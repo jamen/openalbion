@@ -1,0 +1,23 @@
+{
+    "name": "unfable",
+    "description": "Mod tool for Fable TLC.",
+    "version": "0.0.0",
+    "private": true,
+    "main": "./dist/main.js",
+    "dependencies": {
+        "@jamen/svelte-router": "^0.4.0",
+        "bytes": "^3.1.0",
+        "mkdirp": "^0.5.1",
+        "mri": "^1.1.4",
+        "recursive-readdir": "^2.2.2",
+        "rollup": "^1.13.1",
+        "rollup-plugin-commonjs": "^10.0.0",
+        "rollup-plugin-node-resolve": "^5.0.1",
+        "rollup-plugin-svelte": "^5.0.3",
+        "sass": "^1.20.3",
+        "svelte": "^3.4.4"
+    },
+    "devDependencies": {
+        "electron": "^5.0.6"
+    }
+}
