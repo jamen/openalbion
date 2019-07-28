@@ -4,7 +4,7 @@
 
 ## WAD
 
-A WAD file starts with a header:
+A WAD file starts with a header
 
 | Field            | Length | Description                                                    |
 |------------------|--------|----------------------------------------------------------------|
@@ -18,7 +18,7 @@ A WAD file starts with a header:
 
 After the header, the file contents are conatined in blocks. A file list follows these blocks (at `fileListOffset`) and is used to parse the files out.
 
-A file list entry looks like:
+The file list entries are
 
 | Field        | Length     | Description                                                    |
 |--------------|------------|----------------------------------------------------------------|
@@ -45,7 +45,7 @@ When the WAD is unarchived, you are left with [TNG](#TNG) and [LEV](#LEV) files.
 
 ## LEV
 
-A LEV file starts with a primary header:
+A LEV file starts with a primary header
 
 | Field              | Length | Description                                          |
 |--------------------|--------|------------------------------------------------------|
@@ -57,7 +57,7 @@ A LEV file starts with a primary header:
 | `navigationOffset` | 4      | Offset to navigation data                            |
 | `unknown3`         | 5      | Unknown                                              |
 
-And is followed by a map data header:
+And is followed by a map data header
 
 | Field           | Length | Description               |
 |-----------------|--------|---------------------------|
@@ -68,11 +68,57 @@ And is followed by a map data header:
 | `height`        | 4      |                           |
 | `alwaysTrue`    | 1      | Should be `1`             |
 
-Work in progress
+Then, some preliminary map data is given.
+
+**I don't know what most of this is  yet, but I'll provide upstream descriptions**
+
+| Field              | Length | Description                                                  |
+|--------------------|--------|--------------------------------------------------------------|
+| `heightmapPalette` | 33792  | A palette of themes for the heightmap                        |
+| `soundVersion`     | 4      | Ambient sound version. 3 is global, and 0 is heightmap sound |
+| `soundThemesCount` | 4      | Amount of sound themes                                       |
+| `soundPalette`     | 33792  | A pallete of sound themes for the heightmap                  |
+| `checksum`         | 4      | A checksum that is only used sometimes                       |
+
+In addition to this is a list of sound theme names.
+
+The list is `soundThemesCount - 1` in length, and contains
+
+| Field        | Length       | Description          |
+|--------------|--------------|----------------------|
+| `nameLength` | 4            | The size of the name |
+| `name`       | `nameLength` | A string name        |
+
+The heightmap data follow this. Its a list of cells that is `(width + 1) * (height + 1)` in length, and contains
+
+| Field                 | Length | Description                                                 |
+|-----------------------|--------|-------------------------------------------------------------|
+| `size`                | 4      | Cell size (should be the same for each cell)                |
+| `version`             | 1      | Cell version                                                |
+| `height`              | 4      | Cell height                                                 |
+| `zero1`               | 1      | A byte equal to `0`                                         |
+| `groundTheme`         | 3      | An array of 3 bytes specifying the ground theme             |
+| `groundThemeStrength` | 2      | An array of 2 bytes specifying the ground theme strength    |
+| `walkable`            | 1      | A boolean specifying if the hero can walk at this point     |
+| `passover`            | 1      | A boolean specifying if the camera can pass over this point |
+| `soundTheme`          | 1      | Sound theme (no further description given)                  |
+| `zero2`               | 1      | A byte equal to `0`                                         |
+| `shore`               | 1      | A boolean specifying if this is a shore point               |
+| `unknown`             | 1      | Unknown                                                     |
+
+A "sound map" follow this. Its a list of cells `width * height` in length, and contains
+
+| Field                | Length | Description                                             |
+|----------------------|--------|---------------------------------------------------------|
+| `size`               | 4      | Size of the cell (should be the same for each cell)     |
+| `version`            | 1      | Cell version                                            |
+| `soundTheme`         | 3      | An array of 3 bytes specifying the sound theme          |
+| `soundThemeStrength` | 2      | An array of 2 bytes specifying the sound theme strength |
+| `soundIndex`         | 1      | An index specifying a sound palette item                |
 
 ## BIG
 
-A BIG file starts with a header.
+A BIG file starts with a header
 
 | Field         | Length | Description              |
 |---------------|--------|--------------------------|
