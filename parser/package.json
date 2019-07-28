@@ -1,0 +1,13 @@
+{
+    "name": "fable-parser",
+    "description": "",
+    "module": "dist/main.js",
+    "devDependencies": {
+        "@types/mkdirp": "^0.5.2",
+        "@types/node": "^12.6.8",
+        "typescript": "^3.5.3"
+    },
+    "dependencies": {
+        "mkdirp": "^0.5.1"
+    }
+}
