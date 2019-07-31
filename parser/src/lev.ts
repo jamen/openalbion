@@ -12,11 +12,50 @@ const closeAsync = promisify(close)
 const writeAsync = promisify(write)
 const mkdirpAsync = promisify(mkdirp)
 
+interface Lev {
+    headerSize: number,
+    version: number,
+    obsoleteOffset: number,
+    navigationOffset: number,
+    uniqueIdCount: BigInt,
+    width: number,
+    height: number,
+    mapHeaderSize: number,
+    mapVersion: number,
+    heightmapPalette: Buffer,
+    ambientSoundVersion: number,
+    soundThemesCount: number,
+    soundPalette: Buffer,
+    soundThemes: string[],
+    heightmap: LevHeightmapCell[],
+    soundmap: LevSoundmapCell[]
+}
+
+interface LevHeightmapCell {
+    size: number,
+    version: number,
+    height: number,
+    groundTheme: Buffer,
+    groundThemeStrength: Buffer,
+    walkable: boolean,
+    passover: boolean,
+    soundTheme: number,
+    shore: boolean
+}
+
+interface LevSoundmapCell {
+    size: number,
+    version: number,
+    soundTheme: Buffer,
+    soundThemeStrength: Buffer,
+    soundIndex: number
+}
+
 /**
  * Parse Lev from inside a Wad file.
  */
 
-export async function parseLevFromWadFile (wadFile: string, levFile: string) {
+export async function parseLevFromWadFile (wadFile: string, levFile: string): Promise<Lev> {
     const fd = await openAsync(wadFile, 'r')
 
     let result = null
@@ -33,7 +72,7 @@ export async function parseLevFromWadFile (wadFile: string, levFile: string) {
     return result
 }
 
-export async function parseLevFromWadFd (wadFd: number, levFile: string) {
+export async function parseLevFromWadFd (wadFd: number, levFile: string): Promise<Lev> {
     const { header, entries } = await parseWadFd(wadFd)
 
     const levEntry = entries.find(file => file.name === levFile)
@@ -60,7 +99,7 @@ export async function parseLevFile (levFile: string) {
  * Parse Lev buffer.
  */
 
-export async function parseLevBuffer (levData: Buffer) {
+export async function parseLevBuffer (levData: Buffer) : Promise<Lev> {
     const headerSize = levData.readUInt32LE(0)
     const version = levData.readUInt32LE(4)
 
@@ -89,7 +128,7 @@ export async function parseLevBuffer (levData: Buffer) {
     // const alwaysTrue = header.readUInt8LE(46)
 
     // Theme data
-    const heightfieldPalette = levData.slice(47, 33839)
+    const heightmapPalette = levData.slice(47, 33839)
     const ambientSoundVersion = levData.readUInt32LE(33839)
     const soundThemesCount = levData.readUInt32LE(33843)
     const soundPalette = levData.slice(33847, 67639)
@@ -112,7 +151,7 @@ export async function parseLevBuffer (levData: Buffer) {
 
     // Heightmap
     let heightmapIter = (width + 1) * (height + 1)
-    const heightmap = []
+    const heightmap: LevHeightmapCell[] = []
 
     while (heightmapIter--) {
         const size = levData.readUInt32LE(offset)
@@ -121,11 +160,11 @@ export async function parseLevBuffer (levData: Buffer) {
         // const zero = levData.readUInt32LE(offset + 9)
         const groundTheme = levData.slice(offset + 10, offset + 13)
         const groundThemeStrength = levData.slice(offset + 13, offset + 15)
-        const walkable = levData.readUInt8(offset + 15)
-        const passover = levData.readUInt8(offset + 16)
+        const walkable = !!levData.readUInt8(offset + 15)
+        const passover = !!levData.readUInt8(offset + 16)
         const soundTheme = levData.readUInt8(offset + 17)
         // const zero = levData.readUint8(offset + 18)
-        const shore = levData.readUInt8(offset + 19)
+        const shore = !!levData.readUInt8(offset + 19)
         // const unknown = levData.readUint8(offset + 20)
 
         offset += 21
@@ -145,7 +184,7 @@ export async function parseLevBuffer (levData: Buffer) {
 
     // Sound Map
     let soundMapIter = width * height
-    const soundMap = []
+    const soundmap: LevSoundmapCell[] = []
 
     while (soundMapIter--) {
         const size = levData.readUInt32LE(offset)
@@ -156,7 +195,7 @@ export async function parseLevBuffer (levData: Buffer) {
 
         offset += 12
 
-        soundMap.push({
+        soundmap.push({
             size,
             version,
             soundTheme,
@@ -166,7 +205,6 @@ export async function parseLevBuffer (levData: Buffer) {
     }
 
     return {
-        // Known good values
         headerSize,
         version,
         obsoleteOffset,
@@ -176,13 +214,12 @@ export async function parseLevBuffer (levData: Buffer) {
         height,
         mapHeaderSize,
         mapVersion,
-        // Expermental values
-        heightfieldPalette,
+        heightmapPalette,
         ambientSoundVersion,
         soundThemesCount,
         soundPalette,
         soundThemes,
         heightmap,
-        soundMap
+        soundmap,
     }
 }
