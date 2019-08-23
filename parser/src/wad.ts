@@ -2,6 +2,7 @@ import { promisify } from 'util'
 import { open, close, fstat, read, createReadStream, createWriteStream } from 'fs'
 import mkdirp from 'mkdirp'
 import * as path from 'path'
+import { start } from 'repl';
 
 const openAsync = promisify(open)
 const fstatAsync = promisify(fstat)
@@ -14,69 +15,11 @@ const mkdirpAsync = promisify(mkdirp)
  */
 
 interface Wad {
-    header: WadHeader,
+    blockSize: number,
+    entriesCount: number,
+    entriesOffset: number
     entries: WadEntry[]
 }
-
-export async function parseWadFile (file: string) : Promise<Wad> {
-    const fd = await openAsync(file, 'r')
-    const results = await parseWadFd(fd)
-    await closeAsync(fd)
-    return results
-}
-
-export async function parseWadFd (fd: number) : Promise<Wad> {
-    // Parse header
-    const headerData = Buffer.alloc(32)
-    await readAsync(fd, headerData, 0, 32, 0)
-    const header = await parseWadHeader(headerData)
-
-    // Parse entries
-    const stat = await fstatAsync(fd)
-    const entriesData = Buffer.alloc(stat.size - header.entriesOffset)
-    await readAsync(fd, entriesData, 0, entriesData.length, header.entriesOffset)
-    const entries = await parseWadEntries(entriesData)
-
-    return { header, entries }
-}
-
-/**
- * Parse WAD header
- */
-
-interface WadHeader {
-    blockSize: number,
-    entriesAmount: number,
-    entriesOffset: number
-}
-
-export async function parseWadHeader (headerData: Buffer) : Promise<WadHeader> {
-    // Check magic number "BBBB"
-    const magicNumber = headerData.readUInt32LE(0)
-
-    if (magicNumber !== 1111638594) {
-        throw new Error('Not a WAD file')
-    }
-
-    // The next 12 bytes are unknown. Possibly 3 version numbers.
-
-    const blockSize = headerData.readUInt32LE(16)
-    const entriesAmount = headerData.readUInt32LE(20)
-
-    // The next 8 bytes entriesAmount is repeated.
-
-    const entriesOffset = headerData.readUInt32LE(28)
-
-    return {
-        blockSize,
-        entriesAmount,
-        entriesOffset
-    }
-}
-
-/**
- * Parse WAD file entries
- */
 
 interface WadEntry {
     id: number,
@@ -88,70 +31,76 @@ interface WadEntry {
     timestamp3: Date,
 }
 
-async function parseWadEntries (entriesData: Buffer) : Promise<WadEntry[]> {
-    const files = []
+export async function readWadFile (file: string): Promise<Wad> {
+    const fd = await openAsync(file, 'r')
+    const results = await readWadFd(fd)
+    await closeAsync(fd)
+    return results
+}
 
-    let fileEntryOffset = 0
+export async function readWadFd (fd: number): Promise<Wad> {
+    // Parse header
+    const headerData = Buffer.alloc(32)
+    await readAsync(fd, headerData, 0, 32, 0)
 
-    while (fileEntryOffset + 40 < entriesData.length) {
+    // Check magic number "BBBB"
+    const magicNumber = headerData.readUInt32LE(0)
+
+    if (magicNumber !== 1111638594) {
+        throw new Error('Not a WAD file')
+    }
+
+    // The next 12 bytes are unknown. Possibly 3 version numbers.
+
+    const blockSize = headerData.readUInt32LE(16)
+    const entriesCount = headerData.readUInt32LE(20)
+
+    // The next 8 bytes entriesCount is repeated.
+
+    const entriesOffset = headerData.readUInt32LE(28)
+
+    // Parse entries
+    const stat = await fstatAsync(fd)
+
+    const entriesData = Buffer.alloc(stat.size - entriesOffset)
+    await readAsync(fd, entriesData, 0, entriesData.length, entriesOffset)
+
+    const entries = []
+
+    let readEntriesOffset = 0
+
+    while (readEntriesOffset + 40 < entriesData.length) {
         // First 16 bytes are unknown, Assumed to be 4 integer fields
 
         // Next 8 bytes is the file's index.
-        const id = entriesData.readUInt32LE(fileEntryOffset + 16)
+        const id = entriesData.readUInt32LE(readEntriesOffset + 16)
 
         // Next 4 bytes are unknown
 
         // Next 8 bytes are the length and offset of the file.
-        const length = entriesData.readUInt32LE(fileEntryOffset + 24)
-        const offset = entriesData.readUInt32LE(fileEntryOffset + 28)
+        const length = entriesData.readUInt32LE(readEntriesOffset + 24)
+        const offset = entriesData.readUInt32LE(readEntriesOffset + 28)
 
         // Next 4 bytes are unknown
 
         // Next 4 bytes are the length of the following string
-        const nameLength = entriesData.readUInt32LE(fileEntryOffset + 36)
+        const nameLength = entriesData.readUInt32LE(readEntriesOffset + 36)
 
         // Next bytes are a string of the file's name
-        const nameOffset = fileEntryOffset + 40
+        const nameOffset = readEntriesOffset + 40
         const name = entriesData.slice(nameOffset, nameOffset + nameLength).toString()
-        fileEntryOffset += 40 + nameLength
+        readEntriesOffset += 40 + nameLength
 
         // Next 16 bytes are unknown. It appears to never change from
         // [ 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 88, 0, 0 ]
 
-        // The next 28 bytes are a timestamp.
-        const timestamp1 = new Date(
-            entriesData.readUInt32LE(fileEntryOffset + 16),
-            entriesData.readUInt32LE(fileEntryOffset + 20),
-            entriesData.readUInt32LE(fileEntryOffset + 24),
-            entriesData.readUInt32LE(fileEntryOffset + 28),
-            entriesData.readUInt32LE(fileEntryOffset + 32),
-            entriesData.readUInt32LE(fileEntryOffset + 36),
-            entriesData.readUInt32LE(fileEntryOffset + 40)
-        )
+        const timestamp1 = readTimestamp(entriesData, readEntriesOffset + 16, 7)
+        const timestamp2 = readTimestamp(entriesData, readEntriesOffset + 44, 7)
+        const timestamp3 = readTimestamp(entriesData, readEntriesOffset + 72, 5)
 
-        // The next 28 bytes are another timestamp.
-        const timestamp2 = new Date(
-            entriesData.readUInt32LE(fileEntryOffset + 44),
-            entriesData.readUInt32LE(fileEntryOffset + 48),
-            entriesData.readUInt32LE(fileEntryOffset + 52),
-            entriesData.readUInt32LE(fileEntryOffset + 56),
-            entriesData.readUInt32LE(fileEntryOffset + 60),
-            entriesData.readUInt32LE(fileEntryOffset + 64),
-            entriesData.readUInt32LE(fileEntryOffset + 68)
-        )
+        readEntriesOffset += 92
 
-        // The next 20 bytes are another (less percise) timestamp.
-        const timestamp3 = new Date(
-            entriesData.readUInt32LE(fileEntryOffset + 72),
-            entriesData.readUInt32LE(fileEntryOffset + 76),
-            entriesData.readUInt32LE(fileEntryOffset + 80),
-            entriesData.readUInt32LE(fileEntryOffset + 84),
-            entriesData.readUInt32LE(fileEntryOffset + 88)
-        )
-
-        fileEntryOffset += 92
-
-        files.push({
+        entries.push({
             id,
             offset,
             length,
@@ -162,11 +111,30 @@ async function parseWadEntries (entriesData: Buffer) : Promise<WadEntry[]> {
         })
     }
 
-    return files
+    return {
+        blockSize,
+        entriesCount: entriesCount,
+        entriesOffset,
+        entries
+    }
+}
+
+function readTimestamp (data: Buffer, offset: number, length: number): Date {
+    const t = []
+    const endOffset = offset + (length * 4)
+
+    while (offset < endOffset) {
+        t.push(data.readUInt32LE(offset))
+        offset += 4
+    }
+
+    return new Date(t[0], t[1], t[2], t[3], t[4], t[5], t[6])
 }
 
 /**
  * Extract WAD files.
+ *
+ * TODO: Create less read streams, allocate more memory to multiple file blocks, and extract faster.
  */
 
 interface ExtractWadOptions {
@@ -174,54 +142,48 @@ interface ExtractWadOptions {
     exclude?: string[]
 }
 
-interface ExtractedWad {
-    header: WadHeader,
-    entries: WadEntry[],
+interface ExtractedWad extends Wad {
     written: string[]
 }
 
-export async function extractWad (file: string, output: string, options: ExtractWadOptions) : Promise<ExtractedWad> {
+export async function extractWad (file: string, output: string, options: ExtractWadOptions): Promise<ExtractedWad> {
     const fd = await openAsync(file, 'r')
-    const { include, exclude } = options
+    const { include = [], exclude = [] } = options
 
-    const { header, entries } = await parseWadFd(fd)
+    const wad = await readWadFd(fd)
     const directories: { [path: string]: boolean } = {}
     const written = []
 
-    for (const entry of entries) {
-        if (
-            (include && include.indexOf(entry.name) === -1) ||
-            (exclude && exclude.indexOf(entry.name) !== -1)
-        ) {
-            continue
+    for (const entry of wad.entries) {
+        if (include.indexOf(entry.name) !== -1 || exclude.indexOf(entry.name) === -1) {
+            const dir = path.resolve(output, path.win32.dirname(entry.name))
+
+            if (!directories[dir]) {
+                await mkdirpAsync(dir)
+                directories[dir] = true
+            }
+
+            const archiveFile = createReadStream('', {
+                fd,
+                start: entry.offset,
+                end: entry.offset + entry.length - 1,
+                autoClose: false
+            })
+
+            const outFile = createWriteStream(path.resolve(output, entry.name))
+
+            await new Promise((resolve, reject) => {
+                archiveFile.pipe(outFile)
+                .on('close', () => resolve())
+                .on('error', err => reject(err))
+            })
+
+            written.push(entry.name)
         }
-
-        const dir = path.resolve(output, path.win32.dirname(entry.name))
-
-        if (!directories[dir]) {
-            await mkdirpAsync(dir)
-            directories[dir] = true
-        }
-
-        const archiveFile = createReadStream('', {
-            fd,
-            start: entry.offset,
-            end: entry.offset + entry.length - 1,
-            autoClose: false
-        })
-
-        const outFile = createWriteStream(path.resolve(output, entry.name))
-
-        await new Promise((resolve, reject) => {
-            archiveFile.pipe(outFile)
-            .on('close', () => resolve())
-            .on('error', err => reject(err))
-        })
-
-        written.push(entry.name)
     }
 
     await closeAsync(fd)
 
-    return { header, entries, written }
+    return { ...wad, written }
 }
+

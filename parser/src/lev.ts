@@ -1,16 +1,12 @@
 import { promisify } from 'util'
-import { open, close, stat, fstat, read, write, readFile } from 'fs'
-import mkdirp from 'mkdirp'
-import { parseWadFd } from './wad'
+import { open, close, read, readFile } from 'fs'
+import { readWadFd } from './wad'
+import path from 'path'
 
 const openAsync = promisify(open)
-const fstatAsync = promisify(fstat)
-const statAsync = promisify(stat)
 const readAsync = promisify(read)
 const readFileAsync = promisify(readFile)
 const closeAsync = promisify(close)
-const writeAsync = promisify(write)
-const mkdirpAsync = promisify(mkdirp)
 
 interface Lev {
     headerSize: number,
@@ -27,6 +23,7 @@ interface Lev {
     soundThemesCount: number,
     soundPalette: Buffer,
     soundThemes: string[],
+    checksum: number
     heightmap: LevHeightmapCell[],
     soundmap: LevSoundmapCell[]
 }
@@ -55,13 +52,13 @@ interface LevSoundmapCell {
  * Parse Lev from inside a Wad file.
  */
 
-export async function parseLevFromWadFile (wadFile: string, levFile: string): Promise<Lev> {
+export async function readLevFromWadFile (wadFile: string, levFile: string): Promise<Lev> {
     const fd = await openAsync(wadFile, 'r')
 
     let result = null
 
     try {
-        result = await parseLevFromWadFd(fd, levFile)
+        result = await readLevFromWadFd(fd, levFile)
     } catch (error) {
         await closeAsync(fd)
         throw error
@@ -72,71 +69,85 @@ export async function parseLevFromWadFile (wadFile: string, levFile: string): Pr
     return result
 }
 
-export async function parseLevFromWadFd (wadFd: number, levFile: string): Promise<Lev> {
-    const { header, entries } = await parseWadFd(wadFd)
+export async function readLevFromWadFd (wadFd: number, levFile: string): Promise<Lev> {
+    const wad = await readWadFd(wadFd)
 
-    const levEntry = entries.find(file => file.name === levFile)
+    levFile = path.normalize(levFile.toLowerCase())
+
+    const levEntry = wad.entries.find(file => path.normalize(file.name.toLowerCase()) === levFile)
 
     if (!levEntry) {
-        throw new Error('Lev file does not exist')
+        throw new Error('Lev file ' + levEntry + ' does not exist')
     }
 
     const levData = Buffer.alloc(levEntry.length)
     await readAsync(wadFd, levData, 0, levEntry.length, levEntry.offset)
 
-    return parseLevBuffer(levData)
+    return readLevBuffer(levData)
 }
 
 /**
  * Parse an extracted Lev file.
  */
 
-export async function parseLevFile (levFile: string) {
-    return parseLevBuffer(await readFileAsync(levFile))
+export async function readLevFile (levFile: string): Promise<Lev> {
+    return readLevBuffer(await readFileAsync(levFile))
 }
 
 /**
  * Parse Lev buffer.
  */
 
-export async function parseLevBuffer (levData: Buffer) : Promise<Lev> {
-    const headerSize = levData.readUInt32LE(0)
-    const version = levData.readUInt32LE(4)
+export function readLevBuffer (levData: Buffer): Lev {
+    let offset = -4
 
-    // 5 unknown bytes. could be a zero byte then a uint32
+    const headerSize = levData.readUInt32LE(offset += 4)
+    const version = levData.readUInt16LE(offset += 2)
+
+    // 3 unknwon byte
+    offset += 3
+    // 4 unknown bytes
+    offset += 4
 
     // Could be useful?
-    const obsoleteOffset = levData.readUInt32LE(13)
+    const obsoleteOffset = levData.readUInt32LE(offset += 4)
 
     // 4 unknown bytes. could be a uint32 like before
+    offset+= 4
 
-    const navigationOffset = levData.readUInt32LE(21)
+    const navigationOffset = levData.readUInt32LE(offset += 4)
 
-    // 5 unknown bytes
+    // file header ends and map header starts
 
-    const mapHeaderSize = levData.readUInt8(46)
-    const mapVersion = levData.readUInt32BE(47)
+    const mapHeaderSize = levData.readUInt8(offset += 1)
+    const mapVersion = levData.readUInt32BE(offset += 4)
+
+console.log('headerSize', headerSize)
+console.log('version', version)
 
     // Electron doesn't support this yet
     // const uniqueIdCount = header.readBigUInt64LE(30)
-    const uniqueIdCount = (BigInt(levData.readUInt32LE(34)) << 32n) | BigInt(levData.readUInt32LE(30))
+    const uniqueIdCount = (BigInt(levData.readUInt32LE(offset += 4)) << 32n) | BigInt(levData.readUInt32LE(offset += 4))
 
-    const width = levData.readUInt32LE(38)
-    const height = levData.readUInt32LE(42)
+    const width = levData.readUInt32LE(offset += 4)
+    const height = levData.readUInt32LE(offset += 4)
 
     // This is a thing. Useless
     // const alwaysTrue = header.readUInt8LE(46)
+    offset += 1
 
     // Theme data
-    const heightmapPalette = levData.slice(47, 33839)
-    const ambientSoundVersion = levData.readUInt32LE(33839)
-    const soundThemesCount = levData.readUInt32LE(33843)
-    const soundPalette = levData.slice(33847, 67639)
+    const heightmapPalette = levData.slice(offset, offset += 33792)
+    const ambientSoundVersion = levData.readUInt32LE(offset += 4)
+    const soundThemesCount = levData.readUInt32LE(offset += 4)
+    const soundPalette = levData.slice(offset, offset += 33792)
+    const checksum = levData.readUInt32LE(offset += 4)
 
-    // Next there is 4 bytes I don't know what they are, or I messed up the offsets prior.
-    // const unknown = levData.readUint32LE(67643)
+    console.log('soundThemesCount', soundThemesCount)
 
-    let offset = 67643
+    console.log('offset', offset)
+
+    offset += 4
 
     // Sound themes
     let soundThemesIter = soundThemesCount - 1
@@ -144,10 +155,16 @@ export async function parseLevBuffer (levData: Buffer) : Promise<Lev> {
 
     while (soundThemesIter--) {
         const length = levData.readUInt32LE(offset)
-        const name = levData.slice(offset + 4, offset + 4 + length)
-        offset += 4 + length
+        const name = levData.slice(offset += 4, offset += length)
+
+        console.log(length, name.slice(0, 100).toString())
+
         soundThemes.push(name.toString())
     }
+
+    console.log('soundThemes', soundThemes)
+
+    // console.log(soundThemes)
 
     // Heightmap
     let heightmapIter = (width + 1) * (height + 1)
@@ -156,7 +173,7 @@ export async function parseLevBuffer (levData: Buffer) : Promise<Lev> {
     while (heightmapIter--) {
         const size = levData.readUInt32LE(offset)
         const version = levData.readUInt8(offset + 4)
-        const height = levData.readUInt32LE(offset + 5)
+        const height = levData.readFloatLE(offset + 5)
         // const zero = levData.readUInt32LE(offset + 9)
         const groundTheme = levData.slice(offset + 10, offset + 13)
         const groundThemeStrength = levData.slice(offset + 13, offset + 15)
@@ -182,18 +199,22 @@ export async function parseLevBuffer (levData: Buffer) : Promise<Lev> {
         })
     }
 
+    // console.log('offset', offset)
+    // console.log('heightmap length', heightmap.length)
+    // console.log('heightmap start', heightmap.slice(0, 5))
+    // console.log('heightmap end', heightmap.slice(-5))
+
     // Sound Map
-    let soundMapIter = width * height
+    // let soundMapIter = width * height
+    let soundMapIter = 3328
     const soundmap: LevSoundmapCell[] = []
 
     while (soundMapIter--) {
-        const size = levData.readUInt32LE(offset)
-        const version = levData.readUInt8(offset + 4)
-        const soundTheme = levData.slice(offset + 5, offset + 8)
-        const soundThemeStrength = levData.slice(offset + 8, offset + 10)
-        const soundIndex = levData.readUInt8(offset + 10)
-
-        offset += 12
+        const size = levData.readUInt32LE(offset += 4)
+        const version = levData.readUInt8(offset += 1)
+        const soundTheme = levData.slice(offset, offset += 3)
+        const soundThemeStrength = levData.slice(offset, offset += 2)
+        const soundIndex = levData.readUInt8(offset += 1)
 
         soundmap.push({
             size,
@@ -203,6 +224,10 @@ export async function parseLevBuffer (levData: Buffer) : Promise<Lev> {
             soundIndex
         })
     }
+
+    // console.log(soundmap.length, soundmap)
+
+    console.log('offsets', offset, navigationOffset)
 
     return {
         headerSize,
@@ -218,6 +243,7 @@ export async function parseLevBuffer (levData: Buffer) : Promise<Lev> {
         ambientSoundVersion,
         soundThemesCount,
         soundPalette,
+        checksum,
         soundThemes,
         heightmap,
         soundmap,
