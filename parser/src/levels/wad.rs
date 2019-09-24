@@ -10,6 +10,7 @@ use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
 use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
+use crate::util::{parse_timestamp, parse_short_timestamp};
 
 #[derive(Debug)]
 pub struct Wad<'a> {
@@ -118,44 +119,6 @@ pub fn parse_entry(input: &[u8]) -> IResult<&[u8], WadEntry> {
                 accessed_at: accessed_at,
                 written_at: written_at,
             }
-        )
-    )
-}
-
-fn parse_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime> {
-    let (input, year) = le_u32(input)?;
-    let (input, month) = le_u32(input)?;
-    let (input, day) = le_u32(input)?;
-    let (input, hour) = le_u32(input)?;
-    let (input, minute) = le_u32(input)?;
-    let (input, second) = le_u32(input)?;
-    let (input, millisecond) = le_u32(input)?;
-
-    Ok(
-        (
-            input,
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(year as i32, month, day),
-                NaiveTime::from_hms_milli(hour, minute, second, millisecond)
-            )
-        )
-    )
-}
-
-fn parse_short_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime> {
-    let (input, year) = le_u32(input)?;
-    let (input, month) = le_u32(input)?;
-    let (input, day) = le_u32(input)?;
-    let (input, hour) = le_u32(input)?;
-    let (input, minute) = le_u32(input)?;
-
-    Ok(
-        (
-            input,
-            NaiveDateTime::new(
-                NaiveDate::from_ymd(year as i32, month, day),
-                NaiveTime::from_hms(hour, minute, 0)
-            )
         )
     )
 }
