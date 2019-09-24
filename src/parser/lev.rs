@@ -37,13 +37,13 @@ pub struct LevHeader {
 pub fn parse_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
     let (input, _header_size) = le_u32(input)?;
     let (input, version) = le_u16(input)?;
-    let (input, _unknown_1) = take(3usize)(input)?;
+    let (input, _unknown_1) = take(3usize)(input)?; // fabletlcmod.com: 3 bytes of padding. see checksum.
     let (input, _unknown_2) = le_u32(input)?;
     let (input, obsolete_offset) = le_u32(input)?;
     let (input, _unknown_3) = le_u32(input)?;
     let (input, navigation_offset) = le_u32(input)?;
     let (input, _map_header_size) = le_u8(input)?;
-    let (input, map_version) = le_u32(input)?;
+    let (input, map_version) = le_u32(input)?; // fabletlcmod.com:  An 8 bit integer (with 3 bytes of padding)
     let (input, unique_id_count) = le_u64(input)?;
     let (input, width) = le_u32(input)?;
     let (input, height) = le_u32(input)?;
@@ -55,11 +55,11 @@ pub fn parse_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
     println!("_header_size {:?}", _header_size);
     println!("_map_header_size {:?}", _map_header_size);
 
-    let (input, _heightmap_palette) = take(33792usize)(input)?;
+    let (input, _heightmap_palette) = take(33792usize)(input)?; // TODO: figure this out
     let (input, ambient_sound_version) = le_u32(input)?;
     let (input, sound_themes_count) = le_u32(input)?;
-    let (input, _sound_palette) = take(33792usize)(input)?;
-    let (input, checksum) = le_u32(input)?;
+    let (input, _sound_palette) = take(33792usize)(input)?; // TODO: figure this out
+    let (input, checksum) = le_u32(input)?; // fabletlcmod.com: only if the map header pad byte 2 is 9.
 
     let (input, sound_themes) = count(parse_rle_string, (sound_themes_count - 1) as usize)(input)?;
 
@@ -192,6 +192,19 @@ pub fn parse_navigation_header_section(input: &[u8]) -> IResult<&[u8], (&[u8], u
     Ok( (input, (name, start)) )
 }
 
+//
+// From fabletlcmod.com:
+//
+// A Subset has 7 Layers (0-6), each defining blocks of walkable area.
+// Layer 0 = 32 X 32
+// Layer 1 = 16 X 16
+// Layer 2 = 8 X 8
+// Layer 3 = 4 X 4
+// Layer 4 = 2 X 2
+// Layer 5 = 1 X 1
+// Layer 6 = 0.5 X 0.5
+//
+
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationSection {
     size: u32,
@@ -208,7 +221,7 @@ pub fn parse_navigation_section(input: &[u8]) -> IResult<&[u8], LevNavigationSec
     let (input, version) = le_u32(input)?;
     let (input, level_width) = le_u32(input)?;
     let (input, level_height) = le_u32(input)?;
-    let (input, _unknown_1) = le_u32(input)?;
+    let (input, _unknown_1) = le_u32(input)?; // fabletlcmod.com: Number of levels, see navigation nodes
 
     let (input, interactive_nodes_count) = le_u32(input)?;
     let (input, interactive_nodes) = count(parse_navigation_interactive_node, interactive_nodes_count as usize)(input)?;
@@ -284,7 +297,7 @@ pub struct LevNavigationRegularNode {
     x: f32,
     y: f32,
     node_id: u32,
-    child_nodes: (u32, u32, u32, u32)
+    child_nodes: (u32, u32, u32, u32) // (top_right, top_left, bottom_right, bottom_left)
 }
 
 pub fn parse_navigation_regular_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
@@ -343,8 +356,8 @@ pub fn parse_navigation_navigation_node(input: &[u8]) -> IResult<&[u8], LevNavig
     let (input, x) = float(input)?;
     let (input, y) = float(input)?;
     let (input, node_id) = le_u32(input)?;
-    let (input, node_level) = le_u32(input)?;
-    let (input, _unknown_3) = le_u8(input)?;
+    let (input, node_level) = le_u32(input)?; // fabletlcmod.com: Represents some sort of z level attribute
+    let (input, _unknown_3) = le_u8(input)?;  // fabletlcmod.com: So far, Subset 0 = 0 or 128, SubSet 1+ = 64
 
     let (input, nodes_count) = le_u32(input)?;
     let (input, nodes) = count(le_u32, nodes_count as usize)(input)?;
@@ -394,12 +407,13 @@ pub fn parse_navigation_exit_node(input: &[u8]) -> IResult<&[u8], LevNavigationN
     let (input, x) = float(input)?;
     let (input, y) = float(input)?;
     let (input, node_id) = le_u32(input)?;
-    let (input, node_level) = le_u32(input)?;
-    let (input, _unknown_3) = le_u8(input)?;
+    let (input, node_level) = le_u32(input)?; // fabletlcmod.com: Represents some sort of z level attribute
+    let (input, _unknown_3) = le_u8(input)?;  // fabletlcmod.com: So far, Subset 0 = 0 or 128, SubSet 1+ = 64
 
     let (input, nodes_count) = le_u32(input)?;
     let (input, nodes) = count(le_u32, nodes_count as usize)(input)?;
 
+    // fabletlcmod.com: Stripped UID to create the real uid add 18446741874686296064
     let (input, uids_count) = le_u32(input)?;
     let (input, uids) = count(le_u64, uids_count as usize)(input)?;
 
@@ -453,7 +467,8 @@ mod tests {
 
     #[test]
     fn test_lev() {
-        let mut file = File::open(concat!(env!("FABLE"), "/data/Levels/FinalAlbion/LookoutPoint.lev")).expect("failed to open file.");
+        let file_path = concat!(env!("FABLE"), "/data/Levels/FinalAlbion/LookoutPoint.lev");
+        let mut file = File::open(file_path).expect("failed to open file.");
 
         let mut lev: Vec<u8> = Vec::new();
 

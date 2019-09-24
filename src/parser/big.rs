@@ -1,3 +1,79 @@
+// From fabletlcmod.com:
+//
+// Main header
+//
+// Char [4] 'BIGB'
+// Char [4] Version
+// Int [4] Bank address
+// Int [4] unknown
+//
+// Bank Index
+//
+// Int [4] Number of Banks
+// Char [x] NULL terminted string
+// Int [4] Bank ID
+//
+// Bank
+//
+// Int [4] Number of Entries in Bank
+// Int [4] Index Start
+// Int [4] Index Size
+// Int [4] block size
+//
+// FileIndex
+// Header
+//
+// Int [4] NumberFileTypes
+// Int [4] FileType
+// Int [4] NumberFiles
+// Index
+//
+// Int [4] Magic Number
+// Int [4] File ID
+// Int [4] File Type
+// Int [4] File Size
+// Int [4] File Start
+// –[dev info]–
+// Int [4] File Type
+// Int [4] StringLength;
+// Int [StringLength] SymbolName
+// Int [4] File CRC
+// Int [4] Number of Source Files
+// Int [4] StringLength;
+// Int [StringLength] Source File Name
+// –[/dev info]–
+// Int [4] SubHeaderSize
+// Int [SubHeaderSize] SubHeader
+// Texture sub-header:
+//
+// Int [2] Width; Texture size…
+// Int [2] Height;
+// Int [2] Depth; …and depth for vol. textures
+// Int [2] FrameWidth; Actual image size (may be smaller)
+// Int [2] FrameHeight;
+// Int [2] FrameCount;
+// Int [2] DXT Compression;
+// Int [2] Unkown;
+// Int [1] Transparency; Number of alpha channels
+// Int [1] MipMaps; Number of MipMaps
+// Int [2] Unkown;
+// Int [4] TopMipmapSize;
+// Int [4] TopMipmapCompressedSize;
+// Int [2] Unkown; DXT compression again?
+// Int [4] Unkown;
+//
+// The first mipmap of each texture is compressed using lzo1x and the rest are uncompressed.
+// Mesh Sub-header:
+//
+// Dword Physics_Mesh;
+// Float [10]; matches first 40 bytes of bbm. possibly origin
+// Dword Number_LOD's;
+// Dword [Number_LOD's] Size_compressed_LOD;
+// Dword padding;
+// Dword Number_Textures_Assigned; 1 per surface within model
+// Dword [Number_Textures_Assigned] Texture_ID; Texture ID as used in the textures.big
+//
+
 use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::{tag,take,is_not};
