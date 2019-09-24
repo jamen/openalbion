@@ -10,7 +10,7 @@ use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
 use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
-use crate::util::{parse_timestamp, parse_short_timestamp};
+use crate::parser::util::{parse_timestamp, parse_short_timestamp};
 
 #[derive(Debug)]
 pub struct Wad<'a> {

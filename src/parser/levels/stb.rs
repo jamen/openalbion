@@ -11,7 +11,7 @@ use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
 use nom::branch::alt;
-use crate::util::parse_rle_string;
+use crate::parser::util::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
 pub struct StbHeader {

@@ -1,7 +1,7 @@
-use unfable_parser::wad;
 use std::fs::File;
 use std::env;
 use std::collections::HashMap;
+use unfable::parser::levels::wad;
 
 fn main() {
     let input = env::args().nth(1).expect("Input required.");

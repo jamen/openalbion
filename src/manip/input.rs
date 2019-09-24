@@ -36,7 +36,7 @@ extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     return 1;
 }
 
-fn main() {
+fn input() {
     let mut entry: PROCESSENTRY32 = PROCESSENTRY32::default();
     entry.dwSize = mem::size_of::<PROCESSENTRY32>() as u32;
 
