@@ -2,7 +2,6 @@ use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
-use nom::combinator::iterator;
 use nom::multi::count;
 use std::fs::{File,create_dir_all};
 use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};

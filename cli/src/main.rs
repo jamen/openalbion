@@ -8,10 +8,8 @@ fn main() {
     let output = env::args().nth(2).expect("Output required.");
 
     let mut wad_file = File::open(input).expect("Could not open file.");
-
-    let mut wad = wad::Wad::new(&mut wad_file).expect("Could not create wad.");
+    let wad = wad::Wad::new(&mut wad_file).expect("Could not create wad.");
 
     let empty: HashMap<String, wad::FileOption> = HashMap::new();
-
     wad.copy(output, empty).expect("Failed to copy files to output.");
 }

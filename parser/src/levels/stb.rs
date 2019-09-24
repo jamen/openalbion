@@ -11,6 +11,7 @@ use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
 use nom::branch::alt;
+use crate::util::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
 pub struct StbHeader {
@@ -99,27 +100,10 @@ fn parse_developer_header(input: &[u8]) -> IResult<&[u8], StbDevHeader> {
     )
 }
 
-fn parse_rle_string(input: &[u8]) -> IResult<&[u8], String> {
-    let (input, string) = le_u32(input)?;
-    let (input, string) = take(string as usize)(input)?;
-
-    let string = match String::from_utf8(string.to_vec()) {
-        Ok(name) => name,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
-    };
-
-    Ok((input, string))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Read;
-
-    #[test]
-    fn test_has_stb_file() {
-        assert!(Path::new(concat!(env!("FABLE"), "/data/levels/finalalbion_rt.stb")).exists());
-    }
 
     #[test]
     fn test_stb_header() {

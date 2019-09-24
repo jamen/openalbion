@@ -1,7 +1,6 @@
 use nom::IResult;
 use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,float};
-use nom::bytes::complete::{tag,take,take_while,is_not};
-use nom::sequence::{terminated,tuple};
+use nom::bytes::complete::{tag,take,is_not};
 use nom::combinator::iterator;
 use nom::multi::count;
 use std::fs::{File,create_dir_all};
@@ -11,6 +10,7 @@ use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
 use nom::branch::alt;
+use crate::util::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
 pub struct BigHeader {
@@ -173,35 +173,18 @@ fn parse_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry> {
     )
 }
 
-fn parse_rle_string(input: &[u8]) -> IResult<&[u8], String> {
-    let (input, string) = le_u32(input)?;
-    let (input, string) = take(string as usize)(input)?;
-
-    let string = match String::from_utf8(string.to_vec()) {
-        Ok(name) => name,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
-    };
-
-    Ok((input, string))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Read;
 
     #[test]
-    fn test_has_file() {
-        assert!(Path::new(concat!(env!("FABLE"), "/data/graphics/graphics.big")).exists());
-    }
-
-    #[test]
-    fn test_print_header() {
-        let mut file = File::open(concat!(env!("FABLE"), "/data/graphics/graphics.big")).expect("failed to open Big file.");
+    fn test_big() {
+        let mut file = File::open(concat!(env!("FABLE"), "/data/graphics/graphics.big")).expect("failed to open file.");
 
         let mut header: [u8; 16] = [0; 16];
 
-        file.read(&mut header).expect("Failed to read Big file.");
+        file.read(&mut header).expect("Failed to read file.");
 
         let (_, big_header) = parse_header(&header[..]).expect("Failed to parse header.");
 

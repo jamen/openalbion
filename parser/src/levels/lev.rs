@@ -2,7 +2,6 @@ use nom::IResult;
 use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,float};
 use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
-use nom::combinator::iterator;
 use nom::multi::count;
 use std::fs::{File,create_dir_all};
 use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
@@ -11,16 +10,22 @@ use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
 use nom::branch::alt;
+use crate::util::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
-pub struct Lev<'a> {
-    header: LevHeader<'a>,
+pub struct Lev {
+    header: LevHeader,
     heightmap_cells: Vec<LevHeightmapCell>,
     soundmap_cells: Vec<LevSoundmapCell>,
+    // navigation_sections: Vec<>
 }
 
+// fn parse_lev(input: &[u8]) -> IResult<&[u8], LevHeader> {
+
+// }
+
 #[derive(Debug,PartialEq)]
-pub struct LevHeader<'a> {
+pub struct LevHeader {
     pub version: u16,
     pub obsolete_offset: u32,
     pub navigation_offset: u32,
@@ -28,11 +33,11 @@ pub struct LevHeader<'a> {
     pub width: u32,
     pub height: u32,
     pub map_version: u32,
-    pub heightmap_palette: &'a [u8],
+    // pub heightmap_palette: &'a [u8],
     pub ambient_sound_version: u32,
-    pub sound_palette: &'a [u8],
+    // pub sound_palette: &'a [u8],
     pub checksum: u32,
-    pub sound_themes: Vec<&'a [u8]>,
+    pub sound_themes: Vec<String>,
 }
 
 pub fn parse_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
@@ -50,13 +55,19 @@ pub fn parse_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
     let (input, height) = le_u32(input)?;
     let (input, _always_true) = le_u8(input)?;
 
-    let (input, heightmap_palette) = take(33792usize)(input)?;
+    println!("version {:?}", version);
+    println!("obsolete_offset {:?}", obsolete_offset);
+    println!("navigation_offset {:?}", navigation_offset);
+    println!("_header_size {:?}", _header_size);
+    println!("_map_header_size {:?}", _map_header_size);
+
+    let (input, _heightmap_palette) = take(33792usize)(input)?;
     let (input, ambient_sound_version) = le_u32(input)?;
     let (input, sound_themes_count) = le_u32(input)?;
-    let (input, sound_palette) = take(33792usize)(input)?;
+    let (input, _sound_palette) = take(33792usize)(input)?;
     let (input, checksum) = le_u32(input)?;
 
-    let (input, sound_themes) = count(parse_header_sound_theme, (sound_themes_count - 1) as usize)(input)?;
+    let (input, sound_themes) = count(parse_rle_string, (sound_themes_count - 1) as usize)(input)?;
 
     Ok(
         (
@@ -69,20 +80,14 @@ pub fn parse_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
                 width: width,
                 height: height,
                 map_version: map_version,
-                heightmap_palette: heightmap_palette,
+                // heightmap_palette: heightmap_palette,
                 ambient_sound_version: ambient_sound_version,
-                sound_palette: sound_palette,
+                // sound_palette: sound_palette,
                 checksum: checksum,
                 sound_themes: sound_themes,
             }
         )
     )
-}
-
-pub fn parse_header_sound_theme(input: &[u8]) -> IResult<&[u8], &[u8]> {
-    let (input, size) = le_u32(input)?;
-    let (input, sound_theme) = take(size as usize)(input)?;
-    Ok((input, sound_theme))
 }
 
 #[derive(Debug,PartialEq)]
@@ -448,9 +453,42 @@ fn parse_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode
     )
 }
 
-// #![cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     fn test_
-// }
+    #[test]
+    fn test_lev() {
+        let mut file = File::open(concat!(env!("FABLE"), "/data/Levels/FinalAlbion/LookoutPoint.lev")).expect("failed to open file.");
+
+        let mut lev: Vec<u8> = Vec::new();
+
+        file.read_to_end(&mut lev).expect("Failed to read file.");
+
+        let (_, lev) = parse_header(&lev).expect("Failed to parse header.");
+
+        println!("{:#?}", lev);
+
+        // let mut bank_index: Vec<u8> = Vec::new();
+        // file.seek(SeekFrom::Start(big_header.bank_address as u64)).expect("Failed to seek file.");
+        // file.read_to_end(&mut bank_index).expect("Failed to read file.");
+
+        // let (_, big_bank_index) = parse_bank_index(&bank_index).expect("Failed to parse bank index.");
+
+        // println!("{:?}", big_bank_index);
+
+        // let mut file_index: Vec<u8> = Vec::new();
+        // file.seek(SeekFrom::Start(big_bank_index.index_start as u64)).expect("Failed to seek file.");
+        // file.take(big_bank_index.index_size as u64).read_to_end(&mut file_index).expect("Failed to read file.");
+        // file.read_to_end(&mut file_index).expect("Failed to read file.");
+
+        // let (_, big_file_index) = match parse_file_index(&file_index) {
+        //     Ok(value) => value,
+        //     Err(nom::Err::Error((_, error))) => return println!("Error {:?}", error),
+        //     Err(nom::Err::Failure((_, error))) => return println!("Error {:?}", error),
+        //     Err(_) => return println!("Error"),
+        // };
+
+        // println!("{:#?}", big_file_index);
+    }
+}
