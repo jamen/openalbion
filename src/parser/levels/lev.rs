@@ -3,12 +3,6 @@ use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,float};
 use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
 use nom::multi::count;
-use std::fs::{File,create_dir_all};
-use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
-use std::iter::Iterator;
-use std::collections::{HashMap,HashSet};
-use std::path::Path;
-use std::convert::TryInto;
 use nom::branch::alt;
 use crate::parser::util::parse_rle_string;
 
@@ -172,7 +166,7 @@ pub struct LevNavigationHeader<'a> {
     sections: Vec<(&'a [u8], u32)>,
 }
 
-fn parse_navigation_header(input: &[u8]) -> IResult<&[u8], LevNavigationHeader> {
+pub fn parse_navigation_header(input: &[u8]) -> IResult<&[u8], LevNavigationHeader> {
     let (input, sections_start) = le_u32(input)?;
     let (input, sections_count) = le_u32(input)?;
 
@@ -190,7 +184,7 @@ fn parse_navigation_header(input: &[u8]) -> IResult<&[u8], LevNavigationHeader> 
     )
 }
 
-fn parse_navigation_header_section(input: &[u8]) -> IResult<&[u8], (&[u8], u32)> {
+pub fn parse_navigation_header_section(input: &[u8]) -> IResult<&[u8], (&[u8], u32)> {
     let (input, len) = le_u32(input)?;
     let (input, name) = take(len as usize)(input)?;
     let (input, start) = le_u32(input)?;
@@ -209,7 +203,7 @@ pub struct LevNavigationSection {
     level_nodes: Vec<LevNavigationNode>,
 }
 
-fn parse_navigation_section(input: &[u8]) -> IResult<&[u8], LevNavigationSection> {
+pub fn parse_navigation_section(input: &[u8]) -> IResult<&[u8], LevNavigationSection> {
     let (input, size) = le_u32(input)?;
     let (input, version) = le_u32(input)?;
     let (input, level_width) = le_u32(input)?;
@@ -241,13 +235,13 @@ fn parse_navigation_section(input: &[u8]) -> IResult<&[u8], LevNavigationSection
 }
 
 #[derive(Debug,PartialEq)]
-struct LevInteractiveNode {
+pub struct LevInteractiveNode {
     x: u32,
     y: u32,
     subset: u32,
 }
 
-fn parse_navigation_interactive_node(input: &[u8]) -> IResult<&[u8], LevInteractiveNode> {
+pub fn parse_navigation_interactive_node(input: &[u8]) -> IResult<&[u8], LevInteractiveNode> {
     let (input, x) = le_u32(input)?;
     let (input, y) = le_u32(input)?;
     let (input, subset) = le_u32(input)?;
@@ -265,14 +259,14 @@ fn parse_navigation_interactive_node(input: &[u8]) -> IResult<&[u8], LevInteract
 }
 
 #[derive(Debug,PartialEq)]
-enum LevNavigationNode {
+pub enum LevNavigationNode {
     Regular(LevNavigationRegularNode),
     Navigation(LevNavigationNavigationNode),
     Exit(LevNavigationExitNode),
     Blank(LevNavigationBlankNode),
 }
 
-fn parse_navigation_level_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+pub fn parse_navigation_level_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     alt((
         parse_navigation_regular_node,
         parse_navigation_navigation_node,
@@ -282,7 +276,7 @@ fn parse_navigation_level_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode
 }
 
 #[derive(Debug,PartialEq)]
-struct LevNavigationRegularNode {
+pub struct LevNavigationRegularNode {
     root: u8,
     end: u8,
     layer: u8,
@@ -293,7 +287,7 @@ struct LevNavigationRegularNode {
     child_nodes: (u32, u32, u32, u32)
 }
 
-fn parse_navigation_regular_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+pub fn parse_navigation_regular_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (input, _node_op) = tag(&[0, 0, 0, 0, 0, 1, 0, 0])(input)?;
     let (input, _unknown_1) = le_u8(input)?;
     let (input, root) = le_u8(input)?;
@@ -326,7 +320,7 @@ fn parse_navigation_regular_node(input: &[u8]) -> IResult<&[u8], LevNavigationNo
 }
 
 #[derive(Debug,PartialEq)]
-struct LevNavigationNavigationNode {
+pub struct LevNavigationNavigationNode {
     root: u8,
     end: u8,
     layer: u8,
@@ -338,7 +332,7 @@ struct LevNavigationNavigationNode {
     nodes: Vec<u32>,
 }
 
-fn parse_navigation_navigation_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+pub fn parse_navigation_navigation_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (input, _node_op) = tag(&[0, 0, 0, 1, 0, 1, 0, 1])(input)?;
     let (input, _unknown_1) = le_u8(input)?;
     let (input, root) = le_u8(input)?;
@@ -376,7 +370,7 @@ fn parse_navigation_navigation_node(input: &[u8]) -> IResult<&[u8], LevNavigatio
 }
 
 #[derive(Debug,PartialEq)]
-struct LevNavigationExitNode {
+pub struct LevNavigationExitNode {
     root: u8,
     end: u8,
     layer: u8,
@@ -389,7 +383,7 @@ struct LevNavigationExitNode {
     uids: Vec<u64>,
 }
 
-fn parse_navigation_exit_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+pub fn parse_navigation_exit_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (input, _node_op) = tag(&[1, 0, 0, 1, 1, 0, 1, 1])(input)?;
     let (input, _unknown_1) = le_u8(input)?;
     let (input, root) = le_u8(input)?;
@@ -431,11 +425,11 @@ fn parse_navigation_exit_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode>
 }
 
 #[derive(Debug,PartialEq)]
-struct LevNavigationBlankNode {
+pub struct LevNavigationBlankNode {
     root: u8
 }
 
-fn parse_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+pub fn parse_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (input, _node_op) = tag(&[0, 1, 1])(input)?;
     let (input, _unknown_1) = le_u8(input)?;
     let (input, root) = le_u8(input)?;

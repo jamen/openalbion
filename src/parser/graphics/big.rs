@@ -1,15 +1,7 @@
 use nom::IResult;
-use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,float};
+use nom::number::complete::le_u32;
 use nom::bytes::complete::{tag,take,is_not};
-use nom::combinator::iterator;
 use nom::multi::count;
-use std::fs::{File,create_dir_all};
-use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
-use std::iter::Iterator;
-use std::collections::{HashMap,HashSet};
-use std::path::Path;
-use std::convert::TryInto;
-use nom::branch::alt;
 use crate::parser::util::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
@@ -18,7 +10,7 @@ pub struct BigHeader {
     bank_address: u32,
 }
 
-fn parse_header(input: &[u8]) -> IResult<&[u8], BigHeader> {
+pub fn parse_header(input: &[u8]) -> IResult<&[u8], BigHeader> {
     let (input, _magic_number) = tag("BIGB")(input)?;
     let (input, version) = le_u32(input)?;
     let (input, bank_address) = le_u32(input)?;
@@ -45,7 +37,7 @@ pub struct BigBankIndex {
     block_size: u32,
 }
 
-fn parse_bank_index(input: &[u8]) -> IResult<&[u8], BigBankIndex> {
+pub fn parse_bank_index(input: &[u8]) -> IResult<&[u8], BigBankIndex> {
     let (input, _banks_count) = le_u32(input)?;
     let (input, name) = is_not("\0")(input)?;
     let (input, _zero) = tag("\0")(input)?;
@@ -84,9 +76,9 @@ pub struct BigFileIndex {
     entries: Vec<BigFileEntry>
 }
 
-fn parse_file_index(input: &[u8]) -> IResult<&[u8], BigFileIndex> {
+pub fn parse_file_index(input: &[u8]) -> IResult<&[u8], BigFileIndex> {
     let (input, file_types_count) = le_u32(input)?;
-    let (input, file_type) = le_u32(input)?;
+    let (input, _file_type) = le_u32(input)?;
     let (input, entries_count) = le_u32(input)?;
 
     println!("file_types_count {:?}", file_types_count);
@@ -128,7 +120,7 @@ pub struct BigFileEntry {
 
 }
 
-fn parse_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry> {
+pub fn parse_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry> {
     let (input, magic_number) = le_u32(input)?;
     let (input, id) = le_u32(input)?;
     let (input, file_type) = le_u32(input)?;

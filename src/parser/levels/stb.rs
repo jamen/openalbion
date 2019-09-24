@@ -1,16 +1,6 @@
 use nom::IResult;
-use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,float};
-use nom::bytes::complete::{tag,take,take_while,is_not};
-use nom::sequence::{terminated,tuple};
-use nom::combinator::iterator;
-use nom::multi::count;
-use std::fs::{File,create_dir_all};
-use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
-use std::iter::Iterator;
-use std::collections::{HashMap,HashSet};
-use std::path::Path;
-use std::convert::TryInto;
-use nom::branch::alt;
+use nom::number::complete::le_u32;
+use nom::bytes::complete::tag;
 use crate::parser::util::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
@@ -22,7 +12,7 @@ pub struct StbHeader {
     developer_listings: u32,
 }
 
-fn parse_header(input: &[u8]) -> IResult<&[u8], StbHeader> {
+pub fn parse_header(input: &[u8]) -> IResult<&[u8], StbHeader> {
     let (input, _magic_number) = tag("BBBB")(input)?;
     let (input, version) = le_u32(input)?;
     let (input, _unknown_1) = le_u32(input)?;
@@ -47,7 +37,7 @@ fn parse_header(input: &[u8]) -> IResult<&[u8], StbHeader> {
 }
 
 #[derive(Debug,PartialEq)]
-struct StbDevHeader {
+pub struct StbDevHeader {
     listing_start: u32,
     file_id: u32,
     file_size: u32,
@@ -57,7 +47,7 @@ struct StbDevHeader {
     bytes_left: u32,
 }
 
-fn parse_developer_header(input: &[u8]) -> IResult<&[u8], StbDevHeader> {
+pub fn parse_developer_header(input: &[u8]) -> IResult<&[u8], StbDevHeader> {
     let (input, listing_start) = le_u32(input)?;
     let (input, file_id) = le_u32(input)?;
     let (input, _null) = le_u32(input)?;
