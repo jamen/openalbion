@@ -3,6 +3,8 @@ use nom::number::complete::le_u32;
 use nom::bytes::complete::take;
 use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
 
+pub mod script;
+
 pub fn parse_rle_string(input: &[u8]) -> IResult<&[u8], String> {
     let (input, string) = le_u32(input)?;
     let (input, string) = take(string as usize)(input)?;
