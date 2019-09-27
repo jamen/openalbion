@@ -4,6 +4,7 @@ pub mod big;
 pub mod bin;
 pub mod bncfg;
 pub mod bwd;
+pub mod gtg;
 pub mod lev;
 pub mod lut;
 pub mod met;

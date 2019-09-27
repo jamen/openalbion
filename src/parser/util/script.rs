@@ -104,7 +104,7 @@ pub fn parse_instr_value_bool(input: &[u8]) -> IResult<&[u8], InstrValue> {
 }
 
 pub fn parse_instr_value_none(input: &[u8]) -> IResult<&[u8], InstrValue> {
-    match peek(tag(";"))(input) {
+    match alt((tag(";"), line_ending))(input) {
         Ok((_input, _tag)) => Ok((input, InstrValue::None)),
         Err(error) => Err(error)
     }

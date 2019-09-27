@@ -39,14 +39,6 @@ pub fn parse_tng_thing(input: &[u8]) -> IResult<&[u8], TngThing> {
 pub fn parse_tng_section(input: &[u8]) -> IResult<&[u8], TngSection> {
     let (maybe_input, section_start) = parse_instr_tag("XXXSectionStart".to_string())(input)?;
     let (maybe_input, (things, _end)) = many_till(parse_tng_thing, parse_instr_tag("XXXSectionEnd".to_string()))(maybe_input)?;
-
-    let ex = match std::str::from_utf8(&input[..30]) {
-        Ok(v) => v,
-        Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-    };
-
-    println!("input \"{:?}\"", ex);
-
     Ok(
         (
             maybe_input,
@@ -61,13 +53,6 @@ pub fn parse_tng_section(input: &[u8]) -> IResult<&[u8], TngSection> {
 pub fn parse_tng(input: &[u8]) -> IResult<&[u8], Tng> {
     let (maybe_input, version) = parse_instr_tag("Version".to_string())(input)?;
     let (maybe_input, sections) = many0(parse_tng_section)(maybe_input)?;
-
-    match parse_tng_section(maybe_input) {
-        Ok(x) => {},
-        Err(nom::Err::Error((_input, error))) => println!("Error {:?}", error),
-        Err(x) => println!("Error {:?}", x),
-    };
-
     Ok(
         (
             maybe_input,
@@ -88,7 +73,7 @@ mod tests {
     #[test]
     fn test_tng() {
         let file_path = concat!(env!("FABLE"), "/data/Levels/FinalAlbion/LookoutPoint.tng");
-        let mut file = File::open(file_path).expect("failed to open file.");
+        let mut file = File::open(file_path).expect("Failed to open file.");
 
         let mut tng: Vec<u8> = Vec::new();
 
