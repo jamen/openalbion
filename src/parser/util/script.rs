@@ -1,64 +1,95 @@
 use nom::IResult;
-use nom::character::complete::{alphanumeric1,digit1,line_ending};
-use nom::character::is_digit;
+use nom::character::complete::{alphanumeric1,digit1,line_ending,one_of};
+use nom::character::{is_digit,is_alphabetic};
 use nom::combinator::opt;
-use nom::bytes::complete::{tag,take_while1};
+use nom::bytes::complete::{tag,take_while1,escaped,is_not};
 use nom::branch::alt;
 use nom::combinator::peek;
-use nom::multi::{many1};
+use nom::multi::{many_till,many1};
+use nom::sequence::terminated;
 
 pub type Instr = (InstrKey, InstrValue);
 
 #[derive(Debug,PartialEq)]
 pub enum InstrKey {
-    Regular(String),
-    Object(Vec<String>),
+    Name(String),
+    Index(u32),
+    Property(Vec<InstrKey>),
 }
 
 #[derive(Debug,PartialEq)]
 pub enum InstrValue {
     None,
-    String(String),
-    Name(String),
-    I32(i32),
-    U64(u64),
-    F32(f32),
     Bool(bool),
-    C3DCoordF((f32, f32, f32)),
+    Number(i32),
+    BigNumber(u64),
+    Float(f32),
+    String(String),
+    Call((String, Vec<InstrValue>)),
+    Name(String),
 }
 
 pub fn parse_instr_key(input: &[u8]) -> IResult<&[u8], InstrKey> {
-    let (input, key) = alphanumeric1(input)?;
+    alt((
+        parse_instr_key_property,
+        parse_instr_key_index,
+        parse_instr_key_name
+    ))(input)
+}
+
+pub fn parse_instr_key_property(input: &[u8]) -> IResult<&[u8], InstrKey> {
+    let (maybe_input, key_name) = parse_instr_key_name(input)?;
+    let (maybe_input, mut parts) = many1(parse_instr_key_property_access)(maybe_input)?;
+
+    parts.insert(0, key_name);
+
+    Ok((maybe_input, InstrKey::Property(parts)))
+}
+
+pub fn parse_instr_key_property_access(input: &[u8]) -> IResult<&[u8], InstrKey> {
+    let (maybe_input, accessor) = one_of(".[")(input)?;
+
+    if accessor == '[' {
+        terminated(parse_instr_key_index, tag("]"))(maybe_input)
+    } else if accessor == '.' {
+        parse_instr_key_name(maybe_input)
+    } else {
+        Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)))
+    }
+}
+
+pub fn parse_instr_key_index(input: &[u8]) -> IResult<&[u8], InstrKey> {
+    let (maybe_input, index) = parse_instr_value_number(input)?;
+
+    let index = match index {
+        InstrValue::Number(index) => index,
+        _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+    };
+
+    Ok((maybe_input, InstrKey::Index(index as u32)))
+}
+
+pub fn parse_instr_key_name(input: &[u8]) -> IResult<&[u8], InstrKey> {
+    let (maybe_input, key) = alphanumeric1(input)?;
 
     let key = match String::from_utf8(key.to_vec()) {
         Ok(key) => key,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
+        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
     };
 
-    // TODO: Object keys.
-    //
-    // For example
-    //
-    // KeyCameras[0].Position C3DCoordF(2.009033,-2.85498,0.508656);
-    // KeyCameras[0].LookDirection C3DCoordF(0.259062,0.961777,-0.088723);
-    // KeyCameras[0].FOV 0.111111;
-    // KeyCameras[0].ShuttleSpeed 1.0;
-
-    Ok(
-        (
-            input,
-            InstrKey::Regular(key)
-        )
-    )
+    Ok((maybe_input, InstrKey::Name(key)))
 }
 
 pub fn parse_instr_value(input: &[u8]) -> IResult<&[u8], InstrValue> {
     alt((
         parse_instr_value_none,
         parse_instr_value_bool,
-        parse_instr_value_f32,
-        parse_instr_value_i32,
-        parse_instr_value_u64,
+        parse_instr_value_float,
+        parse_instr_value_number,
+        parse_instr_value_big_number,
+        parse_instr_value_string,
+        parse_instr_value_call,
+        parse_instr_value_name,
     ))(input)
 }
 
@@ -79,13 +110,13 @@ pub fn parse_instr_value_none(input: &[u8]) -> IResult<&[u8], InstrValue> {
     }
 }
 
-pub fn parse_instr_value_f32(input: &[u8]) -> IResult<&[u8], InstrValue> {
+pub fn parse_instr_value_float(input: &[u8]) -> IResult<&[u8], InstrValue> {
     let (input, negative) = opt(tag("-"))(input)?;
     let (maybe_input, value) = take_while1(|x| is_digit(x) || x == 0x2e)(input)?;
 
     let value = match String::from_utf8(value.to_vec()) {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
+        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
     };
 
     let value = match value.parse::<f32>() {
@@ -95,16 +126,16 @@ pub fn parse_instr_value_f32(input: &[u8]) -> IResult<&[u8], InstrValue> {
 
     let value = if negative.is_none() { value } else { -value };
 
-    Ok((maybe_input, InstrValue::F32(value)))
+    Ok((maybe_input, InstrValue::Float(value)))
 }
 
-pub fn parse_instr_value_i32(input: &[u8]) -> IResult<&[u8], InstrValue> {
-    let (input, negative) = opt(tag("-"))(input)?;
-    let (maybe_input, value) = digit1(input)?;
+pub fn parse_instr_value_number(input: &[u8]) -> IResult<&[u8], InstrValue> {
+    let (maybe_input, negative) = opt(tag("-"))(input)?;
+    let (maybe_input, value) = digit1(maybe_input)?;
 
     let value = match String::from_utf8(value.to_vec()) {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
+        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
     };
 
     let value = match value.parse::<i32>() {
@@ -114,15 +145,15 @@ pub fn parse_instr_value_i32(input: &[u8]) -> IResult<&[u8], InstrValue> {
 
     let value = if negative.is_none() { value } else { -value };
 
-   Ok((maybe_input, InstrValue::I32(value)))
+   Ok((maybe_input, InstrValue::Number(value)))
 }
 
-pub fn parse_instr_value_u64(input: &[u8]) -> IResult<&[u8], InstrValue> {
+pub fn parse_instr_value_big_number(input: &[u8]) -> IResult<&[u8], InstrValue> {
     let (maybe_input, value) = digit1(input)?;
 
     let value = match String::from_utf8(value.to_vec()) {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
+        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
     };
 
     let value = match value.parse::<u64>() {
@@ -130,27 +161,82 @@ pub fn parse_instr_value_u64(input: &[u8]) -> IResult<&[u8], InstrValue> {
         Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
     };
 
-   Ok((maybe_input, InstrValue::U64(value)))
+   Ok((maybe_input, InstrValue::BigNumber(value)))
+}
+
+pub fn parse_instr_value_string(input: &[u8]) -> IResult<&[u8], InstrValue> {
+    let (maybe_input, _opener) = tag("\"")(input)?;
+    let (maybe_input, value) = escaped(is_not("\""), '\\', one_of("\"\\"))(maybe_input)?;
+    let (maybe_input, _closer) = tag("\"")(maybe_input)?;
+
+    let value = match String::from_utf8(value.to_vec()) {
+        Ok(value) => value,
+        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+    };
+
+    Ok((maybe_input, InstrValue::String(value)))
+}
+
+pub fn parse_instr_value_call(input: &[u8]) -> IResult<&[u8], InstrValue> {
+    let (maybe_input, name) = parse_instr_value_name(input)?;
+
+    let name = match name {
+        InstrValue::Name(value) => value,
+        _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+    };
+
+    let (maybe_input, _start) = tag("(")(maybe_input)?;
+    let (maybe_input, (values, _end)) = many_till(parse_instr_value, tag(")"))(maybe_input)?;
+
+    Ok((maybe_input, InstrValue::Call((name, values))))
+}
+
+pub fn parse_instr_value_call_tag(name: String) -> impl Fn(&[u8]) -> IResult<&[u8], InstrValue> {
+    move |input: &[u8]| {
+        let (maybe_input, func) = parse_instr_value_call(input)?;
+
+        let (key, values) = match func {
+            InstrValue::Call((key, values)) => (key, values),
+            _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        };
+
+        if key != name.clone() {
+            return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
+        }
+
+        Ok((maybe_input, InstrValue::Call((key, values))))
+    }
+}
+
+pub fn parse_instr_value_name(input: &[u8]) -> IResult<&[u8], InstrValue> {
+    let (maybe_input, name) = take_while1(|x| is_alphabetic(x) || x == 0x5f)(input)?;
+
+    let name = match String::from_utf8(name.to_vec()) {
+        Ok(value) => value,
+        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+    };
+
+    Ok((maybe_input, InstrValue::Name(name)))
 }
 
 pub fn parse_instr(input: &[u8]) -> IResult<&[u8], Instr> {
-    let (input, key) = parse_instr_key(input)?;
-    let (input, _space) = opt(tag(" "))(input)?;
-    let (input, value) = parse_instr_value(input)?;
-    let (input, _semicolon) = tag(";")(input)?;
-    let (input, _line_ending) = many1(line_ending)(input)?;
+    let (maybe_input, key) = parse_instr_key(input)?;
+    let (maybe_input, _space) = opt(tag(" "))(maybe_input)?;
+    let (maybe_input, value) = parse_instr_value(maybe_input)?;
+    let (maybe_input, _semicolon) = tag(";")(maybe_input)?;
+    let (maybe_input, _line_ending) = many1(line_ending)(maybe_input)?;
 
-    Ok((input, (key, value)))
+    Ok((maybe_input, (key, value)))
 }
 
 pub fn parse_instr_tag(name: String) -> impl Fn(&[u8]) -> IResult<&[u8], Instr> {
     move |input: &[u8]| {
-        let (input, (key, value)) = parse_instr(input)?;
+        let (maybe_input, (key, value)) = parse_instr(input)?;
 
-        if key != InstrKey::Regular(name.clone()) {
+        if key != InstrKey::Name(name.clone()) {
             return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
         }
 
-        Ok((input, (key, value)))
+        Ok((maybe_input, (key, value)))
     }
 }
