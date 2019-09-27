@@ -81,3 +81,51 @@ pub fn parse_wld(input: &[u8]) -> IResult<&[u8], Wld> {
         )
     )
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Read;
+
+    #[test]
+    fn test_wld() {
+        let file_path = concat!(env!("FABLE"), "/data/Levels/FinalAlbion.wld");
+        let mut file = File::open(file_path).expect("Failed to open file.");
+
+        let mut wld: Vec<u8> = Vec::new();
+
+        file.read_to_end(&mut wld).expect("Failed to read file.");
+
+       let (left, wld) = match parse_wld(&wld) {
+            Ok(x) => x,
+            Err(nom::Err::Error((_input, error))) => return println!("Error {:?}", error),
+            Err(error) => return println!("Error {:?}", error),
+        };
+
+        println!("{:#?}", wld);
+
+        // let mut bank_index: Vec<u8> = Vec::new();
+        // file.seek(SeekFrom::Start(big_header.bank_address as u64)).expect("Failed to seek file.");
+        // file.read_to_end(&mut bank_index).expect("Failed to read file.");
+
+        // let (_, big_bank_index) = parse_bank_index(&bank_index).expect("Failed to parse bank index.");
+
+        // println!("{:?}", big_bank_index);
+
+        // let mut file_index: Vec<u8> = Vec::new();
+        // file.seek(SeekFrom::Start(big_bank_index.index_start as u64)).expect("Failed to seek file.");
+        // file.take(big_bank_index.index_size as u64).read_to_end(&mut file_index).expect("Failed to read file.");
+        // file.read_to_end(&mut file_index).expect("Failed to read file.");
+
+        // let (_, big_file_index) = match parse_file_index(&file_index) {
+        //     Ok(value) => value,
+        //     Err(nom::Err::Error((_, error))) => return println!("Error {:?}", error),
+        //     Err(nom::Err::Failure((_, error))) => return println!("Error {:?}", error),
+        //     Err(_) => return println!("Error"),
+        // };
+
+        // println!("{:#?}", big_file_index);
+    }
+}

@@ -464,6 +464,8 @@ pub fn parse_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigation
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::Read;
 
     #[test]
     fn test_lev() {

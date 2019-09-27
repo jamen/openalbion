@@ -1,12 +1,12 @@
 use nom::IResult;
-use nom::character::complete::{alphanumeric1,digit1,line_ending,one_of};
+use nom::character::complete::{alphanumeric1,digit1,line_ending,one_of,space0};
 use nom::character::{is_digit,is_alphabetic};
 use nom::combinator::opt;
 use nom::bytes::complete::{tag,take_while1,escaped,is_not};
 use nom::branch::alt;
 use nom::combinator::peek;
-use nom::multi::{many_till,many1};
-use nom::sequence::terminated;
+use nom::multi::{many_till,many0,many1};
+use nom::sequence::{terminated,preceded};
 
 pub type Instr = (InstrKey, InstrValue);
 
@@ -50,7 +50,7 @@ pub fn parse_instr_key_property_access(input: &[u8]) -> IResult<&[u8], InstrKey>
     let (maybe_input, accessor) = one_of(".[")(input)?;
 
     if accessor == '[' {
-        terminated(parse_instr_key_index, tag("]"))(maybe_input)
+        terminated(parse_instr_key, tag("]"))(maybe_input)
     } else if accessor == '.' {
         parse_instr_key_name(maybe_input)
     } else {
@@ -70,7 +70,7 @@ pub fn parse_instr_key_index(input: &[u8]) -> IResult<&[u8], InstrKey> {
 }
 
 pub fn parse_instr_key_name(input: &[u8]) -> IResult<&[u8], InstrKey> {
-    let (maybe_input, key) = alphanumeric1(input)?;
+    let (maybe_input, key) = take_while1(|x| is_alphabetic(x) || is_digit(x) || x == 0x5f)(input)?;
 
     let key = match String::from_utf8(key.to_vec()) {
         Ok(key) => key,
@@ -166,12 +166,16 @@ pub fn parse_instr_value_big_number(input: &[u8]) -> IResult<&[u8], InstrValue> 
 
 pub fn parse_instr_value_string(input: &[u8]) -> IResult<&[u8], InstrValue> {
     let (maybe_input, _opener) = tag("\"")(input)?;
-    let (maybe_input, value) = escaped(is_not("\""), '\\', one_of("\"\\"))(maybe_input)?;
+    let (maybe_input, value) = opt(escaped(is_not("\""), '\\', one_of("\"\\")))(maybe_input)?;
     let (maybe_input, _closer) = tag("\"")(maybe_input)?;
 
-    let value = match String::from_utf8(value.to_vec()) {
-        Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+    let value = match value {
+        Some(value) =>
+            match String::from_utf8(value.to_vec()) {
+                Ok(value) => value,
+                Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+            },
+        None => "".to_string(),
     };
 
     Ok((maybe_input, InstrValue::String(value)))
@@ -188,7 +192,12 @@ pub fn parse_instr_value_call(input: &[u8]) -> IResult<&[u8], InstrValue> {
     };
 
     let (maybe_input, _start) = tag("(")(maybe_input)?;
-    let (maybe_input, (values, _end)) = many_till(parse_instr_value, tag(")"))(maybe_input)?;
+    let (maybe_input, (mut values, last)) = many_till(
+        preceded(space0, terminated(terminated(parse_instr_value, space0), tag(","))),
+        preceded(space0, terminated(terminated(parse_instr_value, space0), tag(")")))
+    )(maybe_input)?;
+
+    values.push(last);
 
     Ok((maybe_input, InstrValue::Call((name, values))))
 }
@@ -211,7 +220,7 @@ pub fn parse_instr_value_call_tag(name: String) -> impl Fn(&[u8]) -> IResult<&[u
 }
 
 pub fn parse_instr_value_name(input: &[u8]) -> IResult<&[u8], InstrValue> {
-    let (maybe_input, name) = take_while1(|x| is_alphabetic(x) || x == 0x5f)(input)?;
+    let (maybe_input, name) = take_while1(|x| (is_alphabetic(x) || is_digit(x) || x == 0x5f || x == 0x20))(input)?;
 
     let name = match String::from_utf8(name.to_vec()) {
         Ok(value) => value,
@@ -222,7 +231,8 @@ pub fn parse_instr_value_name(input: &[u8]) -> IResult<&[u8], InstrValue> {
 }
 
 pub fn parse_instr(input: &[u8]) -> IResult<&[u8], Instr> {
-    let (maybe_input, key) = parse_instr_key(input)?;
+    let (maybe_input, _line_ending) = many0(line_ending)(input)?;
+    let (maybe_input, key) = parse_instr_key(maybe_input)?;
     let (maybe_input, _space) = opt(tag(" "))(maybe_input)?;
     let (maybe_input, value) = parse_instr_value(maybe_input)?;
     let (maybe_input, _semicolon) = tag(";")(maybe_input)?;
@@ -235,10 +245,18 @@ pub fn parse_instr_tag(name: String) -> impl Fn(&[u8]) -> IResult<&[u8], Instr> 
     move |input: &[u8]| {
         let (maybe_input, (key, value)) = parse_instr(input)?;
 
-        if key != InstrKey::Name(name.clone()) {
+        let key = match key {
+            InstrKey::Name(x) => x,
+            InstrKey::Index(_) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+            InstrKey::Property(_) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        };
+
+        // println!("{:?} == {:?}", name, key);
+
+        if key != name {
             return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
         }
 
-        Ok((maybe_input, (key, value)))
+        Ok((maybe_input, (InstrKey::Name(key), value)))
     }
 }

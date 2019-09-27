@@ -244,7 +244,9 @@ pub fn parse_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::fs::File;
+    use std::io::{Read,Seek};
+    use std::io::SeekFrom;
 
     #[test]
     fn test_big() {

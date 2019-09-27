@@ -136,10 +136,12 @@ pub fn parse_developer_header(input: &[u8]) -> IResult<&[u8], StbDevHeader> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::fs::File;
+    use std::io::{Read,Seek};
+    use std::io::SeekFrom;
 
     #[test]
-    fn test_stb_header() {
+    fn test_stb() {
         let mut file = File::open(concat!(env!("FABLE"), "/data/Levels/FinalAlbion_RT.stb")).expect("failed to open file.");
 
         let mut header: Vec<u8> = Vec::new();

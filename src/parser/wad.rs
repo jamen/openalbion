@@ -223,3 +223,14 @@ impl Wad<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Read;
+
+    fn test_wad() {
+
+    }
+}
