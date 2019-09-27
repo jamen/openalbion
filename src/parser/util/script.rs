@@ -177,6 +177,8 @@ pub fn parse_instr_value_string(input: &[u8]) -> IResult<&[u8], InstrValue> {
     Ok((maybe_input, InstrValue::String(value)))
 }
 
+// TODO: Add leniency on space between parameters.
+
 pub fn parse_instr_value_call(input: &[u8]) -> IResult<&[u8], InstrValue> {
     let (maybe_input, name) = parse_instr_value_name(input)?;
 
