@@ -1,3 +1,4 @@
+use chrono::naive::NaiveDateTime;
 use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::{tag,take};
@@ -8,8 +9,7 @@ use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
 use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
-use chrono::naive::{NaiveDateTime};
-use crate::parser::util::{parse_timestamp, parse_short_timestamp};
+use crate::shared::timestamp::{parse_timestamp, parse_short_timestamp};
 
 #[derive(Debug)]
 pub struct Wad<'a> {

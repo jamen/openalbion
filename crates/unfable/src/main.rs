@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::env;
 use std::collections::HashMap;
-use unfable::parser::wad;
+use fable_format::wad;
 
 fn main() {
     let input = env::args().nth(1).expect("Input required.");

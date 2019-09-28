@@ -3,9 +3,8 @@ use nom::character::complete::line_ending;
 use nom::combinator::opt;
 use nom::bytes::complete::tag;
 use nom::multi::{many0,many1};
-use crate::parser::tng::{parse_tng,Tng};
-use crate::parser::util::script::{parse_instr_tag,parse_instr_value,parse_instr_key,Instr,InstrKey};
-
+use crate::tng::{parse_tng,Tng};
+use crate::shared::script::{parse_instr_tag,parse_instr_value,parse_instr_key,Instr,InstrKey};
 
 #[derive(Debug,PartialEq)]
 pub struct Gtg {
@@ -19,7 +18,7 @@ pub fn parse_gtg_map(input: &[u8]) -> IResult<&[u8], Tng> {
     Ok((maybe_input, tng))
 }
 
-// Strangely "NEWMAP" and "ENDMAP" don't use semicolons. So, here is an alternative to parser::util::parse_instr_tag
+// "NEWMAP" and "ENDMAP" don't use semicolons, so this is an alternative of parser::util::parse_instr_tag
 pub fn parse_gtg_map_instr(name: String) -> impl Fn(&[u8]) -> IResult<&[u8], Instr> {
     move |input: &[u8]| {
         let (maybe_input, _line_ending) = many0(line_ending)(input)?;

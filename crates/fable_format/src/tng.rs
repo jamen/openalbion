@@ -1,7 +1,7 @@
 use nom::IResult;
 use nom::character::complete::line_ending;
 use nom::multi::{many0,many_till};
-use crate::parser::util::script::{parse_instr,parse_instr_tag,Instr};
+use crate::shared::script::{parse_instr,parse_instr_tag,Instr};
 
 #[derive(Debug,PartialEq)]
 pub struct Tng {

@@ -78,7 +78,7 @@ use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::{tag,take,is_not};
 use nom::multi::count;
-use crate::parser::util::parse_rle_string;
+use crate::shared::string::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
 pub struct BigHeader {

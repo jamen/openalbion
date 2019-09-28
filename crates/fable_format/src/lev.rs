@@ -1,22 +1,60 @@
+// From fabletlcmod.com:
+//
+// Creating Heightmaps and loading heightmaps into 3ds max.
+//
+// http://www.ogre3d.org/wiki/index.php/3dsmax_Heightmap
+//
+
 use nom::IResult;
 use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,float};
 use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
 use nom::multi::count;
 use nom::branch::alt;
-use crate::parser::util::parse_rle_string;
+use crate::shared::string::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
-pub struct Lev {
+pub struct Lev<'a> {
     header: LevHeader,
     heightmap_cells: Vec<LevHeightmapCell>,
-    soundmap_cells: Vec<LevSoundmapCell>,
-    // navigation_sections: Vec<>
+    // soundmap_cells: Vec<LevSoundmapCell>,
+    navigation_header: LevNavigationHeader,
+    navigation_section: LevNavigationSection<'a>
 }
 
-// fn parse_lev(input: &[u8]) -> IResult<&[u8], LevHeader> {
+fn parse_lev(input: &[u8]) -> IResult<&[u8], Lev> {
+    let (maybe_input, header) = parse_header(input)?;
+    // println!("{:?}", header);
+    let (maybe_input, heightmap_cells) = count(parse_heightmap_cell, ((header.height + 1) * (header.width + 1)) as usize)(maybe_input)?;
+    // println!("{:#?}", heightmap_cells.first());
+    // println!("{:#?}", heightmap_cells.last());
+    // fabletlcmod.com seems to have the wrong amount, using a temporary one.
+    // let (input, soundmap_cells) = count(parse_soundmap_cell, ((header.height - 1) * (header.width - 1)) as usize)(input)?;
+    let (maybe_input, soundmap_cells) = count(parse_soundmap_cell, 1024 as usize)(maybe_input)?;
+    // println!("{:#?}", soundmap_cells.last());
+    // let (input, soundmap_cell_1) = parse_soundmap_cell(input)?;
+    // let (input, soundmap_cell_2) = parse_soundmap_cell(input)?;
 
-// }
+    // println!("{:#?}", soundmap_cell_1);
+    // println!("{:#?}", soundmap_cell_2);
+
+    let (maybe_input, navigation_header) = parse_navigation_header(&input[header.navigation_offset as usize..])?;
+    println!("{:#?}", navigation_header);
+    let (maybe_input, navigation_section) = parse_navigation_section(&input[navigation_header.sections_start as usize..])?;
+
+    Ok(
+        (
+            maybe_input,
+            Lev {
+                header: header,
+                heightmap_cells: heightmap_cells,
+                // soundmap_cells: soundmap_ cells,
+                navigation_header: navigation_header,
+                navigation_section: navigation_section,
+            }
+        )
+    )
+}
 
 #[derive(Debug,PartialEq)]
 pub struct LevHeader {
@@ -48,12 +86,6 @@ pub fn parse_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
     let (input, width) = le_u32(input)?;
     let (input, height) = le_u32(input)?;
     let (input, _always_true) = le_u8(input)?;
-
-    println!("version {:?}", version);
-    println!("obsolete_offset {:?}", obsolete_offset);
-    println!("navigation_offset {:?}", navigation_offset);
-    println!("_header_size {:?}", _header_size);
-    println!("_map_header_size {:?}", _map_header_size);
 
     let (input, _heightmap_palette) = take(33792usize)(input)?; // TODO: figure this out
     let (input, ambient_sound_version) = le_u32(input)?;
@@ -88,7 +120,7 @@ pub fn parse_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
 pub struct LevHeightmapCell {
     size: u32,
     version: u8,
-    height: f32,
+    height: u32,
     ground_theme: (u8, u8, u8),
     ground_theme_strength: (u8, u8),
     walkable: bool,
@@ -100,8 +132,8 @@ pub struct LevHeightmapCell {
 pub fn parse_heightmap_cell(input: &[u8]) -> IResult<&[u8], LevHeightmapCell> {
     let (input, size) = le_u32(input)?;
     let (input, version) = le_u8(input)?;
-    let (input, height) = float(input)?;
-    let (input, _zero) = le_u32(input)?;
+    let (input, height) = le_u32(input)?;
+    let (input, _zero) = le_u8(input)?;
     let (input, ground_theme) = tuple((le_u8, le_u8, le_u8))(input)?;
     let (input, ground_theme_strength) = tuple((le_u8, le_u8))(input)?;
     let (input, walkable) = le_u8(input)?;
@@ -144,7 +176,6 @@ pub fn parse_soundmap_cell(input: &[u8]) -> IResult<&[u8], LevSoundmapCell> {
     let (input, sound_theme) = tuple((le_u8, le_u8, le_u8))(input)?;
     let (input, sound_theme_strength) = tuple((le_u8, le_u8))(input)?;
     let (input, sound_index) = le_u8(input)?;
-
     Ok(
         (
             input,
@@ -160,10 +191,10 @@ pub fn parse_soundmap_cell(input: &[u8]) -> IResult<&[u8], LevSoundmapCell> {
 }
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationHeader<'a> {
+pub struct LevNavigationHeader {
     sections_start: u32,
     sections_count: u32,
-    sections: Vec<(&'a [u8], u32)>,
+    sections: Vec<(String, u32)>,
 }
 
 pub fn parse_navigation_header(input: &[u8]) -> IResult<&[u8], LevNavigationHeader> {
@@ -184,9 +215,8 @@ pub fn parse_navigation_header(input: &[u8]) -> IResult<&[u8], LevNavigationHead
     )
 }
 
-pub fn parse_navigation_header_section(input: &[u8]) -> IResult<&[u8], (&[u8], u32)> {
-    let (input, len) = le_u32(input)?;
-    let (input, name) = take(len as usize)(input)?;
+pub fn parse_navigation_header_section(input: &[u8]) -> IResult<&[u8], (String, u32)> {
+    let (input, name) = parse_rle_string(input)?;
     let (input, start) = le_u32(input)?;
 
     Ok( (input, (name, start)) )
@@ -206,14 +236,14 @@ pub fn parse_navigation_header_section(input: &[u8]) -> IResult<&[u8], (&[u8], u
 //
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationSection {
+pub struct LevNavigationSection<'a> {
     size: u32,
     version: u32,
     level_width: u32,
     level_height: u32,
     interactive_nodes: Vec<LevInteractiveNode>,
     subsets_count: u32,
-    level_nodes: Vec<LevNavigationNode>,
+    level_nodes: Vec<LevNavigationNode<'a>>,
 }
 
 pub fn parse_navigation_section(input: &[u8]) -> IResult<&[u8], LevNavigationSection> {
@@ -228,8 +258,19 @@ pub fn parse_navigation_section(input: &[u8]) -> IResult<&[u8], LevNavigationSec
 
     let (input, subsets_count) = le_u32(input)?;
 
+    // println!("size {:#?}", size);
+    // println!("version {:#?}", version);
+    // println!("level_width {:#?}", level_width);
+    // println!("level_height {:#?}", level_height);
+    // println!("interactive_nodes_count {:#?}", interactive_nodes_count);
+    // println!("interactive_nodes {:#?}", interactive_nodes);
+    // println!("subsets_count {:#?}", subsets_count);
+
     let (input, level_nodes_count) = le_u32(input)?;
+    println!("level_nodes_count {:#?}", level_nodes_count);
     let (input, level_nodes) = count(parse_navigation_level_node, level_nodes_count as usize)(input)?;
+    // let (input, level_nodes) = count(parse_navigation_level_node, 1usize)(input)?;
+    // println!("level_nodes {:?}", level_nodes);
 
     Ok(
         (
@@ -272,20 +313,34 @@ pub fn parse_navigation_interactive_node(input: &[u8]) -> IResult<&[u8], LevInte
 }
 
 #[derive(Debug,PartialEq)]
-pub enum LevNavigationNode {
+pub enum LevNavigationNode<'a> {
     Regular(LevNavigationRegularNode),
     Navigation(LevNavigationNavigationNode),
     Exit(LevNavigationExitNode),
     Blank(LevNavigationBlankNode),
+    Unknown1(LevNavigationUnknown1Node),
+    Unknown2(LevNavigationUnknown2Node),
+    Unknown3(LevNavigationUnknown3Node),
+    Unknown(LevNavigationUnknownNode<'a>),
 }
 
 pub fn parse_navigation_level_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
-    alt((
+    // println!("next node {:?}", &input[..18]);
+
+    let (input, level_node) = alt((
         parse_navigation_regular_node,
         parse_navigation_navigation_node,
         parse_navigation_exit_node,
-        parse_navigation_blank_node
-    ))(input)
+        parse_navigation_blank_node,
+        parse_navigation_unknown1_node,
+        parse_navigation_unknown2_node,
+        parse_navigation_unknown3_node,
+        parse_navigation_unknown_node,
+    ))(input)?;
+
+    // println!("level_node {:?}", level_node);
+
+    Ok((input, level_node))
 }
 
 #[derive(Debug,PartialEq)]
@@ -311,6 +366,9 @@ pub fn parse_navigation_regular_node(input: &[u8]) -> IResult<&[u8], LevNavigati
     let (input, x) = float(input)?;
     let (input, y) = float(input)?;
     let (input, node_id) = le_u32(input)?;
+
+    println!("node_id {:?}", node_id);
+
     let (input, child_nodes) = tuple((le_u32, le_u32, le_u32, le_u32))(input)?;
 
     Ok(
@@ -356,6 +414,9 @@ pub fn parse_navigation_navigation_node(input: &[u8]) -> IResult<&[u8], LevNavig
     let (input, x) = float(input)?;
     let (input, y) = float(input)?;
     let (input, node_id) = le_u32(input)?;
+
+    println!("node_id {:?}", node_id);
+
     let (input, node_level) = le_u32(input)?; // fabletlcmod.com: Represents some sort of z level attribute
     let (input, _unknown_3) = le_u8(input)?;  // fabletlcmod.com: So far, Subset 0 = 0 or 128, SubSet 1+ = 64
 
@@ -407,6 +468,9 @@ pub fn parse_navigation_exit_node(input: &[u8]) -> IResult<&[u8], LevNavigationN
     let (input, x) = float(input)?;
     let (input, y) = float(input)?;
     let (input, node_id) = le_u32(input)?;
+
+    println!("node_id {:?}", node_id);
+
     let (input, node_level) = le_u32(input)?; // fabletlcmod.com: Represents some sort of z level attribute
     let (input, _unknown_3) = le_u8(input)?;  // fabletlcmod.com: So far, Subset 0 = 0 or 128, SubSet 1+ = 64
 
@@ -439,6 +503,92 @@ pub fn parse_navigation_exit_node(input: &[u8]) -> IResult<&[u8], LevNavigationN
 }
 
 #[derive(Debug,PartialEq)]
+pub struct LevNavigationUnknown1Node {
+    end: u8
+}
+
+pub fn parse_navigation_unknown1_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+    let (maybe_input, _node_op) = tag(&[11, 0, 0, 0, 0, 0, 0, 0, 0, 0])(input)?;
+    let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
+    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
+    let (maybe_input, end) = le_u8(maybe_input)?;
+
+    let unknown = LevNavigationUnknown1Node {
+        end: end,
+    };
+
+    let maybe_input = &input[end as usize..];
+
+    Ok((maybe_input, LevNavigationNode::Unknown1(unknown)))
+}
+
+#[derive(Debug,PartialEq)]
+pub struct LevNavigationUnknown2Node {
+    end: u8
+}
+
+pub fn parse_navigation_unknown2_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+    let (maybe_input, _node_op) = tag(&[0, 1, 0, 0, 0, 0, 0, 0])(input)?;
+    let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
+    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
+    let (maybe_input, end) = le_u8(maybe_input)?;
+
+    let unknown = LevNavigationUnknown2Node {
+        end: end,
+    };
+
+    let maybe_input = &input[end as usize..];
+
+    Ok((maybe_input, LevNavigationNode::Unknown2(unknown)))
+}
+
+#[derive(Debug,PartialEq)]
+pub struct LevNavigationUnknown3Node {
+    end: u8
+}
+
+pub fn parse_navigation_unknown3_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+    let (maybe_input, _node_op) = tag(&[0, 0, 0, 0, 0, 0, 0, 0])(input)?;
+    let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
+    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
+    let (maybe_input, end) = le_u8(maybe_input)?;
+
+    let unknown = LevNavigationUnknown3Node {
+        end: end,
+    };
+
+    let maybe_input = &input[end as usize..];
+
+    Ok((maybe_input, LevNavigationNode::Unknown3(unknown)))
+}
+
+#[derive(Debug,PartialEq)]
+pub struct LevNavigationUnknownNode<'a> {
+    node_op: &'a [u8],
+    end: u8
+}
+
+pub fn parse_navigation_unknown_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
+    let (maybe_input, node_op) = take(8usize)(input)?;
+    let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
+    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
+    let (maybe_input, end) = le_u8(maybe_input)?;
+
+    let unknown = LevNavigationUnknownNode {
+        node_op: &node_op,
+        end: end,
+    };
+
+    let maybe_input = &input[end as usize..];
+
+    Ok((maybe_input, LevNavigationNode::Unknown(unknown)))
+}
+
+#[derive(Debug,PartialEq)]
 pub struct LevNavigationBlankNode {
     root: u8
 }
@@ -448,6 +598,8 @@ pub fn parse_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigation
     let (input, _unknown_1) = le_u8(input)?;
     let (input, root) = le_u8(input)?;
     let (input, _unknown_2) = le_u8(input)?;
+
+    println!("blank {:?}", root);
 
     Ok(
         (
@@ -469,16 +621,25 @@ mod tests {
 
     #[test]
     fn test_lev() {
-        let file_path = concat!(env!("FABLE"), "/data/Levels/FinalAlbion/LookoutPoint.lev");
+        let file_path = concat!(env!("FABLE"), "/data/Levels/FinalAlbion/SnowspireVillage.lev");
         let mut file = File::open(file_path).expect("failed to open file.");
 
         let mut lev: Vec<u8> = Vec::new();
 
         file.read_to_end(&mut lev).expect("Failed to read file.");
 
-        let (_, lev) = parse_header(&lev).expect("Failed to parse header.");
+       let (left, lev) = match parse_lev(&lev) {
+            Ok(x) => x,
+            Err(nom::Err::Error((_input, error))) => return println!("Error {:?}", error),
+            Err(error) => return println!("Error {:?}", error),
+        };
 
-        println!("{:#?}", lev);
+        // println!("{:#?}", lev);
+        println!("level_nodes.len() {:?}", lev.navigation_section.level_nodes.len());
+        println!("level_nodes {:#?}", &lev.navigation_section.level_nodes[0..10]);
+        println!("level_nodes {:#?}", &lev.navigation_section.level_nodes.last());
+
+        // println!("left {:?}", left);
 
         // let mut bank_index: Vec<u8> = Vec::new();
         // file.seek(SeekFrom::Start(big_header.bank_address as u64)).expect("Failed to seek file.");

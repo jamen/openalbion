@@ -3,7 +3,7 @@ use nom::multi::{many1,many0};
 use nom::character::complete::line_ending;
 use nom::bytes::complete::tag;
 use nom::combinator::opt;
-use crate::parser::util::script::{parse_instr_value_call,InstrValue};
+use crate::shared::script::{parse_instr_value_call,InstrValue};
 
 #[derive(Debug,PartialEq)]
 pub struct Qst {
