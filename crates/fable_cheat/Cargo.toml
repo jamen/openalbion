@@ -1,8 +1,0 @@
-[package]
-name = "fable_cheat"
-version = "0.1.0"
-authors = ["Jamen Marz <me@jamen.dev>"]
-edition = "2018"
-
-[dependencies]
-winapi = "0.3.8"

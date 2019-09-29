@@ -1,9 +1,0 @@
-[package]
-name = "fable_format"
-version = "0.1.0"
-authors = ["Jamen Marz <me@jamen.dev>"]
-edition = "2018"
-
-[dependencies]
-nom = "5.0.1"
-chrono = "0.4.9"
