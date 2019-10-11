@@ -44,7 +44,7 @@
 use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::tag;
-use crate::shared::string::parse_rle_string;
+use crate::format::shared::string::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
 pub struct StbHeader {

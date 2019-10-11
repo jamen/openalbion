@@ -15,4 +15,5 @@ path = "src/main.rs"
 [dependencies]
 nom = "5.0.1"
 chrono = "0.4.9"
-winapi = "0.3.8"
+winapi = { version = "0.3.8", features = ["winuser","tlhelp32","processthreadsapi","errhandlingapi","handleapi","winerror"] }
+libc = "0.2.62"

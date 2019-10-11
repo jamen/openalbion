@@ -11,7 +11,7 @@ use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
 use nom::multi::count;
 use nom::branch::alt;
-use crate::shared::string::parse_rle_string;
+use crate::format::shared::string::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
 pub struct Lev<'a> {

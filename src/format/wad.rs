@@ -9,7 +9,7 @@ use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
 use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
-use crate::shared::timestamp::{parse_timestamp, parse_short_timestamp};
+use crate::format::shared::timestamp::{parse_timestamp, parse_short_timestamp};
 
 #[derive(Debug)]
 pub struct Wad<'a> {
