@@ -17,12 +17,12 @@ use crate::format::shared::string::parse_rle_string;
 pub struct Lev<'a> {
     header: LevHeader,
     heightmap_cells: Vec<LevHeightmapCell>,
-    // soundmap_cells: Vec<LevSoundmapCell>,
+    soundmap_cells: Vec<LevSoundmapCell>,
     navigation_header: LevNavigationHeader,
     navigation_section: LevNavigationSection<'a>
 }
 
-fn parse_lev(input: &[u8]) -> IResult<&[u8], Lev> {
+pub fn parse_lev(input: &[u8]) -> IResult<&[u8], Lev> {
     let (maybe_input, header) = parse_header(input)?;
     // println!("{:?}", header);
     let (maybe_input, heightmap_cells) = count(parse_heightmap_cell, ((header.height + 1) * (header.width + 1)) as usize)(maybe_input)?;
@@ -30,7 +30,7 @@ fn parse_lev(input: &[u8]) -> IResult<&[u8], Lev> {
     // println!("{:#?}", heightmap_cells.last());
     // fabletlcmod.com seems to have the wrong amount, using a temporary one.
     // let (input, soundmap_cells) = count(parse_soundmap_cell, ((header.height - 1) * (header.width - 1)) as usize)(input)?;
-    let (maybe_input, soundmap_cells) = count(parse_soundmap_cell, 1024 as usize)(maybe_input)?;
+    let (_maybe_input, soundmap_cells) = count(parse_soundmap_cell, 1024 as usize)(maybe_input)?;
     // println!("{:#?}", soundmap_cells.last());
     // let (input, soundmap_cell_1) = parse_soundmap_cell(input)?;
     // let (input, soundmap_cell_2) = parse_soundmap_cell(input)?;
@@ -48,7 +48,7 @@ fn parse_lev(input: &[u8]) -> IResult<&[u8], Lev> {
             Lev {
                 header: header,
                 heightmap_cells: heightmap_cells,
-                // soundmap_cells: soundmap_ cells,
+                soundmap_cells: soundmap_cells,
                 navigation_header: navigation_header,
                 navigation_section: navigation_section,
             }

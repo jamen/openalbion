@@ -77,12 +77,12 @@
 //
 
 use nom::IResult;
-use nom::number::complete::{le_u32,le_i32,le_u16,le_f32};
+use nom::number::complete::{le_u8,le_u32,le_u16,le_f32};
 use nom::bytes::complete::{tag,take,is_not};
 use nom::multi::count;
 use nom::combinator::all_consuming;
+use nom::sequence::tuple;
 use crate::format::shared::string::{parse_rle_string};
-use std::iter::Iterator;
 
 #[derive(Debug,PartialEq)]
 pub struct BigHeader {
@@ -153,7 +153,8 @@ pub struct BigFileIndex {
     // file_types_count: u32,
     // file_type: u32,
     // entries_count: u32,
-    entries: Vec<BigFileEntry>
+    unknown_types_map: Vec<(u32, u32)>,
+    entries: Vec<BigFileEntry>,
 }
 
 pub fn parse_file_index(input: &[u8]) -> IResult<&[u8], BigFileIndex> {
@@ -161,13 +162,17 @@ pub fn parse_file_index(input: &[u8]) -> IResult<&[u8], BigFileIndex> {
     let (input, _file_type) = le_u32(input)?;
     let (input, entries_count) = le_u32(input)?;
 
-    println!("file_types_count {:?}", file_types_count);
+    // println!("file_types_count {:?}", file_types_count);
     // println!("file_type {:?}", file_type);
-    println!("entries_count {:?}", entries_count);
+    // println!("entries_count {:?}", entries_count);
     // let entries_count = 10;
 
+    // println!("{:?}", &input[..60]);
+
     // Lots of integers not documented in fabletlcmod.com
-    let (input, _unknown_1) = take(56usize)(input)?;
+    // let (input, _unknown_1) = take(56usize)(input)?;
+
+    let (input, unknown_types_map) = count(tuple((le_u32, le_u32)), (file_types_count - 1) as usize)(input)?;
 
     let (input, entries) = count(parse_file_index_entry, entries_count as usize)(input)?;
 
@@ -177,6 +182,7 @@ pub fn parse_file_index(input: &[u8]) -> IResult<&[u8], BigFileIndex> {
             BigFileIndex {
                 // file_types_count: file_types_count,
                 // file_type: file_type,
+                unknown_types_map: unknown_types_map,
                 entries: entries,
                 // entries_count: entries_count,
             }
@@ -191,7 +197,7 @@ pub struct BigFileEntry {
     file_type: u32,
     size: u32,
     start: u32,
-    type_dev: u32,
+    file_type_dev: u32,
     symbol_name: String,
     crc: u32,
     files: Vec<String>,
@@ -205,7 +211,14 @@ pub fn parse_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry> {
     let (input, file_type) = le_u32(input)?;
     let (input, size) = le_u32(input)?;
     let (input, start) = le_u32(input)?;
-    let (input, type_dev) = le_u32(input)?;
+    let (input, file_type_dev) = le_u32(input)?;
+
+    // println!("magic_number {:?}", magic_number);
+    // println!("id {:?}", id);
+    // println!("file_type {:?}", file_type);
+    // println!("size {:?}", size);
+    // println!("start {:?}", start);
+    // println!("file_type_dev {:?}", file_type_dev);
 
     let (input, symbol_name_length) = le_u32(input)?;
     let (input, symbol_name) = take(symbol_name_length as usize)(input)?;
@@ -223,10 +236,12 @@ pub fn parse_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry> {
     let (input, sub_header_size) = le_u32(input)?;
     let (input, sub_header) = take(sub_header_size as usize)(input)?;
 
-    println!("symbol_name {:?}", symbol_name);
-    println!("file_type {:?}", file_type);
+    // println!("\"{:?} {:?}\" -> {:?}", file_type_dev, symbol_name, file_type);
+    println!("file_type {:?} file_type_dev {:?} crc {:?} symbol_name {:?}", file_type, file_type_dev, crc, symbol_name);
 
     let (_, sub_header) = all_consuming(parse_big_sub_header(file_type))(sub_header)?;
+
+    // println!("sub_header {:?}", sub_header);
 
     Ok(
         (
@@ -238,7 +253,7 @@ pub fn parse_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry> {
                 size: size,
                 start: start,
                 files: files,
-                type_dev: type_dev,
+                file_type_dev: file_type_dev,
                 symbol_name: symbol_name,
                 crc: crc,
                 sub_header: sub_header,
@@ -254,6 +269,90 @@ pub enum BigSubHeader {
     Mesh(BigSubHeaderMesh),
     Animation(BigSubHeaderAnimation),
     Unknown(Vec<u8>),
+}
+
+// This is pretty disgusting :D
+// I looked at how the different entry properties are associated to different symbols, but I couldn't find something
+// consistent enough for parsing this nicely.
+
+pub fn parse_big_sub_header(file_type: u32) -> impl Fn(&[u8]) -> IResult<&[u8], BigSubHeader> {
+    move |input: &[u8]| {
+        match file_type {
+            // 1339597992 |
+            // 1310379679 =>
+            0 =>
+                parse_big_sub_header_texture(input),
+            // 69563933 |
+
+            // 161007522 |
+            // 296707119 |
+            // 321290918 |
+            // 409261624 |
+            // 470996368 |
+            // 496338967 |
+            // 636771168 |
+            // 662552041 |
+            // 813582674 |
+            // 855093211 |
+            // 863040092 |
+            // 914467955 |
+
+            // 1036253421 |
+            // 1270726879 |
+            // 1112739598 |
+            // 1174434144 |
+            // 1338753911 |
+            // 1401578322 |
+            // 1514262853 |
+            // 1580716781 |
+            // 1605406570 |
+            // 1700313748 |
+            // 1741773853 |
+            // 1901458721 |
+            // 1918586415 |
+            // 1956948750 |
+
+            // 2023638838 |
+            // 2048369087 |
+            // 2154789095 |
+            // 2309278448 |
+            // 2379401560 |
+            // 2514840277 |
+            // 2555960170 |
+            // 2581563117 |
+            // 2713605530 |
+            // 2738336531 |
+            // 2781369906 |
+            // 2798054716 |
+            // 2806100155 |
+            // 2926088593 |
+            // 2999689865 |
+
+            // 3074096294 |
+            // 3414281613 |
+            // 3489123877 |
+            // 3619712424 |
+            // 3665681431 |
+            // 3776099438 |
+            // 3818607335 |
+            // 3848583110 |
+
+            // 4042171892 |
+            // 4103644764 |
+            // 4112514011 |
+            // 4128325845 =>
+            1 | 2 | 4 | 5 =>
+                parse_big_sub_header_mesh(input),
+            // 2188482983 |
+            // 1940626445 =>
+                parse_big_sub_header_anim(input),
+            // 0 |
+            // 3099354981 =>
+                Ok((b"", BigSubHeader::None)),
+            _ =>
+                Ok((b"", BigSubHeader::Unknown(input.to_vec()))),
+        }
+    }
 }
 
 #[derive(Debug,PartialEq)]
@@ -275,6 +374,49 @@ pub struct BigSubHeaderTexture {
     unknown4: u32,
 }
 
+pub fn parse_big_sub_header_texture(input: &[u8]) -> IResult<&[u8], BigSubHeader> {
+    let (input, width) = le_u16(input)?;
+    let (input, height) = le_u16(input)?;
+    let (input, depth) = le_u16(input)?;
+    let (input, frame_width) = le_u16(input)?;
+    let (input, frame_height) = le_u16(input)?;
+    let (input, frame_count) = le_u16(input)?;
+    let (input, dxt_compression) = le_u16(input)?;
+    let (input, unknown1) = le_u16(input)?;
+    let (input, transparency) = le_u8(input)?;
+    let (input, mip_maps) = le_u8(input)?;
+    let (input, unknown2) = le_u16(input)?;
+    let (input, top_mip_map_size) = le_u32(input)?;
+    let (input, top_mip_map_compressed_size) = le_u32(input)?;
+    let (input, unknown3) = le_u16(input)?;
+    let (input, unknown4) = le_u32(input)?;
+
+    Ok(
+        (
+            input,
+            BigSubHeader::Texture(
+                BigSubHeaderTexture {
+                    width: width,
+                    height: height,
+                    depth: depth,
+                    frame_width: frame_width,
+                    frame_height: frame_height,
+                    frame_count: frame_count,
+                    dxt_compression: dxt_compression,
+                    unknown1: unknown1,
+                    transparency: transparency,
+                    mip_maps: mip_maps,
+                    unknown2: unknown2,
+                    top_mip_map_size: top_mip_map_size,
+                    top_mip_map_compressed_size: top_mip_map_compressed_size,
+                    unknown3: unknown3,
+                    unknown4: unknown4,
+                }
+            )
+        )
+    )
+}
+
 #[derive(Debug,PartialEq)]
 pub struct BigSubHeaderMesh {
     physics_mesh: u32,
@@ -283,21 +425,8 @@ pub struct BigSubHeaderMesh {
     unknown1: Vec<f32>,
     size_compressed_lod: Vec<u32>,
     padding: u32,
-    unknown2: Vec<f32>,
+    unknown2: Vec<u32>,
     texture_ids: Vec<u32>,
-}
-
-pub fn parse_big_sub_header(file_type: u32) -> impl Fn(&[u8]) -> IResult<&[u8], BigSubHeader> {
-    move |input: &[u8]| {
-        match file_type {
-            1 | 2 | 3 | 4 | 5 =>
-                parse_big_sub_header_mesh(input),
-            6 | 7 | 9 =>
-                parse_big_sub_header_anim(input),
-            _unknown =>
-                Ok((b"", BigSubHeader::Unknown(input.to_vec()))),
-        }
-    }
 }
 
 pub fn parse_big_sub_header_mesh(input: &[u8]) -> IResult<&[u8], BigSubHeader> {
@@ -317,7 +446,7 @@ pub fn parse_big_sub_header_mesh(input: &[u8]) -> IResult<&[u8], BigSubHeader> {
 
     let (input, padding) = le_u32(input)?;
 
-    let (input, unknown2) = count(le_f32, (size_compressed_lod_count - 1) as usize)(input)?;
+    let (input, unknown2) = count(le_u32, (size_compressed_lod_count - 1) as usize)(input)?;
 
     let (input, texture_ids_count) = le_u32(input)?;
     let (input, texture_ids) = count(le_u32, texture_ids_count as usize)(input)?;
@@ -373,8 +502,10 @@ mod tests {
 
     #[test]
     fn test_big() {
-        let mut file = File::open(concat!(env!("FABLE"), "/data/graphics/graphics.big")).expect("failed to open file.");
+        // let mut file = File::open(concat!(env!("FABLE"), "/data/graphics/graphics.big")).expect("failed to open file.");
         // let mut file = File::open(concat!(env!("FABLE"), "/data/graphics/pc/textures.big")).expect("failed to open file.");
+        // let mut file = File::open(concat!(env!("FABLE"), "/data/shaders/pc/shaders.big")).expect("failed to open file.");
+        let mut file = File::open(env!("FABLE")).expect("failed to open file.");
 
         let mut header: [u8; 16] = [0; 16];
 
@@ -397,6 +528,8 @@ mod tests {
         file.take(big_bank_index.index_size as u64).read_to_end(&mut file_index).expect("Failed to read file.");
         // file.read_to_end(&mut file_index).expect("Failed to read file.");
 
+        // println!("digraph {{");
+
         let (_, big_file_index) = match parse_file_index(&file_index) {
             Ok(value) => value,
             Err(nom::Err::Error((_, error))) => return println!("Error {:?}", error),
@@ -404,6 +537,8 @@ mod tests {
             Err(_) => return println!("Error"),
         };
 
-        println!("{:#?}", big_file_index);
+        // println!("}}");
+
+        // println!("{:#?}", big_file_index);
     }
 }

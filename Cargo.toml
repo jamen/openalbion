@@ -1,5 +1,5 @@
 [package]
-name = "unfable"
+name = "fable_files"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
@@ -8,12 +8,6 @@ edition = "2018"
 name = "unfable"
 path = "src/lib.rs"
 
-[[bin]]
-name = "unfable"
-path = "src/main.rs"
-
 [dependencies]
 nom = "5.0.1"
 chrono = "0.4.9"
-winapi = { version = "0.3.8", features = ["winuser","tlhelp32","processthreadsapi","errhandlingapi","handleapi","winerror"] }
-libc = "0.2.62"
