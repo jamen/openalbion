@@ -3,8 +3,8 @@ use nom::character::complete::line_ending;
 use nom::combinator::opt;
 use nom::bytes::complete::tag;
 use nom::multi::{many0,many1};
-use crate::format::tng::{parse_tng,Tng};
-use crate::format::shared::script::{parse_instr_tag,parse_instr_value,parse_instr_key,Instr,InstrKey};
+use crate::tng::{parse_tng,Tng};
+use crate::shared::script::{parse_instr_value,parse_instr_key,Instr,InstrKey};
 
 #[derive(Debug,PartialEq)]
 pub struct Gtg {

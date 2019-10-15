@@ -1,6 +1,6 @@
 use nom::IResult;
 use nom::multi::{many1,many_till};
-use crate::format::shared::script::{parse_instr,parse_instr_tag,Instr};
+use crate::shared::script::{parse_instr,parse_instr_tag,Instr};
 
 #[derive(Debug,PartialEq)]
 pub struct Wld {

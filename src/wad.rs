@@ -9,7 +9,7 @@ use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
 use std::collections::{HashMap,HashSet};
 use std::path::Path;
 use std::convert::TryInto;
-use crate::format::shared::timestamp::{parse_timestamp, parse_short_timestamp};
+use crate::shared::timestamp::{parse_timestamp, parse_short_timestamp};
 
 #[derive(Debug)]
 pub struct Wad<'a> {
@@ -224,14 +224,13 @@ impl Wad<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::File;
-    use std::io::Read;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use std::fs::File;
+//     use std::io::Read;
 
-    #[test]
-    fn test_wad() {
-
-    }
-}
+//     #[test]
+//     fn test_wad() {
+//     }
+// }

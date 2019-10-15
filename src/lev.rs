@@ -11,7 +11,7 @@ use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
 use nom::multi::count;
 use nom::branch::alt;
-use crate::format::shared::string::parse_rle_string;
+use crate::shared::string::parse_rle_string;
 
 #[derive(Debug,PartialEq)]
 pub struct Lev<'a> {
@@ -38,7 +38,7 @@ pub fn parse_lev(input: &[u8]) -> IResult<&[u8], Lev> {
     // println!("{:#?}", soundmap_cell_1);
     // println!("{:#?}", soundmap_cell_2);
 
-    let (maybe_input, navigation_header) = parse_navigation_header(&input[header.navigation_offset as usize..])?;
+    let (_maybe_input, navigation_header) = parse_navigation_header(&input[header.navigation_offset as usize..])?;
     println!("{:#?}", navigation_header);
     let (maybe_input, navigation_section) = parse_navigation_section(&input[navigation_header.sections_start as usize..])?;
 
@@ -510,9 +510,9 @@ pub struct LevNavigationUnknown1Node {
 pub fn parse_navigation_unknown1_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (maybe_input, _node_op) = tag(&[11, 0, 0, 0, 0, 0, 0, 0, 0, 0])(input)?;
     let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _root) = le_u8(maybe_input)?;
     let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-    let (maybe_input, end) = le_u8(maybe_input)?;
+    let (_maybe_input, end) = le_u8(maybe_input)?;
 
     let unknown = LevNavigationUnknown1Node {
         end: end,
@@ -531,9 +531,9 @@ pub struct LevNavigationUnknown2Node {
 pub fn parse_navigation_unknown2_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (maybe_input, _node_op) = tag(&[0, 1, 0, 0, 0, 0, 0, 0])(input)?;
     let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _root) = le_u8(maybe_input)?;
     let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-    let (maybe_input, end) = le_u8(maybe_input)?;
+    let (_maybe_input, end) = le_u8(maybe_input)?;
 
     let unknown = LevNavigationUnknown2Node {
         end: end,
@@ -552,9 +552,9 @@ pub struct LevNavigationUnknown3Node {
 pub fn parse_navigation_unknown3_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (maybe_input, _node_op) = tag(&[0, 0, 0, 0, 0, 0, 0, 0])(input)?;
     let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _root) = le_u8(maybe_input)?;
     let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-    let (maybe_input, end) = le_u8(maybe_input)?;
+    let (_maybe_input, end) = le_u8(maybe_input)?;
 
     let unknown = LevNavigationUnknown3Node {
         end: end,
@@ -574,9 +574,9 @@ pub struct LevNavigationUnknownNode<'a> {
 pub fn parse_navigation_unknown_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode> {
     let (maybe_input, node_op) = take(8usize)(input)?;
     let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-    let (maybe_input, root) = le_u8(maybe_input)?;
+    let (maybe_input, _root) = le_u8(maybe_input)?;
     let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-    let (maybe_input, end) = le_u8(maybe_input)?;
+    let (_maybe_input, end) = le_u8(maybe_input)?;
 
     let unknown = LevNavigationUnknownNode {
         node_op: &node_op,
