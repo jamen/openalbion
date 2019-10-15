@@ -1,10 +1,9 @@
 use nom::IResult;
-use nom::character::complete::{alphanumeric1,digit1,line_ending,one_of,space0};
+use nom::character::complete::{digit1,line_ending,one_of,space0};
 use nom::character::{is_digit,is_alphabetic};
 use nom::combinator::opt;
 use nom::bytes::complete::{tag,take_while1,escaped,is_not};
 use nom::branch::alt;
-use nom::combinator::peek;
 use nom::multi::{many_till,many0,many1};
 use nom::sequence::{terminated,preceded};
 
