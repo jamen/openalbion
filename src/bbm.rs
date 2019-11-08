@@ -48,8 +48,8 @@ pub struct BbmHeader {
     helper_dummies: Vec<BbmHelperDummy>,     // Helper Dummies[HDMY_Count];
     hlpr_index_compressed: u16,         // word			HLPR_Index_Compressed;
     hpnt_index_size: u16,               // word			HPNT_IndexSize;
-    // char		HPNT_Index[HPNT_IndexSize-2]; //Subtract the size
-    // char		HDMY_Index[HLPR_Index_Uncompressed-HPNT_IndexSize]; //Rest of helper index deduced
+    hpnt_index: Vec<u8>,                // char			HPNT_Index[HPNT_IndexSize-2]; //Subtract the size
+    hdmy_index: Vec<u8>,                // char		    HDMY_Index[HLPR_Index_Uncompressed-HPNT_IndexSize]; //Rest of helper index deduced
     material_count: u32,                // dword        NumberMaterials;
     surface_count: u32,                 // dword        NumberSurfaces;
     bone_count: u32,                    // dword        NumberBones;
@@ -58,9 +58,9 @@ pub struct BbmHeader {
     unknown4: u16,                      // word         Unknown;
     unknown5: u16,                      // word         Unknown;
     compressed: u16,                    // word         Compressed;
-    // word		Bone_Index_Reference[NumberBones-1];
+    bone_index_reference: Vec<u16>,     // word         Bone_Index_Reference[NumberBones-1];
     bone_index_compressed: u16,         // word         BoneIndexCompressed;
-    // char		BoneIndex[SizeOfBoneIndex];
+    bone_index: Vec<u8>,                // char         BoneIndex[SizeOfBoneIndex];
     compressed_size: u16,               // word         CompressedSize;
     //      Bones SUB CHUNK 1[NumberBones];
     //      word					CompressedSize;
@@ -71,13 +71,13 @@ pub struct BbmHeader {
 }
 
 pub struct BbmHelperPoint {
-    // float         Matrix[4]; //No Rotation
-    // long          hierarchy;
+    matrix: Vec<f32>,   // float         Matrix[4]; //No Rotation
+    hierachy: i32,      // long          hierarchy;
 }
 
 pub struct BbmHelperDummy {
-//      float					Matrix[13];
-//      long					hierarchy;
+    matrix: Vec<f32>,   //  float					Matrix[13];
+    hierachy: i32,      //  long					hierarchy;
 }
 
 //
