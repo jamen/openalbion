@@ -2,8 +2,8 @@ pub mod decode;
 pub mod encode;
 
 pub struct Bin {
-    header: BinHeader,
-    entries: Vec<BinNameLookup>,
+    pub header: BinHeader,
+    pub entries: Vec<BinNameLookup>,
 }
 
 // Temporary comments from fabletlcmod.com.
@@ -21,10 +21,10 @@ pub struct Bin {
 // [4] Bytes - Number of Entries
 
 pub struct BinHeader {
-    use_names_bin: u8,
-    file_indicator: u32,
-    platform_indicator: u32,
-    entries_count: u32,
+    pub use_names_bin: u8,
+    pub file_indicator: u32,
+    pub platform_indicator: u32,
+    pub entries_count: u32,
 }
 
 // Names Lookup
@@ -41,9 +41,9 @@ pub struct BinHeader {
 //
 
 pub struct BinNameLookup {
-    definition_offset: u32,
-    file_name_offset: u32,
-    counter: u32,
+    pub definition_offset: u32,
+    pub file_name_offset: u32,
+    pub counter: u32,
 }
 
 // Second Table Header
@@ -54,8 +54,8 @@ pub struct BinNameLookup {
 //
 
 pub struct SecondTableHeader {
-    compressed_chunks_count: u32,
-    unknown1: u32,
+    pub compressed_chunks_count: u32,
+    pub unknown1: u32,
 }
 
 // Second Table Lookup (Compressed)
@@ -73,8 +73,8 @@ pub struct SecondTableHeader {
 //
 
 pub struct SecondTableRow {
-    compressed_chunk_offset: u32,
-    last_file_number: u32,
+    pub compressed_chunk_offset: u32,
+    pub last_file_number: u32,
 }
 
 // Decompressed
@@ -89,7 +89,7 @@ pub struct SecondTableRow {
 //
 
 pub struct SecondTableRowDecompressed {
-    offset: u16,
+    pub offset: u16,
 }
 
 // more as we get time…
