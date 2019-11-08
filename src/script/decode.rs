@@ -225,7 +225,7 @@ pub fn decode_instr(input: &[u8]) -> IResult<&[u8], Instr> {
     Ok((maybe_input, (key, value)))
 }
 
-pub fn decode_instr_tag(name: String) -> impl Fn(&[u8]) -> IResult<&[u8], Instr> {
+pub fn decode_instr_tag(name: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], Instr> {
     move |input: &[u8]| {
         let (maybe_input, (key, value)) = decode_instr(input)?;
 

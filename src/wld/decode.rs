@@ -12,8 +12,8 @@ use crate::wld::{
 
 pub fn decode_wld(input: &[u8]) -> IResult<&[u8], Wld> {
     let (input, start_initial_quests) = decode_wld_initial_quests(input)?;
-    let (input, map_uid_count) = decode_instr_tag("MapUIDCount".to_string())(input)?;
-    let (input, thing_manager_uid_count) = decode_instr_tag("ThingManagerUIDCount".to_string())(input)?;
+    let (input, map_uid_count) = decode_instr_tag("MapUIDCount")(input)?;
+    let (input, thing_manager_uid_count) = decode_instr_tag("ThingManagerUIDCount")(input)?;
     let (input, maps) = many1(decode_wld_map)(input)?;
     let (input, regions) = many1(decode_wld_region)(input)?;
 
@@ -32,8 +32,8 @@ pub fn decode_wld(input: &[u8]) -> IResult<&[u8], Wld> {
 }
 
 pub fn decode_wld_initial_quests(input: &[u8]) -> IResult<&[u8], Vec<Instr>> {
-    let (input, _start) = decode_instr_tag("START_INITIAL_QUESTS".to_string())(input)?;
-    let (input, (instrs, _end)) = many_till(decode_instr, decode_instr_tag("END_INITIAL_QUESTS".to_string()))(input)?;
+    let (input, _start) = decode_instr_tag("START_INITIAL_QUESTS")(input)?;
+    let (input, (instrs, _end)) = many_till(decode_instr, decode_instr_tag("END_INITIAL_QUESTS"))(input)?;
 
     Ok(
         (
@@ -44,8 +44,8 @@ pub fn decode_wld_initial_quests(input: &[u8]) -> IResult<&[u8], Vec<Instr>> {
 }
 
 pub fn decode_wld_map(input: &[u8]) -> IResult<&[u8], WldMap> {
-    let (input, new_map) = decode_instr_tag("NewMap".to_string())(input)?;
-    let (input, (instrs, _end_instr)) = many_till(decode_instr, decode_instr_tag("EndMap".to_string()))(input)?;
+    let (input, new_map) = decode_instr_tag("NewMap")(input)?;
+    let (input, (instrs, _end_instr)) = many_till(decode_instr, decode_instr_tag("EndMap"))(input)?;
 
     Ok(
         (
@@ -59,8 +59,8 @@ pub fn decode_wld_map(input: &[u8]) -> IResult<&[u8], WldMap> {
 }
 
 pub fn decode_wld_region(input: &[u8]) -> IResult<&[u8], WldRegion> {
-    let (input, new_region) = decode_instr_tag("NewRegion".to_string())(input)?;
-    let (input, (instrs, _end)) = many_till(decode_instr, decode_instr_tag("EndRegion".to_string()))(input)?;
+    let (input, new_region) = decode_instr_tag("NewRegion")(input)?;
+    let (input, (instrs, _end)) = many_till(decode_instr, decode_instr_tag("EndRegion"))(input)?;
 
     Ok(
         (
