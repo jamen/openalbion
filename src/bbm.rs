@@ -30,38 +30,38 @@ pub mod encode;
 //
 
 pub struct Bbm {
-    header: BbmHeader,
+    pub header: BbmHeader,
 }
 
 
 pub struct BbmHeader {
-    unknown1: String,                   // char         NullTerminatedString[x];
-    selection_present: u8,              // byte         SkeletonPresent;
-    unknown2: Vec<f32>,                 // float        floats[10]; //Model Origin?? Listed in .big Sub-header...
-    hpnt_count: u16,                    // word         HPNT_Count;
-    hdmy_count: u16,                    // word         HDMY_Count;
-    hlpr_index_uncompressed: u32,       // dword        HLPR_Index_Uncompressed;
-    padding: u16,                       // word			padding;
-    hpnt_compressed: u16,               // word			HPNT_Compressed;
-    helper_points: Vec<BbmHelperPoint>,        // Helper Points[HPNT_Count];
-    hdmy_compressed: u16,               // word			HDMY_Compressed;
-    helper_dummies: Vec<BbmHelperDummy>,     // Helper Dummies[HDMY_Count];
-    hlpr_index_compressed: u16,         // word			HLPR_Index_Compressed;
-    hpnt_index_size: u16,               // word			HPNT_IndexSize;
-    hpnt_index: Vec<u8>,                // char			HPNT_Index[HPNT_IndexSize-2]; //Subtract the size
-    hdmy_index: Vec<u8>,                // char		    HDMY_Index[HLPR_Index_Uncompressed-HPNT_IndexSize]; //Rest of helper index deduced
-    material_count: u32,                // dword        NumberMaterials;
-    surface_count: u32,                 // dword        NumberSurfaces;
-    bone_count: u32,                    // dword        NumberBones;
-    bone_index_size: u32,               // dword        SizeOfBoneIndex;
-    unknown3: u16,                      // byte         Unknown;
-    unknown4: u16,                      // word         Unknown;
-    unknown5: u16,                      // word         Unknown;
-    compressed: u16,                    // word         Compressed;
-    bone_index_reference: Vec<u16>,     // word         Bone_Index_Reference[NumberBones-1];
-    bone_index_compressed: u16,         // word         BoneIndexCompressed;
-    bone_index: Vec<u8>,                // char         BoneIndex[SizeOfBoneIndex];
-    compressed_size: u16,               // word         CompressedSize;
+    pub unknown1: String,                   // char         NullTerminatedString[x];
+    pub selection_present: u8,              // byte         SkeletonPresent;
+    pub unknown2: Vec<f32>,                 // float        floats[10]; //Model Origin?? Listed in .big Sub-header...
+    pub hpnt_count: u16,                    // word         HPNT_Count;
+    pub hdmy_count: u16,                    // word         HDMY_Count;
+    pub hlpr_index_uncompressed: u32,       // dword        HLPR_Index_Uncompressed;
+    pub padding: u16,                       // word			padding;
+    pub hpnt_compressed: u16,               // word			HPNT_Compressed;
+    pub helper_points: Vec<BbmHelperPoint>,        // Helper Points[HPNT_Count];
+    pub hdmy_compressed: u16,               // word			HDMY_Compressed;
+    pub helper_dummies: Vec<BbmHelperDummy>,     // Helper Dummies[HDMY_Count];
+    pub hlpr_index_compressed: u16,         // word			HLPR_Index_Compressed;
+    pub hpnt_index_size: u16,               // word			HPNT_IndexSize;
+    pub hpnt_index: Vec<u8>,                // char			HPNT_Index[HPNT_IndexSize-2]; //Subtract the size
+    pub hdmy_index: Vec<u8>,                // char		    HDMY_Index[HLPR_Index_Uncompressed-HPNT_IndexSize]; //Rest of helper index deduced
+    pub material_count: u32,                // dword        NumberMaterials;
+    pub surface_count: u32,                 // dword        NumberSurfaces;
+    pub bone_count: u32,                    // dword        NumberBones;
+    pub bone_index_size: u32,               // dword        SizeOfBoneIndex;
+    pub unknown3: u16,                      // byte         Unknown;
+    pub unknown4: u16,                      // word         Unknown;
+    pub unknown5: u16,                      // word         Unknown;
+    pub compressed: u16,                    // word         Compressed;
+    pub bone_index_reference: Vec<u16>,     // word         Bone_Index_Reference[NumberBones-1];
+    pub bone_index_compressed: u16,         // word         BoneIndexCompressed;
+    pub bone_index: Vec<u8>,                // char         BoneIndex[SizeOfBoneIndex];
+    pub compressed_size: u16,               // word         CompressedSize;
     //      Bones SUB CHUNK 1[NumberBones];
     //      word					CompressedSize;
     //      Bones SUB CHUNK 2[NumberBones];
@@ -71,13 +71,14 @@ pub struct BbmHeader {
 }
 
 pub struct BbmHelperPoint {
-    matrix: Vec<f32>,   // float         Matrix[4]; //No Rotation
-    hierachy: i32,      // long          hierarchy;
+    pub matrix: Vec<f32>,   // float         Matrix[4]; //No Rotation
+    pub hierarchy: i32,      // long          hierarchy;
 }
 
 pub struct BbmHelperDummy {
-    matrix: Vec<f32>,   //  float					Matrix[13];
-    hierachy: i32,      //  long					hierarchy;
+    // Why is this 13? No other matrix except 1x13 or 13x1 makes sense, unless its a 13x13 matrix? It could be, as Wikipedia puts, "alternative expressions of transformation matrices involving row vectors that are preferred by some authors." where 13x1 makes sense: https://en.wikipedia.org/wiki/Row_and_column_vectors
+    pub matrix: Vec<f32>,   //  float        Matrix[13];
+    pub hierarchy: i32,      //  long         hierarchy;
 }
 
 //

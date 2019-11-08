@@ -1,7 +1,7 @@
 pub mod bba;
 pub mod bbm;
 pub mod big;
-pub mod bin;
+pub mod fable_bin;
 pub mod bncfg;
 pub mod bwd;
 pub mod error;
@@ -23,7 +23,7 @@ pub mod wld;
 // pub use bba::Bba;
 pub use bbm::Bbm;
 pub use big::Big;
-pub use bin::Bin;
+pub use fable_bin::Bin;
 pub use bncfg::Bncfg;
 // pub use bwd::Bwd;
 pub use gtg::Gtg;
