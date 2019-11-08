@@ -2,7 +2,7 @@ use nom::IResult;
 use nom::number::complete::{le_u8,le_u16,le_u32,le_i32,le_f32};
 use nom::multi::count;
 
-use crate::shared::string::decode_null_terminated_string;
+use crate::string::decode_null_terminated_string;
 
 use crate::bbm::{
     Bbm,

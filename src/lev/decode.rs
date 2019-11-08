@@ -4,7 +4,7 @@ use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
 use nom::multi::count;
 use nom::branch::alt;
-use crate::shared::string::decode_rle_string;
+use crate::string::decode_rle_string;
 
 use crate::lev::{
     Lev,
