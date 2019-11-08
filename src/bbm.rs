@@ -43,9 +43,9 @@ pub struct BbmHeader {
     hlpr_index_uncompressed: u32,       // dword        HLPR_Index_Uncompressed;
     padding: u16,                       // word			padding;
     hpnt_compressed: u16,               // word			HPNT_Compressed;
-    points: Vec<BbmHelperPoint>,        // Helper Points[HPNT_Count];
+    helper_points: Vec<BbmHelperPoint>,        // Helper Points[HPNT_Count];
     hdmy_compressed: u16,               // word			HDMY_Compressed;
-    dummies: Vec<BbmHelperDummies>,     // Helper Dummies[HDMY_Count];
+    helper_dummies: Vec<BbmHelperDummy>,     // Helper Dummies[HDMY_Count];
     hlpr_index_compressed: u16,         // word			HLPR_Index_Compressed;
     hpnt_index_size: u16,               // word			HPNT_IndexSize;
     // char		HPNT_Index[HPNT_IndexSize-2]; //Subtract the size
@@ -75,7 +75,7 @@ pub struct BbmHelperPoint {
     // long          hierarchy;
 }
 
-pub struct BbmHelperDummies {
+pub struct BbmHelperDummy {
 //      float					Matrix[13];
 //      long					hierarchy;
 }
