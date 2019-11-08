@@ -1,6 +1,11 @@
 pub mod decode;
 pub mod encode;
 
+pub struct Bin {
+    header: BinHeader,
+    entries: Vec<BinNameLookup>,
+}
+
 // Temporary comments from fabletlcmod.com.
 //
 // Compiled Defs (.Bin)
@@ -14,6 +19,14 @@ pub mod encode;
 // [4] Bytes - File Indicator
 // [4] Bytes - Platform Indicator (Xbox / PC)
 // [4] Bytes - Number of Entries
+
+pub struct BinHeader {
+    use_names_bin: u8,
+    file_indicator: u32,
+    platform_indicator: u32,
+    entries_count: u32,
+}
+
 // Names Lookup
 //
 // Each Row is 12 Bytes long. Loop until Number of Entries is met.
@@ -26,12 +39,25 @@ pub mod encode;
 // PC If the entry Equals (FF FF FF FF) Name is Defined outside of Names.Bin and does not require parsing.
 // Xbox If the enumeration equals (00 00 00 00) Then Enumerator is Defined in Names.Bin
 //
+
+pub struct BinNameLookup {
+    definition_offset: u32,
+    file_name_offset: u32,
+    counter: u32,
+}
+
 // Second Table Header
 //
 //
 // [4] Bytes - Number of Compressed Chunks (Actual Compressed Chunks is always one less)
 // [4] Bytes - Null
 //
+
+pub struct SecondTableHeader {
+    compressed_chunks_count: u32,
+    unknown1: u32,
+}
+
 // Second Table Lookup (Compressed)
 //
 //
@@ -45,6 +71,12 @@ pub mod encode;
 //
 // Each Compressed Chunk is Zlib Compressed
 //
+
+pub struct SecondTableRow {
+    compressed_chunk_offset: u32,
+    last_file_number: u32,
+}
+
 // Decompressed
 //
 // [2] Bytes - Offset
@@ -55,4 +87,9 @@ pub mod encode;
 // // *Additional Notes: PC .Bin Files require Names.Bin to be parsed into each file offset. Files are listed in order in the First Table.
 // Bin Entries
 //
+
+pub struct SecondTableRowDecompressed {
+    offset: u16,
+}
+
 // more as we get time…
