@@ -19,7 +19,7 @@ pub struct Wad {
     pub entries: Vec<WadEntry>,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Default)]
 pub struct WadHeader {
     pub version: (u32, u32, u32),
     pub block_size: u32,
@@ -63,57 +63,23 @@ impl From<std::convert::Infallible> for WriteError {
 }
 
 impl Wad {
-    pub fn from_file(file_path: &str) -> Result<Wad, Error> {
-        let mut file = match File::open(file_path) {
-            Ok(file) => file,
-            Err(_error) => return Err(Error::new(ErrorKind::InvalidInput, "file doesn't exist"))
-        };
+    pub fn create(file_path: &str) -> Result<Wad, Error> {
+        Ok(
+            Wad {
+                file: File::create(file_path)?,
+                header: WadHeader::default(),
+                entries: Vec::new(),
+            }
+        )
+    }
 
-        // Get header values
-        let mut header_data: [u8; 32] = [0; 32];
+    pub fn open(file_path: &str) -> Result<Wad, Error> {
+        Self::from_file(File::open(file_path)?)
+    }
 
-        file.read_exact(&mut header_data[..])?;
-
-        let (_, header) = match decode_header(&header_data[..]) {
-            Ok(value) => value,
-            Err(_error) => return Err(Error::new(ErrorKind::InvalidData, "header is invalid"))
-        };
-
-        // println!("header {:?}", header);
-
-        // Get entries
-        let mut entries_data: Vec<u8> = Vec::new();
-
-        // println!("entries_offset {:?}", header.entries_offset);
-
-        file.seek(SeekFrom::Start(header.entries_offset as u64))?;
-        file.read_to_end(&mut entries_data)?;
-
-        let (_, entries) = match count(decode_entry, header.entries_count as usize)(&entries_data) {
-            Ok(value) => value,
-            Err(_error) => return Err(Error::new(ErrorKind::InvalidData, "entries is invalid"))
-        };
-
-        // Create a map of paths -> entries
-        // let mut parser_iter = iterator(&entries_data[..], decode_entry);
-        // let entries = parser_iter
-        //     .map(|x| (x.path.clone(), x))
-        //     .collect::<HashMap<String, WadEntry>>();
-
-        // for entry in decode_iter {
-        //     entries.insert(entry.path.clone(), entry);
-        // }
-
-        // match parser_iter.finish() {
-        //     Err(nom::Err::Incomplete(_needed)) =>
-        //         return Err(Error::new(ErrorKind::InvalidData, "incomplete")),
-        //     Err(nom::Err::Failure((_input, error))) |
-        //     Err(nom::Err::Error((_input, error))) =>
-        //         return Err(Error::new(ErrorKind::InvalidData, error.description())),
-        //     Ok((_, ())) => {},
-        // }
-
-        // println!("entries {:?}", entries);
+    pub fn from_file(mut file: File) -> Result<Wad, Error> {
+        let header = Self::read_header(&mut file)?;
+        let entries = Self::read_entries(&mut file, &header)?;
 
         Ok(
             Wad {
@@ -124,10 +90,38 @@ impl Wad {
         )
     }
 
-    pub fn extract(&self, output: &str, file_options: HashMap<String, FileOption>) -> Result<(), WriteError> {
+    pub fn read_header(mut file: &File) -> Result<WadHeader, Error> {
+        let mut header_data: [u8; 32] = [0; 32];
+
+        file.read_exact(&mut header_data[..])?;
+
+        let (_, header) = match decode_header(&header_data[..]) {
+            Ok(value) => value,
+            Err(_error) => return Err(Error::new(ErrorKind::InvalidData, "header is invalid"))
+        };
+
+        Ok(header)
+    }
+
+    pub fn read_entries(mut file: &File, header: &WadHeader) -> Result<Vec<WadEntry>, Error> {
+        let mut entries_data = Vec::new();
+
+        file.seek(SeekFrom::Start(header.entries_offset as u64))?;
+        file.read_to_end(&mut entries_data)?;
+
+        let (_, entries) = match count(decode_entry, header.entries_count as usize)(&entries_data) {
+            Ok(value) => value,
+            Err(_error) => return Err(Error::new(ErrorKind::InvalidData, "entries is invalid"))
+        };
+
+        Ok(entries)
+    }
+
+    pub fn unpack(&self, output: &str, file_options: HashMap<String, FileOption>) -> Result<u32, WriteError> {
         let mut directories_created: HashSet<String> = HashSet::new();
 
         let mut file = &self.file;
+        let mut files_written = 0;
 
         for entry in &self.entries {
             // println!("entry {:?}", entry);
@@ -162,9 +156,13 @@ impl Wad {
 
             let mut output_file = File::create(file_path)?;
 
+            // TODO: Set file metadata.
+
             output_file.write_all(file_data.as_slice())?;
+
+            files_written += 1;
         }
 
-        Ok(())
+        Ok(files_written)
     }
 }

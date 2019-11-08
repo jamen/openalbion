@@ -2,7 +2,7 @@ use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
-use crate::shared::timestamp::{decode_timestamp,decode_short_timestamp};
+use crate::timestamp::{decode_timestamp,decode_short_timestamp};
 
 use crate::wad::{
     WadHeader,
