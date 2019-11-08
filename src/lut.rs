@@ -1,4 +1,7 @@
-// From fabletlcmod.com:
+pub mod decode;
+pub mod encode;
+
+// Temporary comments from fabletlcmod.com.
 //
 // .Lut
 //

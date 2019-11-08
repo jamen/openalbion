@@ -1,4 +1,7 @@
-// From fabletlcmod.com:
+pub mod decode;
+pub mod encode;
+
+// Temporary comments from fabletlcmod.com.
 //
 // Game Save Specification
 // Header
@@ -164,4 +167,3 @@
 // Each file is individually lzo'd compressed
 // 4 Bytes - decompressed size
 // 2 Bytes - compressed size
-

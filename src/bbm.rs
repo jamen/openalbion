@@ -1,4 +1,7 @@
-// From fabletlcmod.com:
+pub mod decode;
+pub mod encode;
+
+// Temporary comments from fabletlcmod.com.
 //
 //  Tagged Model Format
 //
@@ -25,96 +28,86 @@
 //
 //  Compiled Model Format
 //
-//  Header
-//
-//  //char					NullTerminatedString[x];
-//  byte					SkeletonPresent;
-//  float					floats[10]; //Model Origin?? Listed in .big Sub-header...
-//  word					HPNT_Count;
-//  word					HDMY_Count;
-//  dword					HLPR_Index_Uncompressed;
-//  word					padding;
-//  word					HPNT_Compressed;
-//
-//  Helper Points[HPNT_Count];
-//
-//  word					HDMY_Compressed;
-//
-//  Helper Dummies[HDMY_Count];
-//
-//  word					HLPR_Index_Compressed;
-//  word					HPNT_IndexSize;
-//  char					HPNT_Index[HPNT_IndexSize-2]; //Subtract the size
-//  char					HDMY_Index[HLPR_Index_Uncompressed-HPNT_IndexSize]; //Rest of helper index deduced
-//  dword					NumberMaterials;
-//  dword					NumberSurfaces;
-//  dword					NumberBones;
-//  dword					SizeOfBoneIndex;
-//  byte					Unknown;
-//  word					Unknown;
-//  word					Unknown;
-//  word					Compressed;
-//  word					Bone_Index_Reference[NumberBones-1];
-//  word					BoneIndexCompressed;
-//  char					BoneIndex[SizeOfBoneIndex];
-//  word					CompressedSize;
-//
-//  Bones SUB CHUNK 1[NumberBones];
-//
-//  word					CompressedSize;
-//
-//  Bones SUB CHUNK 2[NumberBones];
-//
-//  word					CompressedSize;
-//
-//  Bones SUB CHUNK 3[NumberBones];
-//
-//  float					Matrix[12]; //Transform Matrix
-//
-//  Helper Points
-//
-//  float					Matrix[4]; //No Rotation
-//  long					hierarchy;
-//
-//  Helper Dummies
-//
-//  float					Matrix[13];
-//  long					hierarchy;
+
+pub struct Bbm {
+    header: BbmHeader,
+}
+
+
+pub struct BbmHeader {
+    unknown1: String,                   // char         NullTerminatedString[x];
+    selection_present: u8,              // byte         SkeletonPresent;
+    unknown2: Vec<f32>,                 // float        floats[10]; //Model Origin?? Listed in .big Sub-header...
+    hpnt_count: u16,                    // word         HPNT_Count;
+    hdmy_count: u16,                    // word         HDMY_Count;
+    hlpr_index_uncompressed: u32,       // dword        HLPR_Index_Uncompressed;
+    padding: u16,                       // word			padding;
+    hpnt_compressed: u16,               // word			HPNT_Compressed;
+    points: Vec<BbmHelperPoint>,        // Helper Points[HPNT_Count];
+    hdmy_compressed: u16,               // word			HDMY_Compressed;
+    dummies: Vec<BbmHelperDummies>,     // Helper Dummies[HDMY_Count];
+    hlpr_index_compressed: u16,         // word			HLPR_Index_Compressed;
+    hpnt_index_size: u16,               // word			HPNT_IndexSize;
+    // char		HPNT_Index[HPNT_IndexSize-2]; //Subtract the size
+    // char		HDMY_Index[HLPR_Index_Uncompressed-HPNT_IndexSize]; //Rest of helper index deduced
+    material_count: u32,                // dword        NumberMaterials;
+    surface_count: u32,                 // dword        NumberSurfaces;
+    bone_count: u32,                    // dword        NumberBones;
+    bone_index_size: u32,               // dword        SizeOfBoneIndex;
+    unknown3: u16,                      // byte         Unknown;
+    unknown4: u16,                      // word         Unknown;
+    unknown5: u16,                      // word         Unknown;
+    compressed: u16,                    // word         Compressed;
+    // word		Bone_Index_Reference[NumberBones-1];
+    bone_index_compressed: u16,         // word         BoneIndexCompressed;
+    // char		BoneIndex[SizeOfBoneIndex];
+    compressed_size: u16,               // word         CompressedSize;
+    //      Bones SUB CHUNK 1[NumberBones];
+    //      word					CompressedSize;
+    //      Bones SUB CHUNK 2[NumberBones];
+    //      word					CompressedSize;
+    //      Bones SUB CHUNK 3[NumberBones];
+    //      float					Matrix[12]; //Transform Matrix
+}
+
+pub struct BbmHelperPoint {
+    // float         Matrix[4]; //No Rotation
+    // long          hierarchy;
+}
+
+pub struct BbmHelperDummies {
+//      float					Matrix[13];
+//      long					hierarchy;
+}
+
 //
 //  Bones
-//  SUB CHUNK 1
-//
-//  long					Index;
-//  long					Parent;
-//  long					nChild;
-//  float					Matrix[12];
-//
-//  SUB CHUNK 2
-//
-//  float					Matrix[12];
-//
-//  SUB CHUNK 3
-//
-//  float					Matrix[16];
+//      SUB CHUNK 1
+//          long					Index;
+//          long					Parent;
+//          long					nChild;
+//          float					Matrix[12];
+//      SUB CHUNK 2
+//          float					Matrix[12];
+//      SUB CHUNK 3
+//          float					Matrix[16];
 //
 //  Material List
-//
-//  dword					Material_Index;
-//  char					NullTerminatedString[x];
-//  dword					Padding;
-//  dword					BASE_Texture_ID; //From Texture.big
-//  dword					BUMPMAP_Texture_ID; //From Texture.big
-//  dword					REFLECT_Texture_ID; //From Texture.big
-//  dword					Unknown;
-//  dword					Max_Texture_Layers;
-//  dword					Glow_Strength;
-//  byte					Unknown;
-//  byte					Alpha_Enabled;
-//  byte					Unknown;
-//  word					Ignored; //For degenerate Tri's
+//      dword					Material_Index;
+//      char					NullTerminatedString[x];
+//      dword					Padding;
+//      dword					BASE_Texture_ID; //From Texture.big
+//      dword					BUMPMAP_Texture_ID; //From Texture.big
+//      dword					REFLECT_Texture_ID; //From Texture.big
+//      dword					Unknown;
+//      dword					Max_Texture_Layers;
+//      dword					Glow_Strength;
+//      byte					Unknown;
+//      byte					Alpha_Enabled;
+//      byte					Unknown;
+//      word					Ignored; //For degenerate Tri's
 //
 //  Sub-Mesh
-//
 //  dword							Hierarchy;
 //  dword							DestroyableMeshLevels;
 //  float							floats[5];
@@ -184,13 +177,3 @@
 //  	DWORD				VGRPCount; // = Number of Bones
 //  	VGRP**				VGRPs;
 //  };
-
-// use nom::IResult;
-// use nom::number::complete::le_u32;
-// use nom::bytes::complete::{tag,take,is_not};
-// use nom::multi::count;
-
-// #[derive(Debug,PartialEq)]
-// pub struct BbmHeader {
-
-// }

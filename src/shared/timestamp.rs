@@ -2,7 +2,7 @@ use nom::IResult;
 use nom::number::complete::le_u32;
 use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
 
-pub fn parse_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime> {
+pub fn decode_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime> {
     let (input, year) = le_u32(input)?;
     let (input, month) = le_u32(input)?;
     let (input, day) = le_u32(input)?;
@@ -18,7 +18,7 @@ pub fn parse_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime> {
     Ok((input, date_time))
 }
 
-pub fn parse_short_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime> {
+pub fn decode_short_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime> {
     let (input, year) = le_u32(input)?;
     let (input, month) = le_u32(input)?;
     let (input, day) = le_u32(input)?;
