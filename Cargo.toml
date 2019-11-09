@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "defable",
+    "fable_cheat",
+    "fable_format",
+    "fable_gltf",
+]
