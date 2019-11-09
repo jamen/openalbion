@@ -186,22 +186,22 @@ pub fn decode_instr_value_call(input: &[u8]) -> IResult<&[u8], InstrValue> {
     Ok((maybe_input, InstrValue::Call((name, values))))
 }
 
-pub fn decode_instr_value_call_tag(name: String) -> impl Fn(&[u8]) -> IResult<&[u8], InstrValue> {
-    move |input: &[u8]| {
-        let (maybe_input, func) = decode_instr_value_call(input)?;
+// pub fn decode_instr_value_call_tag(name: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], InstrValue> {
+//     move |input: &[u8]| {
+//         let (maybe_input, func) = decode_instr_value_call(input)?;
 
-        let (key, values) = match func {
-            InstrValue::Call((key, values)) => (key, values),
-            _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
-        };
+//         let (key, values) = match func {
+//             InstrValue::Call((key, values)) => (key, values),
+//             _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+//         };
 
-        if key != name.clone() {
-            return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
-        }
+//         if key != name.clone() {
+//             return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
+//         }
 
-        Ok((maybe_input, InstrValue::Call((key, values))))
-    }
-}
+//         Ok((maybe_input, InstrValue::Call((key, values))))
+//     }
+// }
 
 pub fn decode_instr_value_name(input: &[u8]) -> IResult<&[u8], InstrValue> {
     let (maybe_input, name) = take_while1(|x| (is_alphabetic(x) || is_digit(x) || x == 0x5f || x == 0x20))(input)?;
