@@ -103,7 +103,7 @@ pub fn decode_header(input: &[u8]) -> IResult<&[u8], LevHeader> {
 pub fn decode_heightmap_cell(input: &[u8]) -> IResult<&[u8], LevHeightmapCell> {
     let (input, size) = le_u32(input)?;
     let (input, version) = le_u8(input)?;
-    let (input, height) = le_u32(input)?;
+    let (input, height) = le_f32(input)?;
     let (input, _zero) = le_u8(input)?;
     let (input, ground_theme) = tuple((le_u8, le_u8, le_u8))(input)?;
     let (input, ground_theme_strength) = tuple((le_u8, le_u8))(input)?;

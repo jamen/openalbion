@@ -43,7 +43,7 @@ pub struct LevHeader {
 pub struct LevHeightmapCell {
     pub size: u32,
     pub version: u8,
-    pub height: u32,
+    pub height: f32,
     pub ground_theme: (u8, u8, u8),
     pub ground_theme_strength: (u8, u8),
     pub walkable: bool,

@@ -13,24 +13,24 @@ pub fn compile_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), 
     let mut positions: Vec<u8> = Vec::new();
 
     let width = (lev.header.width + 1) as usize;
-    let mut x: u32 = 0;
-    let mut y: u32 = 0;
+    let mut x = 0f32;
+    let mut z = 0f32;
 
     for (i, cell) in lev.heightmap_cells.iter().enumerate() {
         positions.extend_from_slice(
             &[
                 x.to_le_bytes(),
-                y.to_le_bytes(),
-                cell.height.to_le_bytes(),
+                (cell.height * 2048f32).to_le_bytes(),
+                z.to_le_bytes(),
             ].concat()
         );
 
         if i % width == 0 {
-            y += cell.size;
-            x = 0;
+            z += 5f32;
+            x = 0f32;
         }
 
-        x += cell.size;
+        x += 5f32;
     }
 
     let root = Root {
@@ -39,7 +39,7 @@ pub fn compile_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), 
                 buffer_view: Index::new(0),
                 byte_offset: 0,
                 count: lev.heightmap_cells.len() as u32,
-                component_type: Checked::Valid(GenericComponentType(ComponentType::U32)),
+                component_type: Checked::Valid(GenericComponentType(ComponentType::F32)),
                 extensions: Default::default(),
                 extras: Default::default(),
                 type_: Checked::Valid(Type::Vec3),
