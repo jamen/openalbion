@@ -71,6 +71,8 @@ version = "0.1.0"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fable_format 0.1.0",
+ "fable_gltf 0.1.0",
+ "gltf-json 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

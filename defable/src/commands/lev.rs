@@ -1,5 +1,9 @@
+use std::fs::File;
+use std::io::Write;
 use clap::{App, SubCommand, Arg, ArgMatches};
 use fable_format::lev::Lev;
+use fable_gltf::compile_lev_to_mesh;
+use gltf_json::serialize::to_string_pretty;
 
 pub fn register<'a, 'b>() -> App<'a, 'b> {
     SubCommand::with_name("lev")
@@ -28,10 +32,10 @@ pub fn register<'a, 'b>() -> App<'a, 'b> {
             .conflicts_with("wad")
         )
         .arg(
-            Arg::with_name("extract")
+            Arg::with_name("unpack")
             .help("Extracts a Lev to a glTF mesh.")
-            .short("e")
-            .long("extract")
+            .short("u")
+            .long("unpack")
             .value_names(&["LEV_FILE", "GLTF_FILE"])
         )
 }
@@ -43,11 +47,26 @@ pub fn main<'a>(matches: &ArgMatches<'a>) {
         //     None => Lev::from_file(lev_file),
         // };
 
-        let lev = Lev::open(lev_file);
+        let lev = Lev::open(lev_file).unwrap();
 
-        match lev {
-            Ok(lev) => println!("{:#?}", lev),
-            Err(error) => println!("Failed: {:?}", error),
-        }
+        println!("{:#?}", lev);
+    }
+
+    if let Some(mut inputs) = matches.values_of("unpack") {
+        let lev_file = inputs.next().unwrap();
+        let gltf_file = inputs.next().unwrap();
+
+        let lev = Lev::open(lev_file).unwrap();
+
+        let bin_file = [gltf_file, ".bin"].concat();
+
+        let (bin_data, root) = compile_lev_to_mesh(lev, &bin_file).unwrap();
+
+        let mut bin = File::create(&bin_file).unwrap();
+        bin.write(&bin_data).unwrap();
+
+        let gltf_data = gltf_json::serialize::to_string_pretty(&root).unwrap();
+        let mut gltf = File::create(gltf_file).unwrap();
+        gltf.write(gltf_data.as_bytes()).unwrap();
     }
 }

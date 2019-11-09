@@ -6,17 +6,17 @@ pub fn register<'a, 'b>() -> App<'a, 'b> {
     SubCommand::with_name("wad")
         .about("Wad archive tool.")
         .arg(
-            Arg::with_name("extract")
+            Arg::with_name("unpack")
             .help("Unpack a Wad to a directory.")
-            .short("e")
-            .long("extract")
+            .short("u")
+            .long("unpack")
             .value_names(&["WAD_FILE", "DIRECTORY"])
         )
         .arg(
-            Arg::with_name("create")
+            Arg::with_name("pack")
             .help("Pack a directory into a Wad.")
-            .short("c")
-            .long("create")
+            .short("p")
+            .long("pack")
             .value_names(&["DIRECTORY", "WAD_FILE"])
         )
         .arg(

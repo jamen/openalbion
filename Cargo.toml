@@ -7,5 +7,6 @@ members = [
     "fable_gltf",
 ]
 
-[patch."https://github.com/jamen/fable_format.git"]
+[patch.crates-io]
 fable_format = { path = "./fable_format" }
+fable_gltf = { path = "./fable_gltf" }

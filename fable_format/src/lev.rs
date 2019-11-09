@@ -15,11 +15,11 @@ use self::decode::decode_lev;
 
 #[derive(Debug,PartialEq)]
 pub struct Lev {
-    header: LevHeader,
-    heightmap_cells: Vec<LevHeightmapCell>,
-    soundmap_cells: Vec<LevSoundmapCell>,
-    navigation_header: LevNavigationHeader,
-    navigation_section: LevNavigationSection
+    pub header: LevHeader,
+    pub heightmap_cells: Vec<LevHeightmapCell>,
+    pub soundmap_cells: Vec<LevSoundmapCell>,
+    pub navigation_header: LevNavigationHeader,
+    pub navigation_section: LevNavigationSection
 }
 
 #[derive(Debug,PartialEq)]
@@ -41,31 +41,31 @@ pub struct LevHeader {
 
 #[derive(Debug,PartialEq)]
 pub struct LevHeightmapCell {
-    size: u32,
-    version: u8,
-    height: u32,
-    ground_theme: (u8, u8, u8),
-    ground_theme_strength: (u8, u8),
-    walkable: bool,
-    passover: bool,
-    sound_theme: u8,
-    shore: bool,
+    pub size: u32,
+    pub version: u8,
+    pub height: u32,
+    pub ground_theme: (u8, u8, u8),
+    pub ground_theme_strength: (u8, u8),
+    pub walkable: bool,
+    pub passover: bool,
+    pub sound_theme: u8,
+    pub shore: bool,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevSoundmapCell {
-    size: u32,
-    version: u8,
-    sound_theme: (u8, u8, u8),
-    sound_theme_strength: (u8, u8),
-    sound_index: u8,
+    pub size: u32,
+    pub version: u8,
+    pub sound_theme: (u8, u8, u8),
+    pub sound_theme_strength: (u8, u8),
+    pub sound_index: u8,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationHeader {
-    sections_start: u32,
-    sections_count: u32,
-    sections: Vec<(String, u32)>,
+    pub sections_start: u32,
+    pub sections_count: u32,
+    pub sections: Vec<(String, u32)>,
 }
 
 //
