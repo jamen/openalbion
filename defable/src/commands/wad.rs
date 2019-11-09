@@ -30,24 +30,24 @@ pub fn register<'a, 'b>() -> App<'a, 'b> {
 
 pub fn main<'a>(matches: &ArgMatches<'a>) {
     if let Some(wad_file) = matches.value_of("info") {
-        let wad = Wad::from_file(wad_file);
+        let wad = Wad::open(wad_file);
 
         match wad {
-            Ok(wad) => println!("{:#?}", wad.header),
+            Ok(wad) => println!("{:#?}", wad),
             Err(error) => println!("Failed: {:?}", error),
         }
     }
 
-    if let Some(mut inputs) = matches.values_of("extract") {
+    if let Some(mut inputs) = matches.values_of("unpack") {
         let wad_file = inputs.next().unwrap();
         let directory = inputs.next().unwrap();
 
-        let wad = Wad::from_file(wad_file).unwrap();
+        let wad = Wad::open(wad_file).unwrap();
 
         let file_options = HashMap::default();
 
         // TODO: Populate file_options (excludes and includes) from matches.
 
-        wad.extract(directory, file_options).unwrap();
+        wad.unpack(directory, file_options).unwrap();
     }
 }

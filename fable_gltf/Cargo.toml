@@ -7,6 +7,3 @@ edition = "2018"
 [dependencies]
 fable_format = { git = "https://github.com/jamen/fable_format.git" }
 gltf-json = "0.14.0"
-
-[patch."https://github.com/jamen/fable_format.git"]
-fable_format = { path = "../fable_format" }

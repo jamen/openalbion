@@ -1,6 +1,11 @@
 pub mod decode;
 pub mod encode;
 
+use std::fs::File;
+use std::io::{Read,Error,ErrorKind};
+
+use self::decode::decode_lev;
+
 // Temporary comments from fabletlcmod.com.
 //
 // Creating Heightmaps and loading heightmaps into 3ds max.
@@ -9,12 +14,12 @@ pub mod encode;
 //
 
 #[derive(Debug,PartialEq)]
-pub struct Lev<'a> {
+pub struct Lev {
     header: LevHeader,
     heightmap_cells: Vec<LevHeightmapCell>,
     soundmap_cells: Vec<LevSoundmapCell>,
     navigation_header: LevNavigationHeader,
-    navigation_section: LevNavigationSection<'a>
+    navigation_section: LevNavigationSection
 }
 
 #[derive(Debug,PartialEq)]
@@ -77,14 +82,14 @@ pub struct LevNavigationHeader {
 //
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationSection<'a> {
+pub struct LevNavigationSection {
     size: u32,
     version: u32,
     level_width: u32,
     level_height: u32,
     interactive_nodes: Vec<LevInteractiveNode>,
     subsets_count: u32,
-    level_nodes: Vec<LevNavigationNode<'a>>,
+    level_nodes: Vec<LevNavigationNode>,
 }
 
 #[derive(Debug,PartialEq)]
@@ -95,7 +100,7 @@ pub struct LevInteractiveNode {
 }
 
 #[derive(Debug,PartialEq)]
-pub enum LevNavigationNode<'a> {
+pub enum LevNavigationNode {
     Regular(LevNavigationRegularNode),
     Navigation(LevNavigationNavigationNode),
     Exit(LevNavigationExitNode),
@@ -103,7 +108,7 @@ pub enum LevNavigationNode<'a> {
     Unknown1(LevNavigationUnknown1Node),
     Unknown2(LevNavigationUnknown2Node),
     Unknown3(LevNavigationUnknown3Node),
-    Unknown(LevNavigationUnknownNode<'a>),
+    Unknown(LevNavigationUnknownNode),
 }
 
 #[derive(Debug,PartialEq)]
@@ -161,12 +166,30 @@ pub struct LevNavigationUnknown3Node {
 }
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationUnknownNode<'a> {
-    node_op: &'a [u8],
+pub struct LevNavigationUnknownNode {
+    node_op: Vec<u8>,
     end: u8
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationBlankNode {
     root: u8
+}
+
+impl Lev {
+    pub fn open(file_path: &str) -> Result<Self, Error> {
+        Self::from_file(File::open(file_path)?)
+    }
+
+    pub fn from_file(mut file: File) -> Result<Self, Error> {
+        let mut lev_data = Vec::new();
+        file.read_to_end(&mut lev_data)?;
+
+        let (_, lev) = match decode_lev(&lev_data) {
+            Ok(lev) => lev,
+            Err(_error) => return Err(Error::new(ErrorKind::InvalidData, "failed to parse lev."))
+        };
+
+        Ok(lev)
+    }
 }

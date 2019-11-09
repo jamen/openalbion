@@ -6,3 +6,6 @@ members = [
     "fable_format",
     "fable_gltf",
 ]
+
+[patch."https://github.com/jamen/fable_format.git"]
+fable_format = { path = "./fable_format" }

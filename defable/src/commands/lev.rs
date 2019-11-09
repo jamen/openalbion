@@ -1,5 +1,5 @@
 use clap::{App, SubCommand, Arg, ArgMatches};
-// use fable_format::lev::Lev;
+use fable_format::lev::Lev;
 
 pub fn register<'a, 'b>() -> App<'a, 'b> {
     SubCommand::with_name("lev")
@@ -37,15 +37,17 @@ pub fn register<'a, 'b>() -> App<'a, 'b> {
 }
 
 pub fn main<'a>(matches: &ArgMatches<'a>) {
-    // if let Some(lev_file) = matches.value_of("info") {
-    //     let lev = match matches.value_of("wad") {
-    //         Some(wad_file) => Lev::from_wad(wad_file, lev_file),
-    //         None => Lev::from_file(lev_file),
-    //     };
+    if let Some(lev_file) = matches.value_of("info") {
+        // let lev = match matches.value_of("wad") {
+        //     Some(wad_file) => Lev::from_wad(wad_file, lev_file),
+        //     None => Lev::from_file(lev_file),
+        // };
 
-    //     match lev {
-    //         Ok(lev) => println!("{:?}", lev.header),
-    //         Err(error) => println!("Failed: {:?}", error),
-    //     }
-    // }
+        let lev = Lev::open(lev_file);
+
+        match lev {
+            Ok(lev) => println!("{:#?}", lev),
+            Err(error) => println!("Failed: {:?}", error),
+        }
+    }
 }

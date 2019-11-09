@@ -433,7 +433,7 @@ pub fn decode_navigation_unknown_node(input: &[u8]) -> IResult<&[u8], LevNavigat
     let (_maybe_input, end) = le_u8(maybe_input)?;
 
     let unknown = LevNavigationUnknownNode {
-        node_op: &node_op,
+        node_op: node_op.to_vec(),
         end: end,
     };
 
@@ -460,56 +460,4 @@ pub fn decode_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigatio
             )
         )
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs::File;
-    use std::io::Read;
-
-    #[test]
-    fn test_lev() {
-        let file_path = concat!(env!("FABLE"), "/data/Levels/FinalAlbion/SnowspireVillage.lev");
-        let mut file = File::open(file_path).expect("failed to open file.");
-
-        let mut lev: Vec<u8> = Vec::new();
-
-        file.read_to_end(&mut lev).expect("Failed to read file.");
-
-       let (left, lev) = match decode_lev(&lev) {
-            Ok(x) => x,
-            Err(nom::Err::Error((_input, error))) => return println!("Error {:?}", error),
-            Err(error) => return println!("Error {:?}", error),
-        };
-
-        // println!("{:#?}", lev);
-        println!("level_nodes.len() {:?}", lev.navigation_section.level_nodes.len());
-        println!("level_nodes {:#?}", &lev.navigation_section.level_nodes[0..10]);
-        println!("level_nodes {:#?}", &lev.navigation_section.level_nodes.last());
-
-        // println!("left {:?}", left);
-
-        // let mut bank_index: Vec<u8> = Vec::new();
-        // file.seek(SeekFrom::Start(big_header.bank_address as u64)).expect("Failed to seek file.");
-        // file.read_to_end(&mut bank_index).expect("Failed to read file.");
-
-        // let (_, big_bank_index) = decode_bank_index(&bank_index).expect("Failed to parse bank index.");
-
-        // println!("{:?}", big_bank_index);
-
-        // let mut file_index: Vec<u8> = Vec::new();
-        // file.seek(SeekFrom::Start(big_bank_index.index_start as u64)).expect("Failed to seek file.");
-        // file.take(big_bank_index.index_size as u64).read_to_end(&mut file_index).expect("Failed to read file.");
-        // file.read_to_end(&mut file_index).expect("Failed to read file.");
-
-        // let (_, big_file_index) = match decode_file_index(&file_index) {
-        //     Ok(value) => value,
-        //     Err(nom::Err::Error((_, error))) => return println!("Error {:?}", error),
-        //     Err(nom::Err::Failure((_, error))) => return println!("Error {:?}", error),
-        //     Err(_) => return println!("Error"),
-        // };
-
-        // println!("{:#?}", big_file_index);
-    }
 }
