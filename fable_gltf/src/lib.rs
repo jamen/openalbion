@@ -9,52 +9,123 @@ use gltf_json::accessor::{GenericComponentType,ComponentType,Type};
 use gltf_json::mesh::{Primitive,Mode,Semantic};
 use gltf_json::validation::Checked;
 
-pub fn compile_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), Error> {
+struct MeshConfig {
+    cell_height_modifier: f32,
+    cell_distance: f32,
+    width: usize,
+    height: usize,
+}
+
+pub fn encode_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), Error> {
     let mut positions: Vec<u8> = Vec::new();
 
-    let width = (lev.header.width + 1) as usize;
+    let config = MeshConfig {
+        cell_height_modifier: 2048f32,
+        cell_distance: 1f32,
+        width: (lev.header.width + 1) as usize,
+        height: (lev.header.height + 1) as usize,
+    };
+
     let mut x = 0f32;
-    let mut z = 0f32;
+    let mut y = 0f32;
+
+    let max = lev.heightmap_cells.len();
+
+    println!("lev cell len {}", max);
+    println!("lev width {}", lev.header.width);
+    println!("lev height {}", lev.header.height);
+    println!("lev width * height {}", lev.header.width * lev.header.height);
+    println!("lev (width + 1) * (height + 1) {}", (lev.header.width + 1) * (lev.header.height + 1));
+
+    // [cell_1] [cell_2]
+    // [cell_3] [cell_4]
 
     for (i, cell) in lev.heightmap_cells.iter().enumerate() {
-        let next_cell = if (i + 1 % width) > 0 { lev.heightmap_cells.get(i + 1) } else { None };
+        let cell_1_height = cell.height;
+
+        // Neighbor right of cell
+        let cell_2_height = if i + 1 % config.width > 0 {
+            if let Some(neighbor_cell) = lev.heightmap_cells.get(i + 1) {
+                neighbor_cell.height
+            } else {
+                cell_1_height
+            }
+        } else {
+            cell_1_height
+        };
+
+        let cell_3_height = if i + config.width < max {
+            if let Some(neighbor_cell) = lev.heightmap_cells.get(i + config.width) {
+                neighbor_cell.height
+            } else {
+                cell_1_height
+            }
+        } else {
+            cell_1_height
+        };
+
+        let cell_4_height = if i + config.width + 1 % config.width > 0 {
+            if let Some(neighbor_cell) = lev.heightmap_cells.get(i + config.width + 1) {
+                neighbor_cell.height
+            } else {
+                cell_1_height
+            }
+        } else {
+            cell_1_height
+        };
 
         positions.extend_from_slice(
             &[
-                // Triangle 1
+                // *--.
+                // | /
+                // ./
                 x.to_le_bytes(),
-                (cell.height * 2048f32).to_le_bytes(),
-                z.to_le_bytes(),
+                (cell_1_height * config.cell_height_modifier).to_le_bytes(),
+                y.to_le_bytes(),
 
-                (x + 1f32).to_le_bytes(),
-                (cell.height * 2048f32).to_le_bytes(),
-                z.to_le_bytes(),
+                // .--*
+                // | /
+                // ./
+                (x + config.cell_distance).to_le_bytes(),
+                (cell_2_height * config.cell_height_modifier).to_le_bytes(),
+                y.to_le_bytes(),
 
+                // .--.
+                // | /
+                // */
                 x.to_le_bytes(),
-                (cell.height * 2048f32).to_le_bytes(),
-                (z + 1f32).to_le_bytes(),
+                (cell_3_height * config.cell_height_modifier).to_le_bytes(),
+                (y + config.cell_distance).to_le_bytes(),
 
-                // Triangle 2
-                (x + 1f32).to_le_bytes(),
-                (if let Some(next_cell) = next_cell { next_cell.height } else { cell.height } * 2048f32).to_le_bytes(),
-                (z + 1f32).to_le_bytes(),
+                //   /`
+                //  / |
+                // `--*
+                (x + config.cell_distance).to_le_bytes(),
+                (cell_4_height * config.cell_height_modifier).to_le_bytes(),
+                (y + config.cell_distance).to_le_bytes(),
 
-                (x + 1f32).to_le_bytes(),
-                (cell.height * 2048f32).to_le_bytes(),
-                z.to_le_bytes(),
+                //   /*
+                //  / |
+                // `--`
+                (x + config.cell_distance).to_le_bytes(),
+                (cell_2_height * config.cell_height_modifier).to_le_bytes(),
+                y.to_le_bytes(),
 
+                //   /`
+                //  / |
+                // *--`
                 x.to_le_bytes(),
-                (cell.height * 2048f32).to_le_bytes(),
-                (z + 1f32).to_le_bytes(),
+                (cell_3_height * config.cell_height_modifier).to_le_bytes(),
+                (y + config.cell_distance).to_le_bytes(),
             ].concat()
         );
 
-        if i % width == 0 {
-            z += 1f32;
-            x = 0f32;
-        }
-
         x += 1f32;
+
+        if i % config.width == 0 {
+            x = 0f32;
+            y += 1f32;
+        }
     }
 
     let root = Root {
@@ -62,7 +133,7 @@ pub fn compile_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), 
             Accessor {
                 buffer_view: Index::new(0),
                 byte_offset: 0,
-                count: (lev.heightmap_cells.len() * 2) as u32,
+                count: (lev.heightmap_cells.len() * 6) as u32,
                 component_type: Checked::Valid(GenericComponentType(ComponentType::F32)),
                 extensions: Default::default(),
                 extras: Default::default(),
@@ -141,4 +212,3 @@ pub fn compile_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), 
 
     Ok((positions, root))
 }
-

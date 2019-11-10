@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::Write;
 use clap::{App, SubCommand, Arg, ArgMatches};
 use fable_format::lev::Lev;
-use fable_gltf::compile_lev_to_mesh;
+use fable_gltf::encode_lev_to_mesh;
 use gltf_json::serialize::to_string_pretty;
 
 pub fn register<'a, 'b>() -> App<'a, 'b> {
@@ -60,7 +60,7 @@ pub fn main<'a>(matches: &ArgMatches<'a>) {
 
         let bin_file = [gltf_file, ".bin"].concat();
 
-        let (bin_data, root) = compile_lev_to_mesh(lev, &bin_file).unwrap();
+        let (bin_data, root) = encode_lev_to_mesh(lev, &bin_file).unwrap();
 
         let mut bin = File::create(&bin_file).unwrap();
         bin.write(&bin_data).unwrap();
