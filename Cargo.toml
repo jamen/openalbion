@@ -5,8 +5,11 @@ members = [
     "fable_cheat",
     "fable_format",
     "fable_gltf",
+    "fable_launch",
 ]
 
 [patch.crates-io]
+fable_cheat = { path = "./fable_cheat" }
 fable_format = { path = "./fable_format" }
 fable_gltf = { path = "./fable_gltf" }
+fable_launch = { path = "./fable_launch" }

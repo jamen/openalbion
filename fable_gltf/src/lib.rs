@@ -9,11 +9,11 @@ use gltf_json::accessor::{GenericComponentType,ComponentType,Type};
 use gltf_json::mesh::{Primitive,Mode,Semantic};
 use gltf_json::validation::Checked;
 
-struct MeshConfig {
-    cell_height_modifier: f32,
-    cell_distance: f32,
-    width: usize,
-    height: usize,
+pub struct MeshConfig {
+    pub cell_height_modifier: f32,
+    pub cell_distance: f32,
+    pub width: usize,
+    pub height: usize,
 }
 
 pub fn encode_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), Error> {
