@@ -1,15 +1,14 @@
 [workspace]
 
 members = [
-    "defable",
-    "fable_cheat",
-    "fable_format",
-    "fable_gltf",
-    "fable_launch",
+    "crates/defable",
+    "crates/defable_launcher/native",
+    "crates/fable_cheat",
+    "crates/fable_format",
+    "crates/fable_gltf",
 ]
 
 [patch.crates-io]
-fable_cheat = { path = "./fable_cheat" }
-fable_format = { path = "./fable_format" }
-fable_gltf = { path = "./fable_gltf" }
-fable_launch = { path = "./fable_launch" }
+fable_cheat = { path = "crates/fable_cheat" }
+fable_format = { path = "crates/fable_format" }
+fable_gltf = { path = "crates/fable_gltf" }

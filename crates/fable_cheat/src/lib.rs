@@ -21,13 +21,13 @@ extern "system" fn DllMain(
 ) -> BOOL {
     match fdv_reason {
         DLL_PROCESS_ATTACH => {
-            // unsafe { AllocConsole() };
+            unsafe { AllocConsole() };
             // unsafe { CreateThread(null_mut(), 0, Some(init), null_mut(), 0, null_mut()) };
 
             // let file_name = CString::new("C:\\Users\\Jamen\\test.txt").unwrap();
             // unsafe { CreateFileA(file_name.as_ptr(), GENERIC_ALL, 0, null_mut(), CREATE_NEW, FILE_ATTRIBUTE_NORMAL, null_mut()) };
 
-            unsafe { ExitProcess(0) };
+            // unsafe { ExitProcess(0) };
         },
         DLL_PROCESS_DETACH => {},
         _ => {}

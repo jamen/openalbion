@@ -1,4 +1,4 @@
-use fable_launch::inject_dll;
+// use fable_launch::inject_dll;
 use clap::{App, SubCommand, Arg, ArgMatches};
 
 pub fn register<'a, 'b>() -> App<'a, 'b> {
@@ -24,5 +24,5 @@ pub fn register<'a, 'b>() -> App<'a, 'b> {
 pub fn main<'a>(matches: &ArgMatches<'a>) {
     let pid = matches.value_of("pid").unwrap();
     let dll = matches.value_of("dll").unwrap();
-    inject_dll(pid, dll).unwrap();
+    // inject_dll(pid, dll).unwrap();
 }
