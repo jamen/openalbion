@@ -27,6 +27,7 @@ app.on('ready', () => {
     }
 })
 
+// TODO: Temporary. E.g. closing the browser window when fable launches using less resources, but ensure Fable closes when Defable is truly exited.
 app.on('window-all-closed', () => {
     app.quit()
 })

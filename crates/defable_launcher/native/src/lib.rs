@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate neon;
-extern crate fable_cheat;
 extern crate winapi;
 
 use std::ffi::CString;
@@ -9,29 +8,27 @@ use std::mem;
 
 use neon::prelude::*;
 
-use winapi::shared::basetsd::LONG_PTR;
-use winapi::shared::minwindef::{BOOL,DWORD,LPARAM,LPDWORD};
-use winapi::shared::windef::HWND;
+use winapi::shared::minwindef::{DWORD,LPDWORD,LPVOID,FARPROC};
+
+use winapi::um::minwinbase::LPTHREAD_START_ROUTINE;
+
+use winapi::um::winnt::{LPCSTR,LPSTR};
+use winapi::um::winnt::{MEM_RESERVE,MEM_COMMIT,PAGE_EXECUTE_READWRITE};
 
 use winapi::um::winbase::CREATE_SUSPENDED;
 
-use winapi::um::processthreadsapi::{CreateProcessA,ResumeThread};
+use winapi::um::processthreadsapi::{CreateProcessA,ResumeThread,CreateRemoteThread};
 use winapi::um::processthreadsapi::{STARTUPINFOA,PROCESS_INFORMATION};
 
-use winapi::um::winnt::{LPCSTR,LPSTR,PROCESS_ALL_ACCESS};
-
-use winapi::um::winuser::{EnumWindows,GetWindowThreadProcessId,SetWindowLongPtrA,SetWindowPos,GetWindowLongPtrA};
-use winapi::um::winuser::{GWL_STYLE,HWND_NOTOPMOST,SWP_FRAMECHANGED,SWP_SHOWWINDOW,WS_MINIMIZEBOX,WS_OVERLAPPEDWINDOW,WS_MAXIMIZEBOX,WS_CAPTION,WS_BORDER,WS_SIZEBOX};
-
-#[derive(Debug)]
-struct FableWindowSearch {
-    process_id: DWORD,
-    hwnd: HWND
-}
+use winapi::um::memoryapi::{VirtualAllocEx,WriteProcessMemory};
+use winapi::um::libloaderapi::{GetProcAddress,GetModuleHandleA};
 
 fn launch_fable(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let fable_executable_original = cx.argument::<JsString>(0)?.value();
     let fable_executable = fable_executable_original.as_ptr() as LPSTR;
+
+    let dll_path_original = CString::new(".\\fable_cheat.dll").unwrap();
+    let dll_path = dll_path_original.as_ptr() as LPCSTR;
 
     let mut process_info: PROCESS_INFORMATION = Default::default();
     let mut startup_info: STARTUPINFOA = Default::default();
@@ -56,51 +53,47 @@ fn launch_fable(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     }
 
     if unsafe { ResumeThread(process_info.hThread) } == 0 {
-        panic!("Failed to resume the main thread.");
-    }
-
-    let mut fable_window_search = FableWindowSearch {
-        process_id: process_info.dwProcessId,
-        hwnd: null_mut(),
+        panic!("Failed to resume the main thread.")
     };
 
-    while fable_window_search.hwnd == null_mut() {
-        unsafe { EnumWindows(Some(find_fable_window), &mut fable_window_search as *mut FableWindowSearch as LPARAM) };
-    }
+    // Put DLL path in Fable's memory.
 
-    println!("found window {:?}", fable_window_search);
+    let dll_path_in_remote = unsafe {
+        VirtualAllocEx(process_info.hProcess, null_mut(), dll_path_original.to_bytes_with_nul().len(), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE)
+    };
 
-    let styles = unsafe { GetWindowLongPtrA(fable_window_search.hwnd, GWL_STYLE as i32) as u32 };
+    println!("dll_path_in_remote {:?}", dll_path_in_remote);
 
-    loop {
-        if unsafe { SetWindowLongPtrA(fable_window_search.hwnd, GWL_STYLE, (styles |
-         WS_OVERLAPPEDWINDOW | WS_BORDER) as LONG_PTR) } == 0 {
-            panic!("SetWindowLongPtrA failed");
-        }
+    unsafe {
+        WriteProcessMemory(process_info.hProcess, dll_path_in_remote, dll_path as LPVOID, dll_path_original.to_bytes_with_nul().len(), null_mut())
+    };
 
-        if unsafe {
-            SetWindowPos(fable_window_search.hwnd, HWND_NOTOPMOST, 50, 50, 1980, 720, SWP_FRAMECHANGED | SWP_SHOWWINDOW)
-        } == 0 {
-            panic!("SetWindowPos failed");
-        };
-    }
+    println!("wrote memory");
+
+    let load_library_in_remote = unsafe {
+        GetProcAddress(
+            GetModuleHandleA(CString::new("kernel32.dll").unwrap().as_ptr() as LPCSTR),
+            CString::new("LoadLibraryA").unwrap().as_ptr() as LPCSTR
+        )
+    };
+
+    println!("load_library_in_remote {:?}", load_library_in_remote);
+
+    let remote_thread = unsafe {
+        CreateRemoteThread(
+            process_info.hProcess,
+            null_mut(),
+            0,
+            mem::transmute::<FARPROC, LPTHREAD_START_ROUTINE>(load_library_in_remote),
+            dll_path_in_remote as LPVOID,
+            0,
+            null_mut()
+        )
+    };
+
+    println!("remote_thread {:?}", remote_thread);
 
     Ok(JsUndefined::new())
-}
-
-extern "system" fn find_fable_window(hwnd: HWND, search: LPARAM) -> BOOL {
-    let mut search = unsafe { &mut *(search as *mut FableWindowSearch) };
-
-    let mut process_id = 1 as DWORD;
-
-    unsafe { GetWindowThreadProcessId(hwnd, &mut process_id as LPDWORD) };
-
-    if process_id == search.process_id {
-        search.hwnd = hwnd;
-        0 as BOOL
-    } else {
-        1 as BOOL
-    }
 }
 
 register_module!(mut cx, {

@@ -3,6 +3,7 @@ SHELL := /bin/bash
 
 all:
 	mkdir -p out
+	cp ../../target/release/fable_cheat.dll out
 	electron-build-env neon build --release
 	cp native/index.node app/index.html out
 	rollup --config

@@ -7,7 +7,6 @@
     }
 
     function launch () {
-        // console.log('Svelte saw:', form.fableExecutable)
         addon.launch_fable(form.fableExecutable)
     }
 
