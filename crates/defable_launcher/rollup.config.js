@@ -50,7 +50,7 @@ export default [
 				'process.browser': true,
 				'process.env.NODE_ENV': JSON.stringify(mode)
 			}),
-			svelte({ dev, hydratable: true }),
+			svelte({ dev }),
 			resolve({ dedupe }),
 			commonjs(),
 			!dev && terser({ module: true })

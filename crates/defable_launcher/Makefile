@@ -3,11 +3,10 @@ SHELL := /bin/bash
 
 all:
 	mkdir -p out
-	cp ../../target/release/fable_cheat.dll out
 	electron-build-env neon build --release
-	cp native/index.node app/index.html out
 	rollup --config
 	sass app/style.scss out/style.css
+	cp -r ../../target/release/fable_cheat.dll native/index.node app/static app/index.html out
 
 dev: export NODE_ENV=development
 dev: all

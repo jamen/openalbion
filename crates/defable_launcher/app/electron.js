@@ -2,8 +2,9 @@ const { app, BrowserWindow } = require('electron')
 
 app.on('ready', () => {
     let browserWindow = new BrowserWindow({
-        width: 800,
+        width: 400,
         height: 600,
+        resizable: false,
         show: false,
         autoHideMenuBar: true,
         webPreferences: {
@@ -23,7 +24,7 @@ app.on('ready', () => {
     browserWindow.loadURL(`file://${__dirname}/index.html`)
 
     if (process.env.NODE_ENV === 'development') {
-        browserWindow.openDevTools()
+        browserWindow.openDevTools({ mode: 'detach' })
     }
 })
 
