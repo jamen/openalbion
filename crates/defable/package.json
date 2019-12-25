@@ -1,0 +1,24 @@
+{
+    "name": "defable_launcher",
+    "description": "Fable launcher and mod organizer.",
+    "version": "0.0.1",
+    "repository": "jamen/defable",
+    "author": "Jamen Marz <me@jamen.dev>",
+    "license": "ISC",
+    "main": "out/main.js",
+    "devDependencies": {
+        "@rollup/plugin-replace": "^2.2.0",
+        "electron": "^4.2.12",
+        "electron-build-env": "^0.2.0",
+        "electron-packager": "^14.1.1",
+        "lodash.template": "^4.5.0",
+        "neon-cli": "^0.3.3",
+        "rollup": "^1.12.0",
+        "rollup-plugin-commonjs": "^10.0.0",
+        "rollup-plugin-node-resolve": "^5.2.0",
+        "rollup-plugin-svelte": "^5.0.1",
+        "rollup-plugin-terser": "^4.0.4",
+        "sass": "^1.24.0",
+        "svelte": "^3.0.0"
+    }
+}

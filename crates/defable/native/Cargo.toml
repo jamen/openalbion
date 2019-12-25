@@ -1,0 +1,20 @@
+[package]
+name = "defable_launcher"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+license = "MIT"
+build = "build.rs"
+exclude = ["artifacts.json", "index.node"]
+
+[lib]
+name = "defable_launcher"
+crate-type = ["cdylib"]
+
+[build-dependencies]
+neon-build = "0.3.3"
+cc = "1.0"
+
+[dependencies]
+neon = { version = "0.3.3" }
+fable_cheat = { version = "0.1.0" }
+winapi = { version = "0.3.8", features = [ "std", "impl-default", "libloaderapi", "winnt", "processthreadsapi", "winbase", "winuser", "memoryapi", "libloaderapi" ] }
