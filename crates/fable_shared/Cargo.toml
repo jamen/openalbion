@@ -1,11 +1,11 @@
 [package]
-name = "fable_format"
+name = "fable_shared"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
 
 [lib]
-name = "fable_format"
+name = "fable_shared"
 path = "src/lib.rs"
 
 [dependencies]

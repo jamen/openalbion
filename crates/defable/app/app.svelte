@@ -24,7 +24,7 @@
     }
 
     function launch () {
-        addon.launch_fable(options.fableExecutable, options.cheatDll)
+        const handle = addon.create_process_and_inject_dll(options.fableExecutable, options.cheatDll)
     }
 
     function dismissErrors () {
