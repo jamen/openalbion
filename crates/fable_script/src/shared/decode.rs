@@ -1,13 +1,15 @@
-use nom::IResult;
-use nom::character::complete::{digit1,line_ending,one_of,space0};
-use nom::character::{is_digit,is_alphabetic};
-use nom::combinator::opt;
-use nom::bytes::complete::{tag,take_while1,escaped,is_not};
-use nom::branch::alt;
-use nom::multi::{many_till,many0,many1};
-use nom::sequence::{terminated,preceded};
+use fable_base::nom::IResult;
+use fable_base::nom::Err;
+use fable_base::nom::error::ErrorKind;
+use fable_base::nom::character::complete::{digit1,line_ending,one_of,space0};
+use fable_base::nom::character::{is_digit,is_alphabetic};
+use fable_base::nom::combinator::opt;
+use fable_base::nom::bytes::complete::{tag,take_while1,escaped,is_not};
+use fable_base::nom::branch::alt;
+use fable_base::nom::multi::{many_till,many0,many1};
+use fable_base::nom::sequence::{terminated,preceded};
 
-use crate::script::{
+use crate::shared::{
     Instr,
     InstrKey,
     InstrValue,
@@ -38,7 +40,7 @@ pub fn decode_instr_key_property_access(input: &[u8]) -> IResult<&[u8], InstrKey
     } else if accessor == '.' {
         decode_instr_key_name(maybe_input)
     } else {
-        Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)))
+        Err(Err::Error((input, ErrorKind::ParseTo)))
     }
 }
 
@@ -47,7 +49,7 @@ pub fn decode_instr_key_index(input: &[u8]) -> IResult<&[u8], InstrKey> {
 
     let index = match index {
         InstrValue::Number(index) => index,
-        _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        _ => return Err(Err::Error((input, ErrorKind::ParseTo))),
     };
 
     Ok((maybe_input, InstrKey::Index(index as u32)))
@@ -58,7 +60,7 @@ pub fn decode_instr_key_name(input: &[u8]) -> IResult<&[u8], InstrKey> {
 
     let key = match String::from_utf8(key.to_vec()) {
         Ok(key) => key,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::ParseTo))),
     };
 
     Ok((maybe_input, InstrKey::Name(key)))
@@ -82,7 +84,7 @@ pub fn decode_instr_value_bool(input: &[u8]) -> IResult<&[u8], InstrValue> {
     let value = match value {
         b"TRUE" => true,
         b"FALSE" => false,
-        _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)))
+        _ => return Err(Err::Error((input, ErrorKind::ParseTo)))
     };
     Ok((maybe_input, InstrValue::Bool(value)))
 }
@@ -100,12 +102,12 @@ pub fn decode_instr_value_float(input: &[u8]) -> IResult<&[u8], InstrValue> {
 
     let value = match String::from_utf8(value.to_vec()) {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::ParseTo))),
     };
 
     let value = match value.parse::<f32>() {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::Digit))),
     };
 
     let value = if negative.is_none() { value } else { -value };
@@ -119,12 +121,12 @@ pub fn decode_instr_value_number(input: &[u8]) -> IResult<&[u8], InstrValue> {
 
     let value = match String::from_utf8(value.to_vec()) {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::ParseTo))),
     };
 
     let value = match value.parse::<i32>() {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::Digit))),
     };
 
     let value = if negative.is_none() { value } else { -value };
@@ -137,12 +139,12 @@ pub fn decode_instr_value_big_number(input: &[u8]) -> IResult<&[u8], InstrValue>
 
     let value = match String::from_utf8(value.to_vec()) {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::ParseTo))),
     };
 
     let value = match value.parse::<u64>() {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::Digit))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::Digit))),
     };
 
    Ok((maybe_input, InstrValue::BigNumber(value)))
@@ -157,7 +159,7 @@ pub fn decode_instr_value_string(input: &[u8]) -> IResult<&[u8], InstrValue> {
         Some(value) =>
             match String::from_utf8(value.to_vec()) {
                 Ok(value) => value,
-                Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+                Err(_error) => return Err(Err::Error((input, ErrorKind::ParseTo))),
             },
         None => "".to_string(),
     };
@@ -172,7 +174,7 @@ pub fn decode_instr_value_call(input: &[u8]) -> IResult<&[u8], InstrValue> {
 
     let name = match name {
         InstrValue::Name(value) => value,
-        _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        _ => return Err(Err::Error((input, ErrorKind::ParseTo))),
     };
 
     let (maybe_input, _start) = tag("(")(maybe_input)?;
@@ -192,11 +194,11 @@ pub fn decode_instr_value_call(input: &[u8]) -> IResult<&[u8], InstrValue> {
 
 //         let (key, values) = match func {
 //             InstrValue::Call((key, values)) => (key, values),
-//             _ => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+//             _ => return Err(Err::Error((input, ErrorKind::ParseTo))),
 //         };
 
 //         if key != name.clone() {
-//             return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
+//             return Err(Err::Error((input, ErrorKind::ParseTo)));
 //         }
 
 //         Ok((maybe_input, InstrValue::Call((key, values))))
@@ -208,7 +210,7 @@ pub fn decode_instr_value_name(input: &[u8]) -> IResult<&[u8], InstrValue> {
 
     let name = match String::from_utf8(name.to_vec()) {
         Ok(value) => value,
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        Err(_error) => return Err(Err::Error((input, ErrorKind::ParseTo))),
     };
 
     Ok((maybe_input, InstrValue::Name(name)))
@@ -231,14 +233,14 @@ pub fn decode_instr_tag(name: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], 
 
         let key = match key {
             InstrKey::Name(x) => x,
-            InstrKey::Index(_) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
-            InstrKey::Property(_) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+            InstrKey::Index(_) => return Err(Err::Error((input, ErrorKind::ParseTo))),
+            InstrKey::Property(_) => return Err(Err::Error((input, ErrorKind::ParseTo))),
         };
 
         // println!("{:?} == {:?}", name, key);
 
         if key != name {
-            return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
+            return Err(Err::Error((input, ErrorKind::ParseTo)));
         }
 
         Ok((maybe_input, (InstrKey::Name(key), value)))

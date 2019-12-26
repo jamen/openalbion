@@ -1,11 +1,11 @@
-use nom::IResult;
-use nom::multi::{many1,many0};
-use nom::character::complete::line_ending;
-use nom::bytes::complete::tag;
-use nom::combinator::opt;
+use fable_base::nom::IResult;
+use fable_base::nom::multi::{many1,many0};
+use fable_base::nom::character::complete::line_ending;
+use fable_base::nom::bytes::complete::tag;
+use fable_base::nom::combinator::opt;
 
-use crate::script::InstrValue;
-use crate::script::decode::decode_instr_value_call;
+use crate::shared::InstrValue;
+use crate::shared::decode::decode_instr_value_call;
 
 use crate::qst::Qst;
 

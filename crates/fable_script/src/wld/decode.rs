@@ -1,8 +1,8 @@
-use nom::IResult;
-use nom::multi::{many1,many_till};
+use fable_base::nom::IResult;
+use fable_base::nom::multi::{many1,many_till};
 
-use crate::script::Instr;
-use crate::script::decode::{decode_instr,decode_instr_tag};
+use crate::shared::Instr;
+use crate::shared::decode::{decode_instr,decode_instr_tag};
 
 use crate::wld::{
     WldMap,

@@ -1,10 +1,10 @@
-use nom::IResult;
-use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,le_f32};
-use nom::bytes::complete::{tag,take};
-use nom::sequence::tuple;
-use nom::multi::count;
-use nom::branch::alt;
-use crate::string::decode_rle_string;
+use fable_base::nom::IResult;
+use fable_base::nom::number::complete::{le_u8,le_u16,le_u32,le_u64,le_f32};
+use fable_base::nom::bytes::complete::{tag,take};
+use fable_base::nom::sequence::tuple;
+use fable_base::nom::multi::count;
+use fable_base::nom::branch::alt;
+use fable_base::string::decode_rle_string;
 
 use crate::lev::{
     Lev,

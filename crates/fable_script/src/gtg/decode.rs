@@ -1,11 +1,13 @@
-use nom::IResult;
-use nom::character::complete::line_ending;
-use nom::combinator::opt;
-use nom::bytes::complete::tag;
-use nom::multi::{many0,many1};
+use fable_base::nom::IResult;
+use fable_base::nom::Err;
+use fable_base::nom::error::ErrorKind;
+use fable_base::nom::character::complete::line_ending;
+use fable_base::nom::combinator::opt;
+use fable_base::nom::bytes::complete::tag;
+use fable_base::nom::multi::{many0,many1};
 
-use crate::script::{Instr,InstrKey};
-use crate::script::decode::{decode_instr_value,decode_instr_key};
+use crate::shared::{Instr,InstrKey};
+use crate::shared::decode::{decode_instr_value,decode_instr_key};
 
 use crate::tng::Tng;
 use crate::tng::decode::decode_tng;
@@ -29,14 +31,14 @@ pub fn decode_gtg_map_instr(name: &'static str) -> impl Fn(&[u8]) -> IResult<&[u
 
        let key_string = match key {
             InstrKey::Name(x) => x,
-            InstrKey::Index(_) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
-            InstrKey::Property(_) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+            InstrKey::Index(_) => return Err(Err::Error((input, ErrorKind::ParseTo))),
+            InstrKey::Property(_) => return Err(Err::Error((input, ErrorKind::ParseTo))),
         };
 
         // println!("{:?} == {:?}", name, key);
 
         if key_string != name {
-            return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo)));
+            return Err(Err::Error((input, ErrorKind::ParseTo)));
         }
 
         Ok((maybe_input, (InstrKey::Name(key_string), value)))

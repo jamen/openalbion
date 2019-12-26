@@ -1,8 +1,8 @@
 pub mod decode;
 pub mod encode;
 
-use chrono::naive::NaiveDateTime;
-use nom::multi::count;
+use fable_base::chrono::naive::NaiveDateTime;
+use fable_base::nom::multi::count;
 use std::fs::{File,create_dir_all};
 use std::io::{SeekFrom,Seek,Read,Write,Error,ErrorKind};
 use std::collections::{HashMap,HashSet};

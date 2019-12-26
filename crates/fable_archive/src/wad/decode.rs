@@ -1,8 +1,8 @@
-use nom::IResult;
-use nom::number::complete::le_u32;
-use nom::bytes::complete::{tag,take};
-use nom::sequence::tuple;
-use crate::timestamp::{decode_timestamp,decode_short_timestamp};
+use fable_base::nom::IResult;
+use fable_base::nom::number::complete::le_u32;
+use fable_base::nom::bytes::complete::{tag,take};
+use fable_base::nom::sequence::tuple;
+use fable_base::timestamp::{decode_timestamp,decode_short_timestamp};
 
 use crate::wad::{
     WadHeader,
@@ -41,7 +41,7 @@ pub fn decode_entry(input: &[u8]) -> IResult<&[u8], WadEntry> {
     let (input, path) = take(path_length as usize)(input)?;
 
     let path = match std::str::from_utf8(path) {
-        Err(_error) => return Err(nom::Err::Error((input, nom::error::ErrorKind::ParseTo))),
+        Err(_error) => return Err(fable_base::nom::Err::Error((input, fable_base::nom::error::ErrorKind::ParseTo))),
         Ok(value) => value.to_owned()
     };
 
