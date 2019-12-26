@@ -1,7 +1,10 @@
+@import './styles/fonts.scss';
+
 html, body {
     margin: 0;
     padding: 0;
-    font-family: sans-serif;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
 }
 
 * {
@@ -13,13 +16,110 @@ main {
     flex-direction: column;
     width: 100vw;
     height: 100vh;
+    background: #161515;
+    color: #fff;
+}
+
+section {
+    // padding: 5px;
+    // padding-bottom: 0;
+    border-bottom: 2px solid #080808;
+}
+
+h2, h3 {
+    margin: 0;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+h2 {
+    padding: 5px;
+    padding-bottom: 0;
+    font-size: 14px;
+}
+
+h3 {
+    font-size: 11px;
+}
+
+.list {
+    padding: 10px;
+    // background: #fff;
+    // border: 1px solid #fcf4f4;
+}
+
+.btns {
+    display: flex;
+    padding: 0;
+    color: #000;
+}
+
+.btn {
+    display: flex;
+    // flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    padding: 10px;
+    background: none;
+    color: inherit;
+    font-size: 12px;
+}
+
+.btn img {
+    margin-right: 5px;
+}
+
+.btn span {
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.btns .launch {
+    width: 70%;
+    background: #64d622;
+}
+
+.btns .edit {
+    width: 30%;
+    background: #3684cc;
 }
 
 .options {
     display: flex;
     flex-direction: column;
+    height: 200px;
+}
+
+.options-list {
+    flex-grow: 1;
+}
+
+.option {
+    margin-bottom: 10px;
 }
 
 .mods {
-    height: 100%;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+
+.mods-list {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.mods-options {
+    display: flex;
+    background: #080808;
+    color: #fff;
+}
+
+.mods-options .btn {
+    padding: 5px;
+    margin-right: 10px;
+    font-size: 11px;
 }
