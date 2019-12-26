@@ -40,7 +40,7 @@ extern "system" fn DllMain(dll_handle: HINSTANCE, fdv_reason: DWORD, lpv_reserve
 }
 
 extern "system" fn init(lpThreadParameter: LPVOID) -> DWORD {
-    // unsafe { AllocConsole() };
+    unsafe { AllocConsole() };
 
     // Fable window search
     // let process_id = unsafe { GetCurrentProcessId() };
