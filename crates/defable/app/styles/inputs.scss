@@ -1,0 +1,73 @@
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    padding: 10px;
+    background: none;
+    color: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.btn img {
+    margin-right: 5px;
+}
+
+.field {
+    display: inline;
+    margin: 0;
+    padding: 5px;
+    border: 0;
+    background: #000;
+    color: inherit;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.file-select {
+    display: flex;
+    width: 100%;
+}
+
+.file-select .field {
+    height: auto;
+    border-top-left-radius: 2px;
+    border-bottom-left-radius: 2px;
+    flex-grow: 1;
+    font-size: 14px;
+}
+
+.file-select .btn {
+    padding: 5px;
+    background: #3684cc;
+    border-top-right-radius: 2px;
+    border-bottom-right-radius: 2px;
+}
+
+.file-select .field:disabled {
+    color: #6d6d6d;
+}
+
+.file-select .btn:disabled {
+    background: #6d6d6d;
+}
+
+.dim {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dim .pre {
+    margin-right: 5px;
+}
+
+.dim .field {
+    width: 100%;
+}
+
+.dim .x {
+    margin: 5px;
+}
