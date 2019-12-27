@@ -1,29 +1,23 @@
 #[macro_use]
 extern crate neon;
 extern crate winapi;
+extern crate fable_dll_inject;
 
 use neon::prelude::*;
+use fable_dll_inject::Injector;
 
-fn find_process(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    unimplemented!()
-}
+fn create_and_inject(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let executable_path = cx.argument::<JsString>(0)?.value();
+    let dll_path = cx.argument::<JsString>(1)?.value();
 
-fn create_process_and_inject_dll(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    unimplemented!();
-}
+    let mut injector = Injector::create_process(&executable_path).expect("Failed to create process.");
 
-fn inject_dll(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    unimplemented!()
-}
+    injector.inject_dll(&dll_path).expect("Failed to inject dll.");
 
-fn close_process(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-    unimplemented!()
+    Ok(JsUndefined::new())
 }
 
 register_module!(mut cx, {
-    cx.export_function("find_process", find_process);
-    cx.export_function("inject_dll", inject_dll);
-    cx.export_function("create_process", create_process);
-    cx.export_function("close_process", close_process);
+    cx.export_function("create_and_inject", create_and_inject);
     Ok(())
 });

@@ -1,46 +1,34 @@
 #![cfg(windows)]
 #![allow(non_snake_case, unused_variables)]
 
+// prelude
+// use winapi::shared::basetsd::*;
+// use winapi::shared::windef::*;
+// use winapi::shared::ntdef::*;
+use winapi::shared::minwindef::*;
+use winapi::um::*;
+
+use processthreadsapi::*;
+use winnt::*;
+
 use std::ptr::null_mut;
-use std::mem;
-use std::ffi::CString;
-
-use winapi::shared::basetsd::LONG_PTR;
-use winapi::shared::minwindef::{HINSTANCE,DWORD,LPVOID,BOOL,TRUE,LPARAM,LPDWORD,WPARAM,LRESULT};
-use winapi::shared::windef::HWND;
-
-use winapi::um::processthreadsapi::{GetCurrentProcessId,CreateThread};
-
-use winapi::um::consoleapi::AllocConsole;
-
-use winapi::um::winnt::{DLL_PROCESS_ATTACH,DLL_PROCESS_DETACH};
-
-use winapi::um::winuser::GWL_WNDPROC;
-use winapi::um::winuser::WNDPROC;
-use winapi::um::winuser::{EnumWindows,GetWindowThreadProcessId,GetWindowLongPtrA,SetWindowLongPtrA,DefWindowProcA};
-
-#[derive(Debug)]
-struct FableWindowSearch {
-    process_id: DWORD,
-    hwnd: HWND
-}
-
-static mut FABLE_WND_PROC: WNDPROC = None;
 
 #[no_mangle]
 extern "system" fn DllMain(dll_handle: HINSTANCE, fdv_reason: DWORD, lpv_reserved: LPVOID) -> BOOL {
     match fdv_reason {
         DLL_PROCESS_ATTACH => {
-            unsafe { CreateThread(null_mut(), 0, Some(init), null_mut(), 0, null_mut()) };
+            unsafe {
+                CreateThread(null_mut(), 0, Some(init), null_mut(), 0, null_mut())
+            };
         },
         DLL_PROCESS_DETACH => {},
         _ => {}
     }
-    TRUE
+    1
 }
 
 extern "system" fn init(lpThreadParameter: LPVOID) -> DWORD {
-    unsafe { AllocConsole() };
+    unsafe { consoleapi::AllocConsole() };
 
     // Fable window search
     // let process_id = unsafe { GetCurrentProcessId() };

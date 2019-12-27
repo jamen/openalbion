@@ -1,14 +1,33 @@
 [workspace]
 
 members = [
-    "crates/defable",
-    "crates/defable_launcher/native",
+    "crates/defable/native",
+    "crates/fable_anim",
+    "crates/fable_archive",
+    "crates/fable_audio",
+    "crates/fable_base",
     "crates/fable_cheat",
-    "crates/fable_format",
-    "crates/fable_gltf",
+    "crates/fable_defs",
+    "crates/fable_dll_inject",
+    "crates/fable_graphics",
+    "crates/fable_mesh",
+    "crates/fable_mod_pack",
+    "crates/fable_save",
+    "crates/fable_script",
+    "crates/fable_world",
 ]
 
 [patch.crates-io]
-fable_cheat = { path = "crates/fable_cheat" }
-fable_format = { path = "crates/fable_format" }
-fable_gltf = { path = "crates/fable_gltf" }
+fable_anim = { version = "0.1.0", path = "crates/fable_anim" }
+fable_archive = { version = "0.1.0", path = "crates/fable_archive" }
+fable_audio = { version = "0.1.0", path = "crates/fable_audio" }
+fable_base = { version = "0.1.0", path = "crates/fable_base" }
+fable_cheat = { version = "0.1.0", path = "crates/fable_cheat" }
+fable_defs = { version = "0.1.0", path = "crates/fable_defs" }
+fable_dll_inject = { version = "0.1.0", path = "crates/fable_dll_inject" }
+fable_graphics = { version = "0.1.0", path = "crates/fable_graphics" }
+fable_mesh = { version = "0.1.0", path = "crates/fable_mesh" }
+fable_mod_pack = { version = "0.1.0", path = "crates/fable_mod_pack" }
+fable_save = { version = "0.1.0", path = "crates/fable_save" }
+fable_script = { version = "0.1.0", path = "crates/fable_script" }
+fable_world = { version = "0.1.0", path = "crates/fable_world" }
