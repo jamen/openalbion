@@ -5,8 +5,11 @@ use winapi::um::*;
 
 use processthreadsapi::*;
 
+use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::ffi::CString;
+use std::ffi::OsStr;
+use std::iter::once;
 use std::mem;
 
 pub struct Injector {
@@ -39,11 +42,7 @@ impl Injector {
         }
 
         let better_process_handle = unsafe {
-            OpenProcess(
-                winnt::PROCESS_CREATE_THREAD | winnt::PROCESS_QUERY_INFORMATION | winnt::PROCESS_VM_OPERATION | winnt::PROCESS_VM_WRITE | winnt::PROCESS_VM_READ,
-                0,
-                process_info.dwProcessId
-            )
+            OpenProcess(winnt::PROCESS_ALL_ACCESS, 0, process_info.dwProcessId)
         };
 
         unsafe {
@@ -59,11 +58,16 @@ impl Injector {
     }
 
     pub fn inject_dll(&mut self, dll_path: &str) -> Result<(), u32> {
+        // let dll_path = CString::new(dll_path).unwrap();
+        // let dll_path_size = dll_path.to_bytes_with_null().len();
+        let dll_path: Vec<u16> = OsStr::new(dll_path).encode_wide().chain(once(0)).collect();
+        let dll_path_size = (dll_path.len() + 1) * mem::size_of::<u16>();
+
         let dll_path_in_remote = unsafe {
             memoryapi::VirtualAllocEx(
                 self.process_handle,
                 null_mut(),
-                dll_path.len() + 1,
+                dll_path_size,
                 winnt::MEM_RESERVE | winnt::MEM_COMMIT,
                 winnt::PAGE_EXECUTE_READWRITE
             )
@@ -77,8 +81,8 @@ impl Injector {
             memoryapi::WriteProcessMemory(
                 self.process_handle,
                 dll_path_in_remote,
-                CString::new(dll_path).unwrap().as_ptr() as LPVOID,
-                dll_path.len() + 1,
+                dll_path.as_ptr() as LPVOID,
+                dll_path_size,
                 null_mut()
             )
         } == 0 {
@@ -87,7 +91,7 @@ impl Injector {
 
         let load_library_in_remote = {
             let module_name = CString::new("kernel32.dll").unwrap();
-            let proc_name = CString::new("LoadLibraryA").unwrap();
+            let proc_name = CString::new("LoadLibraryW").unwrap();
             let module_handle = unsafe { libloaderapi::GetModuleHandleA(module_name.as_ptr()) };
             unsafe { libloaderapi::GetProcAddress(module_handle, proc_name.as_ptr()) }
         };
@@ -101,8 +105,8 @@ impl Injector {
                 self.process_handle,
                 null_mut(),
                 0,
-                // Some(*(&load_library_in_remote as *const _ as *const unsafe extern "system" fn(LPVOID) -> DWORD)),
-                Some(mem::transmute::<FARPROC, unsafe extern "system" fn(LPVOID) -> DWORD>(load_library_in_remote)),
+                Some(*(&load_library_in_remote as *const _ as *const unsafe extern "system" fn(LPVOID) -> DWORD)),
+                // Some(mem::transmute::<FARPROC, unsafe extern "system" fn(LPVOID) -> DWORD>(load_library_in_remote)),
                 dll_path_in_remote,
                 0,
                 null_mut(),
