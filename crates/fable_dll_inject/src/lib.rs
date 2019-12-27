@@ -7,6 +7,7 @@ use processthreadsapi::*;
 
 use std::ptr::null_mut;
 use std::ffi::CString;
+use std::mem;
 
 pub struct Injector {
     pub process_handle: HANDLE,
@@ -18,7 +19,7 @@ impl Injector {
         let mut process_info: PROCESS_INFORMATION = Default::default();
         let mut startup_info: STARTUPINFOA = Default::default();
 
-        startup_info.cb = std::mem::size_of::<STARTUPINFOA>() as u32;
+        startup_info.cb = mem::size_of::<STARTUPINFOA>() as u32;
 
         if unsafe {
             CreateProcessA(
@@ -37,9 +38,21 @@ impl Injector {
             return Err(1)
         }
 
+        let better_process_handle = unsafe {
+            OpenProcess(
+                winnt::PROCESS_CREATE_THREAD | winnt::PROCESS_QUERY_INFORMATION | winnt::PROCESS_VM_OPERATION | winnt::PROCESS_VM_WRITE | winnt::PROCESS_VM_READ,
+                0,
+                process_info.dwProcessId
+            )
+        };
+
+        unsafe {
+            handleapi::CloseHandle(process_info.hProcess)
+        };
+
         Ok(
             Injector {
-                process_handle: process_info.hProcess,
+                process_handle: better_process_handle,
                 thread_handle: process_info.hThread,
             }
         )
@@ -88,7 +101,8 @@ impl Injector {
                 self.process_handle,
                 null_mut(),
                 0,
-                Some(*(&load_library_in_remote as *const _ as *const unsafe extern "system" fn(LPVOID) -> DWORD)),
+                // Some(*(&load_library_in_remote as *const _ as *const unsafe extern "system" fn(LPVOID) -> DWORD)),
+                Some(mem::transmute::<FARPROC, unsafe extern "system" fn(LPVOID) -> DWORD>(load_library_in_remote)),
                 dll_path_in_remote,
                 0,
                 null_mut(),
@@ -98,6 +112,18 @@ impl Injector {
         unsafe {
             synchapi::WaitForSingleObject(remote_thread, winbase::INFINITE)
         };
+
+        // NOTE: Maybe this always returns zero?
+
+        // let mut remote_thread_exit_code = 0;
+
+        // unsafe {
+        //     GetExitCodeThread(remote_thread, &mut remote_thread_exit_code)
+        // };
+
+        // if remote_thread_exit_code == 0 {
+        //     panic!("Remote thread exited with code {}.", remote_thread_exit_code);
+        // }
 
         if !self.process_handle.is_null() {
             unsafe { handleapi::CloseHandle(self.process_handle) };
