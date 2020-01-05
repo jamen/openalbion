@@ -23,8 +23,10 @@
         mods: Mods,
     }
 
+    const injectorHelper = path.join(__dirname, 'fable_injector_32bit_helper.exe')
+
     function launch () {
-        const handle = addon.create_and_inject(options.fableExecutable, options.cheatDll)
+        const handle = addon.create_and_inject(options.fableExecutable, options.cheatDll, injectorHelper)
     }
 
     function dismissErrors () {

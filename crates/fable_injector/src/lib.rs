@@ -1,16 +1,23 @@
+#[macro_use]
+extern crate arrayref;
+
 // use winapi::shared::windef::*;
 use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
 use winapi::um::*;
 
 use processthreadsapi::*;
+use psapi::*;
 
+use std::convert::TryInto;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
 use std::ffi::CString;
 use std::ffi::OsStr;
 use std::iter::once;
 use std::mem;
+
+use std::process::Command;
 
 pub struct Injector {
     pub process_handle: HANDLE,
@@ -19,6 +26,8 @@ pub struct Injector {
 
 impl Injector {
     pub fn create_process(executable_path: &str) -> Result<Self, u32> {
+        let executable_path = CString::new(executable_path).unwrap();
+
         let mut process_info: PROCESS_INFORMATION = Default::default();
         let mut startup_info: STARTUPINFOA = Default::default();
 
@@ -41,27 +50,38 @@ impl Injector {
             return Err(1)
         }
 
-        let better_process_handle = unsafe {
-            OpenProcess(winnt::PROCESS_ALL_ACCESS, 0, process_info.dwProcessId)
-        };
-
-        unsafe {
-            handleapi::CloseHandle(process_info.hProcess)
-        };
+        let process_handle = process_info.hProcess;
+        // let process_handle = unsafe {
+        //     handleapi::CloseHandle(process_info.hProcess);
+        //     OpenProcess(winnt::PROCESS_ALL_ACCESS, 0, process_info.dwProcessId)
+        // };
 
         Ok(
             Injector {
-                process_handle: better_process_handle,
+                process_handle: process_handle,
                 thread_handle: process_info.hThread,
             }
         )
     }
 
-    pub fn inject_dll(&mut self, dll_path: &str) -> Result<(), u32> {
-        // let dll_path = CString::new(dll_path).unwrap();
-        // let dll_path_size = dll_path.to_bytes_with_null().len();
-        let dll_path: Vec<u16> = OsStr::new(dll_path).encode_wide().chain(once(0)).collect();
-        let dll_path_size = (dll_path.len() + 1) * mem::size_of::<u16>();
+    pub fn get_loadlibraryw_address<T: AsRef<OsStr>>(injector_helper: T) -> Result<u32, u32> {
+        match Command::new(&injector_helper).output() {
+            Ok(output) => {
+                let address_bytes: [u8; 4] = array_ref![&output.stdout, 0, 4].clone();
+                Ok(u32::from_le_bytes(address_bytes))
+            }
+            Err(error) => {
+                eprintln!("Recieved errror {:?}", error);
+                Err(3)
+            }
+        }
+    }
+
+    pub fn inject_dll<T: AsRef<OsStr>>(&mut self, dll_path: T, injector_helper: T) -> Result<(), u32> {
+        let dll_path = CString::new(dll_path.as_ref().to_str().unwrap()).unwrap();
+        let dll_path_size = dll_path.to_bytes_with_nul().len();
+        // let dll_path: Vec<u16> = CString::new(&dll_path).encode_wide().chain(once(0)).collect();
+        // let dll_path_size = (dll_path.len() + 1) * mem::size_of::<u16>();
 
         let dll_path_in_remote = unsafe {
             memoryapi::VirtualAllocEx(
@@ -74,7 +94,7 @@ impl Injector {
         };
 
         if dll_path_in_remote.is_null() {
-            return Err(2)
+            return Err(4)
         }
 
         if unsafe {
@@ -86,19 +106,10 @@ impl Injector {
                 null_mut()
             )
         } == 0 {
-            return Err(3)
+            return Err(5)
         }
 
-        let load_library_in_remote = {
-            let module_name = CString::new("kernel32.dll").unwrap();
-            let proc_name = CString::new("LoadLibraryW").unwrap();
-            let module_handle = unsafe { libloaderapi::GetModuleHandleA(module_name.as_ptr()) };
-            unsafe { libloaderapi::GetProcAddress(module_handle, proc_name.as_ptr()) }
-        };
-
-        if load_library_in_remote.is_null() {
-            return Err(4)
-        }
+        let load_library_in_remote = Self::get_loadlibraryw_address(injector_helper)?;
 
         let remote_thread: HANDLE = unsafe {
             CreateRemoteThread(
@@ -116,6 +127,8 @@ impl Injector {
         unsafe {
             synchapi::WaitForSingleObject(remote_thread, winbase::INFINITE)
         };
+
+        unsafe { processthreadsapi::ResumeThread(self.thread_handle) };
 
         // NOTE: Maybe this always returns zero?
 
