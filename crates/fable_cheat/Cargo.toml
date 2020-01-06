@@ -9,4 +9,4 @@ name = "fable_cheat"
 crate-type = ["cdylib"]
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.8", features = ["std","processthreadsapi","libloaderapi","memoryapi","minwinbase","winbase","errhandlingapi","winnt","winuser","consoleapi","fileapi"] }
+winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","libloaderapi","memoryapi","minwinbase","winbase","errhandlingapi","winnt","winuser","consoleapi","fileapi"] }

@@ -11,8 +11,8 @@ use processthreadsapi::*;
 use winnt::*;
 use winuser::*;
 
+use std::ffi::CString;
 use std::ptr::null_mut;
-use std::mem;
 
 static mut FABLE_WND_PROC: Option<WNDPROC> = None;
 
@@ -82,13 +82,30 @@ extern "system" fn find_fable_window(hwnd: HWND, search: LPARAM) -> BOOL {
     }
 }
 
+// Dxwnd wnd proc hook for reference:
+// https://github.com/old-games/DXWnd-OG-build/blob/master/src/dxhook.cpp#L160-L309
+
 unsafe extern "system" fn wnd_proc_hook(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    match FABLE_WND_PROC {
-        Some(wnd_proc) => {
-            CallWindowProcA(wnd_proc, hwnd, msg, wparam, lparam)
-        }
-        None => {
-            DefWindowProcA(hwnd, msg, wparam, lparam)
+    match msg {
+        WM_ACTIVATE => {
+            0
+        },
+        WM_SIZE => {
+            let mut rect: RECT = Default::default();
+
+            unsafe { MoveWindow(hwnd, 50, 50, 1280, 720, 1) };
+
+            0
+        },
+        _ => {
+            match FABLE_WND_PROC {
+                Some(wnd_proc) => {
+                    CallWindowProcA(wnd_proc, hwnd, msg, wparam, lparam)
+                }
+                None => {
+                    DefWindowProcA(hwnd, msg, wparam, lparam)
+                }
+            }
         }
     }
 }
