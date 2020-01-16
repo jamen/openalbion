@@ -1,15 +1,13 @@
 [workspace]
 
 members = [
-    "crates/defable/native",
+    "crates/defable",
     "crates/fable_anim",
     "crates/fable_archive",
     "crates/fable_audio",
     "crates/fable_base",
     "crates/fable_cheat",
     "crates/fable_defs",
-    "crates/fable_injector",
-    "crates/fable_injector_32bit_helper",
     "crates/fable_level",
     "crates/fable_mesh",
     "crates/fable_mod_pack",
@@ -24,8 +22,6 @@ fable_audio = { version = "0.1.0", path = "crates/fable_audio" }
 fable_base = { version = "0.1.0", path = "crates/fable_base" }
 fable_cheat = { version = "0.1.0", path = "crates/fable_cheat" }
 fable_defs = { version = "0.1.0", path = "crates/fable_defs" }
-fable_injector = { version = "0.1.0", path = "crates/fable_injector" }
-fable_injector_32bit_helper = { version = "0.1.0", path = "crates/fable_injector_32bit_helper" }
 fable_level = { version = "0.1.0", path = "crates/fable_level" }
 fable_mesh = { version = "0.1.0", path = "crates/fable_mesh" }
 fable_mod_pack = { version = "0.1.0", path = "crates/fable_mod_pack" }
