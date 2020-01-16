@@ -100,10 +100,6 @@ name = "fable_defs"
 version = "0.1.0"
 
 [[package]]
-name = "fable_graphics"
-version = "0.1.0"
-
-[[package]]
 name = "fable_injector"
 version = "0.1.0"
 dependencies = [
@@ -118,6 +114,16 @@ name = "fable_injector_32bit_helper"
 version = "0.1.0"
 dependencies = [
  "winapi 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "fable_level"
+version = "0.1.0"
+dependencies = [
+ "fable_archive 0.1.0",
+ "fable_base 0.1.0",
+ "fable_mesh 0.1.0",
+ "fable_script 0.1.0",
 ]
 
 [[package]]
@@ -140,16 +146,6 @@ name = "fable_script"
 version = "0.1.0"
 dependencies = [
  "fable_base 0.1.0",
-]
-
-[[package]]
-name = "fable_world"
-version = "0.1.0"
-dependencies = [
- "fable_archive 0.1.0",
- "fable_base 0.1.0",
- "fable_mesh 0.1.0",
- "fable_script 0.1.0",
 ]
 
 [[package]]
