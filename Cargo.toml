@@ -2,6 +2,7 @@
 
 members = [
     "crates/defable",
+    "crates/defable_editor/native",
     "crates/fable_anim",
     "crates/fable_archive",
     "crates/fable_audio",

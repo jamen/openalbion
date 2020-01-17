@@ -1,0 +1,20 @@
+{
+    "name": "defable_editor",
+    "main": "out/main.js",
+    "private": true,
+    "devDependencies": {
+        "@rollup/plugin-node-resolve": "^7.0.0",
+        "@rollup/plugin-replace": "^2.3.0",
+        "electron": "^4.2.12",
+        "electron-build-env": "^0.2.0",
+        "electron-packager": "^14.2.0",
+        "html-minifier": "^4.0.0",
+        "mustache": "^4.0.0",
+        "neon-cli": "^0.3.3",
+        "rollup": "^1.29.0",
+        "rollup-plugin-svelte": "^5.1.1",
+        "rollup-plugin-terser": "^5.2.0",
+        "sass": "^1.24.5",
+        "svelte": "^3.17.1"
+    }
+}
