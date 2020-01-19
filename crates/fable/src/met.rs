@@ -1,3 +1,6 @@
+pub mod decode;
+pub mod encode;
+
 // From fabletlcmod.com
 //
 // .Met
@@ -61,5 +64,5 @@
 // [4] Bytes - Number of Sounds to Associate with Event Name
 // ~Then Based on number of sounds to associate are 4 byte ID listings
 
-pub mod decode;
-pub mod encode;
+pub struct Met {
+}

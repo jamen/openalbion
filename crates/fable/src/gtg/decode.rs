@@ -10,7 +10,7 @@ use crate::shared::{Decode,Error,ErrorKind};
 use crate::shared::script::{Instr,InstrKey};
 use crate::shared::script::decode::{decode_instr_value,decode_instr_key};
 
-use crate::script::tng::Tng;
+use crate::Tng;
 
 use super::Gtg;
 

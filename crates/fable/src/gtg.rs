@@ -1,7 +1,7 @@
 pub mod decode;
 pub mod encode;
 
-use crate::script::tng::Tng;
+use crate::Tng;
 
 #[derive(Debug,PartialEq)]
 pub struct Gtg {

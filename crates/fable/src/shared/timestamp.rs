@@ -2,7 +2,7 @@ use nom::IResult;
 use nom::number::complete::le_u32;
 use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
 
-use crate::shared::Error;
+use super::Error;
 
 pub fn decode_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime, Error> {
     let (input, year) = le_u32(input)?;

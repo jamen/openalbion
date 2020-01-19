@@ -25,3 +25,6 @@ pub mod encode;
 // [4] Bytes - File ID
 // [4] Bytes - Chunk Size (All .Lut entries contain 36 Byte Header)
 // [4] Bytes - Offset (Remember initial 44 byte header is not counted)
+
+pub struct Lut {
+}

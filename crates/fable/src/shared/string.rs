@@ -3,7 +3,7 @@ use nom::number::complete::le_u32;
 use nom::bytes::complete::{take,take_till};
 use nom::combinator::all_consuming;
 
-use crate::shared::Error;
+use super::Error;
 
 pub fn decode_rle_string(input: &[u8]) -> IResult<&[u8], String, Error> {
     let (input, size) = le_u32(input)?;

@@ -46,7 +46,7 @@ pub mod encode;
 
 #[derive(Debug,PartialEq)]
 pub struct Stb {
-
+    header: StbHeader,
 }
 
 #[derive(Debug,PartialEq)]

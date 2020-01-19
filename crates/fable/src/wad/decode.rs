@@ -1,10 +1,11 @@
-use std::io::Read;
+use std::io::{Read,Seek,SeekFrom};
 
 use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::{tag,take};
 use nom::sequence::tuple;
 use nom::multi::count;
+use nom::combinator::all_consuming;
 
 use crate::shared::{Decode,Error};
 use crate::shared::timestamp::{decode_timestamp,decode_short_timestamp};
@@ -12,33 +13,45 @@ use crate::shared::string::decode_bytes_as_utf8;
 
 use super::{
     Wad,
+    WadHeader,
     WadEntry,
 };
 
-// impl Decode for Wad {
-//     fn decode(source: impl Read) -> Result<Self, Error> {
-//     }
-// }
+static MAGIC_NUMBER: &'static str = "BBBB";
+
+impl Decode for Wad {
+    fn decode(source: &mut (impl Read + Seek)) -> Result<Self, Error> {
+        let mut header_buf = Vec::with_capacity(32);
+        let mut entries_buf = Vec::new();
+
+        source.read_exact(&mut header_buf)?;
+        let (_, header) = all_consuming(Self::decode_header)(&header_buf)?;
+
+        source.seek(SeekFrom::Start(header.entries_offset as u64))?;
+        source.read_to_end(&mut entries_buf)?;
+        let (_, entries) = all_consuming(count(Self::decode_entry, header.entries_count as usize))(&entries_buf)?;
+
+        Ok(Wad { header: header, entries: entries })
+    }
+}
 
 impl Wad {
-    pub fn decode_header(input: &[u8]) -> IResult<&[u8], Wad, Error> {
-        let (input, _magic_number) = tag("BBBB")(input)?;
+    pub fn decode_header(input: &[u8]) -> IResult<&[u8], WadHeader, Error> {
+        let (input, _magic_number) = tag(MAGIC_NUMBER)(input)?;
         let (input, version) = tuple((le_u32, le_u32, le_u32))(input)?;
         let (input, block_size) = le_u32(input)?;
         let (input, entries_count) = le_u32(input)?;
         let (input, _entries_count_again) = le_u32(input)?;
         let (input, entries_offset) = le_u32(input)?;
-        let (input, entries) = count(Self::decode_entry, entries_count as usize)(input)?;
 
         Ok(
             (
                 input,
-                Wad {
+                WadHeader {
                     version: version,
                     block_size: block_size,
                     entries_count: entries_count,
                     entries_offset: entries_offset,
-                    entries: entries,
                 }
             )
         )

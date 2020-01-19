@@ -94,31 +94,3 @@ pub struct BigSubHeaderAnimation {
     unknown2: f32,
     unknown3: Vec<u8>
 }
-
-// impl Big {
-//     fn from(file: &mut File) -> Option<Big> {
-//         let mut header: [u8; 16] = [0; 16];
-
-//         file.read(&mut header).expect("Failed to read file.");
-
-//         let (_, header) = decode_header(&header[..]).expect("Failed to parse header.");
-
-//         let mut bank_index: Vec<u8> = Vec::new();
-//         file.seek(SeekFrom::Start(header.bank_address as u64)).expect("Failed to seek file.");
-//         file.read_to_end(&mut bank_index).expect("Failed to read file.");
-
-//         let (_, bank) = decode_bank_index(&bank_index).expect("Failed to parse bank index.");
-
-//         let mut file_index: Vec<u8> = Vec::new();
-//         file.seek(SeekFrom::Start(bank.index_start as u64)).expect("Failed to seek file.");
-//         file.take(bank.index_size as u64).read_to_end(&mut file_index).expect("Failed to read file.");
-
-//         let (_, entries) = decode_file_index(&file_index);
-
-//         Big {
-//             header: header,
-//             bank: bank,
-//             entries: entries,
-//         }
-//     }
-// }
