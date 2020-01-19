@@ -1,4 +1,4 @@
-# fable
+# Fable Rust
 
 Fable library for Rust.
 
@@ -12,9 +12,9 @@ Then open `./target/doc/fable/index.html` in your browser.
 
 ## Scope
 
-Using the assets for Fable, Fable: TLC, Fable: Anniversary, and mods.
+Using and modifying the assets for Fable, Fable: TLC, Fable: Anniversary, and mods.
 
-See also [`defable_cheat`](../defable_cheat).
+See also [`fable_hack`](../fable_hack) for runtime modifications.
 
 ## Credits
 

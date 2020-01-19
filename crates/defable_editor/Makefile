@@ -24,7 +24,7 @@ assets:
 	cp -r app/assets out/assets
 
 html:
-	mustache app/template.js app/index.html > out/index.html
+	mustache app/template.js app/index.html.tpl > out/index.html
 ifneq ($(NODE_ENV),"development")
 	html-minifier out/index.html --collapse-whitespace --minify-css > out/index.min.html
 	mv out/index.min.html out/index.html
