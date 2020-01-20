@@ -1,3 +1,0 @@
-# Frypan
-
-Fable editor.

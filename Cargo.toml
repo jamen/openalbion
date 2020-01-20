@@ -1,12 +1,18 @@
-[workspace]
+[package]
+name = "defable"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
 
-members = [
-    "crates/defable",
-    "crates/defable_editor/native",
-    "crates/defable_cheat",
-    "crates/fable",
-    "crates/refable",
-]
+[[bin]]
+name = "defable"
+path = "src/main.rs"
 
-[patch.crates-io]
-fable = { version = "0.1.0", path = "crates/fable" }
+[lib]
+name = "defable_hack"
+path = "src/hack.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+clap = "2.33.0"
+winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi"] }
