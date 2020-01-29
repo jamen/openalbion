@@ -105,6 +105,9 @@ extern "system" fn find_fable_window(hwnd: HWND, search: LPARAM) -> BOOL {
 // Dxwnd wnd proc hook for reference:
 // https://github.com/old-games/DXWnd-OG-build/blob/master/src/dxhook.cpp#L160-L309
 
+// Borderless Gaming reference:
+// https://github.com/Codeusa/Borderless-Gaming/blob/3677f913918d000f67177892252cec2cc67cd42a/BorderlessGaming.Logic/Windows/Manipulation.cs#L34
+
 // unsafe extern "system" fn wnd_proc_hook(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
 //     match msg {
 //         WM_ACTIVATE => {
