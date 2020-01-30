@@ -3,7 +3,7 @@
 
 mod hack;
 
-use hack::context::HACK_CONTEXT;
+use hack::HACK;
 
 // use winapi::shared::ntdef::*;
 use winapi::shared::windef::*;
@@ -18,7 +18,7 @@ use std::ptr::null_mut;
 
 #[no_mangle]
 unsafe extern "system" fn DllMain(dll_handle: HINSTANCE, fdv_reason: DWORD, lpv_reserved: LPVOID) -> BOOL {
-    HACK_CONTEXT.dll_handle = Some(dll_handle);
+    HACK.dll_handle = Some(dll_handle);
 
     match fdv_reason {
         DLL_PROCESS_ATTACH => {
@@ -34,20 +34,21 @@ unsafe extern "system" fn DllMain(dll_handle: HINSTANCE, fdv_reason: DWORD, lpv_
 }
 
 unsafe extern "system" fn init(lpThreadParameter: LPVOID) -> DWORD {
-    HACK_CONTEXT.pid = GetCurrentProcessId();
+    HACK.pid = GetCurrentProcessId();
 
     // Create a console for debug messages.
     consoleapi::AllocConsole();
 
     // Fable window search
-    while HACK_CONTEXT.hwnd.is_none() { EnumWindows(Some(find_fable_window), 0); }
-    let hwnd = HACK_CONTEXT.hwnd.unwrap();
+    while HACK.hwnd.is_none() { EnumWindows(Some(find_fable_window), 0); }
 
-    HACK_CONTEXT.wnd_proc = Some(*(&GetWindowLongPtrA(hwnd, GWL_WNDPROC) as *const _ as *const WNDPROC));
+    let hwnd = HACK.hwnd.unwrap();
+
+    HACK.wnd_proc = Some(*(&GetWindowLongPtrA(hwnd, GWL_WNDPROC) as *const _ as *const WNDPROC));
 
     // SetWindowLongPtrA(hwnd, GWL_WNDPROC, *(&wnd_proc_hook as *const _ as *const i32));
 
-    println!("hwnd {:?}", HACK_CONTEXT.hwnd);
+    println!("hwnd {:?}", HACK.hwnd);
 
     // Hook
     hack::start().expect("Hook failed.");
@@ -61,7 +62,7 @@ unsafe extern "system" fn find_fable_window(hwnd: HWND, _: LPARAM) -> BOOL {
 
     GetWindowThreadProcessId(hwnd, &mut pid as LPDWORD);
 
-    if pid == HACK_CONTEXT.pid && GetWindow(hwnd, GW_OWNER) == 0 as HWND {
+    if pid == HACK.pid && GetWindow(hwnd, GW_OWNER) == 0 as HWND {
         let mut window_text_dest: [u8; 256] = [0; 256];
         let window_text_len = GetWindowTextA(hwnd, window_text_dest.as_mut_ptr() as LPSTR, window_text_dest.len() as i32);
         let window_text = std::str::from_utf8(&window_text_dest[..window_text_len as usize]).unwrap();
@@ -71,7 +72,7 @@ unsafe extern "system" fn find_fable_window(hwnd: HWND, _: LPARAM) -> BOOL {
         let class_name = std::str::from_utf8(&class_name_dest[..class_name_len as usize]).unwrap();
 
         if class_name == "Fable - The Lost Chapters " && window_text == "Fable - The Lost Chapters " {
-            HACK_CONTEXT.hwnd = Some(hwnd);
+            HACK.hwnd = Some(hwnd);
             0
         } else {
             1

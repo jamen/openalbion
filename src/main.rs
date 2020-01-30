@@ -1,4 +1,4 @@
-mod injector;
+mod inject;
 
 use inject::{Inject,InjectTarget};
 

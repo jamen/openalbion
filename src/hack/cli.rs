@@ -10,7 +10,7 @@ use libloaderapi::*;
 
 use std::io::{Write,BufRead};
 
-use super::{HackError,HACK_CONTEXT};
+use super::{HackError,HACK};
 
 pub fn start() -> Result<(), HackError> {
     let stdin = std::io::stdin();
@@ -42,9 +42,9 @@ fn ping() -> Result<(), HackError> {
 
 fn unload() -> Result<(), HackError> {
     unsafe {
-        let moudle_handle = HACK_CONTEXT.dll_handle.unwrap() as HMODULE;
-        FreeLibraryAndExitThread(moudle_handle, 0)
-    };
+        let moudle_handle = HACK.dll_handle.unwrap() as HMODULE;
+        FreeLibraryAndExitThread(moudle_handle, 0);
+    }
     Ok(())
 }
 

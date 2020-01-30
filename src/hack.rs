@@ -1,25 +1,34 @@
 pub mod cli;
-pub mod context;
-pub mod hook_directx;
-pub mod hook_window;
 pub mod error;
+pub mod hook;
 
-pub use hook_directx::HookDirectX;
-pub use hook_window::HookWindow;
-pub use context::HackContext;
 pub use error::HackError;
+pub use hook::{Hook,HookConsole};
 
-use context::HACK_CONTEXT;
+use winapi::shared::windef::*;
+use winapi::shared::minwindef::*;
+use winapi::um::*;
 
-pub trait Hook {
-    unsafe fn start() -> Result<(), HackError>;
-    unsafe fn stop() -> Result<(), HackError>;
+use winuser::*;
+
+pub struct Hack {
+    pub dll_handle: Option<HINSTANCE>,
+    pub pid: u32,
+    pub hwnd: Option<HWND>,
+    pub wnd_proc: Option<WNDPROC>,
 }
+
+pub static mut HACK: Hack = Hack {
+    dll_handle: None,
+    pid: 0,
+    hwnd: None,
+    wnd_proc: None,
+};
 
 pub unsafe fn start() -> Result<(), HackError> {
     // Hooks
-    HookDirectX::start()?;
-    HookWindow::start()?;
+    hook::HookConsole::enable()?;
+    hook::HookPanel::enable()?;
 
     // CLI
     cli::start()?;
