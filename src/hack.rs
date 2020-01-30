@@ -2,7 +2,7 @@
 #![allow(non_snake_case, unused_variables)]
 
 mod hack {
-    pub mod console;
+    pub mod cli;
 }
 
 // use winapi::shared::ntdef::*;
@@ -86,7 +86,7 @@ extern "system" fn init(lpThreadParameter: LPVOID) -> DWORD {
 
     let module_handle = unsafe { DLL_HANDLE.unwrap() as HMODULE };
 
-    hack::console::start(module_handle);
+    hack::cli::start(module_handle).expect("Failed to start CLI.");
 
     0
 }
