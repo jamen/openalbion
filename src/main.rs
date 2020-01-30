@@ -1,6 +1,6 @@
 mod injector;
 
-use injector::{Injector,InjectorTarget};
+use inject::{Inject,InjectTarget};
 
 use clap::{App,Arg};
 
@@ -46,19 +46,19 @@ fn main() -> Result<(), u32> {
 
     let method =
         if matches.value_of("create").is_some() {
-            InjectorTarget::Create(matches.value_of("create").unwrap())
+            InjectTarget::Create(matches.value_of("create").unwrap())
         }
         else if matches.value_of("pid").is_some() {
-            InjectorTarget::Pid(matches.value_of("pid").unwrap())
+            InjectTarget::Pid(matches.value_of("pid").unwrap())
         }
         else if matches.value_of("find").is_some() {
-            InjectorTarget::Find(matches.value_of("find").unwrap())
+            InjectTarget::Find(matches.value_of("find").unwrap())
         }
         else {
-            InjectorTarget::Find("Fable.exe")
+            InjectTarget::Find("Fable.exe")
         };
 
-    let injector = Injector {
+    let injector = Inject {
         target: method,
         dll: matches.value_of("dll"),
     };

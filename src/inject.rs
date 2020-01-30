@@ -15,20 +15,20 @@ use std::path::Path;
 use std::num::ParseIntError;
 
 #[derive(Debug)]
-pub struct Injector<'a> {
-    pub target: InjectorTarget<'a>,
+pub struct Inject<'a> {
+    pub target: InjectTarget<'a>,
     pub dll: Option<&'a str>,
 }
 
 #[derive(Debug)]
-pub enum InjectorTarget<'a> {
+pub enum InjectTarget<'a> {
     Create(&'a str),
     Pid(&'a str),
     Find(&'a str),
 }
 
 #[derive(Debug)]
-pub enum InjectorError {
+pub enum InjectError {
     ParseIntError,
     CreateProcessError,
     InvalidSnapshotHandle,
@@ -38,20 +38,20 @@ pub enum InjectorError {
     RemoteExitCodeError,
 }
 
-impl From<ParseIntError> for InjectorError {
+impl From<ParseIntError> for InjectError {
     fn from(_: ParseIntError) -> Self {
-        InjectorError::ParseIntError
+        InjectError::ParseIntError
     }
 }
 
-impl Injector<'_> {
-    pub fn start(&self) -> Result<u32, InjectorError> {
+impl Inject<'_> {
+    pub fn start(&self) -> Result<u32, InjectError> {
 
         let pid =
             match self.target {
-                InjectorTarget::Create(exe) => Self::create_process(&exe)?,
-                InjectorTarget::Find(exe) => Self::find_pid(exe)?,
-                InjectorTarget::Pid(pid_str) => pid_str.parse::<u32>()?,
+                InjectTarget::Create(exe) => Self::create_process(&exe)?,
+                InjectTarget::Find(exe) => Self::find_pid(exe)?,
+                InjectTarget::Pid(pid_str) => pid_str.parse::<u32>()?,
             };
 
         let dll = self.dll.unwrap_or("defable_hack.dll");
@@ -61,7 +61,7 @@ impl Injector<'_> {
         Ok(pid)
     }
 
-    pub fn create_process(exe: &str) -> Result<u32, InjectorError> {
+    pub fn create_process(exe: &str) -> Result<u32, InjectError> {
         let executable_path = CString::new(exe).unwrap();
         let mut process_info: PROCESS_INFORMATION = Default::default();
         let mut startup_info: STARTUPINFOA = Default::default();
@@ -81,7 +81,7 @@ impl Injector<'_> {
                 &mut process_info,
             )
         } == 0 {
-            return Err(InjectorError::CreateProcessError)
+            return Err(InjectError::CreateProcessError)
         }
 
         // unsafe { processthreadsapi::ResumeThread(thread_handle) };
@@ -97,13 +97,13 @@ impl Injector<'_> {
         Ok(process_info.dwProcessId)
     }
 
-    pub fn find_pid(exe: impl AsRef<Path>) -> Result<u32, InjectorError> {
+    pub fn find_pid(exe: impl AsRef<Path>) -> Result<u32, InjectError> {
         let exe = exe.as_ref();
         let exe_name = exe.file_name().unwrap().to_str().unwrap();
         let snapshot_handle = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
 
         if snapshot_handle == handleapi::INVALID_HANDLE_VALUE {
-            return Err(InjectorError::InvalidSnapshotHandle)
+            return Err(InjectError::InvalidSnapshotHandle)
         }
 
         let mut pid = 0;
@@ -130,13 +130,13 @@ impl Injector<'_> {
         }
 
         if pid == 0 {
-            return Err(InjectorError::ProcessNotFound)
+            return Err(InjectError::ProcessNotFound)
         }
 
         Ok(pid)
     }
 
-    pub fn remote_call(process_handle: HANDLE, proc_name: &str, thread_param: impl AsRef<[u8]>) -> Result<u32, InjectorError> {
+    pub fn remote_call(process_handle: HANDLE, proc_name: &str, thread_param: impl AsRef<[u8]>) -> Result<u32, InjectError> {
         let thread_param_bytes = thread_param.as_ref();
 
         let dll_path_in_remote = unsafe {
@@ -150,7 +150,7 @@ impl Injector<'_> {
         };
 
         if dll_path_in_remote.is_null() {
-            return Err(InjectorError::RemoteAllocError)
+            return Err(InjectError::RemoteAllocError)
         }
 
         if unsafe {
@@ -162,7 +162,7 @@ impl Injector<'_> {
                 null_mut()
             )
         } == 0 {
-            return Err(InjectorError::RemoteWriteError)
+            return Err(InjectError::RemoteWriteError)
         }
 
         let module_name = CString::new("kernel32.dll").unwrap();
@@ -193,13 +193,13 @@ impl Injector<'_> {
         let mut ret_val = 0;
 
         if unsafe { GetExitCodeThread(remote_thread, &mut ret_val) } == 0 {
-            return Err(InjectorError::RemoteExitCodeError)
+            return Err(InjectError::RemoteExitCodeError)
         }
 
         Ok(ret_val)
     }
 
-    pub fn inject(pid: u32, dll: &str) -> Result<(), InjectorError> {
+    pub fn inject(pid: u32, dll: &str) -> Result<(), InjectError> {
         let process_handle = unsafe { OpenProcess(winnt::PROCESS_ALL_ACCESS, 0, pid) };
 
         let dll_path = CString::new(dll).unwrap();

@@ -10,7 +10,9 @@ use libloaderapi::*;
 
 use std::io::{Write,BufRead};
 
-pub fn start(module_handle: HMODULE) -> Result<(), u32> {
+use super::{HackError,HACK_CONTEXT};
+
+pub fn start() -> Result<(), HackError> {
     let stdin = std::io::stdin();
     let mut lines = stdin.lock().lines();
 
@@ -25,7 +27,7 @@ pub fn start(module_handle: HMODULE) -> Result<(), u32> {
 
         match line.as_ref() {
             "ping" => ping()?,
-            "unload" => unload(module_handle)?,
+            "unload" => unload()?,
             "exit" => exit()?,
             "" => println!("No command given."),
             _ => println!("Unknown command."),
@@ -33,17 +35,20 @@ pub fn start(module_handle: HMODULE) -> Result<(), u32> {
     }
 }
 
-fn ping() -> Result<(), u32> {
+fn ping() -> Result<(), HackError> {
     println!("pong");
     Ok(())
 }
 
-fn unload(module_handle: HMODULE) -> Result<(), u32> {
-    unsafe { FreeLibraryAndExitThread(module_handle, 0) };
+fn unload() -> Result<(), HackError> {
+    unsafe {
+        let moudle_handle = HACK_CONTEXT.dll_handle.unwrap() as HMODULE;
+        FreeLibraryAndExitThread(moudle_handle, 0)
+    };
     Ok(())
 }
 
-fn exit() -> Result<(), u32> {
+fn exit() -> Result<(), HackError> {
     unsafe { ExitProcess(0) };
     Ok(())
 }

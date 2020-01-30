@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [lib]
 name = "defable_hack"
-path = "src/hack.rs"
+path = "src/dll.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
