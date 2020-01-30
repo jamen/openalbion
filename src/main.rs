@@ -14,6 +14,7 @@ use std::io::{Error,ErrorKind};
 use std::ptr::null_mut;
 use std::ffi::{CString,CStr};
 use std::mem;
+use std::path::Path;
 
 fn remote_call(process_handle: HANDLE, proc_name: &str, thread_param: impl AsRef<[u8]>) -> Result<u32, Error> {
     let thread_param_bytes = thread_param.as_ref();
@@ -66,6 +67,9 @@ fn remote_call(process_handle: HANDLE, proc_name: &str, thread_param: impl AsRef
         synchapi::WaitForSingleObject(remote_thread, winbase::INFINITE)
     };
 
+    // NOTE: Stackoverflow comment says "GetExitCodeThread(t1, &retVal) and returned 4294967295 (retVal being a DWORD). The actual return value in the thread was -1. I just figured out the ints rebounded to negatives. Sigh... – Sefu Aug 17 '11 at 23:05"
+    // TODO: Verify the return value somehow?
+
     let mut ret_val = 0;
 
     if unsafe { GetExitCodeThread(remote_thread, &mut ret_val) } == 0 {
@@ -93,7 +97,7 @@ fn main() -> Result<(), u32> {
                     }
                     None => {
                         let exe = matches.value_of("find").unwrap_or("Fable.exe");
-                        find_pid(exe).expect("Failed to find PID.")
+                        find_pid(exe).expect("Failed to find Fable.")
                     }
                 }
             }
@@ -111,31 +115,32 @@ fn parse_cli<'a>() -> ArgMatches<'a> {
         .author("Jamen Marz <me@jamen.dev>")
         .arg(
             Arg::with_name("exe")
-            .short("e")
-            .required(false)
+            .long("exe")
             .help("Path to Fable's executable.")
             .conflicts_with_all(&["pid", "find"])
+            .required(false)
             .takes_value(true)
         )
         .arg(
             Arg::with_name("pid")
-            .required(false)
-            .short("p")
+            .long("pid")
             .help("Attach to Fable process by PID.")
             .conflicts_with_all(&["exe", "find"])
+            .required(false)
             .takes_value(true)
         )
         .arg(
             Arg::with_name("find")
-            .required(false)
-            .short("f")
+            .long("find")
             .help("Attempts to find ")
             .conflicts_with_all(&["exe", "pid"])
+            .required(false)
             .takes_value(true)
+            .default_value("Fable.exe")
         )
         .arg(
             Arg::with_name("dll")
-            .short("d")
+            .long("dll")
             .required(false)
             .help("Path to DLL hack.")
             .takes_value(true)
@@ -143,7 +148,9 @@ fn parse_cli<'a>() -> ArgMatches<'a> {
         .get_matches()
 }
 
-fn find_pid(exe_name: &str) -> Option<u32> {
+fn find_pid(exe: impl AsRef<Path>) -> Option<u32> {
+    let exe = exe.as_ref();
+    let exe_name = exe.file_name().unwrap().to_str().unwrap();
     let snapshot_handle = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
 
     if snapshot_handle == handleapi::INVALID_HANDLE_VALUE {
@@ -151,7 +158,6 @@ fn find_pid(exe_name: &str) -> Option<u32> {
     }
 
     let mut process_entry = PROCESSENTRY32::default();
-
     process_entry.dwSize = mem::size_of::<PROCESSENTRY32>() as u32;
 
     loop {
@@ -177,10 +183,8 @@ fn find_pid(exe_name: &str) -> Option<u32> {
 
 fn create_process(exe: &str) -> Result<u32, u32> {
     let executable_path = CString::new(exe).unwrap();
-
     let mut process_info: PROCESS_INFORMATION = Default::default();
     let mut startup_info: STARTUPINFOA = Default::default();
-
     startup_info.cb = mem::size_of::<STARTUPINFOA>() as u32;
 
     if unsafe {
@@ -214,49 +218,57 @@ fn create_process(exe: &str) -> Result<u32, u32> {
 }
 
 #[repr(C)]
-struct GetModuleHandleArgs {
-    flags: u32,
-    module_name: LPCSTR,
-
-}
-
-#[repr(C)]
 struct FreeLibraryAndExitThreadArgs {
     module_handle: HMODULE,
     exit_code: u32,
 }
 
-fn detach_loaded_hack(process_handle: HANDLE, dll: &str) -> Result<(), u32> {
-    // Use CreateRemoteThread to call GetModuleHandleA then FreeLibraryAndExitThread
+fn detach_loaded_hack(process_handle: HANDLE, pid: u32, dll: &str) -> Result<(), u32> {
+    // Use CreateToolhelp32Snapshot to get cheat module then remote call FreeLibraryAndExitThread.
 
-    // From MSDN forums: Yes, if the module is loaded into _other_ process, GetModuleHandle for this module in _your_ process will fail. Of course, unless a module with same name or path happens to be loaded by your process.
+    let short_dll = if dll.len() > MAX_PATH { &dll[..MAX_PATH] } else { dll };
+    let snapshot_handle = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid) };
+    let mut remote_module_handle = None;
+    let mut module_entry = MODULEENTRY32::default();
+    module_entry.dwSize = mem::size_of::<MODULEENTRY32>() as u32;
 
-    let dll_target = CString::new("defable_cheat.dll").unwrap();
-    let dll_target_bytes = dll_target.to_bytes_with_nul();
 
-    let remote_module_handle = remote_call(process_handle, "GetModuleHandleA", &dll_target_bytes)
-        .expect("Failed to remote call GetModuleHandleA");
+    loop {
+        if unsafe { Module32Next(snapshot_handle, &mut module_entry) } == 0 {
+            break
+        }
 
-    if remote_module_handle == 0 {
-        println!("No remote module found.")
+        let target_module_path = unsafe { CStr::from_ptr(module_entry.szExePath.as_ptr()) };
+        let target_module_path = target_module_path.to_owned();
+
+        if short_dll.as_bytes() == target_module_path.as_bytes() {
+            // TODO: Sanity check with QueryFullProcessImageNameA?
+            remote_module_handle = Some(module_entry.hModule);
+            break
+        }
+
+        if unsafe { errhandlingapi::GetLastError() } == ERROR_NO_MORE_FILES {
+            break
+        }
     }
 
-    println!("remote_module_handle return {}", remote_module_handle);
+    match remote_module_handle {
+        Some(remote_module_handle) => {
+            // TODO: Verify the return value of the thread.
 
-    // TODO: Verify the return value of the thread.
+            let free_and_exit_args = FreeLibraryAndExitThreadArgs {
+                module_handle: remote_module_handle as HMODULE,
+                exit_code: 0,
+            };
+            let free_and_exit_args_bytes = unsafe { mem::transmute::<FreeLibraryAndExitThreadArgs, [u8; 8]>(free_and_exit_args) };
+            let r = remote_call(process_handle, "FreeLibraryAndExitThread", &free_and_exit_args_bytes).expect("Failed to remote call FreeLibraryAndExitThread.");
 
-    // NOTE: Stackoverflow comment says "GetExitCodeThread(t1, &retVal) and returned 4294967295 (retVal being a DWORD). The actual return value in the thread was -1. I just figured out the ints rebounded to negatives. Sigh... – Sefu Aug 17 '11 at 23:05"
-
-    let free_and_exit_args = FreeLibraryAndExitThreadArgs {
-        module_handle: remote_module_handle as HMODULE,
-        exit_code: 0,
-    };
-
-    let free_and_exit_args_bytes = unsafe { mem::transmute::<FreeLibraryAndExitThreadArgs, [u8; 8]>(free_and_exit_args) };
-
-    let r = remote_call(process_handle, "FreeLibraryAndExitThread", &free_and_exit_args_bytes).expect("Failed to remote call FreeLibraryAndExitThread.");
-
-    println!("rfreelibrary return {}", r);
+            println!("freelibrary return {}", r);
+        }
+        None => {
+            // Module was not loaded or failed to match.
+        }
+    }
 
     Ok(())
 }
@@ -264,7 +276,7 @@ fn detach_loaded_hack(process_handle: HANDLE, dll: &str) -> Result<(), u32> {
 fn attach_hack(pid: u32, dll: &str) -> Result<(), u32> {
     let process_handle = unsafe { OpenProcess(winnt::PROCESS_ALL_ACCESS, 0, pid) };
 
-    detach_loaded_hack(process_handle, &dll).expect("Failed to unload the hack thats running.");
+    detach_loaded_hack(process_handle, pid, &dll).expect("Failed to unload the hack thats running.");
 
     let dll_path = CString::new(dll).unwrap();
     let dll_path_bytes = dll_path.to_bytes_with_nul();

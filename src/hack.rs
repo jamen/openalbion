@@ -1,6 +1,10 @@
 #![cfg(windows)]
 #![allow(non_snake_case, unused_variables)]
 
+mod hack {
+    pub mod console;
+}
+
 // use winapi::shared::ntdef::*;
 use winapi::shared::basetsd::*;
 use winapi::shared::windef::*;
@@ -24,15 +28,23 @@ struct FableWindowSearch {
     hwnd: Option<HWND>,
 }
 
+static mut DLL_HANDLE: Option<HINSTANCE> = None;
+
 #[no_mangle]
 extern "system" fn DllMain(dll_handle: HINSTANCE, fdv_reason: DWORD, lpv_reserved: LPVOID) -> BOOL {
+    unsafe {
+        DLL_HANDLE = Some(dll_handle);
+    }
+
     match fdv_reason {
         DLL_PROCESS_ATTACH => {
             unsafe {
                 CreateThread(null_mut(), 0, Some(init), null_mut(), 0, null_mut())
             };
         },
-        DLL_PROCESS_DETACH => {},
+        DLL_PROCESS_DETACH => {
+            unsafe { wincon::FreeConsole() };
+        },
         _ => {}
     }
     1
@@ -69,6 +81,12 @@ extern "system" fn init(lpThreadParameter: LPVOID) -> DWORD {
     // unsafe {
     //     SetWindowLongPtrA(hwnd, GWL_WNDPROC, *(&wnd_proc_hook as *const _ as *const i32));
     // }
+
+    // AllocConsole prompt
+
+    let module_handle = unsafe { DLL_HANDLE.unwrap() as HMODULE };
+
+    hack::console::start(module_handle);
 
     0
 }
