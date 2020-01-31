@@ -8,11 +8,6 @@ edition = "2018"
 name = "defable"
 path = "src/main.rs"
 
-[lib]
-name = "defable_hack"
-path = "src/dll.rs"
-crate-type = ["cdylib"]
-
 [dependencies]
 clap = "2.33.0"
 winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
