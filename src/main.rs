@@ -45,18 +45,10 @@ fn main() -> Result<(), u32> {
         .get_matches();
 
     let method =
-        if matches.value_of("create").is_some() {
-            InjectTarget::Create(matches.value_of("create").unwrap())
-        }
-        else if matches.value_of("pid").is_some() {
-            InjectTarget::Pid(matches.value_of("pid").unwrap())
-        }
-        else if matches.value_of("find").is_some() {
-            InjectTarget::Find(matches.value_of("find").unwrap())
-        }
-        else {
-            InjectTarget::Find("Fable.exe")
-        };
+        if let Some(value) = matches.value_of("create") { InjectTarget::Create(value) }
+        else if let Some(value) = matches.value_of("pid") { InjectTarget::Pid(value) }
+        else if let Some(value) = matches.value_of("find") { InjectTarget::Find(value) }
+        else { InjectTarget::Find("Fable.exe") };
 
     let injector = Inject {
         target: method,
