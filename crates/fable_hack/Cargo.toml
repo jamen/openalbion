@@ -1,0 +1,13 @@
+[package]
+name = "fable_hack"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+
+[lib]
+name = "fable_hack"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
