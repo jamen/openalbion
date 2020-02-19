@@ -4,7 +4,9 @@ all:
 	cargo doc --workspace --no-deps
 	rm -rf out
 	cp -r ../../target/doc out
-	cp -r static/** out
+
+test-deploy: all
+	netlify deploy --site defable.netlify.com --dir out
 
 deploy: all
-	netlify deploy --site fable-doc --dir out
+	netlify deploy --site defable.netlify.com --dir out --prod
