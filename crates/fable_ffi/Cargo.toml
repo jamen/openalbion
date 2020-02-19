@@ -1,0 +1,7 @@
+[package]
+name = "fable_ffi"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+
+[dependencies]
