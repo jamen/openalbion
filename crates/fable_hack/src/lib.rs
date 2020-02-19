@@ -21,8 +21,6 @@ use std::mem;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use ilhook::x86::{Hooker, HookType, Registers, CallbackOption, HookFlags};
-
 pub struct Hack {
     pub dll_handle: Option<HINSTANCE>,
     pub pid: u32,
@@ -35,9 +33,9 @@ pub static mut HACK: Hack = Hack {
     hwnd: None,
 };
 
-struct GSystemManager {}
+// struct GSystemManager {}
 
-static CFGetSystemManager: fn() -> GSystemManager = unsafe { *(0x009a4ec0 as *const fn() -> GSystemManager) };
+// static CFGetSystemManager: fn() -> GSystemManager = unsafe { *(0x009a4ec0 as *const fn() -> GSystemManager) };
 
 #[no_mangle]
 unsafe extern "system" fn DllMain(dll_handle: HINSTANCE, fdv_reason: DWORD, lpv_reserved: LPVOID) -> BOOL {

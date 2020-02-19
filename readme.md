@@ -1,17 +1,18 @@
 # Defable
 
-Fable modding and experiments.
+Fable modding and experiments. See [`crates`](crates/) for the projects.
 
-- [`defable`](crates/defable)
-- [`fable_bindgen`](crates/fable_bindgen)
-- [`fable_hack`](crates/fable_hack)
-- [`fable_rust`](crates/fable_rust)
+## Documentation
+
+See [defable.netlify.com](https://defable.netlify.com) for docs.
+
+To build documentation, use the `make` command in `creates/fable_doc`, then open `crates/fable_doc/out/defable/index.html` in your browser.
 
 ## Credits
 
-- [fabletlcmod.com](http://fabletlcmod.com)'s information.
-- [Fable Speedrunning](https://discord.gg/Sv8P6Ef) community.
-- Anons who _may or may not_ have dropped development builds.
+- [fabletlcmod.com](http://fabletlcmod.com).
+- [Fable Speedrunning Discord](https://discord.gg/Sv8P6Ef).
+- Anons who dropped development builds. :)
 
 ## License
 

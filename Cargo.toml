@@ -1,0 +1,12 @@
+[workspace]
+
+members = [
+    "crates/defable",
+    "crates/fable",
+    "crates/fable_bindgen",
+    "crates/fable_hack",
+]
+
+exclude = [
+    "crates/fable_doc",
+]
