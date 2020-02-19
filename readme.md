@@ -14,8 +14,8 @@ To build documentation, use the `make` command in `creates/fable_doc`, then open
 - [Fable Speedrunning Discord](https://discord.gg/Sv8P6Ef).
 - Anons who dropped development builds. :)
 
-## License
+## Legal
 
-Each project is [ISC licensed](https://opensource.org/licenses/ISC).
+All of the code and documentation is [ISC licensed](crates/defable/license).
 
-Fable is owned by Microsoft and is not affiliated with this project.
+Fable is property of Microsoft and is not affiliated with this project.
