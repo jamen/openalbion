@@ -9,3 +9,7 @@ $ cargo docs
 ```
 
 Then open `./target/doc/fable/index.html` in your browser.
+
+## License
+
+See [license](./license)
