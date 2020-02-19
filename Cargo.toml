@@ -3,7 +3,7 @@
 members = [
     "crates/defable",
     "crates/fable",
-    "crates/fable_bindgen",
+    "crates/fable_ffi",
     "crates/fable_hack",
 ]
 

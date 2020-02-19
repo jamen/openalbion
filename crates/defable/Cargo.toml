@@ -11,3 +11,7 @@ path = "src/main.rs"
 [dependencies]
 clap = "2.33.0"
 winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
+
+[package.metadata.wix]
+input = "wix/main.wxs"
+output = "../../target"
