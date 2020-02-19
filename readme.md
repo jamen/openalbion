@@ -1,12 +1,14 @@
 # Defable
 
-Fable modding and experiments.
+Fable modding framework and experiments.
 
 See the [`crates`](crates/) directory for the projects.
 
 ## Documentation
 
-See [defable.netlify.com](https://defable.netlify.com) for documentation, or run `cargo doc` and open `target/doc/defable/index.html` in your browser.
+See [defable.netlify.com](https://defable.netlify.com) for documentation.
+
+For local docs, run `cargo doc` and open `target/doc/defable/index.html` in your browser.
 
 ## Credits
 
