@@ -12,7 +12,7 @@ For local docs, run `cargo doc` and open `target/doc/defable/index.html` in your
 
 - [fabletlcmod.com].
 - [Fable Speedrunning Discord].
-- Preservationists that had useful builds.
+- [ObscureGamers] preservationists with useful builds.
 
 ## Legal
 
@@ -22,4 +22,5 @@ All of this code and documentation is [ISC licensed]. Fable is copyright Microso
 [defable.netlify.com]: https://defable.netlify.com
 [fabletlcmod.com]: http://fabletlcmod.com
 [Fable Speedrunning Discord]: https://discord.gg/Sv8P6Ef
+[ObscureGamers]: https://www.obscuregamers.com
 [ISC licensed]: crates/defable/license
