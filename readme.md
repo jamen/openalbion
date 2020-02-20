@@ -16,9 +16,7 @@ For local docs, run `cargo doc` and open `target/doc/defable/index.html` in your
 
 ## Legal
 
-All of the code and documentation is [ISC licensed].
-
-Fable is copyright Microsoft and is not affiliated with this project.
+All of this code and documentation is [ISC licensed]. Fable is copyright Microsoft.
 
 [Fable]: https://en.wikipedia.org/wiki/Fable_(video_game_series)
 [defable.netlify.com]: https://defable.netlify.com
