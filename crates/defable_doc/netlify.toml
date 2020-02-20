@@ -3,4 +3,5 @@
 
 [[redirects]]
     from = "/"
-    to = "/defable/index.html"
+    to = "/fable/index.html"
+    status = 302

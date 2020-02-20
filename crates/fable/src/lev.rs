@@ -1,12 +1,10 @@
+//! Level cells and nodes.
+//!
+//! # Format Description
+//!
+
 pub mod decode;
 pub mod encode;
-
-// Temporary comments from fabletlcmod.com.
-//
-// Creating Heightmaps and loading heightmaps into 3ds max.
-//
-// http://www.ogre3d.org/wiki/index.php/3dsmax_Heightmap
-//
 
 #[derive(Debug,PartialEq)]
 pub struct Lev {

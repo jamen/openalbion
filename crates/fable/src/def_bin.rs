@@ -1,11 +1,7 @@
-pub mod decode;
-pub mod encode;
-
-pub struct Bin {
-    pub header: BinHeader,
-    pub entries: Vec<BinNameLookup>,
-}
-
+//! Compiled def format.
+//!
+//! These are found at `Data/Defs`, `Data/Lang`, `Data/Misc`, and `Data/Shaders`.
+//
 // Temporary comments from fabletlcmod.com.
 //
 // Compiled Defs (.Bin)
@@ -19,6 +15,15 @@ pub struct Bin {
 // [4] Bytes - File Indicator
 // [4] Bytes - Platform Indicator (Xbox / PC)
 // [4] Bytes - Number of Entries
+
+pub mod decode;
+pub mod encode;
+
+pub struct Bin {
+    pub header: BinHeader,
+    pub entries: Vec<BinNameLookup>,
+}
+
 
 pub struct BinHeader {
     pub use_names_bin: u8,

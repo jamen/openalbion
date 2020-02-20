@@ -3,49 +3,49 @@ pub mod encode;
 
 #[derive(Debug,PartialEq)]
 pub struct Big {
-    header: BigHeader,
-    bank: BigBankIndex,
-    entries: BigFileIndex
+    pub header: BigHeader,
+    pub bank: BigBankIndex,
+    pub entries: BigFileIndex
 }
 
 #[derive(Debug,PartialEq)]
 pub struct BigHeader {
-    version: u32,
-    bank_address: u32,
+    pub version: u32,
+    pub bank_address: u32,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct BigBankIndex {
-    name: String,
-    bank_id: u32,
-    bank_entries_count: u32,
-    index_start: u32,
-    index_size: u32,
-    block_size: u32,
+    pub name: String,
+    pub bank_id: u32,
+    pub bank_entries_count: u32,
+    pub index_start: u32,
+    pub index_size: u32,
+    pub block_size: u32,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct BigFileIndex {
-    // file_types_count: u32,
-    // file_type: u32,
-    // entries_count: u32,
-    unknown_types_map: Vec<(u32, u32)>,
-    entries: Vec<BigFileEntry>,
+    // pub file_types_count: u32,
+    // pub file_type: u32,
+    // pub entries_count: u32,
+    pub unknown_types_map: Vec<(u32, u32)>,
+    pub entries: Vec<BigFileEntry>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct BigFileEntry {
-    magic_number: u32,
-    id: u32,
-    file_type: u32,
-    size: u32,
-    start: u32,
-    file_type_dev: u32,
-    symbol_name: String,
-    crc: u32,
-    files: Vec<String>,
-    sub_header: BigSubHeader,
-    // sub_header: Vec<u8>,
+    pub magic_number: u32,
+    pub id: u32,
+    pub file_type: u32,
+    pub size: u32,
+    pub start: u32,
+    pub file_type_dev: u32,
+    pub symbol_name: String,
+    pub crc: u32,
+    pub files: Vec<String>,
+    pub sub_header: BigSubHeader,
+    // pub sub_header: Vec<u8>,
 }
 
 #[derive(Debug,PartialEq)]
@@ -59,38 +59,36 @@ pub enum BigSubHeader {
 
 #[derive(Debug,PartialEq)]
 pub struct BigSubHeaderTexture {
-    width: u16,
-    height: u16,
-    depth: u16,
-    frame_width: u16,
-    frame_height: u16,
-    frame_count: u16,
-    dxt_compression: u16,
-    unknown1: u16,
-    transparency: u8,
-    mip_maps: u8,
-    unknown2: u16,
-    top_mip_map_size: u32,
-    top_mip_map_compressed_size: u32,
-    unknown3: u16,
-    unknown4: u32,
+    pub width: u16,
+    pub height: u16,
+    pub depth: u16,
+    pub frame_width: u16,
+    pub frame_height: u16,
+    pub frame_count: u16,
+    pub dxt_compression: u16,
+    pub unknown1: u16,
+    pub transparency: u8,
+    pub mip_maps: u8,
+    pub unknown2: u16,
+    pub top_mip_map_size: u32,
+    pub top_mip_map_compressed_size: u32,
+    pub unknown3: u16,
+    pub unknown4: u32,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct BigSubHeaderMesh {
-    physics_mesh: u32,
-    // unknown1: Vec<u8>,
-    // unknown1: Vec<u32>,
-    unknown1: Vec<f32>,
-    size_compressed_lod: Vec<u32>,
-    padding: u32,
-    unknown2: Vec<u32>,
-    texture_ids: Vec<u32>,
+    pub physics_mesh: u32,
+    pub unknown1: Vec<f32>,
+    pub size_compressed_lod: Vec<u32>,
+    pub padding: u32,
+    pub unknown2: Vec<u32>,
+    pub texture_ids: Vec<u32>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct BigSubHeaderAnimation {
-    unknown1: f32,
-    unknown2: f32,
-    unknown3: Vec<u8>
+    pub unknown1: f32,
+    pub unknown2: f32,
+    pub unknown3: Vec<u8>
 }

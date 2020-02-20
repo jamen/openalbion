@@ -1,6 +1,6 @@
 # Fable Rust
 
-Fable library for Rust to use the assets of Fable OG, TLC, Anniversary, and mods.
+A Fable library for Rust. Its made for Fable, Fable: The Lost Chapters, Fable Anniversary, and their mods.
 
 ## Documentation
 
