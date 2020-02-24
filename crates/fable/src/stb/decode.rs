@@ -1,11 +1,11 @@
-use std::io::Read;
+use std::io::{Read,Seek};
 
 use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::tag;
 
-use crate::shared::{Decode,Error};
-use crate::shared::string::decode_rle_string;
+use crate::{Error,Decode};
+use crate::shared::decode_rle_string;
 
 use super::{
     Stb,
@@ -13,8 +13,8 @@ use super::{
     StbDevHeader,
 };
 
-// impl Decode for Stb {
-//     fn decode(source: impl Read) -> Result<Self, Error> {
+// impl<T: Read + Seek> Decode<Stb> for T {
+//     fn decode(&mut self) -> Result<Stb, Error> {
 //     }
 // }
 

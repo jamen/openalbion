@@ -55,6 +55,7 @@ pub mod bncfg;
 pub mod bwd;
 pub mod def;
 pub mod def_bin;
+pub mod error;
 pub mod fmp;
 pub mod gtg;
 pub mod ini;
@@ -64,6 +65,7 @@ pub mod met;
 pub mod qst;
 pub mod save;
 pub mod save_bin;
+pub mod script;
 pub mod shared;
 pub mod stb;
 pub mod stb_lev;
@@ -77,6 +79,7 @@ pub use big::*;
 pub use bncfg::*;
 pub use def::*;
 pub use def_bin::*;
+pub use error::*;
 pub use fmp::*;
 pub use gtg::*;
 pub use lev::*;
@@ -85,8 +88,21 @@ pub use met::*;
 pub use qst::*;
 pub use save::*;
 // pub use shared::*;
+pub use script::*;
 pub use stb::*;
 pub use stb_lev::*;
 pub use tng::*;
 pub use wad::*;
 pub use wld::*;
+
+use std::io::{Read,Write,Seek};
+
+/// The trait that all decoders implement. (See implementors)
+pub trait Decode<Item: Sized>: Read + Seek {
+    fn decode(&mut self) -> Result<Item, Error>;
+}
+
+/// The trait that all encoders implement. (See implementors)
+pub trait Encode<Item: Sized>: Write + Seek {
+    fn encode(&mut self, item: Item) -> Result<(), Error>;
+}

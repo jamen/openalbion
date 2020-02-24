@@ -1,12 +1,12 @@
-use std::io::Read;
+use std::io::{Read,Seek};
 
 use nom::IResult;
 use nom::number::complete::{le_u8,le_u16,le_u32,le_i32,le_f32};
 use nom::multi::count;
 use nom::combinator::all_consuming;
 
-use crate::shared::{Decode,Error};
-use crate::shared::string::decode_null_terminated_string;
+use crate::{Decode,Error};
+use crate::shared::decode_null_terminated_string;
 
 use super::{
     Bbm,
@@ -15,11 +15,11 @@ use super::{
     BbmHelperDummy,
 };
 
-impl Decode for Bbm {
-    fn decode(source: &mut impl Read) -> Result<Self, Error> {
+impl<T: Read + Seek> Decode<Bbm> for T {
+    fn decode(&mut self) -> Result<Bbm, Error> {
         let mut input = Vec::new();
-        source.read_to_end(&mut input)?;
-        let (_, bbm) = all_consuming(Self::decode_bbm)(&input)?;
+        self.read_to_end(&mut input)?;
+        let (_, bbm) = all_consuming(Bbm::decode_bbm)(&input)?;
         Ok(bbm)
     }
 }

@@ -1,6 +1,9 @@
 //! Compiled def format.
 //!
 //! These are found at `Data/Defs`, `Data/Lang`, `Data/Misc`, and `Data/Shaders`.
+//!
+//!
+
 //
 // Temporary comments from fabletlcmod.com.
 //

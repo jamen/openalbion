@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read,Seek};
 
 use nom::IResult;
 use nom::number::complete::{le_u8,le_u16,le_u32,le_u64,le_f32};
@@ -8,8 +8,8 @@ use nom::multi::count;
 use nom::branch::alt;
 use nom::combinator::all_consuming;
 
-use crate::shared::{Decode,Error};
-use crate::shared::string::decode_rle_string;
+use crate::{Decode,Error};
+use crate::shared::decode_rle_string;
 
 use super::{
     Lev,
@@ -30,11 +30,11 @@ use super::{
     LevNavigationUnknownNode
 };
 
-impl Decode for Lev {
-    fn decode(source: &mut impl Read) -> Result<Self, Error> {
+impl<T: Read + Seek> Decode<Lev> for T {
+    fn decode(&mut self) -> Result<Lev, Error> {
         let mut input = Vec::new();
-        source.read_to_end(&mut input)?;
-        let (_, lev) = all_consuming(Self::decode_lev)(&input)?;
+        self.read_to_end(&mut input)?;
+        let (_, lev) = all_consuming(Lev::decode_lev)(&input)?;
         Ok(lev)
     }
 }

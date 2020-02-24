@@ -7,9 +7,10 @@ use nom::sequence::tuple;
 use nom::multi::count;
 use nom::combinator::all_consuming;
 
-use crate::shared::{Decode,Error};
-use crate::shared::timestamp::{decode_timestamp,decode_short_timestamp};
-use crate::shared::string::decode_bytes_as_utf8;
+use crate::{Decode,Error};
+use crate::shared::decode_bytes_as_utf8;
+
+use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
 
 use super::{
     Wad,
@@ -19,17 +20,17 @@ use super::{
 
 static MAGIC_NUMBER: &'static str = "BBBB";
 
-impl Decode for Wad {
-    fn decode(source: &mut (impl Read + Seek)) -> Result<Self, Error> {
+impl<T: Read + Seek> Decode<Wad> for T {
+    fn decode(&mut self) -> Result<Wad, Error> {
         let mut header_buf = Vec::with_capacity(32);
         let mut entries_buf = Vec::new();
 
-        source.read_exact(&mut header_buf)?;
-        let (_, header) = all_consuming(Self::decode_header)(&header_buf)?;
+        self.read_exact(&mut header_buf)?;
+        let (_, header) = all_consuming(Wad::decode_header)(&header_buf)?;
 
-        source.seek(SeekFrom::Start(header.entries_offset as u64))?;
-        source.read_to_end(&mut entries_buf)?;
-        let (_, entries) = all_consuming(count(Self::decode_entry, header.entries_count as usize))(&entries_buf)?;
+        self.seek(SeekFrom::Start(header.entries_offset as u64))?;
+        self.read_to_end(&mut entries_buf)?;
+        let (_, entries) = all_consuming(count(Wad::decode_entry, header.entries_count as usize))(&entries_buf)?;
 
         Ok(Wad { header: header, entries: entries })
     }
@@ -71,9 +72,9 @@ impl Wad {
 
         let (input, _unknown_4) = take(16usize)(input)?;
 
-        let (input, created_at) = decode_timestamp(input)?;
-        let (input, accessed_at) = decode_timestamp(input)?;
-        let (input, written_at) = decode_short_timestamp(input)?;
+        let (input, created_at) = Self::decode_timestamp(input)?;
+        let (input, accessed_at) = Self::decode_timestamp(input)?;
+        let (input, written_at) = Self::decode_short_timestamp(input)?;
 
         Ok(
             (
@@ -89,5 +90,35 @@ impl Wad {
                 }
             )
         )
+    }
+
+    pub fn decode_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime, Error> {
+        let (input, year) = le_u32(input)?;
+        let (input, month) = le_u32(input)?;
+        let (input, day) = le_u32(input)?;
+        let (input, hour) = le_u32(input)?;
+        let (input, minute) = le_u32(input)?;
+        let (input, second) = le_u32(input)?;
+        let (input, millisecond) = le_u32(input)?;
+
+        let ymd = NaiveDate::from_ymd(year as i32, month, day);
+        let hms = NaiveTime::from_hms_milli(hour, minute, second, millisecond);
+        let date_time = NaiveDateTime::new(ymd, hms);
+
+        Ok((input, date_time))
+    }
+
+    pub fn decode_short_timestamp(input: &[u8]) -> IResult<&[u8], NaiveDateTime, Error> {
+        let (input, year) = le_u32(input)?;
+        let (input, month) = le_u32(input)?;
+        let (input, day) = le_u32(input)?;
+        let (input, hour) = le_u32(input)?;
+        let (input, minute) = le_u32(input)?;
+
+        let ymd = NaiveDate::from_ymd(year as i32, month, day);
+        let hms = NaiveTime::from_hms(hour, minute, 0);
+        let date_time = NaiveDateTime::new(ymd, hms);
+
+        Ok((input, date_time))
     }
 }
