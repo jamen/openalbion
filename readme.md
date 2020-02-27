@@ -12,7 +12,7 @@ For local docs, run `cargo doc` and open `target/doc/defable/index.html` in your
 
 - [fabletlcmod.com].
 - [Fable Speedrunning Discord].
-- [ObscureGamers] preservationists with useful builds.
+- [ObscureGamers] preservationists.
 
 ## Legal
 

@@ -47,7 +47,7 @@ fn main() -> Result<(), u32> {
         .about("Fable mod tool.")
         .author("Jamen Marz <me@jamen.dev>")
         .arg(
-            Arg::with_name("create")
+            Arg::with_name("exe")
             .long("exe")
             .help("Path to Fable's executable.")
             .conflicts_with_all(&["pid", "find"])

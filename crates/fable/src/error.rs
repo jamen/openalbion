@@ -1,5 +1,6 @@
 use nom::error::ParseError;
 
+#[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
     Nom(nom::error::ErrorKind),
@@ -9,6 +10,7 @@ pub enum Error {
     Fable(ErrorKind),
 }
 
+#[derive(Debug)]
 pub enum ErrorKind {
     InvalidInstruction,
     InvalidTagName,

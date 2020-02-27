@@ -1,3 +1,3 @@
 # Defable Doc
 
-This publishes the Rustdocs to Netlify.
+This builds and publishes the rustdoc to Netlify.

@@ -50,13 +50,19 @@ pub enum ScriptValue {
     /// A plaintext string such as `MESH_OBJECT_POINTER`.
     Name(String),
     /// A series of flags such as `A | B | C`.
-    Flags(Vec<ScriptAccessor>),
+    Flags(Vec<ScriptFlag>),
     Bool(bool),
     Number(i32),
     /// A big number (for 64-bit ids).
     BigNumber(u64),
     Float(f32),
     String(String),
+}
+
+#[derive(Debug,PartialEq)]
+pub enum ScriptFlag {
+    Name(String),
+    Number(i32),
 }
 
 /// A call.
@@ -69,7 +75,7 @@ pub enum ScriptValue {
 #[derive(Debug,PartialEq)]
 pub struct ScriptCall {
     pub reference: ScriptReference,
-    pub arguments: Vec<ScriptValue>
+    pub arguments: Vec<ScriptExpression>
 }
 
 /// XML-like markup (but not real XML).
@@ -86,8 +92,8 @@ pub struct ScriptCall {
 /// ```
 #[derive(Debug,PartialEq)]
 pub struct ScriptMarkup {
-    pub tag: String,
-    pub content: Vec<ScriptExpression>
+    pub name: String,
+    pub body: Vec<ScriptExpression>
 }
 
 /// A line or block comment.
