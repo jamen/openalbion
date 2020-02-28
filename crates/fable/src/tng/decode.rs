@@ -20,12 +20,12 @@ impl<T: Read + Seek> Decode<Tng> for T {
 
 impl Tng {
     pub fn decode_tng(input: &[u8]) -> IResult<&[u8], Tng, Error> {
-        let (maybe_input, version) = decode_field_named("Version")(input)?;
-        let (maybe_input, sections) = many0(Self::decode_tng_section)(maybe_input)?;
+        let (input, version) = decode_field_named("Version")(input)?;
+        let (input, sections) = many0(Self::decode_tng_section)(input)?;
 
         Ok(
             (
-                maybe_input,
+                input,
                 Tng {
                     version: version,
                     sections: sections,
@@ -35,12 +35,12 @@ impl Tng {
     }
 
     pub fn decode_tng_section(input: &[u8]) -> IResult<&[u8], TngSection, Error> {
-        let (maybe_input, section_start) = decode_field_named("XXXSectionStart")(input)?;
-        let (maybe_input, (things, _end)) = many_till(Self::decode_tng_thing, decode_field_named("XXXSectionEnd"))(maybe_input)?;
+        let (input, section_start) = decode_field_named("XXXSectionStart")(input)?;
+        let (input, (things, _end)) = many_till(Self::decode_tng_thing, decode_field_named("XXXSectionEnd"))(input)?;
 
         Ok(
             (
-                maybe_input,
+                input,
                 TngSection {
                     section_start: section_start,
                     things: things,
@@ -50,12 +50,12 @@ impl Tng {
     }
 
     pub fn decode_tng_thing(input: &[u8]) -> IResult<&[u8], TngThing, Error> {
-        let (maybe_input, new_thing) = decode_field_named("NewThing")(input)?;
-        let (maybe_input, (fields, _end)) = many_till(decode_field, decode_field_named("EndThing"))(maybe_input)?;
+        let (input, new_thing) = decode_field_named("NewThing")(input)?;
+        let (input, (fields, _end)) = many_till(decode_field, decode_field_named("EndThing"))(input)?;
 
         Ok(
             (
-                maybe_input,
+                input,
                 TngThing {
                     new_thing: new_thing,
                     fields: fields

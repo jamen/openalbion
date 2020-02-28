@@ -15,7 +15,7 @@ use super::{
     BbmHelperDummy,
 };
 
-impl<T: Read + Seek> Decode<Bbm> for T {
+impl<Source: Read + Seek> Decode<Bbm> for Source {
     fn decode(&mut self) -> Result<Bbm, Error> {
         let mut input = Vec::new();
         self.read_to_end(&mut input)?;

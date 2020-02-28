@@ -41,25 +41,25 @@ impl<T: Read + Seek> Decode<Lev> for T {
 
 impl Lev {
     pub fn decode_lev(input: &[u8]) -> IResult<&[u8], Lev, Error> {
-        let (maybe_input, header) = Self::decode_header(input)?;
+        let (input, header) = Self::decode_header(input)?;
 
         let heightmap_cell_count = ((header.width + 1) * (header.height + 1)) as usize;
-        let (maybe_input, heightmap_cells) = count(Self::decode_heightmap_cell, heightmap_cell_count)(maybe_input)?;
+        let (input, heightmap_cells) = count(Self::decode_heightmap_cell, heightmap_cell_count)(input)?;
 
         // fabletlcmod.com seems to have the wrong amount, using a temporary one.
         // let soundmap_cell_count = ((header.height - 1) * (header.width - 1)) as usize;
         let soundmap_cell_count = 1024usize;
-        let (_maybe_input, soundmap_cells) = count(Self::decode_soundmap_cell, soundmap_cell_count)(maybe_input)?;
+        let (_input, soundmap_cells) = count(Self::decode_soundmap_cell, soundmap_cell_count)(input)?;
 
         let navigation_header_data = &input[header.navigation_offset as usize..];
-        let (_maybe_input, navigation_header) = Self::decode_navigation_header(navigation_header_data)?;
+        let (_input, navigation_header) = Self::decode_navigation_header(navigation_header_data)?;
 
         let navigation_section_data = &input[navigation_header.sections_start as usize..];
-        let (maybe_input, navigation_section) = Self::decode_navigation_section(navigation_section_data)?;
+        let (input, navigation_section) = Self::decode_navigation_section(navigation_section_data)?;
 
         Ok(
             (
-                maybe_input,
+                input,
                 Lev {
                     header: header,
                     heightmap_cells: heightmap_cells,
@@ -393,68 +393,68 @@ impl Lev {
     }
 
     pub fn decode_navigation_unknown1_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
-        let (maybe_input, _node_op) = tag(&[11, 0, 0, 0, 0, 0, 0, 0, 0, 0])(input)?;
-        let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-        let (maybe_input, _root) = le_u8(maybe_input)?;
-        let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-        let (_maybe_input, end) = le_u8(maybe_input)?;
+        let (input, _node_op) = tag(&[11, 0, 0, 0, 0, 0, 0, 0, 0, 0])(input)?;
+        let (input, _unknown_1) = le_u8(input)?;
+        let (input, _root) = le_u8(input)?;
+        let (input, _unknown_2) = le_u8(input)?;
+        let (_input, end) = le_u8(input)?;
 
         let unknown = LevNavigationUnknown1Node {
             end: end,
         };
 
-        let maybe_input = &input[end as usize..];
+        let input = &input[end as usize..];
 
-        Ok((maybe_input, LevNavigationNode::Unknown1(unknown)))
+        Ok((input, LevNavigationNode::Unknown1(unknown)))
     }
 
     pub fn decode_navigation_unknown2_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
-        let (maybe_input, _node_op) = tag(&[0, 1, 0, 0, 0, 0, 0, 0])(input)?;
-        let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-        let (maybe_input, _root) = le_u8(maybe_input)?;
-        let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-        let (_maybe_input, end) = le_u8(maybe_input)?;
+        let (input, _node_op) = tag(&[0, 1, 0, 0, 0, 0, 0, 0])(input)?;
+        let (input, _unknown_1) = le_u8(input)?;
+        let (input, _root) = le_u8(input)?;
+        let (input, _unknown_2) = le_u8(input)?;
+        let (_input, end) = le_u8(input)?;
 
         let unknown = LevNavigationUnknown2Node {
             end: end,
         };
 
-        let maybe_input = &input[end as usize..];
+        let input = &input[end as usize..];
 
-        Ok((maybe_input, LevNavigationNode::Unknown2(unknown)))
+        Ok((input, LevNavigationNode::Unknown2(unknown)))
     }
 
     pub fn decode_navigation_unknown3_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
-        let (maybe_input, _node_op) = tag(&[0, 0, 0, 0, 0, 0, 0, 0])(input)?;
-        let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-        let (maybe_input, _root) = le_u8(maybe_input)?;
-        let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-        let (_maybe_input, end) = le_u8(maybe_input)?;
+        let (input, _node_op) = tag(&[0, 0, 0, 0, 0, 0, 0, 0])(input)?;
+        let (input, _unknown_1) = le_u8(input)?;
+        let (input, _root) = le_u8(input)?;
+        let (input, _unknown_2) = le_u8(input)?;
+        let (_input, end) = le_u8(input)?;
 
         let unknown = LevNavigationUnknown3Node {
             end: end,
         };
 
-        let maybe_input = &input[end as usize..];
+        let input = &input[end as usize..];
 
-        Ok((maybe_input, LevNavigationNode::Unknown3(unknown)))
+        Ok((input, LevNavigationNode::Unknown3(unknown)))
     }
 
     pub fn decode_navigation_unknown_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
-        let (maybe_input, node_op) = take(8usize)(input)?;
-        let (maybe_input, _unknown_1) = le_u8(maybe_input)?;
-        let (maybe_input, _root) = le_u8(maybe_input)?;
-        let (maybe_input, _unknown_2) = le_u8(maybe_input)?;
-        let (_maybe_input, end) = le_u8(maybe_input)?;
+        let (input, node_op) = take(8usize)(input)?;
+        let (input, _unknown_1) = le_u8(input)?;
+        let (input, _root) = le_u8(input)?;
+        let (input, _unknown_2) = le_u8(input)?;
+        let (_input, end) = le_u8(input)?;
 
         let unknown = LevNavigationUnknownNode {
             node_op: node_op.to_vec(),
             end: end,
         };
 
-        let maybe_input = &input[end as usize..];
+        let input = &input[end as usize..];
 
-        Ok((maybe_input, LevNavigationNode::Unknown(unknown)))
+        Ok((input, LevNavigationNode::Unknown(unknown)))
     }
 
     pub fn decode_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {

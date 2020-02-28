@@ -1,25 +1,25 @@
 pub mod decode;
 pub mod encode;
 
-use crate::script::ScriptField;
+use crate::script::Field;
 
 #[derive(Debug,PartialEq)]
 pub struct Wld {
-    start_initial_quests: Vec<ScriptField>,
-    map_uid_count: ScriptField,
-    thing_manager_uid_count: ScriptField,
+    start_initial_quests: Vec<Field>,
+    map_uid_count: Field,
+    thing_manager_uid_count: Field,
     maps: Vec<WldMap>,
     regions: Vec<WldRegion>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct WldMap {
-    new_map: ScriptField,
-    instrs: Vec<ScriptField>,
+    new_map: Field,
+    instrs: Vec<Field>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct WldRegion {
-    new_region: ScriptField,
-    instrs: Vec<ScriptField>,
+    new_region: Field,
+    instrs: Vec<Field>,
 }

@@ -12,12 +12,6 @@
 // Game.Bin, Script.Bin and Frontend.Bin use Names.Bin as a library.
 //
 // All Names.Bin offsets do not count 20 byte header
-// Header
-//
-// [1] Byte - 00 (Indicates to use Names.Bin as Library)
-// [4] Bytes - File Indicator
-// [4] Bytes - Platform Indicator (Xbox / PC)
-// [4] Bytes - Number of Entries
 
 pub mod decode;
 pub mod encode;
@@ -27,6 +21,12 @@ pub struct Bin {
     pub entries: Vec<BinNameLookup>,
 }
 
+// Header
+//
+// [1] Byte - 00 (Indicates to use Names.Bin as Library)
+// [4] Bytes - File Indicator
+// [4] Bytes - Platform Indicator (Xbox / PC)
+// [4] Bytes - Number of Entries
 
 pub struct BinHeader {
     pub use_names_bin: u8,

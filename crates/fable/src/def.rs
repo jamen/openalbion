@@ -1,7 +1,7 @@
 pub mod decode;
 pub mod encode;
 
-use crate::script::{ScriptComment,ScriptExpression};
+use crate::script::Expression;
 
 #[derive(Debug)]
 pub struct Def {
@@ -10,7 +10,7 @@ pub struct Def {
 
 #[derive(Debug)]
 pub enum DefItem {
-    Comment(ScriptComment),
+    Between(String),
     Definition(Definition),
 }
 
@@ -20,5 +20,5 @@ pub struct Definition {
     pub group: String,
     pub name: String,
     pub specializes: Option<String>,
-    pub body: Vec<ScriptExpression>,
+    pub body: Vec<Expression>,
 }

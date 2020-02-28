@@ -15,7 +15,9 @@ pub enum ErrorKind {
     InvalidInstruction,
     InvalidTagName,
     InvalidScriptProperty,
-    InvalidScriptValue,
+    InvalidValue,
+    InvalidBinaryOp,
+    NotEnoughSpaceForParser,
 }
 
 impl From<std::io::Error> for Error {

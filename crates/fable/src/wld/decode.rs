@@ -5,7 +5,7 @@ use nom::multi::{many1,many_till};
 use nom::combinator::all_consuming;
 
 use crate::{Decode,Error};
-use crate::script::ScriptField;
+use crate::script::Field;
 use crate::script::decode::{decode_field,decode_field_named};
 
 use super::{WldMap, WldRegion, Wld};
@@ -41,7 +41,7 @@ impl Wld {
         )
     }
 
-    pub fn decode_wld_initial_quests(input: &[u8]) -> IResult<&[u8], Vec<ScriptField>, Error> {
+    pub fn decode_wld_initial_quests(input: &[u8]) -> IResult<&[u8], Vec<Field>, Error> {
         let (input, _start) = decode_field_named("START_INITIAL_QUESTS")(input)?;
         let (input, (instrs, _end)) = many_till(decode_field, decode_field_named("END_INITIAL_QUESTS"))(input)?;
 

@@ -7,9 +7,9 @@ use nom::character::is_alphanumeric;
 use nom::character::complete::{space1,line_ending,multispace0};
 use nom::sequence::tuple;
 use nom::combinator::{opt,all_consuming};
-use nom::multi::many0;
+use nom::multi::{many0,many1};
 
-use crate::{Decode,Error};
+use crate::{Decode,Error,ErrorKind};
 use crate::script::decode::{decode_comment,decode_expression_list};
 
 use super::{
@@ -36,7 +36,10 @@ impl Def {
 
     fn decode_def_item(input: &[u8]) -> IResult<&[u8], DefItem, Error> {
         let (input, _) = multispace0(input)?;
-        alt((Self::decode_def_item_definition, Self::decode_def_item_comment))(input)
+        alt((
+            Self::decode_def_item_definition,
+            Self::decode_def_item_between,
+        ))(input)
     }
 
     fn decode_def_item_definition(input: &[u8]) -> IResult<&[u8], DefItem, Error> {
@@ -44,13 +47,44 @@ impl Def {
         Ok((input, DefItem::Definition(definition)))
     }
 
-    fn decode_def_item_comment(input: &[u8]) -> IResult<&[u8], DefItem, Error> {
-        let (input, comment) = decode_comment(input)?;
-        let (input, _) = opt(line_ending)(input)?;
-        Ok((input, DefItem::Comment(comment)))
+    /// Everything between definitions is ignored. Evidenced by numerous syntax errors.
+    fn decode_def_item_between(input: &[u8]) -> IResult<&[u8], DefItem, Error> {
+        if input.len() < 11 {
+            return Err(nom::Err::Error(Error::Fable(ErrorKind::NotEnoughSpaceForParser)))
+        }
+
+        let mut should = true;
+        let mut ending = 0;
+
+        loop {
+            if &input[ending..ending+2] == b"//" {
+                should = false;
+                ending += 2;
+            } else if let Ok((_, m)) = line_ending::<&[u8], Error>(&input[ending..ending+2]) {
+                should = true;
+                ending += m.len();
+            } else if should && &input[ending..ending+11] == b"#definition" {
+                break
+            } else {
+                ending += 1;
+            }
+        }
+
+        let between = &input[..ending];
+
+        let between = match String::from_utf8(between.to_vec()) {
+            Ok(s) => s,
+            _ => return Err(nom::Err::Error(Error::Utf8Error))
+        };
+
+        let input = &input[ending..];
+
+        Ok((input, DefItem::Between(between)))
     }
 
     fn decode_definition(input: &[u8]) -> IResult<&[u8], Definition, Error> {
+        // println!("definition start {:?}", String::from_utf8(input[..10].to_vec()));
+
         let (input, directive) = alt((tag("#definition_template"), tag("#definition")))(input)?;
 
         let is_template = match std::str::from_utf8(&directive) {
@@ -88,13 +122,15 @@ impl Def {
             None => None,
         };
 
-        println!("#definition (is_template {}) {} {} specializes {:?}", is_template, group, name, specializes);
+        // println!("definition {} ({}) specializes {:?}", name, group, specializes);
 
         let (input, body) = decode_expression_list(input)?;
 
+        // println!("definition {:#?}", body);
+        // println!("definition {:?}", String::from_utf8(input[..10].to_vec()));
 
-        let (input, _) = multispace0(input)?;
-        let (input, _) = tag("#end_definition")(input)?;
+        // There's potientially stray "#end_definition" that do nothing.
+        let (input, _) = many1(tuple((multispace0, tag("#end_definition"), opt(tag(";")))))(input)?;
 
         Ok(
             (

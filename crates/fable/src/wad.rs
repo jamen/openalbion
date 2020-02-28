@@ -35,7 +35,7 @@ use std::io::Take;
 /// See those structs for more details.
 ///
 /// [`WadHeader`]: ./struct.WadHeader.html
-/// [`WadEntry`]: ./struct.WadReader.html
+/// [`WadEntry`]: ./struct.WadEntry.html
 /// [`WadReader`]: ./struct.WadReader.html
 #[derive(Debug,PartialEq)]
 pub struct Wad {

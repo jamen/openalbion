@@ -1,9 +1,9 @@
 pub mod decode;
 pub mod encode;
 
-use crate::script::ScriptCall;
+use crate::script::Call;
 
 #[derive(Debug,PartialEq)]
 pub struct Qst {
-    pub body: Vec<ScriptCall>
+    pub body: Vec<Call>
 }

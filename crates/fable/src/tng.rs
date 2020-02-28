@@ -1,22 +1,22 @@
 pub mod decode;
 pub mod encode;
 
-use crate::script::ScriptField;
+use crate::script::Field;
 
 #[derive(Debug,PartialEq)]
 pub struct Tng {
-    pub version: ScriptField,
+    pub version: Field,
     pub sections: Vec<TngSection>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct TngSection {
-    pub section_start: ScriptField,
+    pub section_start: Field,
     pub things: Vec<TngThing>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct TngThing {
-    pub new_thing: ScriptField,
-    pub fields: Vec<ScriptField>,
+    pub new_thing: Field,
+    pub fields: Vec<Field>,
 }

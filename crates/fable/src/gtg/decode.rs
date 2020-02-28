@@ -7,8 +7,8 @@ use nom::bytes::complete::tag;
 use nom::multi::{many0,many1};
 
 use crate::{Decode,Error,ErrorKind};
-use crate::script::{ScriptField,ScriptReference};
-use crate::script::decode::{decode_reference,decode_value};
+use crate::script::{Field,Reference};
+use crate::script::decode::{decode_reference,decode_expression};
 
 use crate::Tng;
 
@@ -28,29 +28,29 @@ impl<T: Read + Seek> Decode<Gtg> for T {
 
 impl Gtg {
     pub fn decode_gtg(input: &[u8]) -> IResult<&[u8], Gtg, Error> {
-        let (maybe_input, maps) = many1(Self::decode_gtg_map)(input)?;
-        Ok((maybe_input, Gtg { maps: maps }))
+        let (input, maps) = many1(Self::decode_gtg_map)(input)?;
+        Ok((input, Gtg { maps: maps }))
     }
 
     pub fn decode_gtg_map(input: &[u8]) -> IResult<&[u8], Tng, Error> {
-        let (maybe_input, _start) = Self::decode_gtg_field_named(NEWMAP)(input)?;
-        let (maybe_input, tng) = Tng::decode_tng(maybe_input)?;
-        let (maybe_input, _end) = Self::decode_gtg_field_named(ENDMAP)(maybe_input)?;
-        Ok((maybe_input, tng))
+        let (input, _start) = Self::decode_gtg_field_named(NEWMAP)(input)?;
+        let (input, tng) = Tng::decode_tng(input)?;
+        let (input, _end) = Self::decode_gtg_field_named(ENDMAP)(input)?;
+        Ok((input, tng))
     }
 
     /// This is a variation of `fable::script::decode_tagged_field` because "NEWMAP" and "ENDMAP" don't use semicolons.
-    pub fn decode_gtg_field_named(name: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], ScriptField, Error> {
+    pub fn decode_gtg_field_named(name: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], Field, Error> {
         move |input: &[u8]| {
-            let (maybe_input, _line_ending) = many0(line_ending)(input)?;
-            let (maybe_input, reference) = decode_reference(maybe_input)?;
-            let (maybe_input, _space) = opt(tag(" "))(maybe_input)?;
-            let (maybe_input, value) = decode_value(maybe_input)?;
-            let (maybe_input, _line_ending) = many1(line_ending)(maybe_input)?;
+            let (input, _line_ending) = many0(line_ending)(input)?;
+            let (input, reference) = decode_reference(input)?;
+            let (input, _space) = opt(tag(" "))(input)?;
+            let (input, expression) = decode_expression(input)?;
+            let (input, _line_ending) = many1(line_ending)(input)?;
 
            let field_name = match reference {
-                ScriptReference::Name(x) => x,
-                ScriptReference::Property(_) => return Err(nom::Err::Error(Error::Fable(ErrorKind::InvalidInstruction))),
+                Reference::Name(x) => x,
+                Reference::Accessor(_) => return Err(nom::Err::Error(Error::Fable(ErrorKind::InvalidInstruction))),
             };
 
             if field_name != name {
@@ -60,9 +60,9 @@ impl Gtg {
             Ok(
                 (
                     input,
-                    ScriptField {
-                        reference: ScriptReference::Name(field_name),
-                        value: value
+                    Field {
+                        reference: Reference::Name(field_name),
+                        value: Box::new(expression),
                     }
                 )
             )

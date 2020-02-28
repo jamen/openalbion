@@ -4,15 +4,45 @@ pub mod decode;
 pub mod encode;
 
 #[derive(Debug,PartialEq)]
-pub enum ScriptExpression {
-    Value(ScriptValue),
-    Field(ScriptField),
-    Call(ScriptCall),
-    Markup(ScriptMarkup),
-    Comment(ScriptComment),
+pub enum Expression {
+    /// A plaintext string such as `MESH_OBJECT_POINTER`.
+    Name(String),
+    BoolLiteral(bool),
+    IntegerLiteral(i32),
+    /// A big integer for 64-bit ids.
+    BigIntegerLiteral(u64),
+    FloatLiteral(f32),
+    StringLiteral(String),
+    Field(Field),
+    Call(Call),
+    Markup(Markup),
+    Comment(Comment),
+    BinaryOp(BinaryOp),
 }
 
-/// A property and value.
+/// The named part of calls and fields.
+#[derive(Debug,PartialEq)]
+pub enum Reference {
+    Name(String),
+    Accessor(Accessor),
+}
+
+/// A complex reference containing another reference or expression.
+#[derive(Debug,PartialEq)]
+pub struct Accessor {
+    name: String,
+    path: Vec<AccessorPath>,
+}
+
+#[derive(Debug,PartialEq)]
+pub enum AccessorPath {
+    /// For the syntax `A.B`.
+    Name(String),
+    /// For the syntax `A[B]` and more complex expression.
+    Expression(Expression),
+}
+
+/// Reference and expression.
 ///
 /// Random example:
 ///
@@ -20,49 +50,9 @@ pub enum ScriptExpression {
 /// DialogueLayers[DIALOGUE_LAYER_BACKGROUND].ResponseTimeSecsAttack		4.0;
 /// ```
 #[derive(Debug,PartialEq)]
-pub struct ScriptField {
-    pub reference: ScriptReference,
-    pub value: ScriptValue,
-}
-
-#[derive(Debug,PartialEq)]
-pub enum ScriptReference {
-    /// A name such as `A`
-    Name(String),
-    /// An accessor such as `A.B` or `A[0]`. It can also be chained further like `A[0].B`.
-    Property((String, Vec<ScriptAccessor>)),
-}
-
-#[derive(Debug,PartialEq)]
-pub enum ScriptAccessor {
-    /// This is the `B` in `A.B`.
-    Name(String),
-    /// This is the `0` in `A[0]`.
-    Index(i32),
-    /// This is the `B` in `A[B]`.
-    IndexName(String)
-}
-
-#[derive(Debug,PartialEq)]
-pub enum ScriptValue {
-    /// An empty value.
-    None,
-    /// A plaintext string such as `MESH_OBJECT_POINTER`.
-    Name(String),
-    /// A series of flags such as `A | B | C`.
-    Flags(Vec<ScriptFlag>),
-    Bool(bool),
-    Number(i32),
-    /// A big number (for 64-bit ids).
-    BigNumber(u64),
-    Float(f32),
-    String(String),
-}
-
-#[derive(Debug,PartialEq)]
-pub enum ScriptFlag {
-    Name(String),
-    Number(i32),
+pub struct Field {
+    pub reference: Reference,
+    pub value: Box<Expression>,
 }
 
 /// A call.
@@ -73,9 +63,9 @@ pub enum ScriptFlag {
 /// PermittedAINarrators.Add("AF3_1_5");
 /// ```
 #[derive(Debug,PartialEq)]
-pub struct ScriptCall {
-    pub reference: ScriptReference,
-    pub arguments: Vec<ScriptExpression>
+pub struct Call {
+    pub reference: Reference,
+    pub arguments: Vec<Expression>
 }
 
 /// XML-like markup (but not real XML).
@@ -91,14 +81,32 @@ pub struct ScriptCall {
 /// <\CHeroMarriageDef>
 /// ```
 #[derive(Debug,PartialEq)]
-pub struct ScriptMarkup {
+pub struct Markup {
     pub name: String,
-    pub body: Vec<ScriptExpression>
+    pub body: Vec<Expression>
 }
 
 /// A line or block comment.
 #[derive(Debug,PartialEq)]
-pub enum ScriptComment {
+pub enum Comment {
     Block(String),
     Line(String),
+}
+
+/// A binary operation.
+#[derive(Debug,PartialEq)]
+pub struct BinaryOp {
+    pub kind: BinaryOpKind,
+    pub lhs: Box<Expression>,
+    pub rhs: Box<Expression>,
+}
+
+#[derive(Debug,PartialEq)]
+pub enum BinaryOpKind {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    BitOr,
+    // TODO more?
 }

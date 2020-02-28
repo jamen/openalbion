@@ -3,6 +3,7 @@ use std::io::{Read,Seek};
 use nom::IResult;
 use nom::number::complete::le_u32;
 use nom::bytes::complete::tag;
+use nom::combinator::all_consuming;
 
 use crate::{Error,Decode};
 use crate::shared::decode_rle_string;
@@ -13,10 +14,16 @@ use super::{
     StbDevHeader,
 };
 
-// impl<T: Read + Seek> Decode<Stb> for T {
-//     fn decode(&mut self) -> Result<Stb, Error> {
-//     }
-// }
+impl<T: Read + Seek> Decode<Stb> for T {
+    fn decode(&mut self) -> Result<Stb, Error> {
+        let mut header_buf = Vec::with_capacity(32);
+
+        self.read_exact(&mut header_buf)?;
+        let (_, header) = all_consuming(Stb::decode_header)(&header_buf)?;
+
+        unimplemented!()
+    }
+}
 
 impl Stb {
     pub fn decode_header(input: &[u8]) -> IResult<&[u8], StbHeader, Error> {
