@@ -6,13 +6,13 @@
 
 See [defable.netlify.com] for documentation.
 
-For local docs, run `cargo doc` and open `target/doc/defable/index.html` in your browser.
+For local docs, run `cargo doc` and open `target/doc/fable/index.html` in your browser.
 
 ## Credits
 
-- [fabletlcmod.com].
-- [Fable Speedrunning Discord].
-- [ObscureGamers] preservationists.
+- [fabletlcmod.com]
+- [Fable Speedrunning Discord]
+- [ObscureGamers]
 
 ## Legal
 
@@ -23,4 +23,4 @@ All of this code and documentation is [ISC licensed]. Fable is copyright Microso
 [fabletlcmod.com]: http://fabletlcmod.com
 [Fable Speedrunning Discord]: https://discord.gg/Sv8P6Ef
 [ObscureGamers]: https://www.obscuregamers.com
-[ISC licensed]: crates/defable/license
+[ISC licensed]: license
