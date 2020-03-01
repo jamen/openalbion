@@ -2,7 +2,7 @@
 //!
 //! These are found at `Data/Defs`, `Data/Lang`, `Data/Misc`, and `Data/Shaders`.
 //!
-//!
+//! The `Data/CompiledDefs/names.bin` is an important index of names used by other defs.
 
 //
 // Temporary comments from fabletlcmod.com.
@@ -16,7 +16,7 @@
 pub mod decode;
 pub mod encode;
 
-pub struct Bin {
+pub struct DefBin {
     pub header: BinHeader,
     pub entries: Vec<BinNameLookup>,
 }
@@ -28,7 +28,7 @@ pub struct Bin {
 // [4] Bytes - Platform Indicator (Xbox / PC)
 // [4] Bytes - Number of Entries
 
-pub struct BinHeader {
+pub struct DefBinHeader {
     pub use_names_bin: u8,
     pub file_indicator: u32,
     pub platform_indicator: u32,
@@ -48,7 +48,7 @@ pub struct BinHeader {
 // Xbox If the enumeration equals (00 00 00 00) Then Enumerator is Defined in Names.Bin
 //
 
-pub struct BinNameLookup {
+pub struct DefBinNameLookup {
     pub definition_offset: u32,
     pub file_name_offset: u32,
     pub counter: u32,
@@ -61,7 +61,7 @@ pub struct BinNameLookup {
 // [4] Bytes - Null
 //
 
-pub struct SecondTableHeader {
+pub struct DefSecondTableHeader {
     pub compressed_chunks_count: u32,
     pub unknown1: u32,
 }
@@ -80,7 +80,7 @@ pub struct SecondTableHeader {
 // Each Compressed Chunk is Zlib Compressed
 //
 
-pub struct SecondTableRow {
+pub struct DefSecondTableRow {
     pub compressed_chunk_offset: u32,
     pub last_file_number: u32,
 }
@@ -96,7 +96,7 @@ pub struct SecondTableRow {
 // Bin Entries
 //
 
-pub struct SecondTableRowDecompressed {
+pub struct DefSecondTableRowDecompressed {
     pub offset: u16,
 }
 

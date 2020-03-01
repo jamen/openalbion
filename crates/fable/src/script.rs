@@ -30,8 +30,8 @@ pub enum Reference {
 /// A complex reference containing another reference or expression.
 #[derive(Debug,PartialEq)]
 pub struct Accessor {
-    name: String,
-    path: Vec<AccessorPath>,
+    pub name: String,
+    pub path: Vec<AccessorPath>,
 }
 
 #[derive(Debug,PartialEq)]
