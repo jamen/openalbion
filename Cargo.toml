@@ -4,7 +4,9 @@ members = [
     "crates/defable",
     "crates/fable",
     "crates/fable_ffi",
+    "crates/fable_gltf",
     "crates/fable_hack",
+    "crates/fable2",
 ]
 
 exclude = [
