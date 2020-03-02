@@ -1,6 +1,6 @@
 use std::io::Error;
 
-use fable_format::Lev;
+use fable::Lev;
 
 use gltf_json::root::Index;
 use gltf_json::{Root,Node,Scene,Value,Mesh,Accessor,Buffer};

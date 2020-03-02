@@ -1,7 +1,10 @@
 //! This is module for a scripting syntax shared in several formats.
 
-pub mod decode;
-pub mod encode;
+mod decode;
+mod encode;
+
+pub use decode::*;
+pub use encode::*;
 
 #[derive(Debug,PartialEq)]
 pub enum Expression {

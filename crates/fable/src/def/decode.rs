@@ -10,7 +10,7 @@ use nom::combinator::{opt,all_consuming};
 use nom::multi::{many0,many1};
 
 use crate::{Decode,Error,ErrorKind};
-use crate::script::decode::{decode_comment,decode_expression_list};
+use crate::script::{decode_comment,decode_expression_list};
 
 use super::{
     Def,

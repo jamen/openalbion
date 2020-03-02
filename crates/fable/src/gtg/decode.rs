@@ -8,7 +8,7 @@ use nom::multi::{many0,many1};
 
 use crate::{Decode,Error,ErrorKind};
 use crate::script::{Field,Reference};
-use crate::script::decode::{decode_reference,decode_expression};
+use crate::script::{decode_reference,decode_expression};
 
 use crate::Tng;
 

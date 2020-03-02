@@ -1,8 +1,5 @@
-//! Compiled def format.
-//!
-//! These are found at `Data/Defs`, `Data/Lang`, `Data/Misc`, and `Data/Shaders`.
-//!
-//! The `Data/CompiledDefs/names.bin` is an important index of names used by other defs.
+mod decode;
+mod encode;
 
 //
 // Temporary comments from fabletlcmod.com.
@@ -13,12 +10,18 @@
 //
 // All Names.Bin offsets do not count 20 byte header
 
-pub mod decode;
-pub mod encode;
-
+/// Compiled def format.
+///
+/// These are found at `Data/Defs`, `Data/Lang`, `Data/Misc`, and `Data/Shaders`.
+///
+/// The `Data/CompiledDefs/names.bin` is an important index of names used by other defs.
+///
+/// ## Format Description
+///
+/// WIP
 pub struct DefBin {
-    pub header: BinHeader,
-    pub entries: Vec<BinNameLookup>,
+    pub header: DefBinHeader,
+    pub entries: Vec<DefBinNameLookup>,
 }
 
 // Header

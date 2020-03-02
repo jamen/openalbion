@@ -5,7 +5,7 @@ use nom::multi::{many0,many_till};
 use nom::combinator::all_consuming;
 
 use crate::{Decode,Error};
-use crate::script::decode::{decode_field,decode_field_named};
+use crate::script::{decode_field,decode_field_named};
 
 use super::{TngThing, TngSection, Tng};
 

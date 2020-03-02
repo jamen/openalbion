@@ -1,28 +1,17 @@
-//! The world archive.
-//!
-//! See [`Wad`] and [`WadReader`].
-//!
-//! These archives contain only [`lev`] and [`tng`] files.
-//!
-//! Usually there's only one occurence at `Data/Levels/FinalAlbion.wad`.
-//!
-//! [`lev`]: ../lev/index.html
-//! [`tng`]: ../tng/index.html
-//! [`Wad`]: ./struct.Wad.html
-//! [`WadReader`]: ./struct.WadReader.html
-
-pub mod decode;
-pub mod encode;
-pub mod reader;
+mod decode;
+mod encode;
+mod reader;
 
 use chrono::naive::NaiveDateTime;
 
 use std::fs::File;
 use std::io::Take;
 
-/// A Wad header and list of entries.
+/// The world archive.
 ///
-/// To read the archive, you use [`WadHeader`] to find the entries, and each [`WadEntry`] to find a file's contents. See [`WadReader`] for this.
+/// These archives contain only [`Lev`] and [`Tng`] files. Usually there's only one occurence at `Data/Levels/FinalAlbion.wad`.
+///
+/// See [`WadReader`] to read the archive. You read the archive with [`WadHeader`] to find the entries, and each [`WadEntry`] to find the file contents.
 ///
 /// ## Format Description
 ///
@@ -37,6 +26,9 @@ use std::io::Take;
 /// [`WadHeader`]: ./struct.WadHeader.html
 /// [`WadEntry`]: ./struct.WadEntry.html
 /// [`WadReader`]: ./struct.WadReader.html
+/// [`Lev`]: ../struct.Lev.html
+/// [`Tng`]: ../struct.Tng.html
+/// [`WadReader`]: ../struct.WadReader.html
 #[derive(Debug,PartialEq)]
 pub struct Wad {
     pub header: WadHeader,

@@ -13,8 +13,8 @@
 //! The format is human readable, so the files can be referenced by eye.
 //!
 
-pub mod decode;
-pub mod encode;
+mod decode;
+mod encode;
 
 use std::collections::HashMap;
 

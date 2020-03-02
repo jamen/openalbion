@@ -1,5 +1,5 @@
-pub mod decode;
-pub mod encode;
+mod decode;
+mod encode;
 
 use crate::Tng;
 

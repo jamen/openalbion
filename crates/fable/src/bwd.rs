@@ -56,5 +56,5 @@
 //!   (Repeat for x number of entries, omit if 0)
 //! ```
 
-pub mod decode;
-pub mod encode;
+mod decode;
+mod encode;

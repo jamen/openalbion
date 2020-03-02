@@ -1,3 +1,7 @@
+use nom::IResult;
+
+use crate::Error;
+
 use super::{
     DefBin,
     DefBinHeader,
@@ -7,8 +11,7 @@ use super::{
     DefSecondTableRowDecompressed,
 };
 
-impl DefBin {
-    fn decode_def_bin(input: &[u8]) -> IResult<&[u8], Wld, Error> {
-
-    }
-}
+// impl DefBin {
+//     fn decode_def_bin(input: &[u8]) -> IResult<&[u8], DefBin, Error> {
+//     }
+// }

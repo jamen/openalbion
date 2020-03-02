@@ -1,5 +1,5 @@
-pub mod decode;
-pub mod encode;
+mod decode;
+mod encode;
 
 #[derive(Debug,PartialEq)]
 pub struct Big {

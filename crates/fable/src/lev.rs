@@ -1,11 +1,11 @@
-//! Level cells and nodes.
-//!
-//! # Format Description
-//!
+mod decode;
+mod encode;
 
-pub mod decode;
-pub mod encode;
-
+/// Level cells and nodes.
+///
+/// # Format Description
+///
+/// WIP
 #[derive(Debug,PartialEq)]
 pub struct Lev {
     pub header: LevHeader,

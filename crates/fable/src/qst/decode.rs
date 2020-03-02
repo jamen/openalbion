@@ -8,7 +8,7 @@ use nom::combinator::{opt,all_consuming};
 
 use crate::{Decode,Error};
 use crate::script::Call;
-use crate::script::decode::decode_call;
+use crate::script::decode_call;
 
 use super::Qst;
 

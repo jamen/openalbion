@@ -4,74 +4,76 @@
 //!
 //! | Format       | Description                                      |
 //! |--------------|--------------------------------------------------|
-//! | [`bba`]      | Animation format.                                |
-//! | [`bbm`]      | Mesh format.                                     |
-//! | [`big`]      | Graphics archive containing [`bba`] and [`bbm`]. |
-//! | [`bncfg`]    | Bone config.                                     |
-//! | [`def`]      | Definition source code.                          |
-//! | [`def_bin`]  | Definition binary.                               |
-//! | [`fmp`]      | Mod packages from [fabletlcmod.com].             |
-//! | [`gtg`]      |                                                  |
-//! | [`ini`]      | Game configs (and debug scripts?)                |
-//! | [`lev`]      | Level heightmap and cell data.                   |
-//! | [`lut`]      |                                                  |
-//! | [`met`]      |                                                  |
-//! | [`qst`]      |                                                  |
-//! | [`save`]     | Game save format.                                |
-//! | [`save_bin`] | Bin file included with save files.               |
-//! | [`stb`]      | Archive containing [`stb_lev`].                  |
-//! | [`stb_lev`]  |                                                  |
-//! | [`tng`]      | Thing scripts.                                   |
-//! | [`wad`]      | World archive containing [`lev`] and [`tng`].    |
-//! | [`wld`]      |                                                  |
+//! | [`Bba`]      | Animation format.                                |
+//! | [`Bbm`]      | Mesh format.                                     |
+//! | [`Big`]      | Graphics archive containing [`bba`] and [`bbm`]. |
+//! | [`Bncfg`]    | Bone config.                                     |
+//! | [`Def`]      | Definition source code.                          |
+//! | [`DefBin`]  | Definition binary.                                |
+//! | [`Fmp`]      | Mod packages from [fabletlcmod.com].             |
+//! | [`Gtg`]      |                                                  |
+//! | [`Ini`]      | Game configs (and debug scripts?)                |
+//! | [`Lev`]      | Level heightmap and cell data.                   |
+//! | [`Lut`]      |                                                  |
+//! | [`Met`]      |                                                  |
+//! | [`Qst`]      |                                                  |
+//! | [`Save`]     | Game save format.                                |
+//! | [`SaveBin`] | Bin file included with save files.                |
+//! | [`Stb`]      | Archive containing [`stb_lev`].                  |
+//! | [`StbLev`]  |                                                   |
+//! | [`Tng`]      | Thing scripts.                                   |
+//! | [`Wad`]      | World archive containing [`lev`] and [`tng`].    |
+//! | [`Wld`]      |                                                  |
 //!
-//! [`bba`]: bba/index.html
-//! [`bbm`]: bbm/index.html
-//! [`big`]: big/index.html
-//! [`bncfg`]: bncfg/index.html
-//! [`def`]: def/index.html
-//! [`def_bin`]: def_bin/index.html
-//! [`fmp`]: fmp/index.html
-//! [`gtg`]: gtg/index.html
-//! [`ini`]: ini/index.html
-//! [`lev`]: lev/index.html
-//! [`lut`]: lut/index.html
-//! [`met`]: met/index.html
-//! [`qst`]: qst/index.html
-//! [`save`]: save/index.html
-//! [`save_bin`]: save_bin/index.html
-//! [`stb`]: stb/index.html
-//! [`stb_lev`]: stb_lev/index.html
-//! [`tng`]: tng/index.html
-//! [`wad`]: wad/index.html
-//! [`wld`]: wld/index.html
+//! [`Bba`]: struct.Bba.html
+//! [`Bbm`]: struct.Bbm.html
+//! [`Big`]: struct.Big.html
+//! [`Bncfg`]: struct.Bncfg.html
+//! [`Def`]: struct.Def.html
+//! [`DefBin`]: struct.DefBin.html
+//! [`Fmp`]: struct.Fmp.html
+//! [`Gtg`]: struct.Gtg.html
+//! [`Ini`]: struct.Ini.html
+//! [`Lev`]: struct.Lev.html
+//! [`Lut`]: struct.Lut.html
+//! [`Met`]: struct.Met.html
+//! [`Qst`]: struct.Qst.html
+//! [`Save`]: struct.Save.html
+//! [`SaveBin`]: struct.SaveBin.html
+//! [`Stb`]: struct.Stb.html
+//! [`StbLev`]: struct.StbLev.html
+//! [`Tng`]: struct.Tng.html
+//! [`Wad`]: struct.Wad.html
+//! [`Wld`]: struct.Wld.html
 //! [`fable_ffi`]: ../fable_ffi/index.html
 //! [fabletlcmod.com]: http://fabletlcmod.com
 
-pub mod bba;
-pub mod bbm;
-pub mod big;
-pub mod bncfg;
-pub mod bwd;
-pub mod def;
-pub mod def_bin;
-pub mod error;
-pub mod fmp;
-pub mod gtg;
-pub mod ini;
-pub mod lev;
-pub mod lut;
-pub mod met;
-pub mod qst;
-pub mod save;
-pub mod save_bin;
 pub mod script;
 pub mod shared;
-pub mod stb;
-pub mod stb_lev;
-pub mod tng;
-pub mod wad;
-pub mod wld;
+
+mod bba;
+mod bbm;
+mod big;
+mod bncfg;
+mod bwd;
+mod def;
+mod def_bin;
+mod error;
+mod fmp;
+mod gtg;
+mod ini;
+mod lev;
+mod lug;
+mod lut;
+mod met;
+mod qst;
+mod save;
+mod save_bin;
+mod stb;
+mod stb_lev;
+mod tng;
+mod wad;
+mod wld;
 
 pub use bba::*;
 pub use bbm::*;
@@ -83,12 +85,13 @@ pub use error::*;
 pub use fmp::*;
 pub use gtg::*;
 pub use lev::*;
+pub use lug::*;
 pub use lut::*;
 pub use met::*;
 pub use qst::*;
 pub use save::*;
 // pub use shared::*;
-pub use script::*;
+// pub use script::*;
 pub use stb::*;
 pub use stb_lev::*;
 pub use tng::*;

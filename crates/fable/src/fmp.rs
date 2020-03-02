@@ -1,2 +1,5 @@
-pub mod decode;
-pub mod encode;
+mod decode;
+mod encode;
+
+pub struct Fmp {
+}

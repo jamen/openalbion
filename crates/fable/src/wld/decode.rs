@@ -6,7 +6,7 @@ use nom::combinator::all_consuming;
 
 use crate::{Decode,Error};
 use crate::script::Field;
-use crate::script::decode::{decode_field,decode_field_named};
+use crate::script::{decode_field,decode_field_named};
 
 use super::{WldMap, WldRegion, Wld};
 
