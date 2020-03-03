@@ -1,6 +1,10 @@
-use std::io::Error;
+//! This tool compiles Fable's graphics to glTF.
 
-use fable::Lev;
+use std::fs::File;
+use std::io::{Read,Write,Cursor,Error};
+use std::path::{Path,PathBuf};
+
+use clap::{App,Arg};
 
 use gltf_json::root::Index;
 use gltf_json::{Root,Node,Scene,Value,Mesh,Accessor,Buffer};
@@ -9,6 +13,8 @@ use gltf_json::accessor::{GenericComponentType,ComponentType,Type};
 use gltf_json::mesh::{Primitive,Mode,Semantic};
 use gltf_json::validation::Checked;
 
+use fable::{Decode,Lev};
+
 pub struct MeshConfig {
     pub cell_height_modifier: f32,
     pub cell_distance: f32,
@@ -16,7 +22,56 @@ pub struct MeshConfig {
     pub height: usize,
 }
 
-pub fn encode_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), Error> {
+fn main() {
+    let matches = App::new("defable")
+        .version("0.1.0")
+        .author("Jamen Marz <me@jamen.dev>")
+        .about("Lev map data tool.")
+        // .arg(
+        //     Arg::with_name("input")
+        //     .help("The Lev file.")
+        //     .takes_value(true)
+        //     .required(true)
+        // )
+        .arg(
+            Arg::with_name("output")
+            .help("The glTF output file.")
+            .takes_value(true)
+            .required(true)
+        )
+        .get_matches();
+
+    // let input_path = matches.value_of("input").unwrap();
+    let output_path = Path::new(matches.value_of("output").unwrap()).with_extension(".gltf");
+
+    // let input_data = File::open
+
+    let mut buffer = Vec::new();
+
+    let stdin = std::io::stdin();
+    let mut stdin_reader = stdin.lock();
+
+    stdin_reader.read_to_end(&mut buffer).expect("Failed to read stdin.");
+
+    let mut lev_data = Cursor::new(buffer);
+
+    let lev: Lev = lev_data.decode().expect("Failed to decode Lev.");
+
+    let output_bin_path = output_path.with_extension(".gltf.bin");
+
+    let (bin_data, root) = encode_lev_to_mesh(lev, &output_bin_path).unwrap();
+
+    let mut bin = File::create(&output_bin_path).unwrap();
+
+    bin.write(&bin_data).unwrap();
+
+    let gltf_data = gltf_json::serialize::to_string_pretty(&root).unwrap();
+    let mut gltf = File::create(output_path).unwrap();
+
+    gltf.write(gltf_data.as_bytes()).unwrap();
+}
+
+pub fn encode_lev_to_mesh(lev: Lev, output_bin_path: &PathBuf) -> Result<(Vec<u8>, Root), Error> {
     let mut positions: Vec<u8> = Vec::new();
 
     let config = MeshConfig {
@@ -147,7 +202,7 @@ pub fn encode_lev_to_mesh(lev: Lev, bin_file: &str) -> Result<(Vec<u8>, Root), E
         buffers:  vec![
             Buffer {
                 byte_length: positions.len() as u32,
-                uri: Some(bin_file.to_string()),
+                uri: Some(output_bin_path.to_str().unwrap().to_string()),
                 extensions: Default::default(),
                 extras: Default::default(),
             }

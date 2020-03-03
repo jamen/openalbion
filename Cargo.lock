@@ -71,6 +71,10 @@ version = "0.1.0"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fable 0.1.0",
+ "fable_bot 0.1.0",
+ "fable_hack 0.1.0",
+ "fable_randize 0.1.0",
+ "fable_transfer 0.1.0",
  "winapi 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -87,22 +91,37 @@ name = "fable2"
 version = "0.1.0"
 
 [[package]]
-name = "fable_ffi"
-version = "0.1.0"
-
-[[package]]
-name = "fable_gltf"
+name = "fable_bot"
 version = "0.1.0"
 dependencies = [
- "fable 0.1.0",
- "gltf-json 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "fable_ffi"
+version = "0.1.0"
 
 [[package]]
 name = "fable_hack"
 version = "0.1.0"
 dependencies = [
  "winapi 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "fable_randize"
+version = "0.1.0"
+dependencies = [
+ "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "fable_transfer"
+version = "0.1.0"
+dependencies = [
+ "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fable 0.1.0",
+ "gltf-json 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -219,6 +238,10 @@ dependencies = [
 name = "redox_syscall"
 version = "0.1.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "refable"
+version = "0.1.0"
 
 [[package]]
 name = "rustc_version"

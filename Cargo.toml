@@ -3,12 +3,16 @@
 members = [
     "crates/defable",
     "crates/fable",
+    "crates/fable_bot",
     "crates/fable_ffi",
-    "crates/fable_gltf",
     "crates/fable_hack",
+    "crates/fable_randize",
+    "crates/fable_transfer",
     "crates/fable2",
+    "crates/refable",
 ]
 
 exclude = [
-    "crates/defable_doc",
+    "crates/defable.netlify.com",
+    "crates/fable_blender_addon",
 ]

@@ -1,3 +1,5 @@
+//! This tool provides info about Fable's files.
+
 use std::fs::File;
 use std::path::Path;
 use std::ffi::OsStr;

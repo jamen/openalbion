@@ -9,7 +9,7 @@
 //! | [`Big`]      | Graphics archive containing [`bba`] and [`bbm`]. |
 //! | [`Bncfg`]    | Bone config.                                     |
 //! | [`Def`]      | Definition source code.                          |
-//! | [`DefBin`]  | Definition binary.                                |
+//! | [`DefBin`]   | Definition binary.                               |
 //! | [`Fmp`]      | Mod packages from [fabletlcmod.com].             |
 //! | [`Gtg`]      |                                                  |
 //! | [`Ini`]      | Game configs (and debug scripts?)                |
@@ -18,9 +18,9 @@
 //! | [`Met`]      |                                                  |
 //! | [`Qst`]      |                                                  |
 //! | [`Save`]     | Game save format.                                |
-//! | [`SaveBin`] | Bin file included with save files.                |
+//! | [`SaveBin`]  | Bin file included with save files.               |
 //! | [`Stb`]      | Archive containing [`stb_lev`].                  |
-//! | [`StbLev`]  |                                                   |
+//! | [`StbLev`]   |                                                  |
 //! | [`Tng`]      | Thing scripts.                                   |
 //! | [`Wad`]      | World archive containing [`lev`] and [`tng`].    |
 //! | [`Wld`]      |                                                  |
@@ -90,8 +90,6 @@ pub use lut::*;
 pub use met::*;
 pub use qst::*;
 pub use save::*;
-// pub use shared::*;
-// pub use script::*;
 pub use stb::*;
 pub use stb_lev::*;
 pub use tng::*;
@@ -100,12 +98,12 @@ pub use wld::*;
 
 use std::io::{Read,Write,Seek};
 
-/// The trait that all decoders implement.
+/// A trait that decoders implement.
 pub trait Decode<Item>: Read + Seek {
     fn decode(&mut self) -> Result<Item, Error>;
 }
 
-/// The trait that all encoders implement.
+/// A trait that encoders implement.
 pub trait Encode<Item>: Write + Seek {
     fn encode(&mut self, item: Item) -> Result<(), Error>;
 }

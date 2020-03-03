@@ -1,9 +1,7 @@
 [package]
-name = "fable_gltf"
+name = "fable_blender_addon"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
 
 [dependencies]
-fable = { path = "../fable" }
-gltf-json = "0.14.0"

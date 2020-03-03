@@ -1,1 +1,3 @@
-pub mod xbox360;
+mod xbox360;
+
+pub use xbox360::*;

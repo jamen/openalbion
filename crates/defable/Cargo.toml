@@ -9,13 +9,18 @@ name = "defable"
 path = "src/bin/defable.rs"
 
 [[bin]]
-name = "defable_assets"
-path = "src/bin/defable_assets.rs"
+name = "fable_info"
+path = "src/bin/fable_info.rs"
 
 [dependencies]
 clap = "2.33.0"
 winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
 fable = { path = "../fable" }
+# Including these commands in the package.
+fable_bot = { path = "../fable_bot" }
+fable_hack = { path = "../fable_hack" }
+fable_randize = { path = "../fable_randize" }
+fable_transfer = { path = "../fable_transfer" }
 
 [package.metadata.wix]
 input = "wix/main.wxs"

@@ -1,1 +1,3 @@
 // Saving Fable 2 from disc to a USB drive gives me an SVOD archive, and [Velocity](https://github.com/hetelek/Velocity) isn't letting me properly extract it. So, I've made this module to read it instead. Its described in ["Reverse Engineering the Xbox 360 SVOD file format"](https://codingha.us/2018/12/31/svod-reverse-engineering-xbox-360/) and [Free60's "STFS" Wiki Article](https://free60project.github.io/wiki/STFS.html).
+pub struct Svod {
+}

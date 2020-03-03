@@ -1,7 +1,8 @@
 [package]
-name = "fable2"
+name = "fable_bot"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
 
 [dependencies]
+clap = "2.33.0"
