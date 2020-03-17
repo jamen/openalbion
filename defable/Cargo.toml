@@ -20,7 +20,6 @@ fable = { path = "../fable" }
 fable_bot = { path = "../fable_bot" }
 fable_hack = { path = "../fable_hack" }
 fable_randize = { path = "../fable_randize" }
-fable_transfer = { path = "../fable_transfer" }
 
 [package.metadata.wix]
 input = "wix/main.wxs"

@@ -1,7 +1,8 @@
 [package]
-name = "fable_blender_addon"
+name = "refable"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
 
 [dependencies]
+boom = { git = "https://github.com/jamen/boom.git" }

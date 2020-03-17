@@ -1,18 +1,17 @@
 [workspace]
 
 members = [
-    "crates/defable",
-    "crates/fable",
-    "crates/fable_bot",
-    "crates/fable_ffi",
-    "crates/fable_hack",
-    "crates/fable_randize",
-    "crates/fable_transfer",
-    "crates/fable2",
-    "crates/refable",
+    "defable",
+    "fable",
+    "fable_binding",
+    "fable_bot",
+    "fable_hack",
+    "fable_randize",
+    "fable2",
+    "refable",
 ]
 
 exclude = [
-    "crates/defable.netlify.com",
-    "crates/fable_blender_addon",
+    "defable.netlify.com",
+    "fable_blender",
 ]
