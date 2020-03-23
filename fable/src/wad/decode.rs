@@ -18,19 +18,19 @@ use super::{
     WadEntry,
 };
 
-static MAGIC_NUMBER: &'static str = "BBBB";
-
-impl<T: Read + Seek> Decode<Wad> for T {
-    fn decode(&mut self) -> Result<Wad, Error> {
-        let mut header_buf = Vec::with_capacity(32);
+impl Decode for Wad {
+    fn decode<Source>(source: &mut Source) -> Result<Self, Error> where
+        Source: Read + Seek
+    {
+        let mut header_buf = [0; 32];
         let mut entries_buf = Vec::new();
 
-        self.read_exact(&mut header_buf)?;
+        source.read_exact(&mut header_buf)?;
         let (_, header) = all_consuming(Wad::decode_header)(&header_buf)?;
 
-        self.seek(SeekFrom::Start(header.entries_offset as u64))?;
-        self.read_to_end(&mut entries_buf)?;
-        let (_, entries) = all_consuming(count(Wad::decode_entry, header.entries_count as usize))(&entries_buf)?;
+        source.seek(SeekFrom::Start(header.entries_offset as u64))?;
+        source.read_to_end(&mut entries_buf)?;
+        let (_, entries) = count(Wad::decode_entry, header.entries_count as usize)(&entries_buf)?;
 
         Ok(Wad { header: header, entries: entries })
     }
@@ -38,7 +38,7 @@ impl<T: Read + Seek> Decode<Wad> for T {
 
 impl Wad {
     pub fn decode_header(input: &[u8]) -> IResult<&[u8], WadHeader, Error> {
-        let (input, _magic_number) = tag(MAGIC_NUMBER)(input)?;
+        let (input, _magic_number) = tag("BBBB")(input)?;
         let (input, version) = tuple((le_u32, le_u32, le_u32))(input)?;
         let (input, block_size) = le_u32(input)?;
         let (input, entries_count) = le_u32(input)?;
@@ -72,9 +72,9 @@ impl Wad {
 
         let (input, _unknown_4) = take(16usize)(input)?;
 
-        let (input, created_at) = Self::decode_timestamp(input)?;
-        let (input, accessed_at) = Self::decode_timestamp(input)?;
-        let (input, written_at) = Self::decode_short_timestamp(input)?;
+        let (input, created) = Self::decode_timestamp(input)?;
+        let (input, accessed) = Self::decode_timestamp(input)?;
+        let (input, written) = Self::decode_short_timestamp(input)?;
 
         Ok(
             (
@@ -84,9 +84,9 @@ impl Wad {
                     length: length,
                     offset: offset,
                     path: path,
-                    created_at: created_at,
-                    accessed_at: accessed_at,
-                    written_at: written_at,
+                    created: created,
+                    accessed: accessed,
+                    written: written,
                 }
             )
         )

@@ -12,11 +12,13 @@ use crate::script::decode_call;
 
 use super::Qst;
 
-impl<T: Read + Seek> Decode<Qst> for T {
-    fn decode(&mut self) -> Result<Qst, Error> {
-        let mut input = Vec::new();
-        self.read_to_end(&mut input)?;
-        let (_, qst) = all_consuming(Qst::decode_qst)(&input)?;
+impl Decode for Qst {
+    fn decode<Source>(source: &mut Source) -> Result<Self, Error> where
+        Source: Read + Seek
+    {
+        let mut data = Vec::new();
+        source.read_to_end(&mut data)?;
+        let (_, qst) = all_consuming(Qst::decode_qst)(&data)?;
         Ok(qst)
     }
 }

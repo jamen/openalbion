@@ -30,11 +30,13 @@ use super::{
     LevNavigationUnknownNode
 };
 
-impl<T: Read + Seek> Decode<Lev> for T {
-    fn decode(&mut self) -> Result<Lev, Error> {
-        let mut input = Vec::new();
-        self.read_to_end(&mut input)?;
-        let (_, lev) = all_consuming(Lev::decode_lev)(&input)?;
+impl Decode for Lev {
+    fn decode<Source>(source: &mut Source) -> Result<Lev, Error> where
+        Source: Read + Seek
+    {
+        let mut data = Vec::new();
+        source.read_to_end(&mut data)?;
+        let (_, lev) = all_consuming(Lev::decode_lev)(&data)?;
         Ok(lev)
     }
 }

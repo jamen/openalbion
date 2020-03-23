@@ -17,10 +17,12 @@ use super::Gtg;
 static NEWMAP: &'static str = "NEWMAP";
 static ENDMAP: &'static str = "ENDMAP";
 
-impl<T: Read + Seek> Decode<Gtg> for T {
-    fn decode(&mut self) -> Result<Gtg, Error> {
+impl Decode for Gtg {
+    fn decode<Source>(source: &mut Source) -> Result<Gtg, Error> where
+        Source: Read + Seek
+    {
         let mut input = Vec::new();
-        self.read_to_end(&mut input)?;
+        source.read_to_end(&mut input)?;
         let (_, gtg) = all_consuming(Gtg::decode_gtg)(&input)?;
         Ok(gtg)
     }

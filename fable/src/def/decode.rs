@@ -18,10 +18,12 @@ use super::{
     Definition,
 };
 
-impl<T: Read + Seek> Decode<Def> for T {
-    fn decode(&mut self) -> Result<Def, Error> {
+impl Decode for Def {
+    fn decode<Source>(source: &mut Source) -> Result<Def, Error> where
+        Source: Read + Seek
+    {
         let mut input = Vec::new();
-        self.read_to_end(&mut input)?;
+        source.read_to_end(&mut input)?;
         let (_, def) = all_consuming(Def::decode_def)(&input)?;
         Ok(def)
     }

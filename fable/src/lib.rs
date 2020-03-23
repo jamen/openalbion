@@ -98,12 +98,14 @@ pub use wld::*;
 
 use std::io::{Read,Write,Seek};
 
-/// A trait that decoders implement.
-pub trait Decode<Item>: Read + Seek {
-    fn decode(&mut self) -> Result<Item, Error>;
+/// Trait that decoders implement.
+pub trait Decode: Sized {
+    fn decode<Source>(input: &mut Source) -> Result<Self, Error> where
+        Source: Read + Seek;
 }
 
-/// A trait that encoders implement.
-pub trait Encode<Item>: Write + Seek {
-    fn encode(&mut self, item: Item) -> Result<(), Error>;
+/// Trait that encoders implement.
+pub trait Encode {
+    fn encode<Sink>(&self, output: &mut Sink) -> Result<(), Error> where
+        Sink: Write + Seek;
 }

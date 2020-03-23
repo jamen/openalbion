@@ -72,9 +72,9 @@ pub struct WadHeader {
 /// | Path size   | `u32`      | 4         | Size of the path string that follows.            |
 /// | Path string | `String`   | Path size | File path                                        |
 /// | Unknown     | `[16; u8]` | 16        | (Maybe some kind of metadata like perms.)        |
-/// | Created At  | `[7; u32]` | 28        | Creation timestamp.                              |
-/// | Accessed At | `[7; u32]` | 28        | Access timestamp.                                |
-/// | Written At  | `[5; u32]` | 20        | Write timestamp.                                 |
+/// | Created     | `[7; u32]` | 28        | Creation timestamp.                              |
+/// | Accessed    | `[7; u32]` | 28        | Access timestamp.                                |
+/// | Written     | `[5; u32]` | 20        | Write timestamp.                                 |
 ///
 /// ### Timestamps
 ///
@@ -95,9 +95,9 @@ pub struct WadEntry {
     pub offset: u32,
     pub length: u32,
     pub path: String,
-    pub created_at: NaiveDateTime,
-    pub accessed_at: NaiveDateTime,
-    pub written_at: NaiveDateTime,
+    pub created: NaiveDateTime,
+    pub accessed: NaiveDateTime,
+    pub written: NaiveDateTime,
 }
 
 /// This reads a single entry out of the Wad file.

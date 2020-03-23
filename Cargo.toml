@@ -1,17 +1,15 @@
 [workspace]
-
 members = [
     "defable",
     "fable",
     "fable_binding",
-    "fable_bot",
     "fable_hack",
-    "fable_randize",
+    "fable_hack_randize",
+    "fable_hack_tas",
     "fable2",
-    "refable",
 ]
-
 exclude = [
     "defable.netlify.com",
-    "fable_blender",
+    "fable_edit",
+    "fable_js/native",
 ]

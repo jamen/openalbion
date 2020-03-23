@@ -1,0 +1,21 @@
+{
+    "name": "fable_edit",
+    "version": "0.1.0",
+    "description": "Fable mod tool.",
+    "main": "out/fable_edit.js",
+    "repository": "jamen/fable_edit",
+    "author": "Jamen Marz <me@jamen.dev>",
+    "license": "ISC",
+    "dependencies": {
+        "neon-cli": "^0.4.0",
+        "rollup": "^2.1.0",
+        "rollup-plugin-svelte": "^5.1.1",
+        "sass": "^1.26.3",
+        "svelte": "^3.20.1"
+    },
+    "devDependencies": {
+        "electron": "^7.1.11",
+        "electron-build-env": "^0.2.0",
+        "electron-packager": "^14.2.1"
+    }
+}

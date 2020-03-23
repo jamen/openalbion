@@ -14,11 +14,13 @@ use super::{
     StbDevHeader,
 };
 
-impl<T: Read + Seek> Decode<Stb> for T {
-    fn decode(&mut self) -> Result<Stb, Error> {
+impl Decode for Stb {
+    fn decode<Source>(source: &mut Source) -> Result<Self, Error> where
+        Source: Read + Seek
+    {
         let mut header_buf = Vec::with_capacity(32);
 
-        self.read_exact(&mut header_buf)?;
+        source.read_exact(&mut header_buf)?;
         let (_, header) = all_consuming(Stb::decode_header)(&header_buf)?;
 
         unimplemented!()

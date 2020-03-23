@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
 
+[lib]
+name = "defable"
+path = "src/lib.rs"
+
 [[bin]]
 name = "defable"
 path = "src/bin/defable.rs"
@@ -12,14 +16,21 @@ path = "src/bin/defable.rs"
 name = "fable_info"
 path = "src/bin/fable_info.rs"
 
+[[bin]]
+name = "fable_randize"
+path = "src/bin/fable_randize.rs"
+
+[[bin]]
+name = "fable_tas"
+path = "src/bin/fable_tas.rs"
+
 [dependencies]
 clap = "2.33.0"
 winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
 fable = { path = "../fable" }
-# Including these commands in the package.
-fable_bot = { path = "../fable_bot" }
 fable_hack = { path = "../fable_hack" }
-fable_randize = { path = "../fable_randize" }
+fable_hack_randize = { path = "../fable_hack_randize" }
+fable_hack_tas = { path = "../fable_hack_tas" }
 
 [package.metadata.wix]
 input = "wix/main.wxs"

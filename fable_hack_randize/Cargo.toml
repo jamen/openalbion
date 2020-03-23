@@ -1,0 +1,12 @@
+[package]
+name = "fable_hack_randize"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+
+[lib]
+name = "fable_hack_randize"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]

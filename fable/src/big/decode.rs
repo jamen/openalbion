@@ -22,23 +22,25 @@ use super::{
     BigSubHeaderAnimation,
 };
 
-impl<T: Read + Seek> Decode<Big> for T {
-    fn decode(&mut self) -> Result<Big, Error> {
+impl Decode for Big {
+    fn decode<Source>(source: &mut Source) -> Result<Big, Error>
+        where Source: Read + Seek
+    {
         let mut header: [u8; 16] = [0; 16];
 
-        self.read(&mut header)?;
+        source.read(&mut header)?;
 
         let (_, header) = Big::decode_header(&header[..])?;
 
         let mut bank_index: Vec<u8> = Vec::new();
-        self.seek(SeekFrom::Start(header.bank_address as u64))?;
-        self.read_to_end(&mut bank_index)?;
+        source.seek(SeekFrom::Start(header.bank_address as u64))?;
+        source.read_to_end(&mut bank_index)?;
 
         let (_, bank) = Big::decode_bank_index(&bank_index)?;
 
         let mut file_index: Vec<u8> = Vec::new();
-        self.seek(SeekFrom::Start(bank.index_start as u64))?;
-        self.take(bank.index_size as u64).read_to_end(&mut file_index)?;
+        source.seek(SeekFrom::Start(bank.index_start as u64))?;
+        source.take(bank.index_size as u64).read_to_end(&mut file_index)?;
 
         let (_, entries) = Big::decode_file_index(&file_index)?;
 

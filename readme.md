@@ -26,4 +26,4 @@ Fable is copyright Microsoft.
 [Fable Speedrunning Discord]: https://discord.gg/Sv8P6Ef
 [ObscureGamers]: https://www.obscuregamers.com
 [ISC licensed]: license-isc
-[CC BY-NC-SA 4 licensed]: license-cc-by-nc-sa-4
+[CC BY-NC-SA 4 licensed]: license-cc

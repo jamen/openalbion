@@ -15,11 +15,13 @@ use super::{
     BbmHelperDummy,
 };
 
-impl<Source: Read + Seek> Decode<Bbm> for Source {
-    fn decode(&mut self) -> Result<Bbm, Error> {
-        let mut input = Vec::new();
-        self.read_to_end(&mut input)?;
-        let (_, bbm) = all_consuming(Bbm::decode_bbm)(&input)?;
+impl Decode for Bbm {
+    fn decode<Source>(source: &mut Source) -> Result<Bbm, Error>
+        where Source: Read + Seek
+    {
+        let mut data = Vec::new();
+        source.read_to_end(&mut data)?;
+        let (_, bbm) = all_consuming(Bbm::decode_bbm)(&data)?;
         Ok(bbm)
     }
 }

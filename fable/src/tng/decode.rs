@@ -9,10 +9,12 @@ use crate::script::{decode_field,decode_field_named};
 
 use super::{TngThing, TngSection, Tng};
 
-impl<T: Read + Seek> Decode<Tng> for T {
-    fn decode(&mut self) -> Result<Tng, Error> {
+impl Decode for Tng {
+    fn decode<Source>(source: &mut Source) -> Result<Self, Error> where
+        Source: Read + Seek
+    {
         let mut input = Vec::new();
-        self.read_to_end(&mut input)?;
+        source.read_to_end(&mut input)?;
         let (_, tng) = all_consuming(Tng::decode_tng)(&input)?;
         Ok(tng)
     }

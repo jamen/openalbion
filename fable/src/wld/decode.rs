@@ -10,11 +10,13 @@ use crate::script::{decode_field,decode_field_named};
 
 use super::{WldMap, WldRegion, Wld};
 
-impl<T: Read + Seek> Decode<Wld> for T {
-    fn decode(&mut self) -> Result<Wld, Error> {
-        let mut input = Vec::new();
-        self.read_to_end(&mut input)?;
-        let (_, wld) = all_consuming(Wld::decode_wld)(&input)?;
+impl Decode for Wld {
+    fn decode<Source>(source: &mut Source) -> Result<Wld, Error> where
+        Source: Read + Seek
+    {
+        let mut data = Vec::new();
+        source.read_to_end(&mut data)?;
+        let (_, wld) = all_consuming(Wld::decode_wld)(&data)?;
         Ok(wld)
     }
 }
