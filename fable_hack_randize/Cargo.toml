@@ -8,5 +8,6 @@ edition = "2018"
 name = "fable_hack_randize"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
+doc = false
 
 [dependencies]

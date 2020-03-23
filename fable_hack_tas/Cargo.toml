@@ -8,5 +8,6 @@ edition = "2018"
 name = "fable_hack_tas"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
+doc = false
 
 [dependencies]

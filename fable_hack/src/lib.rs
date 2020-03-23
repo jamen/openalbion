@@ -1,3 +1,9 @@
+//! To use this:
+//!
+//! ```txt
+//! defable --find
+//! ```
+
 #![cfg(windows)]
 #![allow(non_snake_case, unused_variables)]
 

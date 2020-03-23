@@ -20,10 +20,6 @@ path = "src/bin/fable_info.rs"
 name = "fable_randize"
 path = "src/bin/fable_randize.rs"
 
-[[bin]]
-name = "fable_tas"
-path = "src/bin/fable_tas.rs"
-
 [dependencies]
 clap = "2.33.0"
 winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
@@ -34,4 +30,4 @@ fable_hack_tas = { path = "../fable_hack_tas" }
 
 [package.metadata.wix]
 input = "wix/main.wxs"
-output = "../../target"
+output = "../target"

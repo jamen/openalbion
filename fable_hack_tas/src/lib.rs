@@ -1,7 +1,5 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+//! To use this:
+//!
+//! ```txt
+//! defable --find --dll ./fable_hack_tas.dll
+//! ```
