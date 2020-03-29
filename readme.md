@@ -23,4 +23,4 @@ This project is [ISC licensed]. Fable is copyright Microsoft.
 [fabletlcmod.com]: http://fabletlcmod.com
 [Fable Speedrunning Discord]: https://discord.gg/Sv8P6Ef
 [ObscureGamers]: https://www.obscuregamers.com
-[ISC licensed]: license-isc
+[ISC licensed]: license
