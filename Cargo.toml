@@ -2,10 +2,7 @@
 members = [
     "defable",
     "fable",
-    "fable_binding",
     "fable_hack",
-    "fable_hack_randize",
-    "fable_hack_tas",
     "fable2",
 ]
 exclude = [
