@@ -51,6 +51,7 @@
 pub mod script;
 pub mod shared;
 
+mod archive;
 mod bba;
 mod bbm;
 mod big;
@@ -75,6 +76,7 @@ mod tng;
 mod wad;
 mod wld;
 
+pub use archive::*;
 pub use bba::*;
 pub use bbm::*;
 pub use big::*;

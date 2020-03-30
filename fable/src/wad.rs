@@ -1,11 +1,7 @@
 mod decode;
 mod encode;
-mod reader;
 
 use chrono::naive::NaiveDateTime;
-
-use std::fs::File;
-use std::io::Take;
 
 /// The world archive.
 ///
@@ -98,14 +94,4 @@ pub struct WadEntry {
     pub created: NaiveDateTime,
     pub accessed: NaiveDateTime,
     pub written: NaiveDateTime,
-}
-
-/// This reads a single entry out of the Wad file.
-///
-/// It implements `std::io::{Read,Seek}`, so it can be used in similar places as `std::fs::File`, but you can't write to it.
-#[derive(Debug)]
-pub struct WadReader<'a> {
-    pub source: Take<&'a mut File>,
-    pub entry: WadEntry,
-    pub position: u64,
 }

@@ -7,16 +7,13 @@ use nom::sequence::tuple;
 use nom::multi::count;
 use nom::combinator::all_consuming;
 
-use crate::{Decode,Error};
-use crate::shared::decode_bytes_as_utf8;
-
 use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
 
-use super::{
-    Wad,
-    WadHeader,
-    WadEntry,
-};
+use crate::{Decode,Error};
+use crate::shared::decode_bytes_as_utf8;
+use crate::ArchiveEntry;
+
+use super::{Wad,WadHeader,WadEntry};
 
 impl Decode for Wad {
     fn decode<Source>(source: &mut Source) -> Result<Self, Error> where
@@ -121,4 +118,9 @@ impl Wad {
 
         Ok((input, date_time))
     }
+}
+
+impl ArchiveEntry for WadEntry {
+    fn length(&self) -> u64 { self.length as u64 }
+    fn offset(&self) -> u64 { self.offset as u64 }
 }
