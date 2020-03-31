@@ -1,4 +1,4 @@
-use fable_inject::{Inject,InjectTarget};
+use defable::{Inject,InjectTarget};
 
 use clap::{App,Arg};
 

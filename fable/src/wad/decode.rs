@@ -11,7 +11,7 @@ use chrono::naive::{NaiveDateTime,NaiveDate,NaiveTime};
 
 use crate::{Decode,Error};
 use crate::shared::decode_bytes_as_utf8;
-use crate::ArchiveEntry;
+use crate::Entry;
 
 use super::{Wad,WadHeader,WadEntry};
 
@@ -120,7 +120,7 @@ impl Wad {
     }
 }
 
-impl ArchiveEntry for WadEntry {
+impl Entry for WadEntry {
     fn length(&self) -> u64 { self.length as u64 }
     fn offset(&self) -> u64 { self.offset as u64 }
 }

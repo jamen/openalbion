@@ -1,5 +1,5 @@
 [package]
-name = "fable_pdb_bindgen"
+name = "fable_bindgen"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"

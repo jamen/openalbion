@@ -1,0 +1,8 @@
+[package]
+name = "fable_edit"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+
+[dependencies]
+wasm-bindgen = "0.2.60"

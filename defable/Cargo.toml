@@ -25,8 +25,6 @@ clap = "2.33.0"
 winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
 fable = { path = "../fable" }
 fable_hack = { path = "../fable_hack" }
-fable_hack_randize = { path = "../fable_hack_randize" }
-fable_hack_tas = { path = "../fable_hack_tas" }
 
 [package.metadata.wix]
 input = "wix/main.wxs"

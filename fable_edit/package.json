@@ -7,7 +7,6 @@
     "author": "Jamen Marz <me@jamen.dev>",
     "license": "ISC",
     "dependencies": {
-        "neon-cli": "^0.4.0",
         "rollup": "^2.1.0",
         "rollup-plugin-svelte": "^5.1.1",
         "sass": "^1.26.3",

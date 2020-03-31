@@ -3,10 +3,10 @@ members = [
     "defable",
     "fable",
     "fable_hack",
+    "fable_bindgen",
     "fable2",
 ]
 exclude = [
     "defable.netlify.com",
     "fable_edit",
-    "fable_js/native",
 ]

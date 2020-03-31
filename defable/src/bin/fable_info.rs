@@ -26,13 +26,6 @@ fn main() -> Result<(), u32> {
 
     if let Some(data_file) = matches.value_of("decode") {
         let path = Path::new(data_file);
-
-        if path.extension() == Some(OsStr::new("def")) ||
-           path.extension() == Some(OsStr::new("tpl")) {
-            let mut def_file = File::open(path).unwrap();
-            let def: Def = def_file.decode().unwrap();
-            println!("{:#?}", def);
-        }
     }
 
     Ok(())
