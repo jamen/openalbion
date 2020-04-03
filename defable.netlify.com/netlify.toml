@@ -1,7 +1,0 @@
-[build]
-    publish = "out"
-
-[[redirects]]
-    from = "/"
-    to = "/fable/index.html"
-    status = 302

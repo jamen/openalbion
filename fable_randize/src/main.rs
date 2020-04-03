@@ -1,4 +1,4 @@
-// References to tim's original randomizer
+// References to tim's TypeScript randomizer
 //
 // https://github.com/blastedt/fable-lib/blob/master/src/randomizer/randomizer.ts
 // https://github.com/blastedt/fable-lib/blob/master/src/things

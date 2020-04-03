@@ -1,0 +1,8 @@
+[package]
+name = "fable_randize"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+
+[dependencies]
+fable_format = { git = "https://github.com/jamen/fable_format.git" }

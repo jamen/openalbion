@@ -4,26 +4,9 @@ version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
 
-[lib]
-name = "defable"
-path = "src/lib.rs"
-
-[[bin]]
-name = "defable"
-path = "src/bin/defable.rs"
-
-[[bin]]
-name = "fable_info"
-path = "src/bin/fable_info.rs"
-
-[[bin]]
-name = "fable_randize"
-path = "src/bin/fable_randize.rs"
-
 [dependencies]
 clap = "2.33.0"
 winapi = { version = "0.3.8", features = ["std","impl-default","processthreadsapi","memoryapi","psapi","handleapi","synchapi","winbase","minwinbase","libloaderapi","errhandlingapi","winuser","consoleapi","fileapi","tlhelp32","winerror","wincon","d3d9"] }
-fable_format = { git = "https://github.com/jamen/fable_format.git" }
 fable_hack = { path = "../fable_hack" }
 
 [package.metadata.wix]

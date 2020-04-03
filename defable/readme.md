@@ -1,5 +1,13 @@
 # Defable
 
+## Building
+
+```
+cargo build
+```
+
+Must use `i686-pc-windows-msvc` target.
+
 ## Packaging
 
 Install [`cargo-wix`](https://github.com/volks73/cargo-wix) with
