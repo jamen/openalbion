@@ -1,8 +1,0 @@
-[package]
-name = "fable_bindgen"
-version = "0.1.0"
-authors = ["Jamen Marz <me@jamen.dev>"]
-edition = "2018"
-
-[dependencies]
-pdb = "0.6.0"

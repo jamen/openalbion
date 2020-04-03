@@ -1,3 +1,0 @@
-# defable
-
-Fable mod tool.

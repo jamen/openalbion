@@ -6,7 +6,7 @@ use std::ffi::OsStr;
 
 use clap::{App,Arg};
 
-use fable::{Decode,Def};
+use fable_format::{Decode,Def};
 
 fn main() -> Result<(), u32> {
     let matches =
