@@ -2,19 +2,17 @@
 
 [Fable] modding framework and experiments.
 
-## Documentation
+See also [`fable_format`](https://github.com/jamen/fable_format).
 
-See [defable.netlify.com] for documentation.
+## Acknowledgements
 
-For local docs, run `cargo doc` and open `target/doc/fable/index.html` in your browser.
-
-## Credits
+Thanks to:
 
 - [fabletlcmod.com]
 - [Fable Speedrunning Discord]
 - [ObscureGamers]
 
-## Legal
+## License
 
 This project is [ISC licensed]. Fable is copyright Microsoft.
 
