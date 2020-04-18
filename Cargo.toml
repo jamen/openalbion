@@ -1,8 +1,7 @@
 [workspace]
 members = [
-    "defable",
-    "fable_hack",
-]
-exclude = [
-    "defable.netlify.com",
+    "ember",
+    "ember_build",
+    "fable_data",
+    "open_albion",
 ]

@@ -1,24 +1,16 @@
-# Defable
+# Open Albion
 
-[Fable] modding framework and experiments.
-
-See also [`fable_format`](https://github.com/jamen/fable_format).
+[Fable] modding and engine recreation exepriments.
 
 ## Acknowledgements
 
 Thanks to:
 
-- [fabletlcmod.com]
+- [FableTLCMod]
 - [Fable Speedrunning Discord]
-- [ObscureGamers]
-
-## License
-
-This project is [ISC licensed]. Fable is copyright Microsoft.
+- [Fable Modders' Guild Discord]
 
 [Fable]: https://en.wikipedia.org/wiki/Fable_(video_game_series)
-[defable.netlify.com]: https://defable.netlify.com
-[fabletlcmod.com]: http://fabletlcmod.com
+[FableTLCMod]: http://fabletlcmod.com
 [Fable Speedrunning Discord]: https://discord.gg/Sv8P6Ef
-[ObscureGamers]: https://www.obscuregamers.com
-[ISC licensed]: license
+[Fable Modders' Guild Discord]: https://discord.gg/xUYzkCw

@@ -1,0 +1,19 @@
+[package]
+name = "open_albion"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+license = "Zlib"
+homepage = "https://github.com/jamen/open_albion/tree/master/fable_data"
+repository = "https://github.com/jamen/open_albion"
+documentation = "https://docs.rs/fable_data"
+
+[dependencies]
+cgmath = "0.17.0"
+ember = { path = "../ember" }
+env_logger = "0.7.1"
+fable_data = { path = "../fable_data" }
+log = "0.4.8"
+
+[build-dependencies]
+ember_build = { path = "../ember_build" }

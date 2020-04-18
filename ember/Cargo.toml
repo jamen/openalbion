@@ -1,0 +1,24 @@
+[package]
+name = "ember"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+description = "A library to setup `winit`, `ash`, and `shaderc` together."
+readme = "readme.md"
+license = "Zlib"
+homepage = "https://github.com/jamen/open_albion/tree/master/ember"
+repository = "https://github.com/jamen/open_albion"
+documentation = "https://docs.rs/ember"
+
+[dependencies]
+ash = "0.30.0"
+winit = "0.22.0"
+vk-mem = "0.2.2"
+log = "0.4.8"
+
+[dependencies.winapi]
+version = "0.3.8"
+features = [ "libloaderapi", "windef" ]
+
+[features]
+debug = []
