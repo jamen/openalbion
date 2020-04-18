@@ -4,6 +4,7 @@ version = "0.1.1"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
 description = "A Rust library for using the assets of Fable, Fable: The Lost Chapters, Fable Anniversary, and mods."
+readme = "readme.md"
 license = "Zlib"
 homepage = "https://github.com/jamen/open_albion/tree/master/fable_data"
 repository = "https://github.com/jamen/open_albion"

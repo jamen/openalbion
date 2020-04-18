@@ -25,7 +25,7 @@ pub struct EmberConfig {
 }
 
 pub struct Ember {
-    pub winit: winit::window::Window,
+    pub winit_window: winit::window::Window,
     pub winit_event_loop: winit::event_loop::EventLoop<()>,
     pub ash_entry: ash::Entry,
     pub ash_instance: ash::Instance,
@@ -146,22 +146,21 @@ impl Ember {
             )
         }
 
-        let required_extension_names = vec![
-            // DebugUtils::name().as_ptr(),
+        let instance_extension_names = vec![
+            DebugUtils::name().as_ptr(),
             Surface::name().as_ptr(),
             Win32Surface::name().as_ptr(),
-            // Swapchain::name().as_ptr(),
         ];
 
-        println!("swapchain extension name {:?}", Swapchain::name().to_str()?.to_string());
+        // println!("swapchain extension name {:?}", Swapchain::name().to_str()?.to_string());
 
-        let instance_extension_properties_enumerator = ash_entry.enumerate_instance_extension_properties()?;
+        // let instance_extension_properties_enumerator = ash_entry.enumerate_instance_extension_properties()?;
 
-        for &instance_extension_properties in instance_extension_properties_enumerator.iter() {
-            let extension_name = unsafe { CStr::from_ptr(instance_extension_properties.extension_name.as_ptr()) };
-            let extension_name = extension_name.to_str()?.to_string();
-            println!("instance extension {:?}", &extension_name);
-        }
+        // for &instance_extension_properties in instance_extension_properties_enumerator.iter() {
+        //     let extension_name = unsafe { CStr::from_ptr(instance_extension_properties.extension_name.as_ptr()) };
+        //     let extension_name = extension_name.to_str()?.to_string();
+        //     println!("instance extension {:?}", &extension_name);
+        // }
 
         let instance_create_info = vk::InstanceCreateInfo {
             s_type: vk::StructureType::INSTANCE_CREATE_INFO,
@@ -170,8 +169,8 @@ impl Ember {
             p_application_info: &app_info,
             pp_enabled_layer_names: layer_names.as_ptr(),
             enabled_layer_count: layer_names.len() as u32,
-            pp_enabled_extension_names: required_extension_names.as_ptr(),
-            enabled_extension_count: required_extension_names.len() as u32,
+            pp_enabled_extension_names: instance_extension_names.as_ptr(),
+            enabled_extension_count: instance_extension_names.len() as u32,
         };
 
         let ash_instance = unsafe { ash_entry.create_instance(&instance_create_info, None)? };
@@ -278,6 +277,10 @@ impl Ember {
             p_queue_priorities: [1.0_f32].as_ptr()
         };
 
+        let device_extension_names = vec![
+            Swapchain::name().as_ptr(),
+        ];
+
         let physical_device_features: vk::PhysicalDeviceFeatures = Default::default();
 
         let device_create_info = vk::DeviceCreateInfo {
@@ -288,8 +291,8 @@ impl Ember {
             p_queue_create_infos: &device_queue_create_info,
             enabled_layer_count: layer_names.len() as u32,
             pp_enabled_layer_names: layer_names.as_ptr(),
-            pp_enabled_extension_names: required_extension_names.as_ptr(),
-            enabled_extension_count: required_extension_names.len() as u32,
+            pp_enabled_extension_names: device_extension_names.as_ptr(),
+            enabled_extension_count: device_extension_names.len() as u32,
             p_enabled_features: &physical_device_features,
         };
 
@@ -429,7 +432,7 @@ impl Ember {
 
         Ok(
             Ember {
-                winit: window,
+                winit_window: window,
                 winit_event_loop: window_event_loop,
                 ash_entry: ash_entry,
                 ash_instance: ash_instance,

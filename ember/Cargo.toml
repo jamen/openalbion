@@ -12,7 +12,7 @@ documentation = "https://docs.rs/ember"
 
 [dependencies]
 ash = "0.30.0"
-winit = "0.22.0"
+winit = "0.22.1"
 vk-mem = "0.2.2"
 log = "0.4.8"
 

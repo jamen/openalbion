@@ -1,7 +1,8 @@
-enum BuildError {
+#[derive(Debug)]
+pub enum BuildError {
 
 }
 
-fn build() -> Result<(), BuildError> {
-
+pub fn build() -> Result<(), BuildError> {
+    Ok(())
 }

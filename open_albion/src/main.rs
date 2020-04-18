@@ -3,7 +3,7 @@ use ember::{Ember,EmberConfig};
 use ember::winit::event::{Event,WindowEvent,KeyboardInput,VirtualKeyCode,ElementState};
 use ember::winit::event_loop::ControlFlow;
 
-use fable_format::Lev;
+use fable_data::Lev;
 
 pub struct Scene {
     pub landscape: Lev,
@@ -11,18 +11,18 @@ pub struct Scene {
 
 fn main() {
     let config = EmberConfig {
-        title: "Open Albion",
+        title: "Open Albion".to_string(),
         width: 1024,
         height: 768,
     };
 
     let Ember {
-        window,
-        window_event_loop,
+        winit_window,
+        winit_event_loop,
         ..
     } = Ember::new(config).expect("Failed to initialize app.");
 
-    window_event_loop.run(move |event, _, control_flow| {
+    winit_event_loop.run(move |event, _, control_flow| {
         match event {
             Event::WindowEvent { event, .. } => {
                 println!("{:?}", event);
@@ -42,7 +42,7 @@ fn main() {
                 }
             },
             Event::MainEventsCleared => {
-                window.request_redraw()
+                winit_window.request_redraw()
             },
             Event::RedrawRequested(_window_id) => {
                 // TODO: Draw

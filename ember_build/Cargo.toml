@@ -11,4 +11,4 @@ repository = "https://github.com/jamen/open_albion"
 documentation = "https://docs.rs/fable_data"
 
 [dependencies]
-shaderc = "0.6.2"
+# shaderc = "0.6.2"
