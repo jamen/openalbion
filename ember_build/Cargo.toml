@@ -3,7 +3,7 @@ name = "ember_build"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
 edition = "2018"
-description = "A build dependency paired with the ember crate."
+description = "The compile-time component for the ember crate."
 readme = "readme.md"
 license = "Zlib"
 homepage = "https://github.com/jamen/open_albion/tree/master/fable_data"
@@ -11,4 +11,4 @@ repository = "https://github.com/jamen/open_albion"
 documentation = "https://docs.rs/fable_data"
 
 [dependencies]
-# shaderc = "0.6.2"
+shaderc = "0.6.2"
