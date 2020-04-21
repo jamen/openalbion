@@ -1,5 +1,13 @@
-use ember_build;
+// use ember_build::EmberBuild;
 
 fn main() {
-    ember_build::build().unwrap();
+    let current_dir = std::env::current_dir().unwrap();
+
+    // let config = EmberBuild {
+    //     shaders: current_dir.join("shaders"),
+    // };
+
+    // ember_build::build(config);
+
+    ember_build::build();
 }

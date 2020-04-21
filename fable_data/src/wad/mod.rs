@@ -74,7 +74,7 @@ pub struct WadHeader {
 ///
 /// ### Timestamps
 ///
-/// This is a description for the "created at" and "accessed at" fields. The "written at" field is similar but only percise to minutes.
+/// This describes the "created" and "accessed" fields. The "written" field is similar but only percise to minutes.
 ///
 /// | Field       | Type  | Byte Size |
 /// |-------------|-------|-----------|

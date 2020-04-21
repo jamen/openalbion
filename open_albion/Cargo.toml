@@ -10,10 +10,11 @@ documentation = "https://docs.rs/fable_data"
 
 [dependencies]
 cgmath = "0.17.0"
-ember = { path = "../ember" }
+ember = { git = "https://github.com/jamen/ember.git" }
 env_logger = "0.7.1"
 fable_data = { path = "../fable_data" }
 log = "0.4.8"
+pico-args = "0.3.1"
 
 [build-dependencies]
-ember_build = { path = "../ember_build" }
+ember_build = { git = "https://github.com/jamen/ember.git" }

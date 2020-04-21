@@ -1,8 +1,6 @@
 mod decode;
 mod encode;
 
-use std::io::BufReader;
-
 #[derive(Debug,PartialEq)]
 pub struct Stb {
     pub header: StbHeader,
@@ -42,12 +40,6 @@ pub struct StbEntryExtras {
     pub field_2: u32,
     pub field_3: u32,
     pub field_4: u32,
-}
-
-#[derive(Debug)]
-pub struct StbReader<Source> {
-    pub source: BufReader<Source>,
-    pub entry: StbEntry,
 }
 
 /// Temporary comments from fabletlcmod.com.
