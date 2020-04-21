@@ -1,7 +1,5 @@
 [workspace]
 members = [
-    "ember",
-    "ember_build",
     "fable_data",
     "open_albion",
 ]
