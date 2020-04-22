@@ -18,9 +18,10 @@ pub trait Encode {
 pub trait Entry: Sized {
     fn len(&self) -> u64;
     fn pos(&self) -> u64;
+
     /// Creates a reader for the entry for further decoding.
     ///
-    /// Using a `std::io::BufReader` source is recommended. Especially when reading multiple and/or small entries.
+    /// Using a `std::io::BufReader` as the source is recommended. Especially if reading multiple entries.
     fn reader<'a, Source: Read + Seek>(&mut self, source: &'a mut Source) -> Result<Take<&'a mut Source>, io::Error> {
         source.seek(SeekFrom::Start(self.pos()))?;
         Ok(source.take(self.len()))

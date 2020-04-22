@@ -1,4 +1,4 @@
-// This is a private module for re-exports nom for convenience.
+// This is a private module that re-exports nom for convenience.
 // See https://github.com/Geal/nom/issues/1142
 
 pub use nom::IResult;

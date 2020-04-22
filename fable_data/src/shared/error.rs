@@ -18,6 +18,7 @@ pub enum ErrorKind {
     InvalidScriptValue,
     InvalidScriptBinaryOp,
     NotEnoughSpaceForParser,
+    CannotInferFileType,
 }
 
 impl From<std::io::Error> for Error {

@@ -26,6 +26,7 @@ use crate::{
     BigSubHeaderAnimation,
     Decode,
     Error,
+    Entry,
     decode_rle_string,
     decode_bytes_as_utf8_string,
 };
@@ -170,11 +171,11 @@ impl Big {
         let (input, sub_header) = take(sub_header_size as usize)(input)?;
 
         // println!("\"{:?} {:?}\" -> {:?}", symbol_name, file_type);
-        println!("file_type {:?} file_type_dev {:?} symbol_name {:?}", file_type, file_type_dev, symbol_name);
+        // println!("file_type {:?} file_type_dev {:?} symbol_name {:?}", file_type, file_type_dev, symbol_name);
 
         let (_, sub_header) = all_consuming(Self::decode_big_sub_header(file_type))(sub_header)?;
 
-        println!("sub_header {:?}", sub_header);
+        // println!("sub_header {:?}", sub_header);
 
         Ok(
             (
@@ -311,4 +312,9 @@ impl Big {
             )
         )
     }
+}
+
+impl Entry for BigFileEntry {
+    fn len(&self) -> u64 { self.size as u64 }
+    fn pos(&self) -> u64 { self.start as u64 }
 }

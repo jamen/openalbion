@@ -1,10 +1,10 @@
 # Open Albion
 
-[Fable] modding and engine recreation exepriments.
+[Fable] level rendering experiment.
 
 ## Acknowledgements
 
-Thanks to:
+Thanks to these communities for providing resources and knowledge:
 
 - [FableTLCMod]
 - [Fable Speedrunning Discord]
