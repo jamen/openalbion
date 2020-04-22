@@ -12,7 +12,7 @@ documentation = "https://docs.rs/fable_data"
 cgmath = "0.17.0"
 ember = { git = "https://github.com/jamen/ember.git" }
 env_logger = "0.7.1"
-fable_data = { path = "../fable_data" }
+fable_data = { git = "https://github.com/jamen/fable_data.git" }
 log = "0.4.8"
 pico-args = "0.3.1"
 
