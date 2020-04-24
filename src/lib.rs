@@ -8,17 +8,18 @@
 //! | [`Bbm`]      | Mesh format.                                     |
 //! | [`Big`]      | Graphics archive containing [`Bba`] and [`Bbm`]. |
 //! | [`Bncfg`]    | Bone config.                                     |
+//! | [`Bwd`]      |                                                  |
 //! | [`Def`]      | Definition source code.                          |
 //! | [`DefBin`]   | Definition binary.                               |
 //! | [`Fmp`]      | Mod packages from [fabletlcmod.com].             |
 //! | [`Gtg`]      |                                                  |
 //! | [`Ini`]      | Game configs (and debug scripts?)                |
 //! | [`Lev`]      | Level heightmap and cell data.                   |
+//! | [`Lug`]      |                                                  |
 //! | [`Lut`]      |                                                  |
 //! | [`Met`]      |                                                  |
 //! | [`Qst`]      |                                                  |
-//! | [`Save`]     | Game save format.                                |
-//! | [`SaveBin`]  | Bin file included with save files.               |
+//! | [`Save`]     | Game save formats.                               |
 //! | [`Stb`]      | A cache of local details generated from [`Lev`]. |
 //! | [`Tng`]      | Thing scripts.                                   |
 //! | [`Wad`]      | World archive containing [`Lev`] and [`Tng`].    |
@@ -28,19 +29,19 @@
 //! [`Bbm`]: struct.Bbm.html
 //! [`Big`]: struct.Big.html
 //! [`Bncfg`]: struct.Bncfg.html
+//! [`Bwd`]: struct.Bwd.html
 //! [`Def`]: struct.Def.html
 //! [`DefBin`]: struct.DefBin.html
 //! [`Fmp`]: struct.Fmp.html
 //! [`Gtg`]: struct.Gtg.html
 //! [`Ini`]: struct.Ini.html
 //! [`Lev`]: struct.Lev.html
+//! [`Lug`]: struct.Lug.html
 //! [`Lut`]: struct.Lut.html
 //! [`Met`]: struct.Met.html
 //! [`Qst`]: struct.Qst.html
 //! [`Save`]: struct.Save.html
-//! [`SaveBin`]: struct.SaveBin.html
 //! [`Stb`]: struct.Stb.html
-//! [`StbLev`]: struct.StbLev.html
 //! [`Tng`]: struct.Tng.html
 //! [`Wad`]: struct.Wad.html
 //! [`Wld`]: struct.Wld.html

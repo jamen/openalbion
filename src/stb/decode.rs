@@ -22,8 +22,8 @@ impl Decode for Stb {
     fn decode<Source>(source: &mut Source) -> Result<Self, Error> where
         Source: Read + Seek
     {
-        let mut header_buf = [0; 32];
-        let mut entries_header_buf = [0; 12];
+        let mut header_buf: [u8; 32] = [0; 32];
+        let mut entries_header_buf: [u8; 12] = [0; 12];
         let mut entries_buf = Vec::new();
 
         source.read_exact(&mut header_buf)?;
@@ -31,10 +31,11 @@ impl Decode for Stb {
 
         source.seek(SeekFrom::Start(header.entries_offset as u64))?;
         source.read_exact(&mut entries_header_buf)?;
-        let (_, entries_header) = all_consuming(Stb::decode_entries_header)(&header_buf)?;
+
+        let (rest, entries_header) = all_consuming(Stb::decode_entries_header)(&entries_header_buf)?;
 
         source.read_to_end(&mut entries_buf)?;
-        let (_, entries) = count(Stb::decode_entry, header.files_count as usize)(&entries_buf)?;
+        let (_, entries) = count(Stb::decode_entry, header.levels_count as usize)(&entries_buf)?;
 
         Ok(Stb { header: header, entries_header: entries_header, entries: entries })
     }

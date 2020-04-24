@@ -9,8 +9,8 @@ mod encode;
 #[derive(Debug,PartialEq)]
 pub struct Lev {
     pub header: LevHeader,
-    pub heightmap_cells: Vec<LevHeightmapCell>,
-    pub soundmap_cells: Vec<LevSoundmapCell>,
+    pub heightmap_cells: Vec<LevHeightCell>,
+    pub soundmap_cells: Vec<LevSoundCell>,
     pub navigation_header: LevNavigationHeader,
     pub navigation_section: LevNavigationSection
 }
@@ -33,7 +33,7 @@ pub struct LevHeader {
 
 
 #[derive(Debug,PartialEq)]
-pub struct LevHeightmapCell {
+pub struct LevHeightCell {
     pub size: u32,
     pub version: u8,
     pub height: f32,
@@ -46,7 +46,7 @@ pub struct LevHeightmapCell {
 }
 
 #[derive(Debug,PartialEq)]
-pub struct LevSoundmapCell {
+pub struct LevSoundCell {
     pub size: u32,
     pub version: u8,
     pub sound_theme: (u8, u8, u8),
@@ -76,20 +76,20 @@ pub struct LevNavigationHeader {
 
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationSection {
-    size: u32,
-    version: u32,
-    level_width: u32,
-    level_height: u32,
-    interactive_nodes: Vec<LevInteractiveNode>,
-    subsets_count: u32,
-    level_nodes: Vec<LevNavigationNode>,
+    pub size: u32,
+    pub version: u32,
+    pub level_width: u32,
+    pub level_height: u32,
+    pub interactive_nodes: Vec<LevInteractiveNode>,
+    pub subsets_count: u32,
+    pub level_nodes: Vec<LevNavigationNode>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevInteractiveNode {
-    x: u32,
-    y: u32,
-    subset: u32,
+    pub x: u32,
+    pub y: u32,
+    pub subset: u32,
 }
 
 #[derive(Debug,PartialEq)]
@@ -98,73 +98,73 @@ pub enum LevNavigationNode {
     Navigation(LevNavigationNavigationNode),
     Exit(LevNavigationExitNode),
     Blank(LevNavigationBlankNode),
-    Unknown1(LevNavigationUnknown1Node),
-    Unknown2(LevNavigationUnknown2Node),
-    Unknown3(LevNavigationUnknown3Node),
-    Unknown(LevNavigationUnknownNode),
+    Unknown1(LevNavigationUnknownNode1),
+    Unknown2(LevNavigationUnknownNode2),
+    Unknown3(LevNavigationUnknownNode3),
+    Unknown4(LevNavigationUnknownNode4),
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationRegularNode {
-    root: u8,
-    end: u8,
-    layer: u8,
-    subset: u8,
-    x: f32,
-    y: f32,
-    node_id: u32,
-    child_nodes: (u32, u32, u32, u32) // (top_right, top_left, bottom_right, bottom_left)
+    pub root: u8,
+    pub end: u8,
+    pub layer: u8,
+    pub subset: u8,
+    pub x: f32,
+    pub y: f32,
+    pub node_id: u32,
+    pub child_nodes: (u32, u32, u32, u32) // (top_right, top_left, bottom_right, bottom_left)
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationNavigationNode {
-    root: u8,
-    end: u8,
-    layer: u8,
-    subset: u8,
-    x: f32,
-    y: f32,
-    node_id: u32,
-    node_level: u32,
-    nodes: Vec<u32>,
+    pub root: u8,
+    pub end: u8,
+    pub layer: u8,
+    pub subset: u8,
+    pub x: f32,
+    pub y: f32,
+    pub node_id: u32,
+    pub node_level: u32,
+    pub nodes: Vec<u32>,
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationExitNode {
-    root: u8,
-    end: u8,
-    layer: u8,
-    subset: u8,
-    x: f32,
-    y: f32,
-    node_id: u32,
-    node_level: u32,
-    nodes: Vec<u32>,
-    uids: Vec<u64>,
+    pub root: u8,
+    pub end: u8,
+    pub layer: u8,
+    pub subset: u8,
+    pub x: f32,
+    pub y: f32,
+    pub node_id: u32,
+    pub node_level: u32,
+    pub nodes: Vec<u32>,
+    pub uids: Vec<u64>,
 }
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationUnknown1Node {
-    end: u8
+pub struct LevNavigationUnknownNode1 {
+    pub node_op: Vec<u8>,
+    pub end: u8
 }
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationUnknown2Node {
-    end: u8
+pub struct LevNavigationUnknownNode2 {
+    pub end: u8
 }
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationUnknown3Node {
-    end: u8
+pub struct LevNavigationUnknownNode3 {
+    pub end: u8
 }
 
 #[derive(Debug,PartialEq)]
-pub struct LevNavigationUnknownNode {
-    node_op: Vec<u8>,
-    end: u8
+pub struct LevNavigationUnknownNode4 {
+    pub end: u8
 }
 
 #[derive(Debug,PartialEq)]
 pub struct LevNavigationBlankNode {
-    root: u8
+    pub root: u8
 }

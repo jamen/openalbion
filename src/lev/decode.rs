@@ -20,8 +20,8 @@ use crate::{
     Error,
     Lev,
     LevHeader,
-    LevHeightmapCell,
-    LevSoundmapCell,
+    LevHeightCell,
+    LevSoundCell,
     LevNavigationHeader,
     LevNavigationSection,
     LevInteractiveNode,
@@ -30,10 +30,10 @@ use crate::{
     LevNavigationNavigationNode,
     LevNavigationExitNode,
     LevNavigationBlankNode,
-    LevNavigationUnknown1Node,
-    LevNavigationUnknown2Node,
-    LevNavigationUnknown3Node,
-    LevNavigationUnknownNode,
+    LevNavigationUnknownNode1,
+    LevNavigationUnknownNode2,
+    LevNavigationUnknownNode3,
+    LevNavigationUnknownNode4,
     decode_rle_string,
 };
 
@@ -124,7 +124,7 @@ impl Lev {
         )
     }
 
-    pub fn decode_heightmap_cell(input: &[u8]) -> IResult<&[u8], LevHeightmapCell, Error> {
+    pub fn decode_heightmap_cell(input: &[u8]) -> IResult<&[u8], LevHeightCell, Error> {
         let (input, size) = le_u32(input)?;
         let (input, version) = le_u8(input)?;
         let (input, height) = le_f32(input)?;
@@ -141,7 +141,7 @@ impl Lev {
         Ok(
             (
                 input,
-                LevHeightmapCell {
+                LevHeightCell {
                     size: size,
                     version: version,
                     height: height,
@@ -156,7 +156,7 @@ impl Lev {
         )
     }
 
-    pub fn decode_soundmap_cell(input: &[u8]) -> IResult<&[u8], LevSoundmapCell, Error> {
+    pub fn decode_soundmap_cell(input: &[u8]) -> IResult<&[u8], LevSoundCell, Error> {
         let (input, size) = le_u32(input)?;
         let (input, version) = le_u8(input)?;
         let (input, sound_theme) = tuple((le_u8, le_u8, le_u8))(input)?;
@@ -166,7 +166,7 @@ impl Lev {
         Ok(
             (
                 input,
-                LevSoundmapCell {
+                LevSoundCell {
                     size: size,
                     version: version,
                     sound_theme: sound_theme,
@@ -408,13 +408,13 @@ impl Lev {
         let (input, _unknown_2) = le_u8(input)?;
         let (_input, end) = le_u8(input)?;
 
-        let unknown = LevNavigationUnknown1Node {
+        let unknown = LevNavigationUnknownNode2 {
             end: end,
         };
 
         let input = &input[end as usize..];
 
-        Ok((input, LevNavigationNode::Unknown1(unknown)))
+        Ok((input, LevNavigationNode::Unknown2(unknown)))
     }
 
     pub fn decode_navigation_unknown2_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
@@ -424,13 +424,13 @@ impl Lev {
         let (input, _unknown_2) = le_u8(input)?;
         let (_input, end) = le_u8(input)?;
 
-        let unknown = LevNavigationUnknown2Node {
+        let unknown = LevNavigationUnknownNode3 {
             end: end,
         };
 
         let input = &input[end as usize..];
 
-        Ok((input, LevNavigationNode::Unknown2(unknown)))
+        Ok((input, LevNavigationNode::Unknown3(unknown)))
     }
 
     pub fn decode_navigation_unknown3_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
@@ -440,13 +440,13 @@ impl Lev {
         let (input, _unknown_2) = le_u8(input)?;
         let (_input, end) = le_u8(input)?;
 
-        let unknown = LevNavigationUnknown3Node {
+        let unknown = LevNavigationUnknownNode4 {
             end: end,
         };
 
         let input = &input[end as usize..];
 
-        Ok((input, LevNavigationNode::Unknown3(unknown)))
+        Ok((input, LevNavigationNode::Unknown4(unknown)))
     }
 
     pub fn decode_navigation_unknown_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
@@ -456,14 +456,14 @@ impl Lev {
         let (input, _unknown_2) = le_u8(input)?;
         let (_input, end) = le_u8(input)?;
 
-        let unknown = LevNavigationUnknownNode {
+        let unknown = LevNavigationUnknownNode1 {
             node_op: node_op.to_vec(),
             end: end,
         };
 
         let input = &input[end as usize..];
 
-        Ok((input, LevNavigationNode::Unknown(unknown)))
+        Ok((input, LevNavigationNode::Unknown1(unknown)))
     }
 
     pub fn decode_navigation_blank_node(input: &[u8]) -> IResult<&[u8], LevNavigationNode, Error> {
