@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "tlse",
+    "tlse_dissect",
     "tlse_hack",
 ]
