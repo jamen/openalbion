@@ -22,3 +22,4 @@ ember_build = { git = "https://github.com/jamen/ember.git" }
 [patch."https://github.com/jamen/ember"]
 ember = { path = "../ember/ember" }
 ember_build = { path = "../ember/ember_build" }
+fable_data = { path = "../fable_data" }

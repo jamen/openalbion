@@ -2,13 +2,12 @@
 
 [Fable] level rendering experiment.
 
-## Acknowledgements
+## Resources
 
-Thanks to these communities for providing resources and knowledge:
-
-- [FableTLCMod]
-- [Fable Speedrunning Discord]
-- [Fable Modders' Guild Discord]
+- [MaikKlein/ash/examples](https://github.com/MaikKlein/ash/tree/master/examples)
+- [Ashen Aetna](https://hoj-senna.github.io/ashen-aetna/)
+- [vulkan-tutorial.com](https://vulkan-tutorial.com/)
+- [unknownue/vulkan-tutorial-rust](https://github.com/unknownue/vulkan-tutorial-rust)
 
 [Fable]: https://en.wikipedia.org/wiki/Fable_(video_game_series)
 [FableTLCMod]: http://fabletlcmod.com
