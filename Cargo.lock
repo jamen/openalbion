@@ -11,6 +11,14 @@ dependencies = [
 name = "tlse_hack"
 version = "0.1.0"
 dependencies = [
+ "tlse_sys 0.1.0",
+ "winapi 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tlse_sys"
+version = "0.1.0"
+dependencies = [
  "winapi 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
