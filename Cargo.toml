@@ -10,16 +10,17 @@ documentation = "https://docs.rs/fable_data"
 
 [dependencies]
 cgmath = "0.17.0"
-ember = { git = "https://github.com/jamen/ember.git" }
 env_logger = "0.7.1"
 fable_data = { git = "https://github.com/jamen/fable_data.git" }
 log = "0.4.8"
-pico-args = "0.3.1"
+winit = "0.22.1"
+wgpu = "0.5.0"
+wgpu-core = "0.5.4"
+wgpu-native = "0.5.0"
+pollster = "0.2.0"
 
 [build-dependencies]
-ember_build = { git = "https://github.com/jamen/ember.git" }
+shaderc = "0.6.2"
 
-[patch."https://github.com/jamen/ember"]
-ember = { path = "../ember/ember" }
-ember_build = { path = "../ember/ember_build" }
+[patch."https://github.com/jamen/fable_data"]
 fable_data = { path = "../fable_data" }

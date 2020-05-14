@@ -1,93 +1,64 @@
-use std::fs::File;
-use std::path::{Path,PathBuf};
-use std::io::{Cursor,Read};
+mod renderer;
+pub mod pga3d;
 
-use ember::{App,Context,Config};
-// use ember::winit::event::{Event,WindowEvent,KeyboardInput,VirtualKeyCode,ElementState};
-// use ember::winit::event_loop::ControlFlow;
+use renderer::*;
+use pga3d::*;
 
-use fable_data::{Wad,Big,Decode,Entry,Lev};
-// use fable_data::Lev;
+use std::env;
+use std::path::PathBuf;
 
-pub struct OpenAlbion {
-    pub fable_path: PathBuf,
+struct OpenAlbion {}
+
+impl OpenAlbion {
+    // fn load_map(&mut self) {
+
+    // }
 }
 
-impl App for OpenAlbion {
-    fn init(self, context: Context) {
-        let mut wad_path = self.fable_path.clone();
+impl Renderer for OpenAlbion {
+    fn draw(&mut self, render: &mut Render) {
+        let frame = render.swap_chain.get_next_texture().expect("Timeout when acquiring next swap chain texture");
 
-        wad_path.push("Data/Levels/FinalAlbion.wad");
+        let mut encoder = render.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        let mut wad_file = File::open(wad_path).unwrap();
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &frame.view,
+                    resolve_target: None,
+                    load_op: wgpu::LoadOp::Clear,
+                    store_op: wgpu::StoreOp::Store,
+                    clear_color: wgpu::Color::GREEN,
+                }],
+                depth_stencil_attachment: None,
+            });
 
-        let mut wad = Wad::decode(&mut wad_file).unwrap();
-
-        // println!("wad {:#?}", wad);
-
-        let mut entry = wad.entries
-            .into_iter()
-            .find(|entry| Path::new(&entry.path).file_stem().unwrap() == "LookoutPoint")
-            .unwrap();
-
-        let mut lev_reader = entry.reader(&mut wad_file).unwrap();
-        let mut lev_data = Vec::new();
-
-        lev_reader.read_to_end(&mut lev_data);
-
-        let mut lev_source = Cursor::new(lev_data);
-
-        let lev = Lev::decode(&mut lev_source).unwrap();
-
-        println!("lev entry {:#?}", entry);
-
-        // let mut big_path = self.fable_path.clone();
-
-        // big_path.push("Data/graphics/pc/frontend.big");
-
-        // let mut big_file = File::open(big_path).unwrap();
-
-        // let mut big = Big::decode(&mut big_file).unwrap();
-
-        // let mut big_entry = big.entries.entries.get_mut(0).unwrap();
-
-        // println!("big entry {:#?}", big_entry);
-
-        // let mut big_entry_reader = big_entry.reader(&mut big_file).unwrap();
-        // let mut big_entry_data = Vec::new();
-
-        // big_entry_reader.read_to_end(&mut big_entry_data);
-
-        // println!("big entry data {:?}", big_entry_data);
-
-        loop {
-            context.window_update_sender.send(ember::Message::Test);
-            // std::thread::sleep_ms(1000);
+            rpass.set_pipeline(&render.pipeline);
+            rpass.draw(0..3, 0..1);
         }
+
+        render.queue.submit(&[ encoder.finish() ]);
     }
 }
 
 fn main() {
-    let mut args = pico_args::Arguments::from_env();
+    let args: Vec<String> = env::args().skip(1).collect();
 
-    let fable_path_str: Option<String> = args.opt_value_from_str("--fable").unwrap();
-
-    let fable_path = match fable_path_str {
+    let fable_path = match args.get(0) {
         Some(path) => PathBuf::from(path),
-        None => std::env::current_dir().unwrap(),
+        None => env::current_dir().expect("No Fable directory found.")
     };
 
-    let game = OpenAlbion {
-        fable_path: fable_path,
-    };
+    log::debug!("Fable path: {:?}", fable_path);
 
-    game.start(
-        Config {
-            title: "Open Albion".to_string(),
-            width: 1024,
-            height: 768,
-            resources: std::env::current_dir().unwrap().join("out"),
-        }
-    )
+    let open_albion = OpenAlbion {};
+
+    let orig = e123;
+    let px = Mv::point(1.0, 0.0, 0.0);
+    let line = orig & px;
+
+    println!("a point       : {:?}", px);
+    println!("a line        : {:?}", line);
+
+    open_albion.start()
 }
-
