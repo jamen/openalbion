@@ -1,8 +1,3 @@
-<<<<<<< HEAD
 **/target
 **/*.rs.bk
 **/out
-=======
-/target
-**/*.rs.bk
->>>>>>> fable_stb_swap/master
