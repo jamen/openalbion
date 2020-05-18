@@ -1,3 +1,5 @@
+This is no longer actively developed. Other contributors and experiments welcome.
+
 # Open Albion
 
 Fable mod experiments.
