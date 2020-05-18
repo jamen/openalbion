@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "fable_data",
+    "fable_stb_swap",
+    "open_albion",
+    "tlse",
+    "tlse_hack",
+    "tlse_sys",
+]
