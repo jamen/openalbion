@@ -8,4 +8,4 @@ Fable mod experiments.
 
 ## Miscellaneous
 
-- [`fable_stb_swap`]: Swaps entries in the Stb file. Failed exepriment.
+- [`fable_stb_swap`]: A failed experiment to swap entries in the Stb file.
