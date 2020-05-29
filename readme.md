@@ -1,13 +1,10 @@
-This is no longer actively developed. Other contributors and experiments welcome.
-
 # Open Albion
 
-Fable mod experiments.
+A level rendering experiment
 
-- [`fable_data`](./fable_data): A Rust library to use Fable's data.
-- [`open_albion`](./open_albion): A level rendering experiment.
-- [`tlse`](./tlse): A script extender.
+## Resources
 
-## Miscellaneous
-
-- [`fable_stb_swap`](./fable_stb_swap): A failed experiment to swap entries in the Stb file.
+- [MaikKlein/ash/examples](https://github.com/MaikKlein/ash/tree/master/examples)
+- [Ashen Aetna](https://hoj-senna.github.io/ashen-aetna/)
+- [vulkan-tutorial.com](https://vulkan-tutorial.com/)
+- [unknownue/vulkan-tutorial-rust](https://github.com/unknownue/vulkan-tutorial-rust)

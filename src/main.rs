@@ -27,9 +27,14 @@ struct OpenAlbion {
 pub struct Render {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub bind_group: wgpu::BindGroup,
+    // pub bind_group: wgpu::BindGroup,
     pub swap_chain: wgpu::SwapChain,
     pub pipeline: wgpu::RenderPipeline,
+}
+
+pub struct Vertex {
+    pub pos: [f32; 2],
+    pub color: [f32; 3],
 }
 
 impl OpenAlbion {
@@ -121,9 +126,9 @@ impl OpenAlbion {
     }
 
     fn start(mut self) -> ! {
-        log::info!("Starting.");
-
-        log::info!("Creating window.");
+        //
+        // Create window
+        //
 
         let event_loop = winit::event_loop::EventLoop::new();
 
@@ -135,12 +140,26 @@ impl OpenAlbion {
             .build(&event_loop)
             .expect("Failed to create window");
 
-        log::debug!("Creating wgpu surface.");
+        log::debug!("Created window.");
 
         let size = window.inner_size();
         let surface = wgpu::Surface::create(&window);
 
-        log::debug!("Creating wgpu adapater.");
+        log::debug!("Created wgpu surface.");
+
+        //
+        // Create vertex data
+        //
+
+        let vertex_data: Vec<Vertex> = vec![
+            Vertex { pos: [ 0.0, -0.5 ], color: [ 1.0, 0.0, 0.0 ] },
+            Vertex { pos: [ 0.5, 0.5 ], color: [ 0.0, 1.0, 0.0 ] },
+            Vertex { pos: [ -0.5, 0.5 ], color: [ 0.0, 0.0, 1.0 ] },
+        ];
+
+        //
+        // Setup wgpu
+        //
 
         let adapter = pollster::block_on(
             wgpu::Adapter::request(
@@ -152,7 +171,7 @@ impl OpenAlbion {
             )
         ).unwrap();
 
-        log::debug!("Creating wgpu device and queue.");
+        log::debug!("Created wgpu adapater.");
 
         let (device, queue) = {
             let device_descriptor = wgpu::DeviceDescriptor {
@@ -163,7 +182,7 @@ impl OpenAlbion {
             pollster::block_on(adapter.request_device(&device_descriptor))
         };
 
-        log::debug!("Creating wgpu swap chain.");
+        log::debug!("Created wgpu device and queue.");
 
         let swap_chain_descriptor = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
@@ -175,7 +194,7 @@ impl OpenAlbion {
 
         let swap_chain = device.create_swap_chain(&surface, &swap_chain_descriptor);
 
-        log::debug!("Load shaders.");
+        log::debug!("Creating wgpu swap chain.");
 
         let frag = include_bytes!("../out/resources/shaders/fragment.spv");
         let frag_source = wgpu::read_spirv(Cursor::new(&frag[..])).unwrap();
@@ -185,7 +204,7 @@ impl OpenAlbion {
         let vert_source = wgpu::read_spirv(Cursor::new(&vert[..])).unwrap();
         let vert_module = device.create_shader_module(&vert_source);
 
-        log::debug!("Creating bind group.");
+        log::debug!("Loading shaders.");
 
         let bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
@@ -200,30 +219,40 @@ impl OpenAlbion {
             }
         );
 
+        log::debug!("Created bind group layout.");
+
         let pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 bind_group_layouts: &[ &bind_group_layout ],
+                // bind_group_layouts: &[]
             }
         );
 
-        log::debug!("Create bind groun resources");
+        log::debug!("Created pipeline layout.");
 
-        let mx_projection = cgmath::perspective(
-            cgmath::Deg(45.0f32),
-            swap_chain_descriptor.width as f32 / swap_chain_descriptor.height as f32,
-            1.0,
-            10.0,
-        );
-        let mx_view = cgmath::Matrix4::look_at(
-            cgmath::Point3::new(1.5f32, -5.0, 3.0),
-            cgmath::Point3::new(0f32, 0.0, 0.0),
-            cgmath::Vector3::unit_z(),
-        );
-        let mx_perspective = OPENGL_TO_WGPU_MATRIX * mx_projection * mx_view;
-        let mx_perspective_ref: &[f32; 16] = mx_perspective.as_ref();
+        // let mx_projection = cgmath::perspective(
+        //     cgmath::Deg(45.0f32),
+        //     swap_chain_descriptor.width as f32 / swap_chain_descriptor.height as f32,
+        //     1.0,
+        //     10.0,
+        // );
+        // let mx_view = cgmath::Matrix4::look_at(
+        //     cgmath::Point3::new(1.5f32, -5.0, 3.0),
+        //     cgmath::Point3::new(0f32, 0.0, 0.0),
+        //     cgmath::Vector3::unit_z(),
+        // );
+        // let mx_perspective = OPENGL_TO_WGPU_MATRIX * mx_projection * mx_view;
+        // let mx_perspective_ref: &[f32; 16] = mx_perspective.as_ref();
 
-        let mx_perspective_buf = device.create_buffer_with_data(
-            bytemuck::cast_slice(mx_perspective_ref),
+        // let mx_perspective_buf = device.create_buffer_with_data(
+        //     bytemuck::cast_slice(mx_perspective_ref),
+        //     wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST
+        // );
+
+        // log::debug!("Created bind group resources.");
+
+        let vertex_buf = device.create_buffer_with_data(
+            bytemuck::bytes_of(&vertex_data),
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST
         );
 
@@ -235,15 +264,22 @@ impl OpenAlbion {
                     wgpu::Binding {
                         binding: 0,
                         resource: wgpu::BindingResource::Buffer {
-                            buffer: &mx_perspective_buf,
-                            range: 0..std::mem::size_of_val(&mx_perspective_buf) as u64
+                            buffer: &vertex_buf,
+                            range: 0..vertex_data.len() as u64
                         }
                     }
+                    // wgpu::Binding {
+                    //     binding: 0,
+                    //     resource: wgpu::BindingResource::Buffer {
+                    //         buffer: &mx_perspective_buf,
+                    //         range: 0..std::mem::size_of_val(&mx_perspective_buf) as u64
+                    //     }
+                    // }
                 ]
             }
         );
 
-        log::debug!("Create render pipeline.");
+        log::debug!("Created bind group.");
 
         let pipeline = device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
@@ -283,13 +319,19 @@ impl OpenAlbion {
                         wgpu::VertexBufferDescriptor {
                             stride: 4 * 4,
                             step_mode: wgpu::InputStepMode::Vertex,
-                            attributes: &[
-                                wgpu::VertexAttributeDescriptor {
-                                    format: wgpu::VertexFormat::Float4,
-                                    offset: 0,
-                                    shader_location: 0,
-                                }
-                            ]
+                            // attributes: &[
+                            //     wgpu::VertexAttributeDescriptor {
+                            //         format: wgpu::VertexFormat::Float2,
+                            //         offset: 0,
+                            //         shader_location: 0,
+                            //     },
+                            //     wgpu::VertexAttributeDescriptor {
+                            //         format: wgpu::VertexFormat::Float3,
+                            //         offset: 0,
+                            //         shader_location: 0,
+                            //     }
+                            // ]
+                            attributes: &wgpu::vertex_attr_array![0 => Float2, 1 => Float3]
                         }
                     ],
                 },
@@ -299,22 +341,24 @@ impl OpenAlbion {
             }
         );
 
-        log::info!("Creating renderer context.");
+        log::debug!("Create render pipeline.");
 
         let mut render = Render {
             device,
             queue,
-            bind_group,
+            // bind_group,
             swap_chain,
             pipeline,
         };
-
-        log::info!("Starting event loop.");
 
         // Do the first render before the window is visible, so it doesn't start blank.
         self.draw(&mut render);
 
         window.set_visible(true);
+
+        log::info!("Did first draw.");
+
+        log::info!("Starting event loop.");
 
         event_loop.run(move |event, _, control_flow| {
             match event {
@@ -354,7 +398,7 @@ fn main() {
 
     let mut open_albion = OpenAlbion::new(fable_path);
 
-    open_albion.select_lev("LookoutPoint.lev");
+    // open_albion.select_lev("LookoutPoint.lev");
 
     open_albion.start()
 }
