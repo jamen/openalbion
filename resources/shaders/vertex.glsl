@@ -1,15 +1,15 @@
 #version 450
 
-layout(location = 0) in vec2 inPosition;
-layout(location = 1) in vec3 inColor;
+layout(location = 0) in vec4 vert_position;
+layout(location = 1) in vec2 vert_color;
 
-layout(location = 0) out vec3 fragColor;
+layout(location = 0) out vec4 frag_color;
 
-out gl_PerVertex {
-    vec4 gl_Position;
+layout(set = 0, binding = 0) uniform Locals {
+    mat4 camera_matrix;
 };
 
 void main() {
-    gl_Position = vec4(inPosition, 0.0, 1.0);
-    fragColor = inColor;
+    gl_Position = camera_matrix * vert_position;
+    frag_color = vec4(1.0, 0.0, 0.0, 1.0);
 }

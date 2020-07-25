@@ -9,14 +9,18 @@ repository = "https://github.com/jamen/open_albion"
 documentation = "https://docs.rs/fable_data"
 
 [dependencies]
-cgmath = "0.17.0"
-env_logger = "0.7.1"
-fable_data =  { path = "../fable_data" }
-log = "0.4.8"
-winit = "0.22.1"
-wgpu = "0.5.0"
-pollster = "0.2.0"
+boom = { git = "https://github.com/jamen/boom" }
 bytemuck = "1.2.0"
+fable_data = { git = "https://github.com/jamen/fable_data" }
+glam = "0.8.7"
+wgpu = "0.5.0"
 
 [build-dependencies]
-shaderc = "0.6.2"
+boom_build = "0.1.0"
+
+[patch."https://github.com/jamen/boom"]
+boom = { path = "../boom/boom" }
+boom_build = { path = "../boom/boom_build" }
+
+[patch."https://github.com/jamen/fable_data"]
+fable_data = { path = "../fable_data" }
