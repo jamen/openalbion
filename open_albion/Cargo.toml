@@ -1,0 +1,38 @@
+[package]
+name = "open_albion"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+license = "Zlib"
+homepage = "https://github.com/jamen/open_albion"
+repository = "https://github.com/jamen/open_albion"
+documentation = "https://docs.rs/fable_data"
+# build = "build.rs"
+build = false
+
+[dependencies]
+bytemuck = "1.2.0"
+cpal = "0.11.0"
+fable_data = { git = "https://github.com/jamen/fable_data" }
+futures = "0.3.5"
+glam = "0.8.7"
+# gltf-json = "0.15.2"
+hecs = "0.2.12"
+log = "0.4.8"
+num_cpus = "1.13.0"
+# png = "0.16.7"
+smol = "0.1.18"
+spin_sleep = "1.0.0"
+wgpu = "0.6.0"
+winit = "0.22.1"
+imgui-wgpu = "0.9.0"
+imgui = "0.4.0"
+imgui-winit-support = "0.4.0"
+vk-shader-macros = "0.2.6"
+rodio = "0.13.0"
+
+# [build-dependencies]
+# shaderc = "0.6.2"
+
+[patch."https://github.com/jamen/fable_data"]
+fable_data = { path = "../fable_data" }

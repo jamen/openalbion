@@ -1,26 +1,12 @@
-[package]
-name = "open_albion"
-version = "0.1.0"
-authors = ["Jamen Marz <me@jamen.dev>"]
-edition = "2018"
-license = "Zlib"
-homepage = "https://github.com/jamen/open_albion/tree/master/fable_data"
-repository = "https://github.com/jamen/open_albion"
-documentation = "https://docs.rs/fable_data"
-
-[dependencies]
-boom = { git = "https://github.com/jamen/boom" }
-bytemuck = "1.2.0"
-fable_data = { git = "https://github.com/jamen/fable_data" }
-glam = "0.8.7"
-wgpu = "0.5.0"
-
-[build-dependencies]
-boom_build = "0.1.0"
-
-[patch."https://github.com/jamen/boom"]
-boom = { path = "../boom/boom" }
-boom_build = { path = "../boom/boom_build" }
-
-[patch."https://github.com/jamen/fable_data"]
-fable_data = { path = "../fable_data" }
+[workspace]
+members = [
+    "fable_data",
+    "fable_tools",
+    "open_albion",
+    "tlse_core",
+    "tlse_loader",
+]
+exclude = [
+    "tlse",
+    "tlse_old",
+]
