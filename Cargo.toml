@@ -3,10 +3,4 @@ members = [
     "fable_data",
     "fable_tools",
     "open_albion",
-    "tlse_core",
-    "tlse_loader",
-]
-exclude = [
-    "tlse",
-    "tlse_old",
 ]

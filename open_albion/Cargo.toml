@@ -13,7 +13,7 @@ build = false
 [dependencies]
 bytemuck = "1.2.0"
 cpal = "0.11.0"
-fable_data = { git = "https://github.com/jamen/fable_data" }
+fable_data = { path = "../fable_data" }
 futures = "0.3.5"
 glam = "0.8.7"
 # gltf-json = "0.15.2"
@@ -30,9 +30,3 @@ imgui = "0.4.0"
 imgui-winit-support = "0.4.0"
 vk-shader-macros = "0.2.6"
 rodio = "0.13.0"
-
-# [build-dependencies]
-# shaderc = "0.6.2"
-
-[patch."https://github.com/jamen/fable_data"]
-fable_data = { path = "../fable_data" }

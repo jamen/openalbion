@@ -165,9 +165,10 @@ impl Renderer {
             label: None,
         });
 
-        // TODO: Improve how shaders are loaded.
-        let vertex_shader_module = shader_module!(device, "src/shader.vert", kind: vert);
-        let fragment_shader_module = shader_module!(device, "src/shader.frag", kind: frag);
+        // TODO: Improve how this all works.
+
+        let vertex_shader_module = shader_module!(device, "shaders/shader.vert", kind: vert);
+        let fragment_shader_module = shader_module!(device, "shaders/shader.frag", kind: frag);
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -224,7 +225,7 @@ impl Renderer {
 
         imgui.fonts().add_font(&[
             imgui::FontSource::TtfData {
-                data: include_bytes!("fonts/Inter-Regular.ttf"),
+                data: include_bytes!("../fonts/Inter-Regular.ttf"),
                 size_pixels: (13.0 * hidpi_factor) as f32,
                 config: None,
             }

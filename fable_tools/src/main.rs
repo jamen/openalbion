@@ -1,3 +1,11 @@
 fn main() {
-    println!("Hello, world!");
+
+}
+
+fn unpack_wad() {
+
+}
+
+fn pack_wad() {
+
 }
