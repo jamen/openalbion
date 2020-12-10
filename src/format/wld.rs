@@ -1,8 +1,7 @@
 use std::io::Read;
 
-use crate::Error;
-
-use crate::{
+use super::{
+    Error,
     Field,
     IResult,
     Index,

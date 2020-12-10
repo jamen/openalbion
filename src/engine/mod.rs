@@ -1,10 +1,6 @@
 use std::fs;
-use std::env;
-use std::path::{Path,PathBuf};
-use std::thread;
-use std::io;
+use std::path::PathBuf;
 use std::mem;
-use std::time::Instant;
 use std::borrow::Cow;
 
 use winit::window::{Window,WindowBuilder};
@@ -12,13 +8,13 @@ use winit::event_loop::{EventLoop,ControlFlow};
 use winit::event::{Event,WindowEvent,KeyboardInput,VirtualKeyCode,ElementState};
 use winit::dpi::PhysicalSize;
 
-use wgpu::util::{DeviceExt,make_spirv};
+use wgpu::util::DeviceExt;
 
 use imgui::{im_str,ImString};
 
 use glam::{Vec3,Mat4};
 
-use fable_data::{Big,Bba};
+use crate::format::{Big,Bba};
 
 macro_rules! shader_module {
     ($d:expr, $( $in:tt )*) => {
@@ -32,7 +28,7 @@ macro_rules! shader_module {
     }
 }
 
-struct OpenAlbion {
+pub struct Engine {
     event_loop: EventLoop<()>,
     renderer: Renderer,
     properties: Properties,
@@ -225,7 +221,7 @@ impl Renderer {
 
         imgui.fonts().add_font(&[
             imgui::FontSource::TtfData {
-                data: include_bytes!("../fonts/Inter-Regular.ttf"),
+                data: include_bytes!("../../fonts/Inter-Regular.ttf"),
                 size_pixels: (13.0 * hidpi_factor) as f32,
                 config: None,
             }
@@ -331,7 +327,7 @@ impl Resources {
     fn create(properties: &Properties) -> Self {
         let mut big_file = fs::File::open(properties.fable_directory.join("data/graphics/graphics.big")).unwrap();
 
-        let big = fable_data::Big::decode(&mut big_file).unwrap();
+        let big = Big::decode(&mut big_file).unwrap();
 
         // println!("{:#?}", big.entries.entries.iter().enumerate().map(|(i, x)| (i, x.symbol_name.as_str())).collect::<Vec<(usize, &str)>>());
 
@@ -347,8 +343,8 @@ impl Resources {
     }
 }
 
-impl OpenAlbion {
-    fn create(fable_directory: PathBuf) -> Self {
+impl Engine {
+    pub fn create(fable_directory: PathBuf) -> Self {
         // TODO: Config file?
 
         let properties = Properties {
@@ -381,7 +377,7 @@ impl OpenAlbion {
         }
     }
 
-    fn run(mut self) -> ! {
+    pub fn run(mut self) -> ! {
         let mut renderer = self.renderer;
 
         renderer.render();
@@ -410,18 +406,4 @@ impl OpenAlbion {
             );
         })
     }
-}
-
-fn main() {
-    let args: Vec<String> = env::args().skip(1).collect();
-
-    // TODO: Use some GUI like an open dialog instead.
-    let fable_directory = args.get(0)
-        .map(|x| PathBuf::from(x))
-        .or(env::current_dir().ok())
-        .expect("Could not determine Fable's directory.");
-
-    let open_albion = OpenAlbion::create(fable_directory);
-
-    open_albion.run()
 }

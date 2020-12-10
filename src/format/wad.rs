@@ -3,7 +3,7 @@ use std::io::{self,Read,Seek,SeekFrom,Write};
 use std::path::Path;
 use std::fs::{File,OpenOptions};
 
-use crate::{
+use super::{
     Decoder,
     Encoder,
     Entry,
@@ -123,7 +123,7 @@ pub struct WadWriter<'a, T: Write + Seek> {
 }
 
 impl Decoder for Wad {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn decode<Source: Read + Seek>(source: &mut Source) -> Result<Self, Error> {
         let mut header_buf = [0; 32];
@@ -227,7 +227,7 @@ impl Wad {
 }
 
 impl Encoder for Wad {
-    type Error = crate::Error;
+    type Error = Error;
 
     fn encode<Target: Write + Seek>(&self, target: &mut Target) -> Result<(), Error> {
         let header_buf = Self::encode_wad_header(&self.header)?;

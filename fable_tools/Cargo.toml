@@ -1,9 +1,0 @@
-[package]
-name = "fable_tools"
-version = "0.1.0"
-authors = ["Jamen Marz <me@jamen.dev>"]
-edition = "2018"
-
-[dependencies]
-clap = "2.33.3"
-fable_data = { path = "../fable_data" }

@@ -1,10 +1,8 @@
 use std::io::{Read,Seek};
 
-use crate::Error;
-
-use crate::{
+use super::{
+    Error,
     IResult,
-    all_consuming,
     count,
     decode_null_terminated_string,
     le_f32,
@@ -308,7 +306,7 @@ impl Bbm {
         // dbg!(&unknown5);
         // dbg!(&compressed);
 
-        hex_table::HexTable::default().format(&input[..256], &mut std::io::stdout()).unwrap();
+        // hex_table::HexTable::default().format(&input[..256], &mut std::io::stdout()).unwrap();
         dbg!(input.len());
         println!("");
 
@@ -381,11 +379,13 @@ impl Bbm {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::env;
     use std::path::PathBuf;
     use std::fs::File;
-    use crate::Entry;
+
+    use super::*;
+
+    use crate::format::{Entry,Big,BigFileEntry};
 
     #[test]
     fn test_bbm_print_meshes() {
@@ -393,9 +393,9 @@ mod tests {
             .join("Data/graphics/graphics.big");
 
         let mut file = File::open(&file_path).unwrap();
-        let big = crate::Big::decode(&mut file).unwrap();
+        let big = Big::decode(&mut file).unwrap();
 
-        let entries: Vec<crate::big::BigFileEntry> = big.entries.entries.into_iter().filter(|x| [
+        let entries: Vec<BigFileEntry> = big.entries.entries.into_iter().filter(|x| [
             "MESH_CREATURE_NEW_CHICKEN_01",
             "MESH_OBJECT_BARREL",
             "MESH_OBJECT_BRAZIER_TORCH_LIT",
@@ -417,9 +417,9 @@ mod tests {
             .join("Data/graphics/graphics.big");
 
         let mut file = File::open(&file_path).unwrap();
-        let big = crate::Big::decode(&mut file).unwrap();
+        let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<crate::BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
             .filter(|x|x.symbol_name.starts_with("MESH_"))
             .collect();
 
@@ -439,9 +439,9 @@ mod tests {
             .join("Data/graphics/graphics.big");
 
         let mut file = File::open(&file_path).unwrap();
-        let big = crate::Big::decode(&mut file).unwrap();
+        let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<crate::BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
             .filter(|x|
                 x.symbol_name.starts_with("MESH_") &&
                 !x.symbol_name.ends_with("[PHYSICS]")
@@ -466,15 +466,15 @@ mod tests {
             .join("Data/graphics/graphics.big");
 
         let mut file = File::open(&file_path).unwrap();
-        let big = crate::Big::decode(&mut file).unwrap();
+        let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<crate::BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
             .filter(|x|x.symbol_name.starts_with("MESH_"))
             .collect();
 
         let mut rng = rand::thread_rng();
 
-        let mut rand_mesh_entries: Vec<&crate::BigFileEntry> = Vec::new();
+        let mut rand_mesh_entries: Vec<&BigFileEntry> = Vec::new();
 
         while rand_mesh_entries.len() != 20 {
             let rand_mesh_idx = rng.gen_range(0, mesh_entries.len());
@@ -505,9 +505,9 @@ mod tests {
             .join("Data/graphics/graphics.big");
 
         let mut file = File::open(&file_path).unwrap();
-        let big = crate::Big::decode(&mut file).unwrap();
+        let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<crate::BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
             .filter(|x|
                 x.symbol_name.starts_with("MESH_") &&
                 !x.symbol_name.ends_with("[PHYSICS]")
@@ -517,7 +517,7 @@ mod tests {
 
         let mut rng = rand::thread_rng();
 
-        let mut rand_mesh_entries: Vec<&crate::BigFileEntry> = Vec::new();
+        let mut rand_mesh_entries: Vec<&BigFileEntry> = Vec::new();
 
         while rand_mesh_entries.len() != 20 {
             let rand_mesh_idx = rng.gen_range(0, mesh_entries.len());
@@ -547,7 +547,7 @@ mod tests {
             .join("Data/graphics/graphics.big");
 
         let mut file = File::open(&file_path).unwrap();
-        let big = crate::Big::decode(&mut file).unwrap();
+        let big = Big::decode(&mut file).unwrap();
 
         let entry = big.entries.entries.get(306).unwrap(); // MESH_OBJECT_STEPS_SMALL_DOUBLE_01
 

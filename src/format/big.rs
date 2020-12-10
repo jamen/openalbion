@@ -1,8 +1,8 @@
 use std::io::{Read,Seek,SeekFrom};
 
-use crate::{Error,Entry};
-
-use crate::{
+use super::{
+    Error,
+    Entry,
     IResult,
     // all_consuming,
     count,
