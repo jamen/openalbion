@@ -385,7 +385,7 @@ mod tests {
 
     use super::*;
 
-    use crate::format::{Entry,Big,BigFileEntry};
+    use crate::format::{Decode,Big,BigEntry};
 
     #[test]
     fn test_bbm_print_meshes() {
@@ -395,7 +395,7 @@ mod tests {
         let mut file = File::open(&file_path).unwrap();
         let big = Big::decode(&mut file).unwrap();
 
-        let entries: Vec<BigFileEntry> = big.entries.entries.into_iter().filter(|x| [
+        let entries: Vec<BigEntry> = big.entries.entries.into_iter().filter(|x| [
             "MESH_CREATURE_NEW_CHICKEN_01",
             "MESH_OBJECT_BARREL",
             "MESH_OBJECT_BRAZIER_TORCH_LIT",
@@ -405,9 +405,9 @@ mod tests {
         ].contains(&x.symbol_name.as_str())).collect();
 
         for entry in &entries {
-            let mut reader = entry.to_sub_source(&mut file).unwrap();
+            let mut reader = entry.source(&mut file).unwrap();
 
-            let bbm = Bbm::decode(&mut reader).unwrap();
+            Bbm::decode(&mut reader).unwrap();
         }
     }
 
@@ -419,17 +419,14 @@ mod tests {
         let mut file = File::open(&file_path).unwrap();
         let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigEntry> = big.entries.entries.into_iter()
             .filter(|x|x.symbol_name.starts_with("MESH_"))
             .collect();
 
         for entry in mesh_entries {
-            let mut barrel_reader = entry.to_sub_source(&mut file).unwrap();
+            let mut barrel_reader = entry.source(&mut file).unwrap();
 
-            let bbm = Bbm::decode(&mut barrel_reader).unwrap();
-
-            println!("");
-            // println!("{:#?}", bbm);
+            Bbm::decode(&mut barrel_reader).unwrap();
         }
     }
 
@@ -441,7 +438,7 @@ mod tests {
         let mut file = File::open(&file_path).unwrap();
         let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigEntry> = big.entries.entries.into_iter()
             .filter(|x|
                 x.symbol_name.starts_with("MESH_") &&
                 !x.symbol_name.ends_with("[PHYSICS]")
@@ -449,12 +446,9 @@ mod tests {
             .collect();
 
         for entry in mesh_entries {
-            let mut barrel_reader = entry.to_sub_source(&mut file).unwrap();
+            let mut barrel_reader = entry.source(&mut file).unwrap();
 
-            let bbm = Bbm::decode(&mut barrel_reader).unwrap();
-
-            println!("");
-            // println!("{:#?}", bbm);
+            Bbm::decode(&mut barrel_reader).unwrap();
         }
     }
 
@@ -468,13 +462,13 @@ mod tests {
         let mut file = File::open(&file_path).unwrap();
         let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigEntry> = big.entries.entries.into_iter()
             .filter(|x|x.symbol_name.starts_with("MESH_"))
             .collect();
 
         let mut rng = rand::thread_rng();
 
-        let mut rand_mesh_entries: Vec<&BigFileEntry> = Vec::new();
+        let mut rand_mesh_entries: Vec<&BigEntry> = Vec::new();
 
         while rand_mesh_entries.len() != 20 {
             let rand_mesh_idx = rng.gen_range(0, mesh_entries.len());
@@ -486,14 +480,11 @@ mod tests {
         }
 
         for entry in rand_mesh_entries {
-            let mut reader = entry.to_sub_source(&mut file).unwrap();
+            let mut reader = entry.source(&mut file).unwrap();
 
             dbg!(entry.id);
             dbg!(&entry.symbol_name);
-            let bbm = Bbm::decode(&mut reader).unwrap();
-
-            println!("");
-            // println!("{:#?}", bbm);
+            Bbm::decode(&mut reader).unwrap();
         }
     }
 
@@ -507,7 +498,7 @@ mod tests {
         let mut file = File::open(&file_path).unwrap();
         let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter()
+        let mesh_entries: Vec<BigEntry> = big.entries.entries.into_iter()
             .filter(|x|
                 x.symbol_name.starts_with("MESH_") &&
                 !x.symbol_name.ends_with("[PHYSICS]")
@@ -517,7 +508,7 @@ mod tests {
 
         let mut rng = rand::thread_rng();
 
-        let mut rand_mesh_entries: Vec<&BigFileEntry> = Vec::new();
+        let mut rand_mesh_entries: Vec<&BigEntry> = Vec::new();
 
         while rand_mesh_entries.len() != 20 {
             let rand_mesh_idx = rng.gen_range(0, mesh_entries.len());
@@ -529,14 +520,11 @@ mod tests {
         }
 
         for entry in rand_mesh_entries {
-            let mut reader = entry.to_sub_source(&mut file).unwrap();
+            let mut reader = entry.source(&mut file).unwrap();
 
             dbg!(entry.id);
             dbg!(&entry.symbol_name);
-            let bbm = Bbm::decode(&mut reader).unwrap();
-
-            println!("");
-            // println!("{:#?}", bbm);
+            Bbm::decode(&mut reader).unwrap();
         }
     }
 
@@ -553,7 +541,7 @@ mod tests {
 
         println!("{:#?}", entry);
 
-        let mut reader = entry.to_sub_source(&mut file).unwrap();
+        let mut reader = entry.source(&mut file).unwrap();
 
         let bbm = Bbm::decode(&mut reader).unwrap();
 
@@ -563,7 +551,7 @@ mod tests {
 
         println!("{:#?}", entry);
 
-        let mut reader = entry.to_sub_source(&mut file).unwrap();
+        let mut reader = entry.source(&mut file).unwrap();
 
         let bbm = Bbm::decode(&mut reader).unwrap();
 

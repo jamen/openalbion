@@ -4,8 +4,8 @@ use std::path::Path;
 use std::fs::{File,OpenOptions};
 
 use super::{
-    Decoder,
-    Encoder,
+    Decode,
+    Encode,
     Entry,
     Error,
     IResult,
@@ -122,7 +122,7 @@ pub struct WadWriter<'a, T: Write + Seek> {
     pub pos: usize,
 }
 
-impl Decoder for Wad {
+impl Decode for Wad {
     type Error = Error;
 
     fn decode<Source: Read + Seek>(source: &mut Source) -> Result<Self, Error> {
@@ -226,7 +226,7 @@ impl Wad {
     }
 }
 
-impl Encoder for Wad {
+impl Encode for Wad {
     type Error = Error;
 
     fn encode<Target: Write + Seek>(&self, target: &mut Target) -> Result<(), Error> {
@@ -320,19 +320,24 @@ impl Wad {
 }
 
 impl Wad {
-    // TODO: Make parallel?
+    // TODO: Make these async?
+
     pub fn unpack<Source: Read + Seek, P: AsRef<Path>>(&self, mut source: &mut Source, to: P) -> Result<(), Error> {
         let to = to.as_ref();
 
         for entry in &self.entries {
             let to = to.join(entry.path.clone());
             let mut file = OpenOptions::new().write(true).create(true).open(to)?;
-            let mut sub_source = entry.to_sub_source(&mut source)?;
+            let mut sub_source = entry.source(&mut source)?;
             io::copy(&mut sub_source, &mut file)?;
         }
 
         Ok(())
     }
+
+    // TODO: This isn't useful. The implementation needs to change to: get files from a directory, create the entries, and then write the archive.
+
+    // pub fn pack<Sink: Write + Seek, P: AsRef<Path>>(mut sink: &mut Sink, from: P) -> Result<(), Error>
 
     pub fn pack<Sink: Write + Seek, P: AsRef<Path>>(&self, mut sink: &mut Sink, from: P) -> Result<(), Error> {
         let from = from.as_ref();
@@ -342,7 +347,7 @@ impl Wad {
         for entry in &self.entries {
             let from = from.join(entry.path.clone());
             let mut file = File::open(from)?;
-            let mut sub_source = entry.to_sub_source(&mut sink)?;
+            let mut sub_source = entry.source(&mut sink)?;
             io::copy(&mut file, &mut sub_source)?;
         }
 
@@ -350,11 +355,8 @@ impl Wad {
     }
 }
 
-impl Entry for WadEntry {
-    fn start(&self) -> u64 {
-        self.offset as u64
-    }
-    fn end(&self) -> u64 {
-        self.offset as u64 + self.length as u64
+impl WadEntry {
+    pub fn source<S: Seek>(&self, source: S) -> Result<Entry<S>, Error> {
+        Ok(Entry::new(source, self.offset as u64, self.offset as u64 + self.length as u64)?)
     }
 }

@@ -1,20 +1,15 @@
-use std::fs;
-use std::path::PathBuf;
+
 use std::mem;
 use std::borrow::Cow;
 
-use winit::window::{Window,WindowBuilder};
-use winit::event_loop::{EventLoop,ControlFlow};
-use winit::event::{Event,WindowEvent,KeyboardInput,VirtualKeyCode,ElementState};
+use winit::window::Window;
 use winit::dpi::PhysicalSize;
 
 use wgpu::util::DeviceExt;
 
-use imgui::{im_str,ImString};
-
 use glam::{Vec3,Mat4};
 
-use crate::format::{Big,Bba};
+use super::App;
 
 macro_rules! shader_module {
     ($d:expr, $( $in:tt )*) => {
@@ -28,50 +23,15 @@ macro_rules! shader_module {
     }
 }
 
-pub struct Engine {
-    event_loop: EventLoop<()>,
-    renderer: Renderer,
-    properties: Properties,
-    resources: Resources,
-    // audio: Audio,
-    // world: hecs::World,
-}
-
-struct Properties {
-    fable_directory: PathBuf,
-    selected_mesh: u32,
-}
-
-struct Resources {
-    graphics: Resource<Big>,
-    mesh: Option<Bba>,
-    // graphics: fable_data::Big,
-}
-
-struct Resource<T> (fs::File, T);
-
-// struct Resource<T> {
-//     source: fs::File,
-//     data: T,
-// }
-
-struct Renderer {
-    window: Window,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    swap_chain: wgpu::SwapChain,
-    camera_buffer: wgpu::Buffer,
-    pipeline: wgpu::RenderPipeline,
-    bind_group: wgpu::BindGroup,
-    size: PhysicalSize<u32>,
-    imgui: imgui::Context,
-    imgui_renderer: imgui_wgpu::Renderer,
-    imgui_platform: imgui_winit_support::WinitPlatform,
-    ui: Ui,
-}
-
-pub struct Ui {
-    mesh_names: Vec<ImString>,
+pub struct Renderer {
+    pub window: Window,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub swap_chain: wgpu::SwapChain,
+    pub camera_buffer: wgpu::Buffer,
+    pub pipeline: wgpu::RenderPipeline,
+    pub bind_group: wgpu::BindGroup,
+    pub size: PhysicalSize<u32>,
 }
 
 #[derive(Clone,Copy)]
@@ -82,9 +42,8 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 unsafe impl bytemuck::Pod for Vertex {}
 
 impl Renderer {
-    fn new(window: Window) -> Self {
+    pub fn new(window: Window) -> Self {
         let size = window.inner_size();
-        let mut hidpi_factor = window.scale_factor();
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(&window) };
 
@@ -103,7 +62,7 @@ impl Renderer {
             shader_validation: false,
         };
 
-        let (device, mut queue) = smol::block_on(adapter.request_device(&device_desc, None)).unwrap();
+        let (device, queue) = smol::block_on(adapter.request_device(&device_desc, None)).unwrap();
 
         let swap_chain_desc = wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
@@ -113,7 +72,7 @@ impl Renderer {
             present_mode: wgpu::PresentMode::Mailbox,
         };
 
-        let mut swap_chain = device.create_swap_chain(&surface, &swap_chain_desc);
+        let swap_chain = device.create_swap_chain(&surface, &swap_chain_desc);
 
         // TODO: Create imgui here?
 
@@ -148,7 +107,7 @@ impl Renderer {
             usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST
         };
 
-        let mut camera_buffer = device.create_buffer_init(&camera_buffer_desc);
+        let camera_buffer = device.create_buffer_init(&camera_buffer_desc);
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
@@ -207,40 +166,6 @@ impl Renderer {
             alpha_to_coverage_enabled: false,
         });
 
-        let mut imgui = imgui::Context::create();
-
-        {
-            let mut style = imgui.style_mut();
-
-            style.window_rounding = 0.0;
-        }
-
-        imgui.set_ini_filename(None);
-
-        imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
-
-        imgui.fonts().add_font(&[
-            imgui::FontSource::TtfData {
-                data: include_bytes!("../../fonts/Inter-Regular.ttf"),
-                size_pixels: (13.0 * hidpi_factor) as f32,
-                config: None,
-            }
-        ]);
-
-        let imgui_renderer = imgui_wgpu::Renderer::new(&mut imgui, &device, &mut queue, swap_chain_desc.format);
-
-        let mut imgui_platform = imgui_winit_support::WinitPlatform::init(&mut imgui);
-
-        imgui_platform.attach_window(
-            imgui.io_mut(),
-            &window,
-            imgui_winit_support::HiDpiMode::Default,
-        );
-
-        let ui = Ui {
-            mesh_names: Vec::new(),
-        };
-
         Self {
             window,
             device,
@@ -250,14 +175,10 @@ impl Renderer {
             pipeline,
             bind_group,
             size,
-            imgui,
-            imgui_renderer,
-            imgui_platform,
-            ui,
         }
     }
 
-    fn render(&mut self) {
+    pub fn render(&mut self, _state: &App) {
         let frame = match self.swap_chain.get_current_frame() {
             Ok(x) => x,
             Err(e) => {
@@ -285,8 +206,6 @@ impl Renderer {
 
         encoder.copy_buffer_to_buffer(&next_camera_buffer, 0, &self.camera_buffer, 0, mem::size_of::<glam::Mat4>() as wgpu::BufferAddress);
 
-        self.imgui_platform.prepare_frame(self.imgui.io_mut(), &self.window).unwrap();
-
         {
             let rpass_desc = wgpu::RenderPassDescriptor {
                 color_attachments: &[
@@ -302,108 +221,9 @@ impl Renderer {
                 depth_stencil_attachment: None,
             };
 
-            let mut rpass = encoder.begin_render_pass(&rpass_desc);
-
-            let ui = self.imgui.frame();
-
-            let mesh_names = &self.ui.mesh_names;
-
-            let window = imgui::Window::new(im_str!("Asset Explorer"));
-
-            window
-                .size([240.0, 400.0], imgui::Condition::FirstUseEver)
-                .build(&ui, || {
-
-                });
-
-            self.imgui_renderer.render(ui.render(), &self.queue, &self.device, &mut rpass).unwrap();
+            let mut _rpass = encoder.begin_render_pass(&rpass_desc);
         }
 
         self.queue.submit(Some(encoder.finish()));
-    }
-}
-
-impl Resources {
-    fn create(properties: &Properties) -> Self {
-        let mut big_file = fs::File::open(properties.fable_directory.join("data/graphics/graphics.big")).unwrap();
-
-        let big = Big::decode(&mut big_file).unwrap();
-
-        // println!("{:#?}", big.entries.entries.iter().enumerate().map(|(i, x)| (i, x.symbol_name.as_str())).collect::<Vec<(usize, &str)>>());
-
-        // MESH_OBJECT_BARREL
-        let x = big.entries.entries.get(168);
-
-        println!("{:?}", x);
-
-        Self {
-            graphics: Resource (big_file, big),
-            mesh: None,
-        }
-    }
-}
-
-impl Engine {
-    pub fn create(fable_directory: PathBuf) -> Self {
-        // TODO: Config file?
-
-        let properties = Properties {
-            fable_directory,
-            selected_mesh: 0,
-        };
-
-        let event_loop = EventLoop::new();
-
-        let window = WindowBuilder::new()
-            .with_title("Open Albion")
-            .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 768.0))
-            // .with_fullscreen(Some(Fullscreen::Borderless(event_loop.primary_monitor()))) // TODO: Allow windowed later.
-            .with_resizable(false) // FIXME
-            .with_visible(false) // NOTE: Revealed later.
-            .build(&event_loop)
-            .unwrap();
-
-        let mut renderer = Renderer::new(window);
-
-        // TODO: Audio?
-
-        let resources = Resources::create(&properties);
-
-        Self {
-            properties,
-            event_loop,
-            renderer,
-            resources,
-        }
-    }
-
-    pub fn run(mut self) -> ! {
-        let mut renderer = self.renderer;
-
-        renderer.render();
-
-        renderer.window.set_visible(true);
-
-        self.event_loop.run(move |event, _, control_flow| {
-            match event {
-                Event::WindowEvent { event: WindowEvent::KeyboardInput { input: KeyboardInput { virtual_keycode: Some(VirtualKeyCode::Escape), state: ElementState::Pressed, .. }, .. }, .. } |
-                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                    *control_flow = ControlFlow::Exit;
-                },
-                Event::MainEventsCleared => {
-                    renderer.window.request_redraw()
-                },
-                Event::RedrawEventsCleared => {
-                    renderer.render();
-                },
-                _ => {}
-            }
-
-            renderer.imgui_platform.handle_event(
-                renderer.imgui.io_mut(),
-                &renderer.window,
-                &event
-            );
-        })
     }
 }

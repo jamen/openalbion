@@ -1,12 +1,8 @@
-mod error;
-mod script;
-mod subsource;
-
-pub use error::*;
-pub use script::*;
-pub use subsource::*;
-
 // Re-exports
+
+use std::io::{Read,Write,Seek};
+
+use super::Error;
 
 pub(crate) use nom::*;
 pub(crate) use nom::branch::*;
@@ -18,26 +14,16 @@ pub(crate) use nom::number::complete::*;
 pub(crate) use nom::sequence::*;
 pub(crate) use nom::error::ParseError;
 
-use std::io::{self,Read,Write,Seek};
-
 // Encoding/decoding
 
-pub trait Decoder: Sized {
+pub trait Decode: Sized {
     type Error;
     fn decode<Source: Read + Seek>(source: &mut Source) -> Result<Self, Self::Error>;
 }
 
-pub trait Encoder {
+pub trait Encode {
     type Error;
     fn encode<Target: Write + Seek>(&self, source: &mut Target) -> Result<(), Self::Error>;
-}
-
-pub trait Entry {
-    fn start(&self) -> u64;
-    fn end(&self) -> u64;
-    fn to_sub_source<T: Seek>(&self, source: T) -> io::Result<Subsource<T>> {
-        Subsource::new(source, self.start() .. self.end())
-    }
 }
 
 // Generic parsers

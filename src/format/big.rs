@@ -2,6 +2,7 @@ use std::io::{Read,Seek,SeekFrom};
 
 use super::{
     Error,
+    Decode,
     Entry,
     IResult,
     // all_consuming,
@@ -22,7 +23,7 @@ use super::{
 pub struct Big {
     pub header: BigHeader,
     pub bank: BigBankIndex,
-    pub entries: BigFileIndex
+    pub entries: BigIndex,
 }
 
 #[derive(Debug,PartialEq)]
@@ -42,16 +43,16 @@ pub struct BigBankIndex {
 }
 
 #[derive(Debug,PartialEq)]
-pub struct BigFileIndex {
+pub struct BigIndex {
     // pub file_types_count: u32,
     // pub file_type: u32,
     // pub entries_count: u32,
     pub unknown_types_map: Vec<(u32, u32)>,
-    pub entries: Vec<BigFileEntry>,
+    pub entries: Vec<BigEntry>,
 }
 
 #[derive(Debug,PartialEq)]
-pub struct BigFileEntry {
+pub struct BigEntry {
     pub magic_number: u32,
     pub id: u32,
     pub file_type: u32,
@@ -111,10 +112,10 @@ pub struct BigSubHeaderAnimation {
     pub unknown3: Vec<u8>
 }
 
-impl Big {
-    pub fn decode<Source>(source: &mut Source) -> Result<Big, Error>
-        where Source: Read + Seek
-    {
+impl Decode for Big {
+    type Error = Error;
+
+    fn decode<S: Read + Seek>(source: &mut S) -> Result<Big, Error> {
         let mut header: [u8; 16] = [0; 16];
 
         source.read(&mut header)?;
@@ -141,7 +142,9 @@ impl Big {
             }
         )
     }
+}
 
+impl Big {
     pub fn decode_header(input: &[u8]) -> IResult<&[u8], BigHeader, Error> {
         let (input, _magic_number) = tag("BIGB")(input)?;
         let (input, version) = le_u32(input)?;
@@ -187,7 +190,7 @@ impl Big {
         )
     }
 
-    pub fn decode_file_index(input: &[u8]) -> IResult<&[u8], BigFileIndex, Error> {
+    pub fn decode_file_index(input: &[u8]) -> IResult<&[u8], BigIndex, Error> {
         let (input, file_types_count) = le_u32(input)?;
         let (input, _file_type) = le_u32(input)?;
         let (input, entries_count) = le_u32(input)?;
@@ -209,7 +212,7 @@ impl Big {
         Ok(
             (
                 input,
-                BigFileIndex {
+                BigIndex {
                     // file_types_count: file_types_count,
                     // file_type: file_type,
                     unknown_types_map: unknown_types_map,
@@ -220,7 +223,7 @@ impl Big {
         )
     }
 
-    pub fn decode_file_index_entry(input: &[u8]) -> IResult<&[u8], BigFileEntry, Error> {
+    pub fn decode_file_index_entry(input: &[u8]) -> IResult<&[u8], BigEntry, Error> {
         let (input, magic_number) = le_u32(input)?;
         let (input, id) = le_u32(input)?;
         let (input, file_type) = le_u32(input)?;
@@ -253,7 +256,7 @@ impl Big {
         Ok(
             (
                 input,
-                BigFileEntry {
+                BigEntry {
                     magic_number: magic_number,
                     id: id,
                     file_type: file_type,
@@ -387,12 +390,9 @@ impl Big {
     // }
 }
 
-impl Entry for BigFileEntry {
-    fn start(&self) -> u64 {
-        self.start as u64
-    }
-    fn end(&self) -> u64 {
-        self.start as u64 + self.size as u64
+impl BigEntry {
+    pub fn source<S: Read + Seek>(&self, source: S) -> Result<Entry<S>, Error> {
+        Ok(Entry::new(source, self.start as u64, self.start as u64 + self.size as u64)?)
     }
 }
 
@@ -422,7 +422,7 @@ mod tests {
         let mut file = File::open(&file_path).unwrap();
         let big = Big::decode(&mut file).unwrap();
 
-        let mesh_entries: Vec<BigFileEntry> = big.entries.entries.into_iter().filter(|x| x.symbol_name.starts_with("MESH_")).collect();
+        let mesh_entries: Vec<BigEntry> = big.entries.entries.into_iter().filter(|x| x.symbol_name.starts_with("MESH_")).collect();
 
         for entry in mesh_entries {
             println!("{} {:?} {}:{}, file_type {} dev {}", entry.id, entry.symbol_name, entry.start, entry.size, entry.file_type, entry.file_type_dev);

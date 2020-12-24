@@ -1,26 +1,23 @@
 use std::io::{self,Read,Write,Seek,SeekFrom};
-use std::ops::Range;
 
-pub struct Subsource<S: Seek> {
+pub struct Entry<S> {
     start: u64,
     end: u64,
     source: S,
 }
 
-impl<S: Seek> Subsource<S> {
-    pub fn new(mut source: S, range: Range<u64>) -> Result<Self, io::Error> {
-        source.seek(SeekFrom::Start(range.start))?;
-        Ok(Self { start: range.start, end: range.end, source })
+impl<S: Seek> Entry<S> {
+    pub fn new(mut source: S, start: u64, end: u64) -> Result<Self, io::Error> {
+        source.seek(SeekFrom::Start(start))?;
+        Ok(Self { start, end, source })
     }
     pub fn into_inner(self) -> S {
         self.source
     }
 }
 
-impl<S: Seek> Seek for Subsource<S> {
+impl<S: Seek> Seek for Entry<S> {
     fn seek(&mut self, seek_from: SeekFrom) -> io::Result<u64> {
-        println!("{:?} {:?} {:?}", self.start, self.end, seek_from);
-
         let seek_from = match seek_from {
             SeekFrom::Start(x) => {
                 let position = self.start + x;
@@ -65,23 +62,21 @@ impl<S: Seek> Seek for Subsource<S> {
             },
         };
 
-        let seek_from = match seek_from {
-            Some(x) => x,
+        match seek_from {
+            Some(seek_from) => self.source.seek(seek_from),
             None => return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid seek to a negative or overflowing position.")),
-        };
-
-        self.source.seek(seek_from)
+        }
     }
 }
 
-impl<S: Seek + Read> Read for Subsource<S> {
+impl<S: Seek + Read> Read for Entry<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let end = buf.len().min((self.end - self.source.seek(SeekFrom::Current(0))?) as usize);
         self.source.read(&mut buf[..end])
     }
 }
 
-impl<S: Seek + Write> Write for Subsource<S> {
+impl<S: Seek + Write> Write for Entry<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let end = buf.len().min((self.end - self.source.seek(SeekFrom::Current(0))?) as usize);
         self.source.write(&buf[..end])
