@@ -31,50 +31,67 @@
 //! [`Met`]: struct.Met.html
 //! [`Ini`]: struct.Ini.html
 
-mod bba;
-mod bbm;
+// mod bba;
+// mod bbm;
 mod big;
-mod bncfg;
-mod bwd;
-mod dat;
-mod def;
-mod entry;
-mod error;
-mod gtg;
-mod ini;
-mod lev;
-mod lug;
-mod lut;
-mod met;
-mod qst;
-mod save;
-mod script;
-mod shared;
-mod stb;
-mod tng;
+// mod bncfg;
+// mod bwd;
+// mod dat;
+// mod def;
+// mod entry;
+// mod error;
+// mod gtg;
+// mod ini;
+// mod lev;
+// mod lug;
+// mod lut;
+// mod met;
+// mod qst;
+// mod save;
+// mod script;
+// mod shared;
+// mod stb;
+// mod tng;
 mod wad;
-mod wld;
+// mod wld;
 
-pub use bba::*;
-pub use bbm::*;
+// pub use bba::*;
+// pub use bbm::*;
 pub use big::*;
-pub use bncfg::*;
-pub use bwd::*;
-pub use dat::*;
-pub use def::*;
-pub use entry::*;
-pub use error::*;
-pub use gtg::*;
-pub use ini::*;
-pub use lev::*;
-pub use lug::*;
-pub use lut::*;
-pub use met::*;
-pub use qst::*;
-pub use save::*;
-pub use script::*;
-pub use shared::*;
-pub use stb::*;
-pub use tng::*;
+// pub use bncfg::*;
+// pub use bwd::*;
+// pub use dat::*;
+// pub use def::*;
+// pub use entry::*;
+// pub use error::*;
+// pub use gtg::*;
+// pub use ini::*;
+// pub use lev::*;
+// pub use lug::*;
+// pub use lut::*;
+// pub use met::*;
+// pub use qst::*;
+// pub use save::*;
+// pub use script::*;
+// pub use shared::*;
+// pub use stb::*;
+// pub use tng::*;
 pub use wad::*;
-pub use wld::*;
+// pub use wld::*;
+
+use views::{Bytes,OutOfBounds};
+
+pub trait BytesExt: Bytes {
+    fn take_with_u32_le_prefix(&mut self) -> Result<&[u8], OutOfBounds> {
+        let prefix = self.take_u32_le()?;
+        let out = self.take(prefix as usize)?;
+        Ok(out)
+    }
+    fn take_as_str_with_u32_le_prefix(&mut self) -> Result<&str, OutOfBounds> {
+        let out = self.take_with_u32_le_prefix()?;
+        let out = std::str::from_utf8(out).map_err(|_| OutOfBounds)?;
+        Ok(out)
+    }
+}
+
+impl BytesExt for &[u8] {}

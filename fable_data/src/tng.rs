@@ -1,5 +1,7 @@
 // use crate::script::ScriptField;
 
+pub struct Tng {}
+
 // #[derive(Debug,PartialEq)]
 // pub struct Tng {
 //     pub version: u32,

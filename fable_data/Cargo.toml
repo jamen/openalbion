@@ -1,0 +1,12 @@
+[package]
+name = "fable_data"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+license = "Zlib"
+homepage = "https://github.com/jamen/open_albion"
+repository = "https://github.com/jamen/open_albion"
+
+[dependencies]
+nom = "5.1.2"
+views = { path = "../../views" }

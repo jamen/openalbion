@@ -1,0 +1,12 @@
+[package]
+name = "fool"
+version = "0.1.0"
+authors = ["Jamen Marz <me@jamen.dev>"]
+edition = "2018"
+
+[dependencies]
+fable_data = { path = "../fable_data" }
+pico-args = "0.4.0"
+bytes = "1.0.1"
+serde_json = "1.0.61"
+views = { path = "../../views" }
