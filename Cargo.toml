@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "open_albion",
-    "fool",
     "fable_data",
+    "fool",
+    "open_albion",
 ]

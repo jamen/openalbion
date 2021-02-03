@@ -42,7 +42,7 @@ mod big;
 // mod error;
 // mod gtg;
 // mod ini;
-// mod lev;
+mod lev;
 // mod lug;
 // mod lut;
 // mod met;
@@ -66,7 +66,7 @@ pub use big::*;
 // pub use error::*;
 // pub use gtg::*;
 // pub use ini::*;
-// pub use lev::*;
+pub use lev::*;
 // pub use lug::*;
 // pub use lut::*;
 // pub use met::*;
@@ -79,19 +79,21 @@ pub use big::*;
 pub use wad::*;
 // pub use wld::*;
 
-use views::{Bytes,OutOfBounds};
+use views::{Bytes,BadPos,Look};
 
 pub trait BytesExt: Bytes {
-    fn take_with_u32_le_prefix(&mut self) -> Result<&[u8], OutOfBounds> {
+    fn take_with_u32_le_prefix(&mut self) -> Result<&[u8], BadPos> {
         let prefix = self.take_u32_le()?;
         let out = self.take(prefix as usize)?;
         Ok(out)
     }
-    fn take_as_str_with_u32_le_prefix(&mut self) -> Result<&str, OutOfBounds> {
+    fn take_as_str_with_u32_le_prefix(&mut self) -> Result<&str, BadPos> {
         let out = self.take_with_u32_le_prefix()?;
-        let out = std::str::from_utf8(out).map_err(|_| OutOfBounds)?;
+        let out = std::str::from_utf8(out).map_err(|_| BadPos)?;
         Ok(out)
     }
 }
 
 impl BytesExt for &[u8] {}
+impl BytesExt for &mut [u8] {}
+impl<B: AsRef<[u8]>> BytesExt for Look<u8, B> {}

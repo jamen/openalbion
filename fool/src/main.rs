@@ -5,7 +5,7 @@ use std::ffi::OsStr;
 
 use pico_args::Arguments;
 
-use fable_data::{Wad,Big};
+use fable_data::{Wad,Big,Lev};
 
 fn main() {
     let mut args = Arguments::from_env();
@@ -15,16 +15,22 @@ fn main() {
     let source_ext = source_path.extension().expect("source has no extension").to_str().unwrap();
 
     match source_ext {
-        "wad" => unpack_wad(&mut args, &source_path),
-        "big" => unpack_big(&mut args, &source_path),
+        "wad" => wad(&mut args, &source_path),
+        "big" => big(&mut args, &source_path),
+        "lev" => lev(&mut args, &source_path),
         x => panic!("Unknown file given {:?}", x),
     }
 }
 
-fn unpack_wad(_args: &mut Arguments, wad_path: &PathBuf) {
+fn wad(args: &mut Arguments, wad_path: &PathBuf) {
     let mut wad_file = BufReader::new(File::open(wad_path).unwrap());
 
     let wad = Wad::decode(&mut wad_file).unwrap();
+
+    if args.contains(["-d","--debug"]) {
+        println!("{:#?}", wad);
+        return
+    }
 
     let wad_name = wad_path.file_stem().unwrap();
 
@@ -58,12 +64,21 @@ fn unpack_wad(_args: &mut Arguments, wad_path: &PathBuf) {
     }
 }
 
-fn unpack_big(_args: &mut Arguments, big_path: &PathBuf) {
-    let big_data = read(&big_path).unwrap();
-    let big = Big::decode(&big_data).unwrap();
+fn big(args: &mut Arguments, big_path: &PathBuf) {
+    let mut big_file = BufReader::new(File::open(big_path).unwrap());
+    let big = Big::decode(&mut big_file).unwrap();
+
+    if args.contains(["-d","--debug"]) {
+        println!("{:#?}", big);
+        return
+    }
 
     for bank in big.banks {
         for entry in bank.index.entries {
+            let mut file_data = vec![0; entry.data_size as usize];
+
+            entry.read_from(&mut big_file, &mut file_data).unwrap();
+
             let file_path = big_path.with_extension("").join(&bank.path).join(&entry.symbol);
 
             match create_dir_all(file_path.parent().unwrap()) {
@@ -72,7 +87,17 @@ fn unpack_big(_args: &mut Arguments, big_path: &PathBuf) {
                 Err(x) => panic!("{}", x),
             };
 
-            write(&file_path, entry.data).unwrap();
+            write(&file_path, file_data).unwrap();
         }
     }
+}
+
+fn lev(args: &mut Arguments, lev_path: &PathBuf) {
+    println!("{:?}", lev_path.file_stem().unwrap());
+    let mut lev_file = BufReader::new(File::open(lev_path).unwrap());
+    let lev = Lev::decode(&mut lev_file).unwrap();
+    // if args.contains(["-d","--debug"]) {
+        println!("{:#?}", lev);
+    //     return
+    // }
 }
