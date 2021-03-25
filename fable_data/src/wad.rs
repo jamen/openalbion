@@ -40,8 +40,9 @@ pub enum WadTimestamp {
 }
 
 impl Wad {
-    pub fn decode<T: Read + Seek>(mut source: &mut T) -> Result<Self, BadPos> {
+    pub fn decode<T: Read + Seek>(mut source: T) -> Result<Self, BadPos> {
         let mut header = &mut [0; 32][..];
+
         source.read_exact(&mut header).or(Err(BadPos))?;
 
         let magic_number = header.take_as_str(4)?.to_owned();
@@ -51,45 +52,27 @@ impl Wad {
         let entry_count_repeat = header.take_u32_le()?;
         let entries_start = header.take_u32_le()?;
 
-        let entries = Self::decode_entries(&mut source, entries_start as usize, entry_count as usize)?;
+        let mut entries_data = Vec::new();
 
-        Ok(
-            Wad {
-                magic_number,
-                version,
-                block_size,
-                entry_count,
-                entry_count_repeat,
-                entries_start,
-                entries
-            }
-        )
-    }
-
-    pub fn decode_entries<T: Read + Seek>(
-        source: &mut T,
-        entries_start: usize,
-        entry_count: usize
-    ) -> Result<Vec<WadEntry>, BadPos> {
-        let mut entries_source = Vec::new();
         source.seek(SeekFrom::Start(entries_start as u64)).or(Err(BadPos))?;
-        source.read_to_end(&mut entries_source).or(Err(BadPos))?;
-        let mut entries_source = &entries_source[..];
+        source.read_to_end(&mut entries_data).or(Err(BadPos))?;
+
+        let mut entries_data = &entries_data[..];
 
         let mut entries = Vec::new();
 
         while entries.len() < entry_count as usize {
-            let unknown_1 = Bytes::take(&mut entries_source, 16)?.to_owned();
-            let id = entries_source.take_u32_le()?;
-            let unknown_2 = entries_source.take_u32_le()?;
-            let data_size = entries_source.take_u32_le()?;
-            let data_start = entries_source.take_u32_le()?;
-            let unknown_3 = entries_source.take_u32_le()?;
-            let path = entries_source.take_as_str_with_u32_le_prefix()?.to_owned();
-            let unknown_4 = entries_source.take_as_str(16)?.to_owned();
-            let created = Self::decode_timestamp(Bytes::take(&mut entries_source, 28)?)?;
-            let accessed = Self::decode_timestamp(Bytes::take(&mut entries_source, 28)?)?;
-            let modified = Self::decode_timestamp_short(Bytes::take(&mut entries_source, 20)?)?;
+            let unknown_1 = Bytes::take(&mut entries_data, 16)?.to_owned();
+            let id = entries_data.take_u32_le()?;
+            let unknown_2 = entries_data.take_u32_le()?;
+            let data_size = entries_data.take_u32_le()?;
+            let data_start = entries_data.take_u32_le()?;
+            let unknown_3 = entries_data.take_u32_le()?;
+            let path = entries_data.take_as_str_with_u32_le_prefix()?.to_owned();
+            let unknown_4 = entries_data.take_as_str(16)?.to_owned();
+            let created = Self::decode_timestamp(&mut entries_data)?;
+            let accessed = Self::decode_timestamp(&mut entries_data)?;
+            let modified = Self::decode_timestamp_short(&mut entries_data)?;
 
             entries.push(WadEntry {
                 unknown_1,
@@ -106,34 +89,44 @@ impl Wad {
             });
         }
 
-        Ok(entries)
+        Ok(
+            Wad {
+                magic_number,
+                version,
+                block_size,
+                entry_count,
+                entry_count_repeat,
+                entries_start,
+                entries
+            }
+        )
     }
 
-    pub fn decode_timestamp(mut source: &[u8]) -> Result<WadTimestamp, BadPos> {
+    fn decode_timestamp(data: &mut &[u8]) -> Result<WadTimestamp, BadPos> {
         Ok(WadTimestamp::Normal {
-            year: source.take_u32_le()?,
-            month: source.take_u32_le()?,
-            day: source.take_u32_le()?,
-            hour: source.take_u32_le()?,
-            minute: source.take_u32_le()?,
-            second: source.take_u32_le()?,
-            millisecond: source.take_u32_le()?,
+            year: data.take_u32_le()?,
+            month: data.take_u32_le()?,
+            day: data.take_u32_le()?,
+            hour: data.take_u32_le()?,
+            minute: data.take_u32_le()?,
+            second: data.take_u32_le()?,
+            millisecond: data.take_u32_le()?,
         })
     }
 
-    pub fn decode_timestamp_short(mut source: &[u8]) -> Result<WadTimestamp, BadPos> {
+    fn decode_timestamp_short(data: &mut &[u8]) -> Result<WadTimestamp, BadPos> {
         Ok(WadTimestamp::Short {
-            year: source.take_u32_le()?,
-            month: source.take_u32_le()?,
-            day: source.take_u32_le()?,
-            hour: source.take_u32_le()?,
-            minute: source.take_u32_le()?,
+            year: data.take_u32_le()?,
+            month: data.take_u32_le()?,
+            day: data.take_u32_le()?,
+            hour: data.take_u32_le()?,
+            minute: data.take_u32_le()?,
         })
     }
 }
 
 impl WadEntry {
-    pub fn read_from<T: Read + Seek>(&self, source: &mut T, buf: &mut [u8]) -> Result<(), BadPos> {
+    pub fn read_from<T: Read + Seek>(&self, mut source: T, buf: &mut [u8]) -> Result<(), BadPos> {
         let read_buf = buf.get_mut(..self.data_size as usize).ok_or(BadPos)?;
         source.seek(SeekFrom::Start(self.data_start as u64)).or(Err(BadPos))?;
         source.read_exact(read_buf).or(Err(BadPos))?;
