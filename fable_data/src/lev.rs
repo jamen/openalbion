@@ -1,14 +1,9 @@
-use std::io::{Read,Seek,SeekFrom};
+use std::io::{Read,Seek};
 
-use views::{Look,View,Bytes,BadPos};
+use views::{Bytes,BadPos};
 
 use crate::BytesExt;
 
-/// Level cells and nodes.
-///
-/// # Format Description
-///
-/// WIP
 #[derive(Debug,PartialEq)]
 pub struct Lev {
     pub version: u16,
@@ -78,12 +73,12 @@ pub struct LevNavigationSection {
     pub start: u32,
     pub size: u32,
     pub version: u32,
-    pub level_width: f32,
-    pub level_height: f32,
+    pub width: f32,
+    pub height: f32,
     pub unknown_1: u32,
     pub interactive_nodes: Vec<LevInteractiveNode>,
     pub subsets_count: u32,
-    pub level_nodes: Vec<LevLevelNode>,
+    pub nodes: Vec<LevLevelNode>,
 }
 
 #[derive(Debug,PartialEq)]
@@ -95,97 +90,49 @@ pub struct LevInteractiveNode {
 
 #[derive(Debug,PartialEq)]
 pub enum LevLevelNode {
+    Short {
+        unknown_1: bool,
+        unknown_2: bool,
+        unknown_3: bool,
+    },
     Regular {
-        prefix: Vec<u8>,
-        unknown_1: u8,
-        root: u8,
-        unknown_2: u8,
-        end: u8,
-        layer: u8,
-        subset: u8,
+        unknown_1: bool,
+        unknown_2: bool,
+        unknown_3: bool,
+        unknown_4: bool,
+        subset: u16,
         x: f32,
         y: f32,
         id: u32,
-        // (top_right, top_left, bottom_right, bottom_left)
-        children: (u32, u32, u32, u32),
+        children: (u32, u32, u32, u32)
     },
-    Navigation {
-        prefix: Vec<u8>,
-        unknown_1: u8,
-        root: u8,
-        unknown_2: u8,
-        end: u8,
-        layer: u8,
-        subset: u8,
+    Extended1 {
+        unknown_1: bool,
+        unknown_2: bool,
+        unknown_3: bool,
+        unknown_4: bool,
+        subset: u16,
         x: f32,
         y: f32,
         id: u32,
-        level: u32,
-        unknown_3: u8,
-        adjacent: Vec<u32>,
+        unknown_5: u32,
+        unknown_6: u8,
+        children: Vec<u32>,
     },
-    Exit {
-        prefix: Vec<u8>,
-        unknown_1: u8,
-        root: u8,
-        unknown_2: u8,
-        end: u8,
-        layer: u8,
-        subset: u8,
+    Extended2 {
+        unknown_1: bool,
+        unknown_2: bool,
+        unknown_3: bool,
+        unknown_4: bool,
+        subset: u16,
         x: f32,
         y: f32,
         id: u32,
-        level: u32,
-        unknown_3: u8,
-        adjacent: Vec<u32>,
-        uids: Vec<u64>,
+        unknown_5: u32,
+        unknown_6: u8,
+        children_1: Vec<u32>,
+        children_2: Vec<u64>,
     },
-    Blank {
-        prefix: Vec<u8>,
-        unknown_1: u8,
-        root: u8,
-        unknown_2: u8,
-    },
-    Unknown1 {
-        prefix: Vec<u8>,
-        unknown_1: f32,
-        unknown_2: f32,
-    }
-    // Unknown1 {
-    //     prefix: Vec<u8>,
-    //     unknown_1: u8,
-    //     root: u8,
-    //     unknown_2: u8,
-    //     end: u8,
-    // },
-    // Unknown2 {
-    //     prefix: Vec<u8>,
-    //     unknown_1: u8,
-    //     root: u8,
-    //     unknown_2: u8,
-    //     end: u8,
-    // },
-    // Unknown3 {
-    //     prefix: Vec<u8>,
-    //     unknown_1: u8,
-    //     root: u8,
-    //     unknown_2: u8,
-    //     end: u8,
-    // },
-    // Unknown4 {
-    //     prefix: Vec<u8>,
-    //     unknown_1: u8,
-    //     root: u8,
-    //     unknown_2: u8,
-    //     end: u8,
-    // },
-    // UnknownOther {
-    //     prefix: Vec<u8>,
-    //     unknown_1: u8,
-    //     root: u8,
-    //     unknown_2: u8,
-    //     end: u8,
-    // },
 }
 
 impl Lev {
@@ -313,7 +260,7 @@ impl Lev {
         Ok(soundmap)
     }
 
-    fn decode_navigation(mut data: &mut &[u8], navigation_start: usize) -> Result<LevNavigation, BadPos> {
+    fn decode_navigation(data: &mut &[u8], navigation_start: usize) -> Result<LevNavigation, BadPos> {
         let header_data = &mut data.get(navigation_start..).ok_or(BadPos)?;
 
         let sections_start = header_data.take_u32_le()?;
@@ -333,24 +280,24 @@ impl Lev {
 
             let size = section_data.take_u32_le()?;
             let version = section_data.take_u32_le()?;
-            let level_width = section_data.take_f32_le()?;
-            let level_height = section_data.take_f32_le()?;
-            let unknown_1 = section_data.take_u32_le()?; // fabletlcmod.com: Number of levels, see navigation nodes
+            let width = section_data.take_f32_le()?;
+            let height = section_data.take_f32_le()?;
+            let unknown_1 = section_data.take_u32_le()?; // fabletlcmod.com: Number of Levels, see navigation nodes
             let interactive_nodes = Self::decode_interactive_nodes(&mut section_data)?;
             let subsets_count = section_data.take_u32_le()?;
-            let level_nodes = Self::decode_level_nodes(&mut section_data)?;
+            let nodes = Self::decode_nodes(&mut section_data)?;
 
             sections.push(LevNavigationSection {
                 name,
                 start,
                 size,
                 version,
-                level_width,
-                level_height,
+                width,
+                height,
                 unknown_1,
                 interactive_nodes,
                 subsets_count,
-                level_nodes,
+                nodes,
             });
         }
 
@@ -375,188 +322,119 @@ impl Lev {
         Ok(interactive_nodes)
     }
 
-    fn decode_level_nodes(mut data: &mut &[u8]) -> Result<Vec<LevLevelNode>, BadPos> {
+    fn decode_nodes(mut data: &mut &[u8]) -> Result<Vec<LevLevelNode>, BadPos> {
         let nodes_count = data.take_u32_le()?;
-        let mut level_nodes = Vec::new();
+        let mut nodes = Vec::new();
 
-        while level_nodes.len() < nodes_count as usize {
-            level_nodes.push(Self::decode_level_node(&mut data)?);
+        while nodes.len() < nodes_count as usize {
+            nodes.push(Self::decode_node(&mut data)?);
         }
 
-        Ok(level_nodes)
+        Ok(nodes)
     }
 
-    fn decode_level_node(mut data: &mut &[u8]) -> Result<LevLevelNode, BadPos> {
-        if data.get(..8) == Some(&[0,0,0,0,0,1,0,0]) {
-            Self::decode_regular_node(data)
-        }
-        else if data.get(..8) == Some(&[0,0,0,1,0,1,0,1]) {
-            Self::decode_navigation_node(data)
-        }
-        else if data.get(..8) == Some(&[1,0,0,1,1,0,1,1]) {
-            Self::decode_exit_node(data)
-        }
-        else if data.get(..3) == Some(&[0,1,1]) {
-            Self::decode_blank_node(data)
-        }
-        // else if data.get(..10) == Some(&[11,0,0,0,0,0,0,0,0,0]) {
-        //     Self::decode_unknown1_node(data)
-        // }
-        else if data.get(..8) == Some(&[0,1,0,0,0,0,0,0]) {
-            Self::decode_unknown1_node(data)
-        }
-        // else if data.get(..8) == Some(&[0,1,0,0,0,0,0,0]) {
-        //     Self::decode_unknown3_node(data)
-        // }
-        // else if data.get(..8) == Some(&[0,1,0,0,0,0,0,0]) {
-        //     Self::decode_unknown4_node(data)
-        // }
-        else {
-            return Err(BadPos)
-            // Self::decode_unknown_other_node(data)
-        }
-    }
+    fn decode_node(data: &mut &[u8]) -> Result<LevLevelNode, BadPos> {
+        let unknown_1 = data.take_u8()? == 1;
+        let unknown_2 = data.take_u8()? == 1;
+        let unknown_3 = data.take_u8()? == 1;
 
-    fn decode_regular_node(data: &mut &[u8]) -> Result<LevLevelNode, BadPos> {
-        let prefix = Bytes::take(data, 8)?.to_owned();
-        let unknown_1 = data.take_u8()?;
-        let root = data.take_u8()?;
-        let unknown_2 = data.take_u8()?;
-        let end = data.take_u8()?;
-        let layer = data.take_u8()?;
-        let subset = data.take_u8()?;
+        if (unknown_1, unknown_2, unknown_3) == (false, true, true) {
+            return Ok(LevLevelNode::Short {
+                unknown_1,
+                unknown_2,
+                unknown_3,
+            })
+        }
+
+        let unknown_4 = data.take_u8()? == 1;
+        let subset = data.take_u16_le()?;
         let x = data.take_f32_le()?;
         let y = data.take_f32_le()?;
         let id = data.take_u32_le()?;
 
-        let tr = data.take_u32_le()?;
-        let tl = data.take_u32_le()?;
-        let br = data.take_u32_le()?;
-        let bl = data.take_u32_le()?;
+        match (unknown_1, unknown_2, unknown_3, unknown_4) {
+            (false, _, _, false) => {
+                let children = (
+                    data.take_u32_le()?,
+                    data.take_u32_le()?,
+                    data.take_u32_le()?,
+                    data.take_u32_le()?,
+                );
 
-        let children = (tr, tl, br, bl);
+                Ok(LevLevelNode::Regular {
+                    unknown_1,
+                    unknown_2,
+                    unknown_3,
+                    unknown_4,
+                    subset,
+                    x,
+                    y,
+                    id,
+                    children,
+                })
+            },
+            (false, _, _, true) => {
+                let unknown_5 = data.take_u32_le()?;
+                let unknown_6 = data.take_u8()?;
 
-        Ok(LevLevelNode::Regular {
-            prefix,
-            unknown_1,
-            root,
-            unknown_2,
-            end,
-            layer,
-            subset,
-            x,
-            y,
-            id,
-            children,
-        })
-    }
+                let children_count = data.take_u32_le()? as usize;
+                let mut children = Vec::new();
 
-    fn decode_navigation_node(data: &mut &[u8]) -> Result<LevLevelNode, BadPos> {
-        let prefix = Bytes::take(data, 8)?.to_owned();
-        let unknown_1 = data.take_u8()?;
-        let root = data.take_u8()?;
-        let unknown_2 = data.take_u8()?;
-        let end = data.take_u8()?;
-        let layer = data.take_u8()?;
-        let subset = data.take_u8()?;
-        let x = data.take_f32_le()?;
-        let y = data.take_f32_le()?;
-        let id = data.take_u32_le()?;
-        let level = data.take_u32_le()?;
-        let unknown_3 = data.take_u8()?;
+                while children_count > children.len() {
+                    children.push(data.take_u32_le()?);
+                }
 
-        let adjacent_count = data.take_u32_le()? as usize;
-        let mut adjacent = Vec::new();
+                Ok(LevLevelNode::Extended1 {
+                    unknown_1,
+                    unknown_2,
+                    unknown_3,
+                    unknown_4,
+                    subset,
+                    x,
+                    y,
+                    id,
+                    unknown_5,
+                    unknown_6,
+                    children,
+                })
+            },
+            (true, _, _, true) => {
+                let unknown_5 = data.take_u32_le()?;
+                let unknown_6 = data.take_u8()?;
 
-        while adjacent.len() < adjacent_count {
-            adjacent.push(data.take_u32_le()?);
+                let children_1_count = data.take_u32_le()? as usize;
+                let mut children_1 = Vec::new();
+
+                while children_1_count > children_1.len() {
+                    children_1.push(data.take_u32_le()?);
+                }
+
+                let children_2_count = data.take_u32_le()? as usize;
+                let mut children_2 = Vec::new();
+
+                while children_2_count > children_2.len() {
+                    children_2.push(data.take_u64_le()?);
+                }
+
+                Ok(LevLevelNode::Extended2 {
+                    unknown_1,
+                    unknown_2,
+                    unknown_3,
+                    unknown_4,
+                    subset,
+                    x,
+                    y,
+                    id,
+                    unknown_5,
+                    unknown_6,
+                    children_1,
+                    children_2,
+                })
+            },
+            flags => {
+                eprintln!("unhandled node with flags {:?}", flags);
+                Err(BadPos)
+            }
         }
-
-        Ok(LevLevelNode::Navigation {
-            prefix,
-            unknown_1,
-            root,
-            unknown_2,
-            end,
-            layer,
-            subset,
-            x,
-            y,
-            id,
-            level,
-            unknown_3,
-            adjacent,
-        })
-    }
-
-    fn decode_exit_node(data: &mut &[u8]) -> Result<LevLevelNode, BadPos> {
-        let prefix = Bytes::take(data, 8)?.to_owned();
-        let unknown_1 = data.take_u8()?;
-        let root = data.take_u8()?;
-        let unknown_2 = data.take_u8()?;
-        let end = data.take_u8()?;
-        let layer = data.take_u8()?;
-        let subset = data.take_u8()?;
-        let x = data.take_f32_le()?;
-        let y = data.take_f32_le()?;
-        let id = data.take_u32_le()?;
-        let level = data.take_u32_le()?;
-        let unknown_3 = data.take_u8()?;
-
-        let adjacent_count = data.take_u32_le()? as usize;
-        let mut adjacent = Vec::new();
-
-        while adjacent.len() < adjacent_count {
-            adjacent.push(data.take_u32_le()?);
-        }
-
-        let uids_count = data.take_u32_le()? as usize;
-        let mut uids = Vec::new();
-
-        while uids.len() < uids_count {
-            uids.push(data.take_u64_le()?);
-        }
-
-        Ok(LevLevelNode::Exit {
-            prefix,
-            unknown_1,
-            root,
-            unknown_2,
-            end,
-            layer,
-            subset,
-            x,
-            y,
-            id,
-            level,
-            unknown_3,
-            adjacent,
-            uids,
-        })
-    }
-
-    fn decode_blank_node(data: &mut &[u8]) -> Result<LevLevelNode, BadPos> {
-        let prefix = Bytes::take(data, 3)?.to_owned();
-        let unknown_1 = data.take_u8()?;
-        let root = data.take_u8()?;
-        let unknown_2 = data.take_u8()?;
-
-        Ok(LevLevelNode::Blank {
-            prefix,
-            unknown_1,
-            root,
-            unknown_2,
-        })
-    }
-
-    fn decode_unknown1_node(data: &mut &[u8]) -> Result<LevLevelNode, BadPos> {
-        let prefix = Bytes::take(data, 8)?.to_owned();
-        let unknown_1 = data.take_f32_le()?;
-        let unknown_2 = data.take_f32_le()?;
-        Ok(LevLevelNode::Unknown1 {
-            prefix,
-            unknown_1,
-            unknown_2,
-        })
     }
 }
