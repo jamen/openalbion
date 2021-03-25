@@ -4,3 +4,6 @@ members = [
     "fool",
     "open_albion",
 ]
+exclude = [
+    "lzo2",
+]

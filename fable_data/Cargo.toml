@@ -10,3 +10,6 @@ repository = "https://github.com/jamen/open_albion"
 [dependencies]
 nom = "5.1.2"
 views = { path = "../../views" }
+
+[build-dependencies]
+cc = "1.0.67"
