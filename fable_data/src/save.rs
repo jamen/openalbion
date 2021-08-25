@@ -168,5 +168,4 @@
 /// 4 Bytes - decompressed size
 /// 2 Bytes - compressed size
 /// ```
-pub struct Save {
-}
+pub struct Save {}

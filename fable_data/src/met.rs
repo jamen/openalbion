@@ -68,8 +68,7 @@
 /// [4] Bytes - Number of Sounds to Associate with Event Name
 /// ~Then Based on number of sounds to associate are 4 byte ID listings
 /// ```
-pub struct Met {
-}
+pub struct Met {}
 
 impl Met {
     // pub fn decode<Source: Read + Seek>(source: &mut Source) -> Result<Self, Error> {

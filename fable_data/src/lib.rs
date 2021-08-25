@@ -1,99 +1,52 @@
-//! |        Path        |                            Formats                            |
-//! | ------------------ | ------------------------------------------------------------- |
-//! | Data/CompiledDefs  | [`DefBin`]                                                    |
-//! | Data/Defs          | [`DefBin`], C header                                          |
-//! | Data/Bones         | [`Bncfg`]                                                     |
-//! | Data/EngineCache   | [`Dat`]                                                       |
-//! | Data/Graphics      | [`Big`]                                                       |
-//! | Data/LightingTable | Tga                                                           |
-//! | Data/Shaders       | [`Big`]                                                       |
-//! | Data/Tattoos       | Bmp                                                           |
-//! | Data/Levels        | [`Bwd`], [`Gtg`], [`Lev`], [`Qst`], [`Tng`], [`Wad`], [`Wld`] |
-//! | Data/Misc          | [`Big`], [`Dat`], [`DefBin`], Dds, Tga, Text script           |
-//! | Data/Lang          | [`DefBin`], [`Lut`], [`Big`], Text script                     |
-//! | Data/Sound         | [`Lug`], [`Met`], Ogg                                         |
-//! | Data/Video         | Wmv, Text script                                              |
-//! | *.ini              | [`Ini`]                                                       |
-//!
-//! [`Bncfg`]: struct.Bncfg.html
-//! [`DefBin`]: struct.DefBin.html
-//! [`Dat`]: struct.Dat.html
-//! [`Big`]: struct.Big.html
-//! [`Lut`]: struct.Lut.html
-//! [`Bwd`]: struct.Bwd.html
-//! [`Gtg`]: struct.Gtg.html
-//! [`Lev`]: struct.Lev.html
-//! [`Qst`]: struct.Qst.html
-//! [`Tng`]: struct.Tng.html
-//! [`Wad`]: struct.Wad.html
-//! [`Wld`]: struct.Wld.html
-//! [`Lug`]: struct.Lug.html
-//! [`Met`]: struct.Met.html
-//! [`Ini`]: struct.Ini.html
+use lalrpop_util::lalrpop_mod;
 
-// mod bba;
-// mod bbm;
-mod big;
-// mod bncfg;
-// mod bwd;
-// mod dat;
-// mod def;
-// mod entry;
-// mod error;
-// mod gtg;
-// mod ini;
-mod lev;
-// mod lug;
-// mod lut;
-// mod met;
-// mod qst;
-// mod save;
-// mod script;
-// mod shared;
-// mod stb;
-// mod tng;
-mod wad;
-// mod wld;
+lalrpop_mod!(bncfg_parser, "/bncfg_parser.rs");
+lalrpop_mod!(gtg_parser, "/gtg_parser.rs");
+lalrpop_mod!(ini_parser, "/ini_parser.rs");
+lalrpop_mod!(qst_parser, "/qst_parser.rs");
+lalrpop_mod!(tng_parser, "/tng_parser.rs");
+lalrpop_mod!(wld_parser, "/wld_parser.rs");
 
-// pub use bba::*;
-// pub use bbm::*;
+pub mod anim;
+pub mod big;
+pub mod bncfg;
+pub mod bwd;
+pub(crate) mod bytes;
+pub(crate) mod crc32;
+pub mod def;
+pub mod gtg;
+pub mod ini;
+pub mod lev;
+pub mod lug;
+pub(crate) mod lzo;
+pub mod met;
+pub mod model;
+pub mod qst;
+pub mod save;
+pub mod stb;
+pub mod texture;
+pub mod tng;
+pub mod wad;
+pub mod wld;
+
+pub use anim::*;
 pub use big::*;
-// pub use bncfg::*;
-// pub use bwd::*;
-// pub use dat::*;
-// pub use def::*;
-// pub use entry::*;
-// pub use error::*;
-// pub use gtg::*;
-// pub use ini::*;
+pub use bncfg::*;
+pub use bwd::*;
+pub(crate) use bytes::*;
+pub use ini::*;
+pub use lug::*;
+pub use met::*;
+pub use model::*;
+pub use save::*;
+pub use texture::*;
+// pub(crate) use crc32::*;
+pub use def::*;
+pub use gtg::*;
 pub use lev::*;
-// pub use lug::*;
-// pub use lut::*;
-// pub use met::*;
-// pub use qst::*;
-// pub use save::*;
-// pub use script::*;
-// pub use shared::*;
-// pub use stb::*;
-// pub use tng::*;
+// pub(crate) use lzo::*;
+pub use qst::*;
+pub use stb::*;
+pub use tng::*;
 pub use wad::*;
-// pub use wld::*;
-
-use views::{Bytes,BadPos,Look};
-
-pub trait BytesExt: Bytes {
-    fn take_with_u32_le_prefix(&mut self) -> Result<&[u8], BadPos> {
-        let prefix = self.take_u32_le()?;
-        let out = self.take(prefix as usize)?;
-        Ok(out)
-    }
-    fn take_as_str_with_u32_le_prefix(&mut self) -> Result<&str, BadPos> {
-        let out = self.take_with_u32_le_prefix()?;
-        let out = std::str::from_utf8(out).map_err(|_| BadPos)?;
-        Ok(out)
-    }
-}
-
-impl BytesExt for &[u8] {}
-impl BytesExt for &mut [u8] {}
-impl<B: AsRef<[u8]>> BytesExt for Look<u8, B> {}
+pub use wld::*;

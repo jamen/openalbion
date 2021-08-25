@@ -1,0 +1,91 @@
+use std::str::FromStr;
+use crate::{Tng,TngSection,TngThing,TngKey,TngValue,TngAccessor};
+
+grammar;
+
+match {
+    "Version",
+    "XXXSectionStart",
+    "NewThing",
+    "Holy Site",
+    "UID",
+    "OwnerUID",
+    "VillageUID",
+    "LinkedToUID1",
+    "LinkedToUID2",
+    "WorkBuildingUID",
+    "EndThing",
+    "XXXSectionEnd",
+    "NULL",
+    "TRUE",
+    "FALSE",
+    r"[-]?[0-9]+[.][0-9]+",
+} else {
+    r"[a-zA-Z_][a-zA-Z0-9_]*",
+    r"[-]?[0-9]+",
+    _
+}
+
+pub Tng: Tng = {
+    "Version" <version:Integer> ";" <sections:Section*> => Tng { version, sections },
+}
+
+Section: TngSection = {
+    "XXXSectionStart" <name:SectionName> ";" <things:Thing*> "XXXSectionEnd" ";" => TngSection { name, things },
+}
+
+Thing: TngThing = {
+    "NewThing" <kind:ThingKind> ";" <fields:Field*> "EndThing" ";" => TngThing::Unknown { kind, fields },
+}
+
+SectionName: String = {
+    <"NULL"> => <>.to_owned(),
+    <Ident> => <>,
+}
+
+ThingKind: String = {
+    <"Holy Site"> => <>.to_owned(),
+    Ident,
+}
+
+Field: (TngKey, TngValue) = {
+    <key:UIDKey> <value:UID> ";" => (TngKey { name: key.to_owned(), accessors: vec![] }, TngValue::Uid(value)),
+    <key:Key> <value:Value?> ";" => (key, value.unwrap_or(TngValue::Empty)),
+}
+
+UIDKey = { "UID", "VillageUID", "OwnerUID", "LinkedToUID1", "LinkedToUID2", "WorkBuildingUID"  }
+
+Key: TngKey = {
+    <name:Ident> <accessors:Accessor*> => TngKey { name, accessors }
+}
+
+Accessor: TngAccessor = {
+    "." <Ident> => TngAccessor::Object(<>),
+    "[" <Integer> "]" => TngAccessor::Array(<>),
+}
+
+Value: TngValue = {
+    "NULL" => TngValue::Null,
+    "FALSE" => TngValue::Bool(false),
+    "TRUE" => TngValue::Bool(true),
+    <Struct> => TngValue::Struct(<>.0, <>.1),
+    <Float> => TngValue::Float(<>),
+    <Integer> => TngValue::Integer(<>),
+    <String> => TngValue::String(<>),
+    <Ident> => TngValue::Ident(<>),
+}
+
+Struct: (String, Vec<TngValue>) = {
+    <name:Ident> "(" <list:ValueList> ")" => (name, list)
+}
+
+ValueList: Vec<TngValue> = {
+    <mut list:ValueList> "," <val:Value> => { list.push(val); list },
+    <Value> => vec![<>]
+}
+
+Ident: String = { <r"[a-zA-Z_][a-zA-Z0-9_]*"> => <>.to_owned() }
+Integer: i64 = { <r"[-]?[0-9]+"> => i64::from_str(<>).unwrap() }
+UID: u64 = { <r"[-]?[0-9]+"> => u64::from_str(<>).unwrap() }
+String: String = { <r#""[^"]*""#> => <>.to_owned() }
+Float: f32 = { <r"[-]?[0-9]+[.][0-9]+"> => f32::from_str(<>).unwrap() }

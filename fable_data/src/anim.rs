@@ -40,5 +40,4 @@
 ///
 /// Lets start it off simple. CAppearanceDef application, first off what does this do? It basically is the list of animations the hero users when called upon. This is essentially how I created the "Piss" Expression, you could change animation IDs for say when your hero runs with a large sword, add jumps etc... This Cdef couldn't be done with the xml so something custom was made.
 /// ```
-pub struct Bba {
-}
+pub struct Anim {}

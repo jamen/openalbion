@@ -2,8 +2,7 @@
 
 // use crate::Error;
 
-pub struct Bwd {
-}
+pub struct Bwd {}
 
 impl Bwd {
     // pub fn decode<Source: Read + Seek>(source: &mut Source) -> Result<Self, Error> {

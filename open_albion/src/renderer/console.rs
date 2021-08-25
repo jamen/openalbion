@@ -1,1 +1,0 @@
-pub struct Console<'a> (Pass<'a>);
