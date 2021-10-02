@@ -5,7 +5,9 @@ use glam::{Quat, Vec3};
 use renderer::*;
 use state::*;
 
+use std::fs;
 use std::f32::consts::PI;
+use std::path::PathBuf;
 
 use winit::{event::{DeviceEvent, ElementState, Event, KeyboardInput, MouseScrollDelta, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 
@@ -13,37 +15,107 @@ use glam::Mat3;
 
 use native_dialog::FileDialog;
 
-// use std::error::Error;
+use serde::{Serialize, Deserialize};
+
+use thiserror::Error;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Settings {
+    version: String,
+    fable_dir: Option<PathBuf>,
+}
+
+#[derive(Error, Debug)]
+enum InitError {
+    #[error("Failed to read settings.toml.")]
+    FailedToReadSettings,
+    #[error("Settings file not found.")]
+    SettingsNotFound,
+    #[error("Config directory not found.")]
+    ConfigDirNotFound,
+    #[error("Failed to parse settings.toml")]
+    FailedToParseSettings,
+    #[error("Failed to parse settings.toml at {0}:{1}")]
+    FailedToParseSettingsAt(usize, usize),
+}
+
+impl Settings {
+    fn new() -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            fable_dir: None,
+        }
+    }
+}
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
+    // TODO: File logger?
     env_logger::init();
 
-    // TODO: Load settings file.
+    let settings_file = dirs::config_dir()
+        .map(|x| x.join(env!("CARGO_PKG_NAME")).join("settings.toml"));
 
-    // Select Fable directory
+    let settings = match settings_file {
+        Some(settings_file) => match settings_file.exists() {
+            true => match fs::read(settings_file) {
+                Ok(data) => match toml::from_slice::<Settings>(&data) {
+                    Ok(mut settings) => {
+                        if settings.fable_dir.is_none() {
+                            log::debug!("Fable's directory not found. Opening a file dialog.");
 
-    // TODO: Store and load directory from settings file, verifying that the directory exists and Fable.exe is inside it, and falling back to the prompt if not.
+                            match FileDialog::new().show_open_single_dir().unwrap() {
+                                Some(fable_dir) => settings.fable_dir = Some(fable_dir),
+                                None => return,
+                            };
 
-    let fable_dir = FileDialog::new().show_open_single_dir().unwrap();
-    let fable_dir = if let Some(d) = fable_dir { d } else { return };
+                            match toml::to_string_pretty(&settings) {
+                                Ok(settings_data) => {
+                                    if let Err(_) = fs::write(settings_file, settings_data) {
+                                        log::warn!("Failed to write the settings file.");
+                                    }
+                                },
+                                Err(_) => {
+                                    log::warn!("Failed to serialize the settings.");
+                                }
+                            }
+                        }
 
-    // TODO: Verify Fable.exe is in the selected directory.
+                        Ok(settings)
+                    },
+                    Err(error) => match error.line_col() {
+                        Some((line, col)) => Err(InitError::FailedToParseSettingsAt(line, col)),
+                        None => Err(InitError::FailedToParseSettings),
+                    }
+                },
+                Err(_) => Err(InitError::FailedToReadSettings),
+            },
+            false => Err(InitError::SettingsNotFound),
+        },
+        None => Err(InitError::ConfigDirNotFound)
+    };
 
-    // Initialize window
+    let settings = settings.unwrap_or_else(|err| {
+        log::error!("{:?}", err);
+        log::debug!("Falling back to default settings.");
+        Settings::new()
+    });
+
+    let mut state = State::new(&settings).unwrap_or_else(|err| {
+        log::error!("Failed to make state from settings: {:?}", err);
+        panic!("{:?}", err);
+    });
 
     let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
         .with_title("Open Albion")
-        .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 768.0))
-        // TODO: .with_fullscreen(Some(Fullscreen::Borderless(event_loop.primary_monitor())))
+        .with_inner_size(winit::dpi::LogicalSize::new(1024, 768))
+        // .with_fullscreen(Some(Fullscreen::Borderless(event_loop.primary_monitor())))
         .with_resizable(true)
         .with_visible(false)
         .build(&event_loop)
         .unwrap();
-
-    let mut state = State::new(fable_dir);
 
     let mut renderer = Renderer::create(&window, &state).await;
 
@@ -68,6 +140,9 @@ async fn main() {
                 WindowEvent::CursorLeft { .. } => state.input.cursor_position = None,
                 // TODO
                 // WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => { },
+                WindowEvent::Resized(size) => {
+                    renderer.resize(size.width, size.height);
+                },
                 WindowEvent::CloseRequested => {
                     // self.exit();
                     *control_flow = ControlFlow::Exit;

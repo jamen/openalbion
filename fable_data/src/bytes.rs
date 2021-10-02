@@ -317,6 +317,33 @@ impl From<[f32; 3]> for Vector3Packed {
 
 impl From<Vector3Packed> for [f32; 3] {
     fn from(v: Vector3Packed) -> [f32; 3] {
+        // Khronos data format spec for 11/10bit floats:
+        // https://www.khronos.org/registry/DataFormat/specs/1.2/dataformat.1.2.html#11bitfp
+
+        // From Talchas#7429 on Discord:
+        // if raw_exponent == 0 {
+        //     special cases for 0 and denorms
+        // } else {
+        //     new_exponent = raw_exponent + 2**new-2**old; new_mantissa = old_mantissa <<
+        // (new_m_bits - old_m_bits) }
+
+        // let xe = (v.0 >> 6) & 0b11111;
+        // let xm = (v.0 >> 0) & 0b111111;
+
+        // let ye = (v.0 >> 17) & 0b11111;
+        // let ym = (v.0 >> 11) & 0b111111;
+
+        // let ze = (v.0 >> 27) & 0b11111;
+        // let zm = (v.0 >> 22) & 0b11111;
+
+        // let x = match (xe, xm) {
+        //     (0, 0) => 0.0f32,
+        //     (31, 0) => f32::INFINITY,
+        //     (0, x) if x != 0 => {} // denorm?
+        //     (31, x) if x != 0 => f32::from_bits(f32::NAN.to_bits() & (x << 17)),
+        //     (x, m) => {}
+        // };
+
         // Attempt 4
         //
 

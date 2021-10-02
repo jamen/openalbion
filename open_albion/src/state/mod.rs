@@ -10,11 +10,14 @@ use fable_data::Big;
 use glam::{Mat3, Quat, Vec2, Vec3};
 // use hecs::World;
 use rand::prelude::*;
+use thiserror::Error;
 use winit::event::VirtualKeyCode;
 
 use std::fs::File;
 use std::path::PathBuf;
 use std::time::Instant;
+
+use crate::Settings;
 
 pub struct State {
     pub frame_start: Instant,
@@ -38,8 +41,18 @@ pub struct State {
     pub show_focus_point: bool,
 }
 
+#[derive(Error, Debug)]
+pub enum StateError {
+    #[error("Fable's directory not found.")]
+    FableDirNotFound,
+}
+
 impl State {
-    pub fn new(fable_dir: PathBuf) -> Self {
+    pub fn new(settings: &Settings) -> Result<Self, StateError> {
+        let fable_dir = settings
+            .fable_dir
+            .map_or_else(|| Err(StateError::FableDirNotFound), Ok)?;
+
         let graphics_path = fable_dir.join("data/graphics/graphics.big");
         let textures_path = fable_dir.join("data/graphics/pc/textures.big");
 
@@ -75,7 +88,7 @@ impl State {
             // "MESH_SS_TAVERN_EXT_01"
             .to_owned();
 
-        Self {
+        Ok(Self {
             frame_start: Instant::now(),
             fable_dir,
             input: InputState::new(),
@@ -88,7 +101,7 @@ impl State {
             model_vector_clock: 0,
             wireframe: true,
             show_focus_point: false,
-        }
+        })
     }
 
     pub fn update(&mut self) {

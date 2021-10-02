@@ -20,6 +20,7 @@ pub struct SceneRenderer {
     depth_texture: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
     material_bind_group_layout: wgpu::BindGroupLayout,
+    aspect:
     model: Model,
 }
 
@@ -46,7 +47,7 @@ pub struct Material {
 
 impl SceneRenderer {
     pub const VERTEX_BUFFER_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
-        step_mode: wgpu::InputStepMode::Vertex,
+        step_mode: wgpu::VertexStepMode::Vertex,
         array_stride: mem::size_of::<fable_data::Vertex>() as u64,
         attributes: &wgpu::vertex_attr_array![
             0 => Float32x3,
@@ -59,7 +60,7 @@ impl SceneRenderer {
         let transform_buffer = base.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: mem::size_of::<glam::Mat4>().try_into().unwrap(),
-            usage: wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::UNIFORM,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: false,
         });
 
@@ -73,7 +74,7 @@ impl SceneRenderer {
                     label: None,
                     entries: &[wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStage::VERTEX_FRAGMENT,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -90,7 +91,7 @@ impl SceneRenderer {
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
                                 view_dimension: wgpu::TextureViewDimension::D2,
@@ -100,7 +101,7 @@ impl SceneRenderer {
                         },
                         wgpu::BindGroupLayoutEntry {
                             binding: 1,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Sampler {
                                 filtering: true,
                                 comparison: false,
@@ -127,20 +128,12 @@ impl SceneRenderer {
                 push_constant_ranges: &[],
             });
 
-        // Disable shader validation on release
-        let flags = if cfg!(debug_assertions) {
-            wgpu::ShaderFlags::VALIDATION
-        } else {
-            wgpu::ShaderFlags::empty()
-        };
-
         // Load this renderer's shader(s)
         let shader = base
             .device
             .create_shader_module(&wgpu::ShaderModuleDescriptor {
                 label: None,
                 source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("./scene.wgsl"))),
-                flags,
             });
 
         // Create pipeline
@@ -157,7 +150,7 @@ impl SceneRenderer {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: &[base.swap_chain_descriptor.format.into()],
+                    targets: &[base.surface_config.format.into()],
                 }),
                 primitive: wgpu::PrimitiveState {
                     cull_mode: Some(wgpu::Face::Back),
@@ -187,7 +180,7 @@ impl SceneRenderer {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_wire",
-                    targets: &[base.swap_chain_descriptor.format.into()],
+                    targets: &[base.surface_config.format.into()],
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::LineList,
@@ -217,7 +210,9 @@ impl SceneRenderer {
         }
     }
 
-    // fn create_depth_texture() -> wgpu::Texture {}
+    pub fn resize(&mut self, base: &RendererBase) {
+        self.depth_texture = Self::create_depth_texture(base);
+    }
 
     // This is function should be replaced by UI.
     fn create_model(
@@ -310,8 +305,8 @@ impl SceneRenderer {
                                         32 => wgpu::TextureFormat::Bc2RgbaUnorm,
                                         _ => wgpu::TextureFormat::Bc2RgbaUnorm,
                                     },
-                                    usage: wgpu::TextureUsage::COPY_DST
-                                        | wgpu::TextureUsage::SAMPLED,
+                                    usage: wgpu::TextureUsages::COPY_DST
+                                        | wgpu::TextureUsages::TEXTURE_BINDING,
                                 },
                                 &texture.frames[0][..],
                             );
@@ -434,14 +429,14 @@ impl SceneRenderer {
                     let vertex_buffer = base.device.create_buffer_init(&BufferInitDescriptor {
                         label: None,
                         contents: bytemuck::cast_slice(&primitive.vertices),
-                        usage: wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::VERTEX,
+                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
                     });
 
                     let index_buffer = if primitive.indices.len() > 0 {
                         Some(base.device.create_buffer_init(&BufferInitDescriptor {
                             label: None,
                             contents: bytemuck::cast_slice(&primitive.indices),
-                            usage: wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::INDEX,
+                            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
                         }))
                     } else {
                         None
@@ -459,7 +454,7 @@ impl SceneRenderer {
                     let wire_index_buffer = base.device.create_buffer_init(&BufferInitDescriptor {
                         label: None,
                         contents: bytemuck::cast_slice(&wire_indices),
-                        usage: wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::INDEX,
+                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
                     });
 
                     primitives.push(Primitive {
@@ -484,15 +479,15 @@ impl SceneRenderer {
         let depth_texture = base.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d {
-                width: base.swap_chain_descriptor.width,
-                height: base.swap_chain_descriptor.height,
+                width: base.surface_config.width,
+                height: base.surface_config.height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsage::RENDER_ATTACHMENT | wgpu::TextureUsage::SAMPLED,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         });
 
         depth_texture.create_view(&wgpu::TextureViewDescriptor::default())
@@ -505,8 +500,8 @@ impl SceneRenderer {
     ) {
         let camera_pos = camera.rotation * Vec3::Z * camera.distance + camera.focus;
 
-        let width = base.swap_chain_descriptor.width as f32;
-        let height = base.swap_chain_descriptor.height as f32;
+        let width = base.surface_config.width as f32;
+        let height = base.surface_config.height as f32;
 
         let aspect = width / height;
         let fov = 90.0f32;
@@ -525,7 +520,7 @@ impl SceneRenderer {
     pub fn render(
         &mut self,
         base: &RendererBase,
-        frame: &wgpu::SwapChainFrame,
+        view: &wgpu::TextureView,
         state: &State,
     ) -> wgpu::CommandBuffer {
         if self.model.vector_clock != state.model_vector_clock {
@@ -542,7 +537,7 @@ impl SceneRenderer {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &frame.output.view,
+                    view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {

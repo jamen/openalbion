@@ -29,14 +29,12 @@ impl Renderer {
     // TODO: Handle other events like scale factor change too.
     /// Resizes the swap chain.  This doesn't resize the render systems, which handle it on render instead. Maybe add to RenderSystem to handle these events
     pub fn resize(&mut self, width: u32, height: u32) {
-        let (swap_chain_descriptor, swap_chain) =
-            RendererBase::create_swap_chain(&self.base.surface, &self.base.device, width, height);
-        self.base.swap_chain_descriptor = swap_chain_descriptor;
-        self.base.swap_chain = swap_chain;
+        self.base.resize(width, height);
+        self.scene_renderer.resize(&self.base);
     }
 
     pub fn render(&mut self, state: &State) {
-        let frame = match self.base.swap_chain.get_current_frame() {
+        let frame = match self.base.surface.get_current_frame() {
             Ok(x) => x,
             Err(e) => {
                 eprintln!("Dropped frame. {}", e);
@@ -44,8 +42,10 @@ impl Renderer {
             }
         };
 
+        let view = frame.output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
         let command_bufs = [
-            self.scene_renderer.render(&self.base, &frame, &state),
+            self.scene_renderer.render(&self.base, &view, &state),
         ];
 
         self.base.queue.submit(IntoIter::new(command_bufs));
