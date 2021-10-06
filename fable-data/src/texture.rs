@@ -25,7 +25,7 @@ impl Texture {
             let first_mipmap_compressed = data.advance(size as usize)?;
 
             let mut texture_data =
-                crate::lzo::decompress(first_mipmap_compressed, info.first_mipmap_size as usize)
+                minilzo::decompress(first_mipmap_compressed, info.first_mipmap_size as usize)
                     .ok()?;
 
             let trail = data.advance(3)?;

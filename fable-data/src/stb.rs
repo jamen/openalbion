@@ -283,7 +283,7 @@ impl StbLev {
             let compressed_data = data.advance(compressed_len as usize)?.to_owned();
             data.advance(2040usize.saturating_sub(compressed_data.len()))?;
             // println!("{:?} {:?} {:x?}", decompressed_size, compressed_len, compressed_data);
-            let decompressed = crate::lzo::decompress(&compressed_data, decompressed_size as usize);
+            let decompressed = minilzo::decompress(&compressed_data, decompressed_size as usize);
             // println!("{:?} {:?} {:?}", decompressed_size, compressed_len, decompressed);
             // println!("{:?} {:?} {:?}", decompressed_size, compressed_len, decompressed);
             blocks.push((decompressed_size, compressed_len, compressed_data));
@@ -314,13 +314,14 @@ impl StbLev {
         // println!("end_z {:?}", end_z);
         // println!("unknown_1 {:?}", unknown_1);
 
-        // let compressed_data = &original[offset as usize .. offset as usize + compressed_size as usize];
+        // let compressed_data = &original[offset as usize .. offset as usize + compressed_size as
+        // usize];
 
         // println!("{} {:x?}", compressed_data.len(), compressed_data);
 
         // println!("compressed_data {:?}", compressed_data);
 
-        // let decompressed_data = crate::lzo::decompress(&compressed_data, 2048);
+        // let decompressed_data = minilzo::decompress(&compressed_data, 2048);
 
         // println!("{:?}", decompressed);
 
@@ -328,7 +329,8 @@ impl StbLev {
 
         // let mut decompressed_data = Vec::with_capacity(4096);
 
-        // rust_lzo::LZOContext::decompress_to_slice(compressed_data.clone(), &mut decompressed_data[..]);
+        // rust_lzo::LZOContext::decompress_to_slice(compressed_data.clone(), &mut
+        // decompressed_data[..]);
 
         // println!("{:?}", decompressed_data);
 

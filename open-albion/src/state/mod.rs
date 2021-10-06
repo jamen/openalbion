@@ -48,7 +48,7 @@ pub enum StateError {
 }
 
 impl State {
-    pub fn new(settings: &Settings) -> Result<Self, StateError> {
+    pub fn new() -> Result<Self, StateError> {
         let fable_dir = settings
             .fable_dir
             .map_or_else(|| Err(StateError::FableDirNotFound), Ok)?;

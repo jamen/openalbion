@@ -1,5 +1,7 @@
 [workspace]
 members = [
-    "open_albion",
-    "fable_data",
+    "fable-data",
+    "open-albion",
+    "rust-minilzo",
 ]
+resolver = "2"

@@ -53,56 +53,13 @@ async fn main() {
     // TODO: File logger?
     env_logger::init();
 
-    let settings_file = dirs::config_dir()
-        .map(|x| x.join(env!("CARGO_PKG_NAME")).join("settings.toml"));
-
-    let settings = match settings_file {
-        Some(settings_file) => match settings_file.exists() {
-            true => match fs::read(settings_file) {
-                Ok(data) => match toml::from_slice::<Settings>(&data) {
-                    Ok(mut settings) => {
-                        if settings.fable_dir.is_none() {
-                            log::debug!("Fable's directory not found. Opening a file dialog.");
-
-                            match FileDialog::new().show_open_single_dir().unwrap() {
-                                Some(fable_dir) => settings.fable_dir = Some(fable_dir),
-                                None => return,
-                            };
-
-                            match toml::to_string_pretty(&settings) {
-                                Ok(settings_data) => {
-                                    if let Err(_) = fs::write(settings_file, settings_data) {
-                                        log::warn!("Failed to write the settings file.");
-                                    }
-                                },
-                                Err(_) => {
-                                    log::warn!("Failed to serialize the settings.");
-                                }
-                            }
-                        }
-
-                        Ok(settings)
-                    },
-                    Err(error) => match error.line_col() {
-                        Some((line, col)) => Err(InitError::FailedToParseSettingsAt(line, col)),
-                        None => Err(InitError::FailedToParseSettings),
-                    }
-                },
-                Err(_) => Err(InitError::FailedToReadSettings),
-            },
-            false => Err(InitError::SettingsNotFound),
-        },
-        None => Err(InitError::ConfigDirNotFound)
+    let fable_dir = match FileDialog::new().show_open_single_dir().unwrap() {
+        Some(fable_dir) => fable_dir,
+        None => return
     };
 
-    let settings = settings.unwrap_or_else(|err| {
-        log::error!("{:?}", err);
-        log::debug!("Falling back to default settings.");
-        Settings::new()
-    });
-
-    let mut state = State::new(&settings).unwrap_or_else(|err| {
-        log::error!("Failed to make state from settings: {:?}", err);
+    let mut state = State::new(&fable_dir).unwrap_or_else(|err| {
+        log::error!("Failed to make state");
         panic!("{:?}", err);
     });
 

@@ -1042,7 +1042,7 @@ impl Model {
         if compressed_len > 0 {
             let input = data.advance(compressed_len as usize)?;
 
-            let out = match crate::lzo::decompress(&input, size) {
+            let out = match minilzo::decompress(&input, size) {
                 Err(_e) => return None,
                 Ok(r) => r,
             };
