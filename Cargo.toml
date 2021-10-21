@@ -1,6 +1,7 @@
 [workspace]
+edition = "2021"
 members = [
     "fable-data",
-    "open-albion",
     "minilzo-rs",
+    "OpenAlbion",
 ]
