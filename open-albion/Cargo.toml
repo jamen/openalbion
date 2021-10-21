@@ -2,11 +2,10 @@
 name = "open-albion"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
-edition = "2018"
+edition = "2021"
 license = "Zlib"
 homepage = "https://github.com/jamen/open_albion"
 repository = "https://github.com/jamen/open_albion"
-resolver = "2"
 
 [dependencies]
 bytemuck = "1.7.0"
@@ -19,8 +18,9 @@ log = "0.4.14"
 mint = "0.5.6"
 native-dialog = "0.5.5"
 rand = "0.8.4"
-rend3 = { git = "https://github.com/bve-reborn/rend3.git", commit = "5d5b25b23395eb92fca8c774311f3b4287fdc21c" }
+rend3 = "0.1.2"
 serde = "1.0.130"
 thiserror = "1.0.29"
 tokio = { version = "1.7.0", features = [ "rt-multi-thread", "net", "time", "sync", "macros" ] }
+wgpu = "0.10.2"
 winit = "0.25.0"

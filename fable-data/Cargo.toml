@@ -2,7 +2,7 @@
 name = "fable-data"
 version = "0.1.0"
 authors = ["Jamen Marz <me@jamen.dev>"]
-edition = "2018"
+edition = "2021"
 license = "Zlib"
 homepage = "https://github.com/jamen/open_albion"
 repository = "https://github.com/jamen/open_albion"
@@ -11,7 +11,7 @@ repository = "https://github.com/jamen/open_albion"
 bcndecode = "0.2.0"
 bytemuck = { version = "1.7.0", features = [ "derive" ] }
 crevice = "0.6.0"
-# flate2 = "1.0.20"
+flate2 = "1.0.20"
 lalrpop-util = { version = "0.19.6", features = [ "lexer" ] }
 minilzo = { path = "../minilzo-rs" }
 mint = "0.5.6"

@@ -1,13 +1,28 @@
-use glam::{Mat3, Mat4, Quat, Vec3};
+use glam::{Quat, Vec3};
 
 #[derive(Debug)]
-pub struct ArcballCamera {
+pub struct Camera {
+    pub location: Vec3,
+    pub rotation: Quat,
+}
+
+impl Camera {
+    pub fn new() -> Self {
+        Self {
+            location: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ArcballRig {
     pub distance: f32,
     pub focus: Vec3,
     pub rotation: Quat,
 }
 
-impl ArcballCamera {
+impl ArcballRig {
     pub fn new() -> Self {
         let distance = 50.0;
         let focus = Vec3::ZERO;

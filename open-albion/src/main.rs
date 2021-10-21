@@ -1,29 +1,18 @@
 mod renderer;
 mod state;
 
-use glam::{Quat, Vec3};
+use std::sync::Arc;
+
+use glam::UVec2;
+use rend3::util::output::OutputFrame;
 use renderer::*;
 use state::*;
 
-use std::fs;
-use std::f32::consts::PI;
-use std::path::PathBuf;
-
-use winit::{event::{DeviceEvent, ElementState, Event, KeyboardInput, MouseScrollDelta, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
-
-use glam::Mat3;
+use winit::{event::Event, event_loop::EventLoop, window::WindowBuilder};
 
 use native_dialog::FileDialog;
 
-use serde::{Serialize, Deserialize};
-
 use thiserror::Error;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Settings {
-    version: String,
-    fable_dir: Option<PathBuf>,
-}
 
 #[derive(Error, Debug)]
 enum InitError {
@@ -37,15 +26,6 @@ enum InitError {
     FailedToParseSettings,
     #[error("Failed to parse settings.toml at {0}:{1}")]
     FailedToParseSettingsAt(usize, usize),
-}
-
-impl Settings {
-    fn new() -> Self {
-        Self {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-            fable_dir: None,
-        }
-    }
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -63,77 +43,55 @@ async fn main() {
         panic!("{:?}", err);
     });
 
+    let mut state = Arc::new(state);
+
     let event_loop = EventLoop::new();
 
+    let window_size = winit::dpi::LogicalSize::new(1024, 768);
+
     let window = WindowBuilder::new()
-        .with_title("Open Albion")
-        .with_inner_size(winit::dpi::LogicalSize::new(1024, 768))
+        .with_title("OpenAlbion")
+        .with_inner_size(window_size)
         // .with_fullscreen(Some(Fullscreen::Borderless(event_loop.primary_monitor())))
         .with_resizable(true)
         .with_visible(false)
         .build(&event_loop)
         .unwrap();
 
-    let mut renderer = Renderer::create(&window, &state).await;
+    let iad = rend3::create_iad(None, None, None).await.unwrap();
 
-    state.update();
+    let surface = unsafe { iad.instance.create_surface(&window) };
 
-    renderer.render(&state);
+    let preferred_format = surface.get_preferred_format(&iad.adapter).unwrap_or(wgpu::TextureFormat::Rgba8Unorm);
+
+    rend3::configure_surface(
+        &surface,
+        &iad.device,
+        preferred_format,
+       [window_size.width as u32, window_size.height as u32].into(),
+        wgpu::PresentMode::Mailbox,
+    );
+
+    let aspect_ratio = Some(window_size.width as f32 / window_size.height as f32);
+
+    let renderer = rend3::Renderer::new(iad, aspect_ratio).unwrap();
+
+    let mut main_render_routine = MainRenderRoutine::new(Arc::clone(&state));
+
+    let output_frame = OutputFrame::from_surface(&surface).unwrap();
+
+    renderer.render(&mut main_render_routine, output_frame);
 
     window.set_visible(true);
 
-    event_loop.run(move |event, _, control_flow| {
+    event_loop.run(move |event, _, mut control_flow| {
+        state.handle_event(&event, &mut control_flow);
+
         match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::KeyboardInput { input: KeyboardInput { virtual_keycode, scancode, state: element_state, .. }, .. } => match element_state {
-                    ElementState::Pressed => state.input.key_down(virtual_keycode, scancode),
-                    ElementState::Released => state.input.key_up(virtual_keycode, scancode),
-                },
-                WindowEvent::MouseInput { button, state: element_state, .. } => match element_state {
-                    ElementState::Pressed => state.input.mouse_down(button),
-                    ElementState::Released => state.input.mouse_up(button),
-                },
-                WindowEvent::ModifiersChanged(modifiers) => state.input.modifiers = modifiers,
-                WindowEvent::CursorLeft { .. } => state.input.cursor_position = None,
-                // TODO
-                // WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => { },
-                WindowEvent::Resized(size) => {
-                    renderer.resize(size.width, size.height);
-                },
-                WindowEvent::CloseRequested => {
-                    // self.exit();
-                    *control_flow = ControlFlow::Exit;
-                },
-                WindowEvent::CursorMoved { position, .. } => {
-                    state.input.cursor_position = Some(position)
-                },
-                _ => {}
-            },
-            Event::DeviceEvent { event, device_id: _device_id } => match event {
-                DeviceEvent::MouseWheel { delta } => match delta {
-                    MouseScrollDelta::LineDelta(x, y) => {
-                        if state.input.cursor_position.is_some() {
-                            state.camera.mouse_wheel((x, y));
-                        }
-                        // state.camera.pos = (state.camera.pos.normalize() * (x * 5.0));
-                    }
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        if state.input.cursor_position.is_some() {
-                            state.camera.mouse_wheel((pos.x as f32, pos.y as f32));
-                        }
-                        // state.camera.pos = (state.camera.pos.normalize() * (pos.x as f32 * 5.0));
-                    }
-                },
-                DeviceEvent::MouseMotion { delta } => {
-                    if state.input.mouse_left.is_some() {
-                        state.camera.mouse_motion(delta);
-                    }
-                },
-                _ => {},
-            },
             Event::MainEventsCleared => {
-                state.update();
-                renderer.render(&state);
+                let output_frame = OutputFrame::from_surface(&surface).unwrap();
+
+                renderer.render(&mut main_render_routine, output_frame);
             }
             _ => {}
         }

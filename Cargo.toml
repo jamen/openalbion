@@ -2,6 +2,5 @@
 members = [
     "fable-data",
     "open-albion",
-    "rust-minilzo",
+    "minilzo-rs",
 ]
-resolver = "2"

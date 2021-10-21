@@ -16,6 +16,7 @@ impl Texture {
 
         if info.first_mipmap_compressed_size > 0 {
             let size = info.first_mipmap_compressed_size & 0xffff0000 | data.parse_u16_le()? as u32;
+
             let size = if size as i16 == -1 {
                 data.parse_u32_le()?
             } else {
