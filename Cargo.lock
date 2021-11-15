@@ -1325,6 +1325,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "fable-data",
+ "flume",
  "glam 0.15.2",
  "log",
  "mint",

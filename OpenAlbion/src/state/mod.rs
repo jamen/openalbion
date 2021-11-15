@@ -102,23 +102,6 @@ impl State {
         })
     }
 
-    pub fn handle_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
-        self.input.handle_event(&event);
-
-        match event {
-            Event::WindowEvent {
-                event: window_event,
-                ..
-            } => match window_event {
-                WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-
     // pub fn update(&mut self) {
     //     if self.input.cursor_position.is_some() {
     //         if self.input.modifiers.ctrl() {

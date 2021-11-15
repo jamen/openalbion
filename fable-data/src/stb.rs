@@ -176,7 +176,7 @@ impl Stb {
         &self,
         mut source: T,
     ) -> Option<StbStaticMapCommon> {
-        let static_map_common_entry = self
+        let _static_map_common_entry = self
             .entries
             .iter()
             .find(|x| x.name_1 == "__STATIC_MAP_COMMON_HEADER__")?;
@@ -197,7 +197,7 @@ impl Stb {
             let path = data.parse_str_until_nul()?.to_owned();
             let offset = data.parse_u32_le()?;
 
-            let entry_data = &data_lookback[offset as usize..];
+            let _entry_data = &data_lookback[offset as usize..];
 
             let unknown_1 = data.parse_u32_le()?;
             let id = data.parse_u32_le()?;
@@ -283,7 +283,7 @@ impl StbLev {
             let compressed_data = data.advance(compressed_len as usize)?.to_owned();
             data.advance(2040usize.saturating_sub(compressed_data.len()))?;
             // println!("{:?} {:?} {:x?}", decompressed_size, compressed_len, compressed_data);
-            let decompressed = minilzo::decompress(&compressed_data, decompressed_size as usize);
+            let _decompressed = minilzo::decompress(&compressed_data, decompressed_size as usize);
             // println!("{:?} {:?} {:?}", decompressed_size, compressed_len, decompressed);
             // println!("{:?} {:?} {:?}", decompressed_size, compressed_len, decompressed);
             blocks.push((decompressed_size, compressed_len, compressed_data));

@@ -1,4 +1,4 @@
-# Open Albion
+# OpenAlbion
 
 A Fable editor experiment
 

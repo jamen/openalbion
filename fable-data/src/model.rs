@@ -4,7 +4,7 @@ use crate::{BigMeshInfo, Bytes};
 
 // use crevice::std140::AsStd140;
 use bytemuck::{Pod, Zeroable};
-use mint::{ColumnMatrix3x4, ColumnMatrix4, Quaternion, Vector2, Vector3, Vector4};
+use mint::{ColumnMatrix3x4, ColumnMatrix4, Quaternion, Vector3, Vector4};
 
 #[derive(Debug)]
 pub struct Model {
@@ -219,7 +219,7 @@ pub enum ParticleConstraint {
 }
 
 impl Model {
-    pub fn decode(mut data: &[u8], info: &BigMeshInfo) -> Option<Model> {
+    pub fn decode(mut data: &[u8], _info: &BigMeshInfo) -> Option<Model> {
         // println!("{:#?}", info);
 
         let name = data.parse_str_until_nul()?.to_owned();

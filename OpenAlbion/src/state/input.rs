@@ -6,6 +6,7 @@ use winit::event::{
     ElementState, Event, KeyboardInput, ModifiersState, MouseButton, ScanCode, VirtualKeyCode,
     WindowEvent,
 };
+use winit::event_loop::ControlFlow;
 
 pub(crate) struct InputState {
     // pub keys: [Option<Instant>; mem::variant_count::<VirtualKeyCode>()],
@@ -34,7 +35,7 @@ impl InputState {
         }
     }
 
-    pub fn handle_event(&mut self, event: &Event<()>) {
+    pub fn handle_event(&mut self, event: &Event<()>, control_flow: &mut ControlFlow) {
         match event {
             Event::WindowEvent { event, .. } => match event {
                 WindowEvent::KeyboardInput {

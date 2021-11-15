@@ -8,7 +8,7 @@ use rend3::util::output::OutputFrame;
 use renderer::*;
 use state::*;
 
-use winit::{event::Event, event_loop::EventLoop, window::WindowBuilder};
+use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
 
 use native_dialog::FileDialog;
 
@@ -43,8 +43,6 @@ async fn main() {
         panic!("{:?}", err);
     });
 
-    let mut state = Arc::new(state);
-
     let event_loop = EventLoop::new();
 
     let window_size = winit::dpi::LogicalSize::new(1024, 768);
@@ -76,22 +74,41 @@ async fn main() {
 
     let renderer = rend3::Renderer::new(iad, aspect_ratio).unwrap();
 
-    let mut main_render_routine = MainRenderRoutine::new(Arc::clone(&state));
+    let mut main_render_routine = MainRenderRoutine::new();
 
-    let output_frame = OutputFrame::from_surface(&surface).unwrap();
+    let surface_texture = surface.get_current_texture().unwrap();
 
-    renderer.render(&mut main_render_routine, output_frame);
+    let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    renderer.render(&mut main_render_routine, (), &view);
+
+    surface_texture.present();
 
     window.set_visible(true);
 
     event_loop.run(move |event, _, mut control_flow| {
-        state.handle_event(&event, &mut control_flow);
+        state.input.handle_event(&event, &mut control_flow);
 
         match event {
+            Event::WindowEvent { event: window_event, .. } => {
+                match window_event {
+                    WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Exit;
+                    },
+                    _ => {}
+                }
+            }
             Event::MainEventsCleared => {
-                let output_frame = OutputFrame::from_surface(&surface).unwrap();
+                let surface_texture = match surface.get_current_texture() {
+                    Ok(x) => x,
+                    Err(_) => return
+                };
 
-                renderer.render(&mut main_render_routine, output_frame);
+                let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+                renderer.render(&mut main_render_routine, (), &view);
+
+                surface_texture.present();
             }
             _ => {}
         }

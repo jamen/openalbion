@@ -1,26 +1,28 @@
+mod assets;
+
 use std::sync::Arc;
 
-use rend3::util::output::OutputFrame;
-use rend3::{RenderRoutine, Renderer};
+use rend3::{ManagerReadyOutput, RenderRoutine, Renderer};
+use wgpu::TextureView;
 
 use crate::state::State;
 
-pub struct MainRenderRoutine {
-    state: Arc<State>,
-}
+pub struct MainRenderRoutine {}
 
 impl MainRenderRoutine {
-    pub fn new(state: Arc<State>) -> Self {
-        Self { state }
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
-impl RenderRoutine for MainRenderRoutine {
+impl RenderRoutine<(), &'_ TextureView> for MainRenderRoutine {
     fn render(
         &mut self,
         renderer: Arc<Renderer>,
-        cmd_bufs: &mut Vec<wgpu::CommandBuffer>,
-        output: &OutputFrame,
+        cmd_bufs: flume::Sender<wgpu::CommandBuffer>,
+        ready: ManagerReadyOutput,
+        input: (),
+        output: &'_ TextureView,
     ) {
     }
 }

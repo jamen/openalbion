@@ -48,11 +48,11 @@ impl NamesBin {
 
 impl Bin {
     pub fn decode(mut data: &[u8]) -> Option<Bin> {
-        let starting_len = data.len();
+        let _starting_len = data.len();
 
-        let unknown_1 = data.parse_u8()?;
-        let unknown_2 = data.parse_u32_le()?;
-        let unknown_3 = data.parse_u32_le()?;
+        let _unknown_1 = data.parse_u8()?;
+        let _unknown_2 = data.parse_u32_le()?;
+        let _unknown_3 = data.parse_u32_le()?;
         let entries_count = data.parse_u32_le()?;
 
         let mut entries = Vec::new();
@@ -70,7 +70,7 @@ impl Bin {
         // println!("{:?}", entries);
 
         let chunks_count = data.parse_u32_le()?;
-        let unknown_4 = data.parse_u32_le()?;
+        let _unknown_4 = data.parse_u32_le()?;
 
         // println!("{:?} {:?}", chunks_count, unknown_4);
 
