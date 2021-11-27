@@ -1,6 +1,6 @@
-# OpenAlbion
+# Open Albion
 
-A Fable editor experiment
+A Fable asset viewer experiment
 
 ## LZO
 
