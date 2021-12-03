@@ -1,8 +1,19 @@
 // These minilzo bindings are a modified version of [minilzo-rs](https://github.com/badboy/minilzo-rs).
 
-use std::mem::MaybeUninit;
-use std::os::raw::{c_int, c_uchar, c_ulong, c_void};
-use std::ptr;
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+extern crate core;
+
+use alloc::vec::Vec;
+
+use core::mem::MaybeUninit;
+use core::ptr;
+
+use libc::{c_int, c_uchar, c_ulong, c_void};
 
 extern "C" {
     fn lzo1x_1_compress(
@@ -23,21 +34,22 @@ extern "C" {
 
 const LZO1X_1_MEM_COMPRESS: usize = 16384 * 8;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Error {
-    Error,
-    OutOfMemory,
-    NotCompressible,
-    InputOverrun,
-    OutputOverrun,
-    LookbehindOverrun,
-    EOFNotFound,
-    InputNotConsumed,
-    NotYetImplemented,
-    InvalidArgument,
-    InvalidAlignment,
-    OutputNotConsumed,
-    InternalError,
+    Error = -1,
+    OutOfMemory = -2,
+    NotCompressible = -3,
+    InputOverrun = -4,
+    OutputOverrun = -5,
+    LookbehindOverrun = -6,
+    EOFNotFound = -7,
+    InputNotConsumed = -8,
+    NotYetImplemented = -9,
+    InvalidArgument = -10,
+    InvalidAlignment = -11,
+    OutputNotConsumed = -12,
+    InternalError = -99,
+    Other,
 }
 
 impl Error {
@@ -56,18 +68,16 @@ impl Error {
             -11 => Error::InvalidAlignment,
             -12 => Error::OutputNotConsumed,
             -99 => Error::InternalError,
-            _ => Error::Error,
+            _ => Error::Other,
         }
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         write!(f, "{:?}", self)
     }
 }
-
-impl std::error::Error for Error {}
 
 pub fn compress(indata: &[u8]) -> Result<Vec<u8>, Error> {
     let mut wrkmem: MaybeUninit<[u8; LZO1X_1_MEM_COMPRESS]> = MaybeUninit::uninit();

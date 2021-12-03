@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "fable_data",
-    "minilzo",
+    "minilzo_rs",
     "open_albion",
 ]
 # NOTE: Still needed for workspaces even with edition 2021. https://github.com/rust-lang/cargo/issues/9996#issuecomment-949193342
