@@ -11,7 +11,7 @@ extern crate core;
 use alloc::vec::Vec;
 
 use core::mem::MaybeUninit;
-use core::ptr;
+use core::{fmt, ptr};
 
 use libc::{c_int, c_uchar, c_ulong, c_void};
 
@@ -73,8 +73,8 @@ impl Error {
     }
 }
 
-impl core::fmt::Display for Error {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
