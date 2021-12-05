@@ -1,6 +1,4 @@
-// use std::collections::HashMap;
-// use std::io::{Cursor, Read, Seek, SeekFrom};
-
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -9,19 +7,59 @@ use crate::Bytes;
 
 #[derive(Debug)]
 pub struct StbHeader {
-    pub magic_number: String,
-    pub version: (u32, u32, u32),
+    pub magic_number: [u8; 4],
+    pub version: [u32; 3],
     pub block_size: u32,
     pub entry_count: u32,
     pub level_count: u32,
     pub entries_start: u32,
-    pub unknown_1: u32,
-    pub unknown_2: u32,
-    pub level_count_again: u32,
 }
 
 impl StbHeader {
-    fn parse(data: &mut &[u8]) -> Option<Self> {}
+    pub fn parse(data: &mut &[u8]) -> Option<Self> {
+        let magic_number = data.advance(4)?.try_into().ok()?;
+        let version = [
+            data.parse_u32_le()?,
+            data.parse_u32_le()?,
+            data.parse_u32_le()?,
+        ];
+        let block_size = data.parse_u32_le()?;
+        let entry_count = data.parse_u32_le()?;
+        let level_count = data.parse_u32_le()?;
+        let entries_start = data.parse_u32_le()?;
+        Some(StbHeader {
+            magic_number,
+            version,
+            block_size,
+            entry_count,
+            level_count,
+            entries_start,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct StbEntries {
+    pub unknown_1: u32,
+    pub unknown_2: u32,
+    pub level_count_again: u32,
+    pub entries: Vec<StbEntry>,
+}
+
+impl StbEntries {
+    pub fn parse(data: &mut &[u8]) -> Option<Self> {
+        let unknown_1 = data.parse_u32_le()?;
+        let unknown_2 = data.parse_u32_le()?;
+        let level_count_again = data.parse_u32_le()?;
+        let entries = StbEntry::parse_all(data, level_count_again as usize)?;
+
+        Some(StbEntries {
+            unknown_1,
+            unknown_2,
+            level_count_again,
+            entries,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -41,118 +79,27 @@ pub struct StbEntry {
 }
 
 impl StbEntry {
-    fn parse(data: &mut &[u8]) -> Option<Self> {}
-    fn parse_seq(data: &mut &[u8]) -> Option<Vec<Self>> {}
-}
-
-#[derive(Debug)]
-pub struct StbEntryExtras {
-    pub unknown_1: u32,
-    pub unknown_2: u32,
-    pub unknown_3: u32,
-    pub unknown_4: u32,
-}
-
-#[derive(Debug)]
-pub struct StbLev {
-    pub offset: u32,
-    pub compressed_size: u32,
-    pub start_x: f32,
-    pub start_y: f32,
-    pub start_z: f32,
-    pub end_x: f32,
-    pub end_y: f32,
-    pub end_z: f32,
-    pub unknown_1: u32,
-}
-
-pub struct StbStaticMapCommon {
-    pub entries_count: u32,
-    pub entries: HashMap<String, StbStaticMapEntry>,
-}
-
-pub struct StbStaticMapEntry {
-    pub offset: u32,
-    pub unknown_1: u32,
-    pub id: u32,
-    pub unknown_2: u32,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl Stb {
-    pub fn decode<T: Read + Seek>(mut source: T) -> Option<Self> {
-        let mut header_data = &mut [0; 32][..];
-
-        source.read_exact(&mut header_data).ok()?;
-
-        let magic_number = header_data.parse_str(4)?.to_owned();
-        let version = (
-            header_data.parse_u32_le()?,
-            header_data.parse_u32_le()?,
-            header_data.parse_u32_le()?,
-        );
-        let block_size = header_data.parse_u32_le()?;
-        let entry_count = header_data.parse_u32_le()?;
-        let level_count = header_data.parse_u32_le()?;
-        let entries_start = header_data.parse_u32_le()?;
-
-        // println!("magic_number {:?}", magic_number);
-        // println!("version {:?}", version);
-        // println!("block_size {:?}", block_size);
-        // println!("entry_count {:?}", entry_count);
-        // println!("level_count {:?}", level_count);
-        // println!("entries_start {:?}", entries_start);
-
-        let mut entries_data = Vec::new();
-
-        source.seek(SeekFrom::Start(entries_start as u64)).ok()?;
-        source.read_to_end(&mut entries_data).ok()?;
-
-        let mut entries_data = &mut entries_data[..];
-
-        let unknown_1 = entries_data.parse_u32_le()?;
-        let unknown_2 = entries_data.parse_u32_le()?;
-        let level_count_again = entries_data.parse_u32_le()?;
-
-        // println!("unknown_1 {:?}", unknown_1);
-        // println!("unknown_2 {:?}", unknown_2);
-        // println!("level_count_again {:?}", level_count_again);
-
+    fn parse_all(data: &mut &[u8], entries_count: usize) -> Option<Vec<Self>> {
         let mut entries = Vec::new();
 
-        while entries.len() < level_count_again as usize {
-            let unknown_1 = entries_data.parse_u32_le()?;
-            let id = entries_data.parse_u32_le()?;
-            let unknown_2 = entries_data.parse_u32_le()?;
-            let len = entries_data.parse_u32_le()?;
-            let pos = entries_data.parse_u32_le()?;
-            let unknown_3 = entries_data.parse_u32_le()?;
+        while entries.len() < entries_count {
+            let unknown_1 = data.parse_u32_le()?;
+            let id = data.parse_u32_le()?;
+            let unknown_2 = data.parse_u32_le()?;
+            let len = data.parse_u32_le()?;
+            let pos = data.parse_u32_le()?;
+            let unknown_3 = data.parse_u32_le()?;
 
-            let name_1_len = entries_data.parse_u32_le()?;
-            let name_1 = entries_data.parse_str(name_1_len as usize)?.to_owned();
+            let name_1_len = data.parse_u32_le()?;
+            let name_1 = data.parse_str(name_1_len as usize)?.to_owned();
 
-            let unknown_4 = entries_data.parse_u32_le()?;
-            let unknown_5 = entries_data.parse_u32_le()?;
+            let unknown_4 = data.parse_u32_le()?;
+            let unknown_5 = data.parse_u32_le()?;
 
-            let name_2_len = entries_data.parse_u32_le()?;
-            let name_2 = entries_data.parse_str(name_2_len as usize)?.to_owned();
+            let name_2_len = data.parse_u32_le()?;
+            let name_2 = data.parse_str(name_2_len as usize)?.to_owned();
 
-            let extras_len = entries_data.parse_u32_le()?;
-            let extras = if extras_len == 16 {
-                let unknown_1 = entries_data.parse_u32_le()?;
-                let unknown_2 = entries_data.parse_u32_le()?;
-                let unknown_3 = entries_data.parse_u32_le()?;
-                let unknown_4 = entries_data.parse_u32_le()?;
-                Some(StbEntryExtras {
-                    unknown_1,
-                    unknown_2,
-                    unknown_3,
-                    unknown_4,
-                })
-            } else {
-                None
-            };
+            let (extras_len, extras) = StbEntryExtras::parse(data)?;
 
             entries.push(StbEntry {
                 unknown_1,
@@ -170,40 +117,69 @@ impl Stb {
             });
         }
 
-        Some(Stb {
-            magic_number,
-            version,
-            block_size,
-            entry_count,
-            level_count,
-            entries_start,
-            unknown_1,
-            unknown_2,
-            level_count_again,
-            entries,
-        })
+        Some(entries)
     }
+}
 
-    pub fn decode_static_map_common<T: Read + Seek>(
-        &self,
-        mut source: T,
-    ) -> Option<StbStaticMapCommon> {
-        let _static_map_common_entry = self
-            .entries
-            .iter()
-            .find(|x| x.name_1 == "__STATIC_MAP_COMMON_HEADER__")?;
+#[derive(Debug)]
+pub struct StbEntryExtras {
+    pub unknown_1: u32,
+    pub unknown_2: u32,
+    pub unknown_3: u32,
+    pub unknown_4: u32,
+}
 
-        let mut data = Vec::new();
+impl StbEntryExtras {
+    fn parse(data: &mut &[u8]) -> Option<(u32, Option<Self>)> {
+        let extras_len = data.parse_u32_le()?;
+        let extras = if extras_len == 16 {
+            let unknown_1 = data.parse_u32_le()?;
+            let unknown_2 = data.parse_u32_le()?;
+            let unknown_3 = data.parse_u32_le()?;
+            let unknown_4 = data.parse_u32_le()?;
+            Some(StbEntryExtras {
+                unknown_1,
+                unknown_2,
+                unknown_3,
+                unknown_4,
+            })
+        } else {
+            None
+        };
+        Some((extras_len, extras))
+    }
+}
 
-        // source.seek(SeekFrom::Start(start as u64)).ok()?;
-        source.read_to_end(&mut data).ok()?;
+#[derive(Debug)]
+pub struct StbLev {
+    pub offset: u32,
+    pub compressed_size: u32,
+    pub start_x: f32,
+    pub start_y: f32,
+    pub start_z: f32,
+    pub end_x: f32,
+    pub end_y: f32,
+    pub end_z: f32,
+    pub unknown_1: u32,
+}
+
+pub struct StbStaticMapCommon {
+    pub entries_count: u32,
+    pub entries: Vec<(String, StbStaticMapEntry)>,
+}
+
+impl StbStaticMapCommon {
+    pub fn parse(data: &mut &[u8]) -> Option<Self> {
+        // let _static_map_common_entry = self
+        //     .entries
+        //     .iter()
+        //     .find(|x| x.name_1 == "__STATIC_MAP_COMMON_HEADER__")?;
 
         let data_lookback = &data[..];
-        let mut data = &data[..];
 
         let entries_count = data.parse_u32_le()?;
 
-        let mut entries = HashMap::with_capacity(entries_count as usize);
+        let mut entries = Vec::with_capacity(entries_count as usize);
 
         while entries.len() < entries_count as usize {
             let path = data.parse_str_until_nul()?.to_owned();
@@ -217,7 +193,7 @@ impl Stb {
             let width = data.parse_u32_le()?;
             let height = data.parse_u32_le()?;
 
-            entries.insert(
+            entries.push((
                 path,
                 StbStaticMapEntry {
                     offset,
@@ -227,7 +203,7 @@ impl Stb {
                     width,
                     height,
                 },
-            );
+            ));
         }
 
         Some(StbStaticMapCommon {
@@ -235,54 +211,32 @@ impl Stb {
             entries,
         })
     }
-
-    pub fn decode_entry<T: Read + Seek>(
-        mut source: T,
-        static_map_common: &StbStaticMapCommon,
-        entry: &StbEntry,
-    ) -> Option<StbLev> {
-        let mut data = vec![0; entry.len as usize];
-
-        entry.read_from(&mut source, &mut data)?;
-
-        let static_map_data = static_map_common.entries.get(&entry.name_1)?;
-
-        let map_block_count = static_map_data.width * static_map_data.height / 256;
-
-        Some(StbLev::decode(Cursor::new(data), map_block_count as usize)?)
-    }
 }
 
-impl StbEntry {
-    pub fn read_from<T: Read + Seek>(&self, mut source: T, buf: &mut [u8]) -> Option<()> {
-        let read_buf = buf.get_mut(..self.len as usize)?;
-        source.seek(SeekFrom::Start(self.pos as u64)).ok()?;
-        source.read_exact(read_buf).ok()?;
-        Some(())
-    }
+pub struct StbStaticMapEntry {
+    pub offset: u32,
+    pub unknown_1: u32,
+    pub id: u32,
+    pub unknown_2: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 impl StbLev {
-    pub fn decode<T: Read + Seek>(mut source: T, _block_count: usize) -> Option<StbLev> {
-        let mut data = Vec::new();
+    pub fn parse(data: &mut &[u8], _block_count: usize) -> Option<StbLev> {
+        let _first_block = data.advance(2048)?;
 
-        source.read_to_end(&mut data).ok()?;
-
-        let mut data = &data[..];
-
-        let first_block = data.advance(2048)?;
-
-        println!("{:?}", first_block);
+        // println!("{:?}", first_block);
 
         let second_block_len = data.parse_u32_le()? as usize;
         let second_block = data
             .advance(second_block_len + (second_block_len % 2048))?
             .to_owned();
-        let second_block = (&second_block[..second_block_len]).to_owned();
+        let _second_block = (&second_block[..second_block_len]).to_owned();
 
         // let second_block = data.grab((second_block_len as usize).min(2048) - 4)?;
 
-        println!("{:?}", second_block);
+        // println!("{:?}", second_block);
 
         // println!("second block len {:?}", second_block_len);
 
@@ -291,11 +245,12 @@ impl StbLev {
         while blocks.len() < 19 {
             let decompressed_size = data.parse_u32_le()?;
             let compressed_len = data.parse_u32_le()?;
-            println!("{:?} {:?}", decompressed_size, compressed_len);
+            // println!("{:?} {:?}", decompressed_size, compressed_len);
             let compressed_data = data.advance(compressed_len as usize)?.to_owned();
             data.advance(2040usize.saturating_sub(compressed_data.len()))?;
+            let mut decompressed = vec![0u8; decompressed_size as usize];
             // println!("{:?} {:?} {:x?}", decompressed_size, compressed_len, compressed_data);
-            let _decompressed = minilzo::decompress(&compressed_data, decompressed_size as usize);
+            let _ = lzokay::decompress::decompress(&compressed_data, &mut decompressed).ok()?;
             // println!("{:?} {:?} {:?}", decompressed_size, compressed_len, decompressed);
             // println!("{:?} {:?} {:?}", decompressed_size, compressed_len, decompressed);
             blocks.push((decompressed_size, compressed_len, compressed_data));

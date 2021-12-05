@@ -8,15 +8,18 @@ homepage = "https://github.com/jamen/open_albion"
 repository = "https://github.com/jamen/open_albion"
 
 [dependencies]
-bcndecode = "0.2.0"
-bytemuck = { version = "1.7.0", features = [ "derive" ] }
-crevice = "0.6.0"
-flate2 = "1.0.20"
-lalrpop-util = { version = "0.19.6", features = [ "lexer" ] }
-minilzo = { path = "../minilzo_rs" }
-mint = "0.5.6"
-# png = "0.16.8"
+miniz_oxide = "0.5.1"
 regex = "1.5.4"
+mint = "0.5.8"
+
+[dependencies.lalrpop-util]
+version = "0.19.6"
+features = ["lexer"]
+
+[dependencies.lzokay]
+version = "1.0.1"
+default-features = false
+features = ["decompress", "compress", "alloc"]
 
 [build-dependencies]
 lalrpop = "0.19.6"

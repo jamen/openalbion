@@ -30,5 +30,5 @@ pub struct Field {
 }
 
 impl Field {
-    pub fn parse(data: &mut &[u8]) -> Vec<Self> {}
+    // pub fn parse(data: &mut &[u8]) -> Vec<Self> {}
 }

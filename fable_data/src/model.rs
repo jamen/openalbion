@@ -1,14 +1,11 @@
-// use std::collections::HashMap;
-
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::{BigMeshInfo, Bytes};
-
-use bytemuck::{Pod, Zeroable};
-
 use mint::{ColumnMatrix3x4, ColumnMatrix4, Quaternion, Vector3, Vector4};
+
+use crate::{BigMeshInfo, Bytes};
 
 #[derive(Debug)]
 pub struct Model {
@@ -153,7 +150,7 @@ pub struct PrimitiveAnimatedBlock {
 // TODO: This type is missing the bone data, unknown data, and mesh level found in some meshes, but
 // its enough to render something. The attributes could be added, but they're sometimes empty.
 // There's many other solutions, but how the shaders are organized should be taken into account.
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Vertex {
     pub pos: [f32; 3],
@@ -178,7 +175,7 @@ pub struct ClothPrimitive {
     pub vertex_indices: Vec<i32>,
     pub average_patch_size: f32,
     pub bezier_enabled: bool,
-    pub export_particles: HashMap<String, u32>,
+    pub export_particles: Vec<(String, u32)>,
 }
 
 #[derive(Debug)]
@@ -918,13 +915,13 @@ impl Model {
         let bezier_enabled: bool = cloth_data.parse_u8()? != 0;
 
         let export_particles_count: u32 = cloth_data.parse_u32_le()?;
-        let mut export_particles: HashMap<String, u32> =
-            HashMap::with_capacity(export_particles_count as usize);
+        let mut export_particles: Vec<(String, u32)> =
+            Vec::with_capacity(export_particles_count as usize);
 
         for _ in 0..export_particles_count {
             let name = cloth_data.parse_str_with_u32_le_prefix()?.to_owned();
             let id = cloth_data.parse_u32_le()?;
-            export_particles.insert(name, id);
+            export_particles.push((name, id));
         }
 
         Some(ClothPrimitive {
@@ -1041,26 +1038,26 @@ impl Model {
             compressed_len as usize
         };
 
-        let mut uncompressed = Vec::with_capacity(size);
+        let mut out = vec![0u8; size];
 
         if compressed_len > 0 {
-            let input = data.advance(compressed_len as usize)?;
+            let compressed_input = data.advance(compressed_len as usize)?;
 
-            let out = match minilzo::decompress(&input, size) {
+            let out_size = match lzokay::decompress::decompress(&compressed_input, &mut out) {
                 Err(_e) => return None,
                 Ok(r) => r,
             };
 
-            size -= out.len() as usize;
+            out.truncate(out_size);
 
-            uncompressed.extend(&out);
+            size = size.saturating_sub(out_size);
         }
 
         if size > 0 {
-            uncompressed.extend(data.advance(size)?);
+            out.extend(data.advance(size)?);
         }
 
-        Some(uncompressed)
+        Some(out)
     }
 }
 

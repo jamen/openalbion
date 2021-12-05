@@ -1,3 +1,4 @@
+use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::{BigTextureInfo, Bytes};
@@ -26,14 +27,17 @@ impl Texture {
             };
 
             let first_mipmap_compressed = data.advance(size as usize)?;
+            let mut first_mipmap_decompressed = vec![0u8; info.first_mipmap_size as usize];
 
-            let mut texture_data =
-                minilzo::decompress(first_mipmap_compressed, info.first_mipmap_size as usize)
-                    .ok()?;
+            let _first_mipmap_decompressed_size = lzokay::decompress::decompress(
+                first_mipmap_compressed,
+                &mut first_mipmap_decompressed,
+            )
+            .ok()?;
 
             let trail = data.advance(3)?;
 
-            texture_data.extend_from_slice(&trail);
+            first_mipmap_decompressed.extend_from_slice(&trail);
 
             // let bc_format = match info.dxt_compression {
             //     31 => { bcndecode::BcnEncoding::Bc1 },
@@ -57,7 +61,7 @@ impl Texture {
 
             // writer.write_image_data(&data);
 
-            frames.push(texture_data);
+            frames.push(first_mipmap_decompressed);
         }
 
         // let data = &data[..252];

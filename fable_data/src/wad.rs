@@ -1,3 +1,4 @@
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -5,8 +6,8 @@ use crate::Bytes;
 
 #[derive(Debug)]
 pub struct WadHeader {
-    pub magic_number: String,
-    pub version: (u32, u32, u32),
+    pub magic_number: [u8; 4],
+    pub version: [u32; 3],
     pub block_size: u32,
     pub entry_count: u32,
     pub entry_count_repeat: u32,
@@ -15,12 +16,12 @@ pub struct WadHeader {
 
 impl WadHeader {
     pub fn parse(data: &mut &[u8]) -> Option<Self> {
-        let magic_number = data.parse_str(4)?.to_owned();
-        let version = (
+        let magic_number = data.advance(4)?.try_into().ok()?;
+        let version = [
             data.parse_u32_le()?,
             data.parse_u32_le()?,
             data.parse_u32_le()?,
-        );
+        ];
         let block_size = data.parse_u32_le()?;
         let entry_count = data.parse_u32_le()?;
         let entry_count_repeat = data.parse_u32_le()?;
@@ -52,7 +53,7 @@ pub struct WadEntry {
 }
 
 impl WadEntry {
-    pub fn parse(data: &mut &[u8], header: &WadHeader) -> Option<Vec<Self>> {
+    pub fn parse_all(data: &mut &[u8], header: &WadHeader) -> Option<Vec<Self>> {
         let mut entries = Vec::new();
 
         while entries.len() < header.entry_count as usize {
@@ -64,9 +65,9 @@ impl WadEntry {
             let unknown_3 = data.parse_u32_le()?;
             let path = data.parse_str_with_u32_le_prefix()?.to_owned();
             let unknown_4 = data.advance(16)?.to_owned();
-            let created = WadTimestamp::parse(&mut data)?;
-            let accessed = WadTimestamp::parse(&mut data)?;
-            let modified = WadTimestampShort::parse(&mut data)?;
+            let created = WadTimestamp::parse(data)?;
+            let accessed = WadTimestamp::parse(data)?;
+            let modified = WadTimestampShort::parse(data)?;
 
             if id != entries.len() as u32 {
                 return None;

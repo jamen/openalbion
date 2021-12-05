@@ -192,16 +192,16 @@ macro_rules! impl_num_put {
     }
 }
 
-macro_rules! impl_mint_put {
-    ($($fn_name:ident, $typ:ty, [ $($c:expr),* ],)*) => {
-        $(
-            fn $fn_name (&mut self, x: $typ) {
-                let mut i = x.into();
-                $($c(self, i.next().unwrap());)*
-            }
-        )*
-    }
-}
+// macro_rules! impl_mint_put {
+//     ($($fn_name:ident, $typ:ty, [ $($c:expr),* ],)*) => {
+//         $(
+//             fn $fn_name (&mut self, x: $typ) {
+//                 let mut i = x.into();
+//                 $($c(self, i.next());)*
+//             }
+//         )*
+//     }
+// }
 
 pub(crate) trait BytesMut: AsRef<[u8]> + AsMut<[u8]> {
     fn put(&mut self, val: &[u8]);
@@ -247,34 +247,34 @@ pub(crate) trait BytesMut: AsRef<[u8]> + AsMut<[u8]> {
         put_f64_ne, f64::to_ne_bytes,
     }
 
-    impl_mint_put! {
-        put_vector2_f32_le, [f32; 2], [Self::put_f32_le, Self::put_f32_le],
-        put_vector3_f32_le, [f32; 3], [Self::put_f32_le, Self::put_f32_le, Self::put_f32_le],
-        put_vector4_f32_le, [f32; 4], [
-            Self::put_f32_le,
-            Self::put_f32_le,
-            Self::put_f32_le,
-            Self::put_f32_le
-        ],
-        put_quaternion_f32_le, mint::Quaternion<f32>, [
-            Self::put_f32_le,
-            Self::put_f32_le,
-            Self::put_f32_le,
-            Self::put_f32_le
-        ],
-        put_colmatrix3x4_f32_le, mint::ColumnMatrix3x4<f32>, [
-            Self::put_vector3_f32_le,
-            Self::put_vector3_f32_le,
-            Self::put_vector3_f32_le,
-            Self::put_vector3_f32_le
-        ],
-        put_colmatrix4_f32_le, mint::ColumnMatrix4<f32>, [
-            Self::put_vector4_f32_le,
-            Self::put_vector4_f32_le,
-            Self::put_vector4_f32_le,
-            Self::put_vector4_f32_le
-        ],
-    }
+    // impl_mint_put! {
+    //     put_vector2_f32_le, [f32; 2], [Self::put_f32_le, Self::put_f32_le],
+    //     put_vector3_f32_le, [f32; 3], [Self::put_f32_le, Self::put_f32_le, Self::put_f32_le],
+    //     put_vector4_f32_le, [f32; 4], [
+    //         Self::put_f32_le,
+    //         Self::put_f32_le,
+    //         Self::put_f32_le,
+    //         Self::put_f32_le
+    //     ],
+    //     put_quaternion_f32_le, mint::Quaternion<f32>, [
+    //         Self::put_f32_le,
+    //         Self::put_f32_le,
+    //         Self::put_f32_le,
+    //         Self::put_f32_le
+    //     ],
+    //     put_colmatrix3x4_f32_le, mint::ColumnMatrix3x4<f32>, [
+    //         Self::put_vector3_f32_le,
+    //         Self::put_vector3_f32_le,
+    //         Self::put_vector3_f32_le,
+    //         Self::put_vector3_f32_le
+    //     ],
+    //     put_colmatrix4_f32_le, mint::ColumnMatrix4<f32>, [
+    //         Self::put_vector4_f32_le,
+    //         Self::put_vector4_f32_le,
+    //         Self::put_vector4_f32_le,
+    //         Self::put_vector4_f32_le
+    //     ],
+    // }
 }
 
 impl BytesMut for &mut [u8] {

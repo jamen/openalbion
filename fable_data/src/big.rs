@@ -1,3 +1,4 @@
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -49,38 +50,16 @@ pub struct BigHeader {
 }
 
 impl BigHeader {
-    pub fn parse<T: AsRef<[u8]>>(source: T) -> Option<Self> {
-        let mut source = source.as_ref();
-
-        let magic_number = source.advance(4)?.try_into().ok()?;
-        let version = source.parse_u32_le()?;
-        let banks_start = source.parse_u32_le()?;
-
+    pub fn parse(data: &mut &[u8]) -> Option<Self> {
+        let magic_number = data.advance(4)?.try_into().ok()?;
+        let version = data.parse_u32_le()?;
+        let banks_start = data.parse_u32_le()?;
         Some(BigHeader {
             magic_number,
             version,
             banks_start,
         })
     }
-
-    // fn decode_entry_kind(big_kind, group_id) -> BigEntryKind {
-    //     match (big_kind) {
-    //         ()
-    //         _ => BigEntryKind::Unknown,
-    //     }
-    // }
-
-    // pub fn read_entry<T: Read + Seek>(
-    //     mut source: T,
-    //     entry: &BigEntry,
-    //     buf: &mut [u8],
-    // ) -> Result<(), IoError> {
-    //     let max_len = buf.len();
-    //     let read_buf = &mut buf[..(entry.data_size as usize).min(max_len)];
-    //     source.seek(SeekFrom::Start(entry.data_start as u64))?;
-    //     source.read_exact(read_buf)?;
-    //     Ok(())
-    // }
 }
 
 #[derive(Debug)]
@@ -95,7 +74,7 @@ pub struct BigBank {
 }
 
 impl BigBank {
-    pub fn parse(source: &mut &[u8]) -> Option<Vec<Self>> {
+    pub fn parse_all(source: &mut &[u8]) -> Option<Vec<Self>> {
         let mut source = source.as_ref();
 
         let banks_count = source.parse_u32_le()?;
@@ -151,7 +130,7 @@ pub struct BigEntry {
 }
 
 impl BigEntry {
-    pub fn parse(data: &mut &[u8], kind: BigKind, bank: &BigBank) -> Option<Vec<Self>> {
+    pub fn parse_all(data: &mut &[u8], kind: BigKind, bank: &BigBank) -> Option<Vec<Self>> {
         let mut entries = Vec::new();
 
         while entries.len() < bank.entries_count as usize {

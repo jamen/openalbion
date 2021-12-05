@@ -6,6 +6,7 @@
 
 // use std::io::Read;
 
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -64,18 +65,12 @@ impl Bin {
             let unknown_1 = data.parse_u32_le()?;
             let unknown_2 = data.parse_u32_le()?;
             let unknown_3 = data.parse_u32_le()?;
-            if unknown_1 == 0xFFFF {
-                // println!("{:?} {:?} {:?}", unknown_1, unknown_2, unknown_3);
-            }
+            if unknown_1 == 0xFFFF {}
             entries.push((unknown_1, unknown_2, unknown_3));
         }
 
-        // println!("{:?}", entries);
-
         let chunks_count = data.parse_u32_le()?;
         let _unknown_4 = data.parse_u32_le()?;
-
-        // println!("{:?} {:?}", chunks_count, unknown_4);
 
         let mut chunks_table = Vec::new();
 
@@ -91,31 +86,17 @@ impl Bin {
 
         let mut bytes = Vec::new();
 
-        for (i, (start, idk)) in chunks_table.iter().copied().enumerate() {
-            // println!("{:?}", idk);
-
+        for (i, (start, _idk)) in chunks_table.iter().copied().enumerate() {
             let compressed_chunk = match chunks_table.get(i + 1).and_then(|x| Some(x.0)) {
                 Some(end) => &data[start as usize..end as usize],
                 None => continue,
             };
 
-            let mut decompressor = flate2::bufread::ZlibDecoder::new(compressed_chunk);
+            let out = miniz_oxide::inflate::decompress_to_vec_zlib(compressed_chunk).ok()?;
 
-            // let mut chunk = Vec::new();
-
-            decompressor.read_to_end(&mut bytes).ok()?;
-
-            // println!("{:?}", &bytes[..1024]);
+            bytes.extend_from_slice(&out);
 
             break;
-
-            // let initial_offset = data.parse_u16_le()?;
-
-            // println!("{:?} {:?}", initial_offset, file_count);
-
-            // println!("{:?}", &chunk[initial_offset as usize..]);
-
-            // println!("{:?}", chunk.len());
         }
 
         // let stdout = std::io::stdout();
@@ -129,8 +110,6 @@ impl Bin {
         // for (offset, unknown_1) in chunks_table.iter() {
 
         // }
-
-        // println!("{:?}", chunks_table);
 
         Some(Bin {})
     }

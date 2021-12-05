@@ -1,5 +1,6 @@
 use crate::Bytes;
 
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -430,7 +431,7 @@ impl Lev {
                     children_2,
                 })
             }
-            flags => {
+            _flags => {
                 // eprintln!("unhandled node with flags {:?}", flags);
                 None
             }
