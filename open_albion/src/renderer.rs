@@ -158,7 +158,7 @@ impl Renderer {
 
         let cmd_bufs = [
             self.render_pass_scene(&surface_view),
-            self.render_pass_gui(&surface_view, &mut state.gui),
+            self.render_pass_gui(&surface_view, state),
         ];
 
         self.queue().submit(cmd_bufs.into_iter());
@@ -166,18 +166,16 @@ impl Renderer {
         frame.present();
     }
 
-    // TODO: Figure out a better structure for render passes?
-
-    fn render_pass_gui(&mut self, surface_view: &wgpu::TextureView, gui: &mut Gui) -> wgpu::CommandBuffer {
+    fn render_pass_gui(&mut self, surface_view: &wgpu::TextureView, state: &mut State) -> wgpu::CommandBuffer {
         let mut egui_rpass = egui_wgpu_backend::RenderPass::new(self.device(), self.core.preferred_format, 1);
 
         let mut encoder = self.device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        gui.platform.begin_frame();
-        gui.update();
-        let (_output, paint_cmds) = gui.platform.end_frame(None); // TODO: egui_winit_platform's docs say "If the optional window is set, it will set the cursor key based on egui’s instructions."
-        let paint_jobs = gui.platform.context().tessellate(paint_cmds);
+        state.gui.platform.begin_frame();
+        Gui::update(state);
+        let (_output, paint_cmds) = state.gui.platform.end_frame(None); // TODO: egui_winit_platform's docs say "If the optional window is set, it will set the cursor key based on egui’s instructions."
+        let paint_jobs = state.gui.platform.context().tessellate(paint_cmds);
         let screen_desc = ScreenDescriptor {
             physical_width: self.size().x,
             physical_height: self.size().y,
@@ -185,10 +183,10 @@ impl Renderer {
         };
 
         {
-            egui_rpass.update_texture(self.device(), self.queue(), &*gui.platform.context().texture());
+            egui_rpass.update_texture(self.device(), self.queue(), &*state.gui.platform.context().texture());
             egui_rpass.update_user_textures(self.device(), self.queue());
             egui_rpass.update_buffers(self.device(), self.queue(), &paint_jobs, &screen_desc);
-            egui_rpass.execute(&mut encoder, &surface_view, &paint_jobs, &screen_desc, None);
+            egui_rpass.execute(&mut encoder, &surface_view, &paint_jobs, &screen_desc, None).unwrap();
         }
 
         encoder.finish()
@@ -199,7 +197,7 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         {
-            let rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: surface_view,

@@ -11,10 +11,6 @@ use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, w
 
 use native_dialog::FileDialog;
 
-use egui::FontDefinitions;
-use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
-use egui_winit_platform::{Platform, PlatformDescriptor};
-
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     env_logger::init();
@@ -27,7 +23,7 @@ async fn main() {
     let event_loop = EventLoop::new();
 
     let window = WindowBuilder::new()
-        .with_title("OpenAlbion")
+        .with_title("Open Albion")
         .with_inner_size(winit::dpi::LogicalSize::new(1024, 768))
         // .with_fullscreen(Some(Fullscreen::Borderless(event_loop.primary_monitor())))
         .with_resizable(true)
