@@ -1,5 +1,3 @@
-pub use crate::gtg_parser::GtgParser;
-
 pub struct Gtg {}
 
 impl Gtg {

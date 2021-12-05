@@ -1,9 +1,13 @@
-use std::collections::HashMap;
+// use std::collections::HashMap;
+
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::{BigMeshInfo, Bytes};
 
-// use crevice::std140::AsStd140;
 use bytemuck::{Pod, Zeroable};
+
 use mint::{ColumnMatrix3x4, ColumnMatrix4, Quaternion, Vector3, Vector4};
 
 #[derive(Debug)]
@@ -1062,31 +1066,31 @@ impl Model {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    // use super::*;
 
-    use crate::{Big, BigInfo, BigMeshInfo};
+    // use crate::{Big, BigInfo, BigMeshInfo};
 
-    use std::fs::File;
-    use std::path::PathBuf;
+    // use std::fs::File;
+    // use std::path::PathBuf;
 
-    #[test]
-    fn test_try_parsing_all_models() {
-        let fable_dir = PathBuf::from(env!("FABLE_DIR"));
+    // #[test]
+    // fn test_try_parsing_all_models() {
+    //     let fable_dir = PathBuf::from(env!("FABLE_DIR"));
 
-        let graphics_path = fable_dir.join("data/graphics/graphics.big");
-        let graphics_file = File::open(&graphics_path).unwrap();
-        let graphics = Big::decode_reader_with_path(&graphics_file, &graphics_path).unwrap();
+    //     let graphics_path = fable_dir.join("data/graphics/graphics.big");
+    //     let graphics_file = File::open(&graphics_path).unwrap();
+    //     let graphics = Big::decode_reader_with_path(&graphics_file, &graphics_path).unwrap();
 
-        for entry in graphics.entries {
-            if let BigInfo::Mesh(big_mesh_info) = &entry.info {
-                // println!("entry name {:?}", entry.sources.first());
+    //     for entry in graphics.entries {
+    //         if let BigInfo::Mesh(big_mesh_info) = &entry.info {
+    //             // println!("entry name {:?}", entry.sources.first());
 
-                let mut entry_data = vec![0; entry.data_size as usize];
+    //             let mut entry_data = vec![0; entry.data_size as usize];
 
-                Big::read_entry(&graphics_file, &entry, &mut entry_data).unwrap();
+    //             Big::read_entry(&graphics_file, &entry, &mut entry_data).unwrap();
 
-                let model = Model::decode(&entry_data, &big_mesh_info).unwrap();
-            }
-        }
-    }
+    //             let model = Model::decode(&entry_data, &big_mesh_info).unwrap();
+    //         }
+    //     }
+    // }
 }

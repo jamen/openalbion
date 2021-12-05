@@ -1,6 +1,9 @@
 pub use crate::bncfg_parser::BncfgParser;
 
-use std::collections::HashMap;
+// use std::collections::HashMap;
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 pub struct Bncfg {
     pub creature_type: String,

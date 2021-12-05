@@ -1,23 +1,45 @@
-use std::collections::HashMap;
-use std::io::{Error as IoError, Read, Seek, SeekFrom};
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use crate::Bytes;
 
 #[derive(Debug)]
-pub struct Wad<T: Read + Seek> {
-    source: T,
+pub struct WadHeader {
     pub magic_number: String,
     pub version: (u32, u32, u32),
     pub block_size: u32,
     pub entry_count: u32,
     pub entry_count_repeat: u32,
     pub entries_start: u32,
-    pub entries: Vec<WadEntry>,
-    pub entries_by_path: HashMap<String, u32>,
+}
+
+impl WadHeader {
+    pub fn parse(data: &mut &[u8]) -> Option<Self> {
+        let magic_number = data.parse_str(4)?.to_owned();
+        let version = (
+            data.parse_u32_le()?,
+            data.parse_u32_le()?,
+            data.parse_u32_le()?,
+        );
+        let block_size = data.parse_u32_le()?;
+        let entry_count = data.parse_u32_le()?;
+        let entry_count_repeat = data.parse_u32_le()?;
+        let entries_start = data.parse_u32_le()?;
+
+        Some(WadHeader {
+            magic_number,
+            version,
+            block_size,
+            entry_count,
+            entry_count_repeat,
+            entries_start,
+        })
+    }
 }
 
 #[derive(Debug)]
 pub struct WadEntry {
+    pub path: String,
     pub unknown_1: Vec<u8>,
     pub unknown_2: u32,
     pub data_size: u32,
@@ -29,73 +51,29 @@ pub struct WadEntry {
     pub modified: WadTimestampShort,
 }
 
-#[derive(Debug)]
-pub struct WadTimestamp {
-    year: u32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: u32,
-    millisecond: u32,
-}
-
-#[derive(Debug)]
-pub struct WadTimestampShort {
-    year: u32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-}
-
-impl<T: Read + Seek> Wad<T> {
-    pub fn decode(mut source: T) -> Option<Self> {
-        let mut header = &mut [0; 32][..];
-
-        source.read_exact(&mut header).ok()?;
-
-        let magic_number = header.parse_str(4)?.to_owned();
-        let version = (
-            header.parse_u32_le()?,
-            header.parse_u32_le()?,
-            header.parse_u32_le()?,
-        );
-        let block_size = header.parse_u32_le()?;
-        let entry_count = header.parse_u32_le()?;
-        let entry_count_repeat = header.parse_u32_le()?;
-        let entries_start = header.parse_u32_le()?;
-
-        let mut entries_data = Vec::new();
-
-        source.seek(SeekFrom::Start(entries_start as u64)).ok()?;
-        source.read_to_end(&mut entries_data).ok()?;
-
-        let mut entries_data = &entries_data[..];
-
+impl WadEntry {
+    pub fn parse(data: &mut &[u8], header: &WadHeader) -> Option<Vec<Self>> {
         let mut entries = Vec::new();
-        let mut entries_by_path = HashMap::new();
 
-        while entries.len() < entry_count as usize {
-            let unknown_1 = entries_data.advance(16)?.to_owned();
-            let id = entries_data.parse_u32_le()?;
-            let unknown_2 = entries_data.parse_u32_le()?;
-            let data_size = entries_data.parse_u32_le()?;
-            let data_start = entries_data.parse_u32_le()?;
-            let unknown_3 = entries_data.parse_u32_le()?;
-            let path = entries_data.parse_str_with_u32_le_prefix()?.to_owned();
-            let unknown_4 = entries_data.advance(16)?.to_owned();
-            let created = Self::decode_timestamp(&mut entries_data)?;
-            let accessed = Self::decode_timestamp(&mut entries_data)?;
-            let modified = Self::decode_timestamp_short(&mut entries_data)?;
+        while entries.len() < header.entry_count as usize {
+            let unknown_1 = data.advance(16)?.to_owned();
+            let id = data.parse_u32_le()?;
+            let unknown_2 = data.parse_u32_le()?;
+            let data_size = data.parse_u32_le()?;
+            let data_start = data.parse_u32_le()?;
+            let unknown_3 = data.parse_u32_le()?;
+            let path = data.parse_str_with_u32_le_prefix()?.to_owned();
+            let unknown_4 = data.advance(16)?.to_owned();
+            let created = WadTimestamp::parse(&mut data)?;
+            let accessed = WadTimestamp::parse(&mut data)?;
+            let modified = WadTimestampShort::parse(&mut data)?;
 
             if id != entries.len() as u32 {
                 return None;
             }
 
-            entries_by_path.insert(path, id).xor(Some(0))?;
-
             entries.push(WadEntry {
+                path,
                 unknown_1,
                 unknown_2,
                 data_size,
@@ -108,20 +86,23 @@ impl<T: Read + Seek> Wad<T> {
             });
         }
 
-        Some(Wad {
-            source,
-            magic_number,
-            version,
-            block_size,
-            entry_count,
-            entry_count_repeat,
-            entries_start,
-            entries,
-            entries_by_path,
-        })
+        Some(entries)
     }
+}
 
-    fn decode_timestamp(data: &mut &[u8]) -> Option<WadTimestamp> {
+#[derive(Debug)]
+pub struct WadTimestamp {
+    pub year: u32,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
+    pub second: u32,
+    pub millisecond: u32,
+}
+
+impl WadTimestamp {
+    fn parse(data: &mut &[u8]) -> Option<WadTimestamp> {
         Some(WadTimestamp {
             year: data.parse_u32_le()?,
             month: data.parse_u32_le()?,
@@ -132,8 +113,19 @@ impl<T: Read + Seek> Wad<T> {
             millisecond: data.parse_u32_le()?,
         })
     }
+}
 
-    fn decode_timestamp_short(data: &mut &[u8]) -> Option<WadTimestampShort> {
+#[derive(Debug)]
+pub struct WadTimestampShort {
+    pub year: u32,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
+}
+
+impl WadTimestampShort {
+    fn parse(data: &mut &[u8]) -> Option<WadTimestampShort> {
         Some(WadTimestampShort {
             year: data.parse_u32_le()?,
             month: data.parse_u32_le()?,
@@ -141,13 +133,5 @@ impl<T: Read + Seek> Wad<T> {
             hour: data.parse_u32_le()?,
             minute: data.parse_u32_le()?,
         })
-    }
-
-    pub fn read_entry(&mut self, entry: &WadEntry, buf: &mut [u8]) -> Result<(), IoError> {
-        let max_len = buf.len();
-        let read_buf = &mut buf[..(entry.data_size as usize).min(max_len)];
-        self.source.seek(SeekFrom::Start(entry.data_start as u64))?;
-        self.source.read_exact(read_buf)?;
-        Ok(())
     }
 }

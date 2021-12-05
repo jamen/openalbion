@@ -1,10 +1,14 @@
-use std::collections::HashMap;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+// use std::collections::HashMap;
+// use std::io::{Cursor, Read, Seek, SeekFrom};
+
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::Bytes;
 
 #[derive(Debug)]
-pub struct Stb {
+pub struct StbHeader {
     pub magic_number: String,
     pub version: (u32, u32, u32),
     pub block_size: u32,
@@ -14,7 +18,10 @@ pub struct Stb {
     pub unknown_1: u32,
     pub unknown_2: u32,
     pub level_count_again: u32,
-    pub entries: Vec<StbEntry>,
+}
+
+impl StbHeader {
+    fn parse(data: &mut &[u8]) -> Option<Self> {}
 }
 
 #[derive(Debug)]
@@ -31,6 +38,11 @@ pub struct StbEntry {
     pub name_2: String,
     pub extras_len: u32,
     pub extras: Option<StbEntryExtras>,
+}
+
+impl StbEntry {
+    fn parse(data: &mut &[u8]) -> Option<Self> {}
+    fn parse_seq(data: &mut &[u8]) -> Option<Vec<Self>> {}
 }
 
 #[derive(Debug)]

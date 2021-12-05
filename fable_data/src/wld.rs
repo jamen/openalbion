@@ -1,6 +1,7 @@
-pub use crate::wld_parser::WldParser;
+use alloc::string::String;
+use alloc::vec::Vec;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Wld {
     pub start_initial_quests: Vec<String>,
     pub map_uid_count: isize,
@@ -9,7 +10,7 @@ pub struct Wld {
     pub regions: Vec<WldRegion>,
 }
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug)]
 pub struct WldMap {
     pub new_map: isize,
     pub map_x: isize,
@@ -21,7 +22,7 @@ pub struct WldMap {
     pub loaded_on_player_proximity: bool,
 }
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug)]
 pub struct WldRegion {
     pub new_region: isize,
     pub region_name: String,

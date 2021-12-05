@@ -13,7 +13,7 @@ bytemuck = { version = "1.7.0", features = [ "derive" ] }
 crevice = "0.6.0"
 flate2 = "1.0.20"
 lalrpop-util = { version = "0.19.6", features = [ "lexer" ] }
-minilzo = { path = "../minilzo" }
+minilzo = { path = "../minilzo_rs" }
 mint = "0.5.6"
 # png = "0.16.8"
 regex = "1.5.4"

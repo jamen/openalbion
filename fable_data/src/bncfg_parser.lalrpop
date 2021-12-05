@@ -1,5 +1,3 @@
-use crate::Bncfg;
-
 grammar;
 
 pub Bncfg = "";

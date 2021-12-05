@@ -1,11 +1,17 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(not(feature = "std"))]
+extern crate alloc;
+
+#[cfg(not(feature = "std"))]
+extern crate core;
+
 use lalrpop_util::lalrpop_mod;
 
 lalrpop_mod!(bncfg_parser, "/bncfg_parser.rs");
-lalrpop_mod!(gtg_parser, "/gtg_parser.rs");
 lalrpop_mod!(ini_parser, "/ini_parser.rs");
 lalrpop_mod!(qst_parser, "/qst_parser.rs");
-lalrpop_mod!(tng_parser, "/tng_parser.rs");
-lalrpop_mod!(wld_parser, "/wld_parser.rs");
+lalrpop_mod!(fields_parser, "/fields_parser.rs");
 
 pub mod anim;
 pub mod big;
@@ -14,6 +20,7 @@ pub mod bwd;
 pub(crate) mod bytes;
 pub(crate) mod crc32;
 pub mod def;
+pub mod fields;
 pub mod gtg;
 pub mod ini;
 pub mod lev;
@@ -41,6 +48,7 @@ pub use save::*;
 pub use texture::*;
 // pub(crate) use crc32::*;
 pub use def::*;
+pub use fields::*;
 pub use gtg::*;
 pub use lev::*;
 pub use qst::*;

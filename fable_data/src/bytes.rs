@@ -1,4 +1,4 @@
-use std::{mem, slice};
+use core::{mem, slice};
 
 macro_rules! impl_num_parse {
     ($($fn_name:ident, $typ:tt::$conv:tt,)*) => {
@@ -143,7 +143,7 @@ pub(crate) trait Bytes: AsRef<[u8]> {
 
     fn parse_str_with_u32_le_prefix(&mut self) -> Option<&str> {
         let out = self.parse_with_u32_le_prefix()?;
-        let out = std::str::from_utf8(out).ok()?;
+        let out = core::str::from_utf8(out).ok()?;
         Some(out)
     }
 }
@@ -196,7 +196,7 @@ macro_rules! impl_mint_put {
     ($($fn_name:ident, $typ:ty, [ $($c:expr),* ],)*) => {
         $(
             fn $fn_name (&mut self, x: $typ) {
-                let mut i = std::array::IntoIter::new(x.into());
+                let mut i = x.into();
                 $($c(self, i.next().unwrap());)*
             }
         )*
@@ -426,24 +426,6 @@ impl From<Vector3Packed> for [f32; 3] {
 
         let z = f32::from_bits(((exponent.wrapping_add(112)) << 23) | (mantissa << 18));
 
-        println!(
-            "x = {:0>5b}_{:0>6b}, {:?}, {}\n\
-             y = {:0>5b}_{:0>6b}, {:?}, {}\n\
-             z = {:0>5b}_{:0>6b}, {:?}, {}\n",
-            xe,
-            xm,
-            F32Inspect(x),
-            x,
-            ye,
-            ym,
-            F32Inspect(y),
-            y,
-            ze,
-            zm,
-            F32Inspect(z),
-            z,
-        );
-
         [x, y, z]
 
         // Attempt 3
@@ -669,8 +651,10 @@ impl From<F16> for f32 {
 
 pub struct F32Inspect(f32);
 
-impl std::fmt::Debug for F32Inspect {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+use core::fmt;
+
+impl fmt::Debug for F32Inspect {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         let x = self.0.to_bits();
         write!(
             fmt,
@@ -684,10 +668,8 @@ impl std::fmt::Debug for F32Inspect {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // use super::*;
 
     #[test]
-    fn test_f16_round_trip() {
-        // assert(F16())
-    }
+    fn test_f16_round_trip() {}
 }

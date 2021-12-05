@@ -4,7 +4,10 @@
 
 // pub use xml::*;
 
-use std::io::Read;
+// use std::io::Read;
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use crate::Bytes;
 
@@ -89,7 +92,7 @@ impl Bin {
         let mut bytes = Vec::new();
 
         for (i, (start, idk)) in chunks_table.iter().copied().enumerate() {
-            println!("{:?}", idk);
+            // println!("{:?}", idk);
 
             let compressed_chunk = match chunks_table.get(i + 1).and_then(|x| Some(x.0)) {
                 Some(end) => &data[start as usize..end as usize],
@@ -168,8 +171,8 @@ impl Bin {
 // // [4] Bytes - Counter Based on Definition Used
 // //
 // // *Exceptions For File Name or Enumerator Bytes:
-// // PC If the entry Equals (FF FF FF FF) Name is Defined outside of Names.Bin and does not require parsing.
-// // Xbox If the enumeration equals (00 00 00 00) Then Enumerator is Defined in Names.Bin
+// // PC If the entry Equals (FF FF FF FF) Name is Defined outside of Names.Bin and does not require
+// parsing. // Xbox If the enumeration equals (00 00 00 00) Then Enumerator is Defined in Names.Bin
 // //
 // pub struct DefBinNameLookup {
 //     pub definition_offset: u32,
@@ -196,8 +199,8 @@ impl Bin {
 // // [4] Bytes - Offset to Compressed Chunk
 // // [4] Bytes - Last File Number Contained in Chunk (Running Counter)
 // //
-// // *Each Offset is based after the second table ends. (Equals (Number of Entries * 12 + 13 byte header) + (Number of Compressed Chunks * 8 + 8 byte header))
-// //
+// // *Each Offset is based after the second table ends. (Equals (Number of Entries * 12 + 13 byte
+// header) + (Number of Compressed Chunks * 8 + 8 byte header)) //
 // //
 // // Each Compressed Chunk is Zlib Compressed
 // //
@@ -211,10 +214,10 @@ impl Bin {
 // // [2] Bytes - Offset
 // //
 // // *If you divide initial Offset by 2 it equals number of files
-// // Each File uses indicator bytes that are defined in the NullDefs (Based on Definition From First Table)
-// //
-// // // *Additional Notes: PC .Bin Files require Names.Bin to be parsed into each file offset. Files are listed in order in the First Table.
-// // Bin Entries
+// // Each File uses indicator bytes that are defined in the NullDefs (Based on Definition From
+// First Table) //
+// // // *Additional Notes: PC .Bin Files require Names.Bin to be parsed into each file offset.
+// Files are listed in order in the First Table. // Bin Entries
 // //
 // pub struct DefSecondTableRowDecompressed {
 //     pub offset: u16,

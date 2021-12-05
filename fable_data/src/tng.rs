@@ -1,4 +1,5 @@
-pub use crate::tng_parser::TngParser;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 #[derive(Debug)]
 pub struct Tng {
