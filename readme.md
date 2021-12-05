@@ -1,11 +1,6 @@
-# Open Albion
+# OpenAlbion
 
 A Fable asset viewer experiment
-
-## LZO
-
-The LZO compression and decompression is done using [http://www.oberhumer.com/opensource/lzo/](http://www.oberhumer.com/opensource/lzo/). Its GPL2 licensed, see [`minilzo-rs/minilzo/COPYING`](./fable_data/minilzo/COPYING) for more info. The bindings are a modified version of
-[`badboy/minilzo-rs`](https://github.com/badboy/minilzo-rs)
 
 ## Acknowledgements
 
