@@ -26,18 +26,27 @@ pub enum BigKind {
 }
 
 impl BigKind {
-    pub fn guess_from_file_name<T: AsRef<str>>(file_name: T) -> Self {
-        match file_name.as_ref().to_lowercase().split_once(".") {
-            Some(("text", "big")) => Self::Text,
-            Some(("dialogue", "big")) => Self::Dialogue,
-            Some(("fonts", "big")) => Self::Fonts,
-            Some(("graphics", "big")) => Self::Graphics,
-            Some(("textures", "big")) => Self::Textures,
-            Some(("frontend", "big")) => Self::Frontend,
-            Some(("shaders", "big")) => Self::Shaders,
-            Some(("effects", "big")) => Self::Effects,
-            Some((_, "fmp")) => Self::Fmp,
-            None | Some(_) => Self::Other,
+    pub fn guess_from_path<S: AsRef<str>>(path: S) -> Self {
+        let path = path.as_ref();
+
+        let (_, file_name) = path
+            .rsplit_once("/")
+            .or_else(|| path.rsplit_once("\\"))
+            .unwrap_or(("", path));
+
+        let (_, extension) = path.rsplit_once(".").unwrap_or((file_name, ""));
+
+        match (file_name, extension) {
+            ("text", "big") => Self::Text,
+            ("dialogue", "big") => Self::Dialogue,
+            ("fonts", "big") => Self::Fonts,
+            ("graphics", "big") => Self::Graphics,
+            ("textures", "big") => Self::Textures,
+            ("frontend", "big") => Self::Frontend,
+            ("shaders", "big") => Self::Shaders,
+            ("effects", "big") => Self::Effects,
+            (_, "fmp") => Self::Fmp,
+            (_, _) => Self::Other,
         }
     }
 }

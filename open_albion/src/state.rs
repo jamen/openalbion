@@ -21,6 +21,14 @@ impl State {
         let graphics_data = GraphicsData::new(fable_dir.as_path());
         let scene = Scene::new();
         let gui = Gui::new(&window);
+
+        let wld_data =
+            std::fs::read_to_string(fable_dir.join("data/Levels/FinalAlbion.wld")).unwrap();
+
+        let wld = fable_data::Wld::parse(&wld_data).unwrap();
+
+        println!("{:#?}", wld);
+
         Self {
             fable_dir,
             graphics_data,
@@ -31,16 +39,14 @@ impl State {
 }
 
 pub struct GraphicsData {
-    graphics_big: fable_data::Big,
+    graphics_big: fable_data::BigHeader,
 }
 
 impl GraphicsData {
     // TODO: Make async, better error handling
     pub fn new(fable_dir: &Path) -> Self {
-        let big_path = fable_dir.join("data/graphics/graphics.big");
-        let source = BufReader::new(File::open(&big_path).unwrap());
-        let graphics_big = fable_data::Big::decode_reader_with_path(source, &big_path).unwrap();
-
+        let source = std::fs::read(fable_dir.join("data/graphics/graphics.big")).unwrap();
+        let graphics_big = fable_data::BigHeader::parse(&mut &source[..]).unwrap();
         Self { graphics_big }
     }
 }
@@ -81,13 +87,13 @@ impl Gui {
             .show(&state.gui.platform.context(), |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.collapsing("data/graphics/graphics.big", |ui| {
-                        for entry in state.graphics_data.graphics_big.entries.iter() {
-                            for source in &entry.sources {
-                                let btn = ui.add(egui::widgets::Button::new(source).wrap(false));
-                                // println!("{:?}", &btn.rect);
-                                if btn.clicked() {}
-                            }
-                        }
+                        // for entry in state.graphics_data.graphics_big.entries.iter() {
+                        //     for source in &entry.sources {
+                        //         let btn = ui.add(egui::widgets::Button::new(source).wrap(false));
+                        //         // println!("{:?}", &btn.rect);
+                        //         if btn.clicked() {}
+                        //     }
+                        // }
                     })
                 })
             });

@@ -18,8 +18,12 @@ features = ["lexer"]
 
 [dependencies.lzokay]
 version = "1.0.1"
+path = "../../lzokay-rs"
 default-features = false
 features = ["decompress", "compress", "alloc"]
 
 [build-dependencies]
 lalrpop = "0.19.6"
+
+[features]
+std = []

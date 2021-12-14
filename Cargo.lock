@@ -1013,8 +1013,6 @@ dependencies = [
 [[package]]
 name = "lzokay"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf88e236da3013301a5bf8559264d80627b58bb5a32f4fff9c01c5a51d638069"
 dependencies = [
  "bindgen",
  "cc",

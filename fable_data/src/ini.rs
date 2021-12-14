@@ -1,5 +1,3 @@
-pub use crate::ini_parser::IniParser;
-
 pub struct Ini {}
 
 impl Ini {

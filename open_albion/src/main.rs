@@ -1,6 +1,8 @@
 // TODO: There's a bug when this and stdout loggers are used together.
 // #![windows_subsystem = "windows"]
 
+// TODO: Check for presence of tlse.dll if functionality is restored (like userst.ini options)
+
 mod renderer;
 mod state;
 
