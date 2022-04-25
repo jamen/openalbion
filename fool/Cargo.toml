@@ -1,0 +1,8 @@
+[package]
+name = "fool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fable_data = { path = "../fable_data" }
+gltf = "1.0.0"
