@@ -5,7 +5,7 @@ use std::{
 
 use clap::Parser;
 
-use fable_data::{Big, BigKind};
+use fable_data::Big;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -20,7 +20,7 @@ fn main() {
 
     let file = fs::read(&args.file).expect("Failed to open file");
 
-    let big = Big::parse(&mut &file[..], BigKind::guess_from_path(&args.file)).unwrap();
+    let (_, big) = Big::parse(&file[..]).unwrap();
 
-    println!("file: {:?}", big);
+    println!("{:?}", big);
 }

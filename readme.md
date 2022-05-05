@@ -1,6 +1,8 @@
 # OpenAlbion
 
-A Fable asset viewer experiment
+Fable asset extractor
+
+
 
 ## Acknowledgements
 

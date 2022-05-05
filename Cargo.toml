@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "fable_data",
+    "fool",
     "open_albion",
 ]
 resolver = "2"

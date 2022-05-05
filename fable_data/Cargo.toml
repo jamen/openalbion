@@ -9,8 +9,7 @@ repository = "https://github.com/jamen/open_albion"
 
 [dependencies]
 miniz_oxide = "0.5.1"
-regex = "1.5.4"
-mint = "0.5.8"
+nom = "7.1.1"
 
 [dependencies.lalrpop-util]
 version = "0.19.6"
@@ -18,12 +17,8 @@ features = ["lexer"]
 
 [dependencies.lzokay]
 version = "1.0.1"
-# path = "../../lzokay-rs"
 default-features = false
 features = ["decompress", "compress", "alloc"]
 
 [build-dependencies]
 lalrpop = "0.19.6"
-
-[features]
-std = []
