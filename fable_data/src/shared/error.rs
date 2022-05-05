@@ -1,4 +1,4 @@
-use crate::ParseError;
+use nom::error::ParseError;
 
 #[derive(Debug)]
 pub enum Error {
@@ -40,7 +40,7 @@ impl From<nom::Err<(&[u8], nom::error::ErrorKind)>> for Error {
         match error {
             nom::Err::Incomplete(needed) => Error::Incomplete(needed), // TODO: Remove?
             nom::Err::Error((_rest, error)) => Error::Nom(error),
-            nom::Err::Failure((_rest, error)) => Error::Nom(error)
+            nom::Err::Failure((_rest, error)) => Error::Nom(error),
         }
     }
 }

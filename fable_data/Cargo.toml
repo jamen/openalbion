@@ -11,4 +11,4 @@ repository = "https://github.com/jamen/fable_data"
 documentation = "https://docs.rs/fable_data"
 
 [dependencies]
-nom = "5.1.2"
+nom = "7.1.1"

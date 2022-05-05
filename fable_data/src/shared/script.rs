@@ -1,29 +1,15 @@
-use crate::{
-    Error,
-    IResult,
-    alt,
-    decode_bytes_as_utf8_string,
-    digit1,
-    do_parse,
-    line_ending,
-    many0,
-    opt,
-    space0,
-    tag,
-    tag_no_case,
-    take_till,
-    take_while,
-};
+use nom::{bytes::complete::tag, IResult};
 
+use crate::{decode_bytes_as_utf8_string, Error};
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Field {
     pub name: String,
     pub indices: Vec<Index>,
     pub value: Value,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 /// The index of a key such as `Foo[0]` or `Foo[Name]`
 pub enum Index {
     /// Accessor such as `Foo[Value]`
@@ -32,7 +18,7 @@ pub enum Index {
     Dot(String),
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Value {
     Integer(isize),
     Float(f32),
@@ -43,23 +29,28 @@ pub enum Value {
     Empty,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Call {
     pub name: String,
     pub parameters: Vec<Value>,
 }
 
 pub fn decode_field(input: &[u8]) -> IResult<&[u8], Field, Error> {
-    do_parse!(input,
-        space0 >>
-        name: decode_name >>
-        indices: decode_indices >>
-        space0 >>
-        value: decode_value >>
-        space0 >>
-        tag!(";") >>
-        line_endings >>
-        (Field { name, indices, value })
+    do_parse!(
+        input,
+        space0
+            >> name: decode_name
+            >> indices: decode_indices
+            >> space0
+            >> value: decode_value
+            >> space0
+            >> tag!(";")
+            >> line_endings
+            >> (Field {
+                name,
+                indices,
+                value
+            })
     )
 }
 
@@ -71,7 +62,7 @@ pub fn decode_indices(input: &[u8]) -> IResult<&[u8], Vec<Index>, Error> {
     many0(decode_index)(input)
 }
 
-pub fn decode_field_tagged<'a>(name: &'a str)-> impl Fn(&'a [u8]) -> IResult<&[u8], Field, Error> {
+pub fn decode_field_tagged<'a>(name: &'a str) -> impl Fn(&'a [u8]) -> IResult<&[u8], Field, Error> {
     move |input: &[u8]| {
         let (input, field) = decode_field(input)?;
 
@@ -86,23 +77,17 @@ pub fn decode_field_tagged<'a>(name: &'a str)-> impl Fn(&'a [u8]) -> IResult<&[u
 pub fn decode_value(input: &[u8]) -> IResult<&[u8], Value, Error> {
     if let (input, Some(float)) = opt(decode_float)(input)? {
         Ok((input, Value::Float(float)))
-    }
-    else if let (input, Some(integer)) = opt(decode_integer)(input)? {
+    } else if let (input, Some(integer)) = opt(decode_integer)(input)? {
         Ok((input, Value::Integer(integer)))
-    }
-    else if let (input, Some(b)) = opt(decode_bool)(input)? {
+    } else if let (input, Some(b)) = opt(decode_bool)(input)? {
         Ok((input, Value::Bool(b)))
-    }
-    else if let (input, Some(string)) = opt(decode_string)(input)? {
+    } else if let (input, Some(string)) = opt(decode_string)(input)? {
         Ok((input, Value::String(string)))
-    }
-    else if let (input, Some(name)) = opt(decode_name)(input)? {
+    } else if let (input, Some(name)) = opt(decode_name)(input)? {
         Ok((input, Value::Name(name)))
-    }
-    else if let (input, Some(call)) = opt(decode_call)(input)? {
+    } else if let (input, Some(call)) = opt(decode_call)(input)? {
         Ok((input, Value::Call(call)))
-    }
-    else {
+    } else {
         Ok((input, Value::Empty))
     }
 }
@@ -118,7 +103,7 @@ pub fn decode_index(input: &[u8]) -> IResult<&[u8], Index, Error> {
             let (input, _) = tag("]")(input)?;
             Ok((input, Index::Box(value)))
         }
-        _ => Err(nom::Err::Error(Error::NotIndexed))
+        _ => Err(nom::Err::Error(Error::NotIndexed)),
     }
 }
 
@@ -130,7 +115,7 @@ pub fn decode_integer(input: &[u8]) -> IResult<&[u8], isize, Error> {
 
     let number = match number.parse::<isize>() {
         Ok(n) => n,
-        Err(_) => return Err(nom::Err::Error(Error::NotAnInteger))
+        Err(_) => return Err(nom::Err::Error(Error::NotAnInteger)),
     };
 
     let number = match sign {
@@ -153,7 +138,7 @@ pub fn decode_float(input: &[u8]) -> IResult<&[u8], f32, Error> {
 
     let number = match float.parse::<f32>() {
         Ok(n) => n,
-        Err(_) => return Err(nom::Err::Error(Error::NotAnInteger))
+        Err(_) => return Err(nom::Err::Error(Error::NotAnInteger)),
     };
 
     let number = match sign {
@@ -188,13 +173,12 @@ pub fn decode_name(input: &[u8]) -> IResult<&[u8], String, Error> {
     let (input, name) = take_while(|x: u8| (x as char).is_alphanumeric() || x == b'_')(input)?;
 
     if name.len() < 1 {
-        return Err(nom::Err::Error(Error::NotAName))
+        return Err(nom::Err::Error(Error::NotAName));
     } else {
         let name = decode_bytes_as_utf8_string(name)?.1;
 
         Ok((input, name))
     }
-
 }
 
 pub fn decode_call(input: &[u8]) -> IResult<&[u8], Call, Error> {
@@ -217,7 +201,7 @@ pub fn decode_call(input: &[u8]) -> IResult<&[u8], Call, Error> {
         if cont.is_none() {
             let (input, _) = tag(")")(input)?;
             last = input;
-            break
+            break;
         }
     }
 
