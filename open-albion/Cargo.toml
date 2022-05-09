@@ -1,0 +1,11 @@
+[package]
+name = "open-albion"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+env_logger = "0.9.0"
+futures = { version = "0.3", default-features = false, features = [ "executor" ] }
+log = "0.4.17"
+renderer = { path = "../renderer" }
+winit = "0.26.1"

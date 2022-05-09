@@ -1,11 +1,4 @@
-use std::{
-    fs::{self, File, OpenOptions},
-    io::BufReader,
-};
-
 use clap::Parser;
-
-use fable_data::Big;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -18,9 +11,5 @@ fn main() {
 
     let args = Args::parse();
 
-    let file = fs::read(&args.file).expect("Failed to open file");
-
-    let (_, big) = Big::parse(&file[..]).unwrap();
-
-    println!("{:?}", big);
+    println!("{:?}", args);
 }
