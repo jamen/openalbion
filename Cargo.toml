@@ -2,7 +2,7 @@
 members = [
     "fool",
     "format",
-    "open-albion",
+    "open_albion",
     "renderer",
 ]
 resolver = "2"

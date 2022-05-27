@@ -1,5 +1,5 @@
 [package]
-name = "open-albion"
+name = "open_albion"
 version = "0.1.0"
 edition = "2021"
 

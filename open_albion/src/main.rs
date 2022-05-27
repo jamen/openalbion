@@ -2,6 +2,7 @@ use futures::executor::block_on;
 
 use winit::{
     dpi::PhysicalSize,
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
@@ -27,11 +28,27 @@ fn main() {
 
     //  TODO: Populate the renderer with graphics at some point
 
-    renderer.render();
+    let _ = renderer.render();
 
     window.set_visible(true);
 
-    event_loop.run(|_event, _target, control_flow| {
+    event_loop.run(move |event, _target, control_flow| {
         *control_flow = ControlFlow::Poll;
+
+        match event {
+            Event::WindowEvent {
+                event: window_event,
+                ..
+            } => match window_event {
+                WindowEvent::CloseRequested => {
+                    *control_flow = ControlFlow::Exit;
+                }
+                _ => {}
+            },
+            Event::MainEventsCleared => {
+                let _ = renderer.render();
+            }
+            _ => {}
+        }
     });
 }

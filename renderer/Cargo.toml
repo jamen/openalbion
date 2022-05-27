@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytemuck = { version = "1.9.1", features = ["derive"] }
 log = "0.4.17"
 raw-window-handle = "0.4.3"
 wgpu = { version = "0.12.0", features = [ "spirv" ] }
