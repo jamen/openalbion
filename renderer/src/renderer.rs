@@ -16,6 +16,11 @@ pub struct Renderer {
     model_pipeline: ModelPipeline,
 }
 
+struct FrameState {
+    frame: wgpu::SurfaceTexture,
+    view: wgpu::TextureView,
+}
+
 impl Renderer {
     pub async fn new<W: HasRawWindowHandle>(
         window: &W,
@@ -30,6 +35,10 @@ impl Renderer {
         })
     }
 
+    pub fn resize(&self, size: [u32; 2]) {
+
+    }
+
     // TODO: Some way to populate the renderer with graphics objects
     // pub fn add_quads()
     // pub fn add_mesh()
@@ -37,30 +46,52 @@ impl Renderer {
 
     // TODO: Make it so the resource in use are determined each render, and unused resources get garbage collected. Resources that are unused but should be kept warm for a future render should also be passed.
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let base = &self.base;
-
-        let frame = base.surface.get_current_texture()?;
+        let frame = self.base.surface.get_current_texture()?;
 
         let view = frame.texture.create_view(&Default::default());
 
-        let render_passes = [
-            &mut self.model_pipeline
+        let frame_state = FrameState {
+            frame,
+            view,
+        };
+
+        let cmd_bufs = [
+            self.main_render_pass(&frame_state)
         ];
 
-        let cmd_bufs = render_passes.map(|r| {
-            let mut encoder = base.device.create_command_encoder(&Default::default());
-            r.render_pass(base, &mut encoder, &view, &frame);
-            encoder.finish()
-        });
+        self.base.queue.submit(cmd_bufs);
 
-        base.queue.submit(cmd_bufs);
-
-        frame.present();
+        frame_state.frame.present();
 
         Ok(())
     }
 
-    pub fn resize(&self, size: [u32; 2]) {
+    fn main_render_pass(
+        &mut self,
+        frame_state: &FrameState,
+    ) -> wgpu::CommandBuffer {
+        let base = &self.base;
+        let view = &frame_state.view;
 
+        let mut encoder = base.device.create_command_encoder(&Default::default());
+
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: None,
+            });
+
+            rpass.set_pipeline(&self.model_pipeline.pipeline);
+        }
+
+        encoder.finish()
     }
 }
