@@ -1,7 +1,0 @@
-[package]
-name = "format"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-nom = "7.1.1"

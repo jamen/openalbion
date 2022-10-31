@@ -1,8 +1,6 @@
 [workspace]
 members = [
-    "fool",
-    "format",
-    "open_albion",
-    "renderer",
+    "format/*",
+    "engine/*",
 ]
 resolver = "2"

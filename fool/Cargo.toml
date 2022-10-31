@@ -1,8 +1,0 @@
-[package]
-name = "fool"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-clap = { version = "3.1.15", features = [ "derive" ] }
-env_logger = "0.9.0"
