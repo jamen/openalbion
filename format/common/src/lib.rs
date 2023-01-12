@@ -4,36 +4,18 @@ use core::mem::size_of;
 
 pub use bytemuck;
 
-use crate::bytemuck::{bytes_of, Pod, PodCastError};
+use crate::bytemuck::{bytes_of, Pod};
 
-pub trait ReadPod {
-    fn read_pod<T: Pod>(&mut self) -> Result<&T, PodCastError>;
+pub fn take<T: Pod, E>(mut src: &[u8], err: E) -> Result<&T, (E, &[u8])> {
+    let Some(data) = src.take(..size_of::<T>()) else {
+        return Err((err, src))
+    };
+    bytemuck::try_from_bytes(data).map_err(|_| (err, src))
 }
 
-impl ReadPod for &[u8] {
-    fn read_pod<T: Pod>(&mut self) -> Result<&T, PodCastError> {
-        bytemuck::try_from_bytes(
-            self.take(..size_of::<T>())
-                .ok_or(PodCastError::SizeMismatch)?,
-        )
-    }
-}
-
-pub trait WritePod {
-    fn write_pod<T: Pod>(&mut self, item: &T) -> Result<(), PodCastError>;
-}
-
-impl WritePod for &mut [u8] {
-    fn write_pod<T: Pod>(&mut self, item: &T) -> Result<(), PodCastError> {
-        self.take_mut(..size_of::<T>())
-            .ok_or(PodCastError::SizeMismatch)?
-            .copy_from_slice(bytes_of(item));
-        Ok(())
-    }
-}
-
-impl<const N: usize> WritePod for &mut [u8; N] {
-    fn write_pod<T: Pod>(&mut self, item: &T) -> Result<(), PodCastError> {
-        (&mut self[..]).write_pod(item)
-    }
+pub fn put<'a, T: Pod, E>(mut out: &'a mut [u8], item: &T, err: E) -> Result<(), E> {
+    out.take_mut(..size_of::<T>())
+        .ok_or_else(|| err)?
+        .copy_from_slice(bytes_of(item));
+    Ok(())
 }

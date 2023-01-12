@@ -46,6 +46,8 @@
 //! | Second      | `u32` | 4         |
 //! | Millisecond | `u32` | 4         |
 
+#![feature(slice_take)]
+
 mod compile;
 mod parse;
 
@@ -60,6 +62,15 @@ pub struct WadHeader {
     pub entry_count: u32,
     pub repeated_entry_count: u32,
     pub first_entry_offset: u32,
+}
+
+pub enum WadHeaderPart {
+    Magic,
+    Version,
+    BlockSize,
+    EntryCount,
+    RepeatedEntryCount,
+    FirstEntryOffset,
 }
 
 impl WadHeader {
@@ -79,6 +90,21 @@ pub struct WadEntry<'a> {
     pub created: [u32; 7],
     pub accessed: [u32; 7],
     pub modified: [u32; 5],
+}
+
+pub enum WadEntryPart {
+    Unknown1,
+    Id,
+    Unknown2,
+    Offset,
+    Length,
+    Unknown3,
+    PathLen,
+    Path,
+    Unknown4,
+    Created,
+    Accessed,
+    Modified,
 }
 
 impl<'a> WadEntry<'a> {

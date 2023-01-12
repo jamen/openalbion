@@ -177,6 +177,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
+name = "client"
+version = "0.1.0"
+dependencies = [
+ "assets_pipeline",
+ "env_logger",
+ "futures",
+ "log",
+ "renderer",
+ "winit",
+]
+
+[[package]]
 name = "cocoa"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -924,17 +936,6 @@ name = "once_cell"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
-
-[[package]]
-name = "open_albion"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "futures",
- "log",
- "renderer",
- "winit",
-]
 
 [[package]]
 name = "parking_lot"

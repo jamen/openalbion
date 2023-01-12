@@ -1,54 +1,52 @@
-use common::{bytemuck::PodCastError, WritePod};
+use common::put;
 
-use crate::{WadEntry, WadHeader};
-
-pub struct WadHeaderCompileError;
-
-impl From<PodCastError> for WadHeaderCompileError {
-    fn from(_x: PodCastError) -> Self {
-        Self
-    }
-}
+use crate::{WadHeader, WadHeaderPart};
 
 impl WadHeader {
-    pub fn compile(&self) -> Result<[u8; WadHeader::TOTAL_BYTE_SIZE], WadHeaderCompileError> {
+    pub fn compile(&self) -> Result<[u8; WadHeader::TOTAL_BYTE_SIZE], WadHeaderPart> {
         let mut buf = [0; WadHeader::TOTAL_BYTE_SIZE];
-        let mut out = &mut buf[..];
-        out.write_pod(&self.magic)?;
-        out.write_pod(&self.version.map(u32::to_le))?;
-        out.write_pod(&self.block_size.to_le())?;
-        out.write_pod(&self.entry_count.to_le())?;
-        out.write_pod(&self.repeated_entry_count.to_le())?;
-        out.write_pod(&self.first_entry_offset.to_le())?;
+        let out = &mut buf[..];
+        put(out, &self.magic, WadHeaderPart::Magic)?;
+        put(out, &self.version.map(u32::to_le), WadHeaderPart::Version)?;
+        put(out, &self.block_size.to_le(), WadHeaderPart::BlockSize)?;
+        put(out, &self.entry_count.to_le(), WadHeaderPart::EntryCount)?;
+        put(
+            out,
+            &self.repeated_entry_count.to_le(),
+            WadHeaderPart::RepeatedEntryCount,
+        )?;
+        put(
+            out,
+            &self.first_entry_offset.to_le(),
+            WadHeaderPart::FirstEntryOffset,
+        )?;
         Ok(buf)
     }
 }
 
-pub struct WadEntryCompileError;
-
-impl From<PodCastError> for WadEntryCompileError {
-    fn from(_x: PodCastError) -> Self {
-        Self
-    }
-}
+use crate::{WadEntry, WadEntryPart};
 
 impl WadEntry<'_> {
-    pub fn compile(&self) -> Result<Box<[u8]>, WadHeaderCompileError> {
+    pub fn compile(&self) -> Result<Box<[u8]>, WadEntryPart> {
         let size = Self::PARTIAL_BYTE_SIZE + self.path.len();
         let mut buf = vec![0; size].into_boxed_slice();
-        let mut out = &mut buf[..];
-        out.write_pod(&self.unknown_1)?;
-        out.write_pod(&self.id.to_le())?;
-        out.write_pod(&self.unknown_2.to_le())?;
-        out.write_pod(&self.offset.to_le())?;
-        out.write_pod(&self.length.to_le())?;
-        out.write_pod(&self.unknown_3.to_le())?;
-        out.write_pod(&(self.path.len() as u32).to_le())?;
+        let out = &mut buf[..];
+        put(out, &self.unknown_1, WadEntryPart::Unknown1)?;
+        put(out, &self.id.to_le(), WadEntryPart::Id)?;
+        put(out, &self.unknown_2.to_le(), WadEntryPart::Unknown2)?;
+        put(out, &self.offset.to_le(), WadEntryPart::Offset)?;
+        put(out, &self.length.to_le(), WadEntryPart::Length)?;
+        put(out, &self.unknown_3.to_le(), WadEntryPart::Unknown3)?;
+        put(
+            out,
+            &(self.path.len() as u32).to_le(),
+            WadEntryPart::PathLen,
+        )?;
         out.copy_from_slice(self.path);
-        out.write_pod(&self.unknown_4)?;
-        out.write_pod(&self.created.map(u32::to_le))?;
-        out.write_pod(&self.accessed.map(u32::to_le))?;
-        out.write_pod(&self.modified.map(u32::to_le))?;
+        put(out, &self.unknown_4, WadEntryPart::Unknown4)?;
+        put(out, &self.created.map(u32::to_le), WadEntryPart::Created)?;
+        put(out, &self.accessed.map(u32::to_le), WadEntryPart::Accessed)?;
+        put(out, &self.modified.map(u32::to_le), WadEntryPart::Modified)?;
         Ok(buf)
     }
 }

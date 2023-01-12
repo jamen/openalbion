@@ -1,6 +1,10 @@
 use crate::{Lev, LevHeader};
 
-pub struct LevParseError;
+use common::{bytemuck::PodCastError, read_pod};
+
+pub enum LevParseError {
+
+};
 
 impl Lev {
     pub fn parse(input: &[u8]) -> Result<Lev, LevParseError> {
@@ -35,50 +39,86 @@ impl Lev {
     }
 }
 
-pub struct LevHeaderParseError;
+pub enum LevHeaderParseError {
+    HeaderSize,
+    Version,
+    Unknown1,
+    Unknown2,
+    ObsoleteOffset,
+    Unknown3,
+    NavigationOffset,
+    MapHeaderSize,
+    MapVersion,
+    UniqueIdCount,
+    Width,
+    Height,
+    AlwaysTrue,
+    HeightmapPalette,
+    AmbientSoundVersion,
+    SoundThemesCount,
+    SoundPalette,
+
+};
+
+impl From<PodCastError> for LevHeaderParseError {
+    fn from(x: PodCastError) -> Self {
+        Self
+    }
+}
 
 impl LevHeader {
-    pub fn parse(input: &[u8]) -> Result<LevHeader, LevHeaderParseError> {
-        let (input, _header_size) = le_u32(input)?;
-        let (input, version) = le_u16(input)?;
-        let (input, _unknown_1) = take(3usize)(input)?; // fabletlcmod.com: 3 bytes of padding. see checksum.
-        let (input, _unknown_2) = le_u32(input)?;
-        let (input, obsolete_offset) = le_u32(input)?;
-        let (input, _unknown_3) = le_u32(input)?;
-        let (input, navigation_offset) = le_u32(input)?;
-        let (input, _map_header_size) = le_u8(input)?;
-        let (input, map_version) = le_u32(input)?; // fabletlcmod.com:  An 8 bit integer (with 3 bytes of padding)
-        let (input, unique_id_count) = le_u64(input)?;
-        let (input, width) = le_u32(input)?;
-        let (input, height) = le_u32(input)?;
-        let (input, _always_true) = le_u8(input)?;
+    pub fn parse(bytes: &[u8]) -> Result<LevHeader, (LevHeaderParseError, &[u8])> {
+        let _header_size = read_pod::<u16, _>(bytes, LevHeaderParseError::HeaderSize)?.to_le();
+        let version = read_pod::<u16, _>(bytes, LevHeaderParseError::Version)?.to_le();
+        // fabletlcmod.com: 3 bytes of padding. see checksum.
+        let _unknown_1 = bytes.read_pod::<[u8; 3]>();
+        let _unknown_2 = bytes.read_pod::<u32>()?.to_le();
+        let obsolete_offset = bytes.read_pod::<u32>()?.to_le();
+        let _unknown_3 = bytes.read_pod::<u32>()?.to_le();
+        let navigation_offset = bytes.read_pod::<u32>()?.to_le();
+        let _map_header_size = bytes.read_pod::<u8>()?;
+        // fabletlcmod.com:  An 8 bit integer (with 3 bytes of padding)
+        let map_version = bytes.read_pod::<u32>()?.to_le();
+        let unique_id_count = bytes.read_pod::<u64>()?.to_le();
+        let width = bytes.read_pod::<u32>()?.to_le();
+        let height = bytes.read_pod::<u32>()?.to_le();
+        let _always_true = bytes.read_pod::<u8>()?;
 
-        let (input, _heightmap_palette) = take(33792usize)(input)?; // TODO: figure this out
-        let (input, ambient_sound_version) = le_u32(input)?;
-        let (input, sound_themes_count) = le_u32(input)?;
-        let (input, _sound_palette) = take(33792usize)(input)?; // TODO: figure this out
-        let (input, checksum) = le_u32(input)?; // fabletlcmod.com: only if the map header pad byte 2 is 9.
+        // TODO: figure this out
+        let _heightmap_palette = bytes.take(..33792).ok_or(LevHeaderParseError)?;
 
-        let (input, sound_themes) =
-            count(decode_rle_string, (sound_themes_count - 1) as usize)(input)?;
+        let ambient_sound_version = bytes.read_pod::<u32>()?.to_le();
+        let sound_themes_count = bytes.read_pod::<u32>()?.to_le();
 
-        Ok((
-            input,
-            LevHeader {
-                version: version,
-                obsolete_offset: obsolete_offset,
-                navigation_offset: navigation_offset,
-                unique_id_count: unique_id_count,
-                width: width,
-                height: height,
-                map_version: map_version,
-                // heightmap_palette: heightmap_palette,
-                ambient_sound_version: ambient_sound_version,
-                // sound_palette: sound_palette,
-                checksum: checksum,
-                sound_themes: sound_themes,
-            },
-        ))
+        // TODO: figure this out
+        let _sound_palette = bytes.take(..33792).ok_or(LevHeaderParseError)?;
+
+        // fabletlcmod.com: only if the map header pad byte 2 is 9.
+        let checksum = bytes.read_pod::<u32>()?.to_le();
+
+        let mut sound_themes = Vec::with_capacity((sound_themes_count - 1) as usize);
+
+        for _ in 0..(sound_themes_count - 1) {
+            let sound_theme_len = bytes.read_pod::<u32>()?.to_le() as usize;
+            let sound_theme = bytes.take(..sound_theme_len).ok_or(LevHeaderParseError)?;
+            let sound_theme = std::str::from_utf8(sound_theme).or(Err(LevHeaderParseError))?;
+            sound_themes.push(sound_theme.to_owned());
+        }
+
+        Ok(LevHeader {
+            version,
+            obsolete_offset,
+            navigation_offset,
+            unique_id_count,
+            width,
+            height,
+            map_version,
+            // heightmap_palette: heightmap_palette,
+            ambient_sound_version,
+            // sound_palette: sound_palette,
+            checksum,
+            sound_themes,
+        })
     }
 }
 

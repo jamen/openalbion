@@ -1,164 +1,54 @@
-use nom::{
-    bytes::complete::{is_not, tag, take},
-    multi::count,
-    number::complete::le_u32,
-    sequence::tuple,
-    IResult,
-};
+use common::read_pod;
 
-use crate::{decode_bytes_as_utf8_string, decode_rle_string, Error};
-
-#[derive(Debug, PartialEq)]
-pub struct Big {
-    pub header: BigHeader,
-    pub bank: BigBankIndex,
-    pub entries: BigFileIndex,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigHeader {
-    pub version: u32,
-    pub bank_address: u32,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigBankIndex {
-    pub name: String,
-    pub bank_id: u32,
-    pub bank_entries_count: u32,
-    pub index_start: u32,
-    pub index_size: u32,
-    pub block_size: u32,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigFileIndex {
-    // pub file_types_count: u32,
-    // pub file_type: u32,
-    // pub entries_count: u32,
-    pub unknown_types_map: Vec<(u32, u32)>,
-    pub entries: Vec<BigFileEntry>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigFileEntry {
-    pub magic_number: u32,
-    pub id: u32,
-    pub file_type: u32,
-    pub size: u32,
-    pub start: u32,
-    pub file_type_dev: u32,
-    pub symbol_name: String,
-    pub crc: u32,
-    pub files: Vec<String>,
-    // pub sub_header: BigSubHeader,
-    pub sub_header: Vec<u8>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum BigSubHeader {
-    None,
-    Texture(BigSubHeaderTexture),
-    Mesh(BigSubHeaderMesh),
-    Animation(BigSubHeaderAnimation),
-    Unknown(Vec<u8>),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigSubHeaderTexture {
-    pub width: u16,
-    pub height: u16,
-    pub depth: u16,
-    pub frame_width: u16,
-    pub frame_height: u16,
-    pub frame_count: u16,
-    pub dxt_compression: u16,
-    pub unknown1: u16,
-    pub transparency: u8,
-    pub mip_maps: u8,
-    pub unknown2: u16,
-    pub top_mip_map_size: u32,
-    pub top_mip_map_compressed_size: u32,
-    pub unknown3: u16,
-    pub unknown4: u32,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigSubHeaderMesh {
-    pub physics_mesh: u32,
-    pub unknown1: Vec<f32>,
-
-    pub size_compressed_lod: Vec<u32>,
-    pub padding: u32,
-    pub unknown2: Vec<u32>,
-    pub texture_ids: Vec<u32>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigSubHeaderAnimation {
-    pub unknown1: f32,
-    pub unknown2: f32,
-    pub unknown3: Vec<u8>,
-}
-
-impl Big {
-    pub fn parse(input: &[u8]) -> IResult<&[u8], Self, Error> {
-        let (_, header) = BigHeader::parse(input)?;
-
-        let bank_input = &input[header.bank_address as usize..];
-
-        let (_, bank) = BigBankIndex::parse(bank_input)?;
-
-        let index_input = &input[bank.index_start as usize..][..bank.index_size as usize];
-
-        let (_, entries) = BigFileIndex::parse(index_input)?;
-
-        Ok((
-            &[],
-            Big {
-                header,
-                bank,
-                entries,
-            },
-        ))
-    }
-}
+use crate::{BigHeader, BigHeaderPart};
 
 impl BigHeader {
-    pub fn parse(input: &[u8]) -> IResult<&[u8], Self, Error> {
-        let (input, _magic_number) = tag("BIGB")(input)?;
-        let (input, version) = le_u32(input)?;
-        let (input, bank_address) = le_u32(input)?;
-        let (input, _unknown_1) = le_u32(input)?;
+    pub fn parse(src: &[u8]) -> Result<Self, (BigHeaderPart, &[u8])> {
+        let magic = read_pod::<[u8; 4], _>(src, BigHeaderPart::Magic)?;
+        let version = read_pod::<u32, _>(src, BigHeaderPart::Version)?;
+        let bank_address = read_pod::<u32, _>(src, BigHeaderPart::BankAddress)?;
+        let unknown_1 = read_pod::<u32, _>(src, BigHeaderPart::Unknown1)?;
 
-        Ok((
-            input,
-            BigHeader {
-                version,
-                bank_address,
-            },
-        ))
+        Ok(BigHeader {
+            magic,
+            version,
+            bank_address,
+            unknown_1,
+        })
     }
 }
 
+use crate::{BigBankIndex, BigBankIndexPart};
+
 impl BigBankIndex {
-    pub fn parse(input: &[u8]) -> IResult<&[u8], Self, Error> {
-        let (input, _banks_count) = le_u32(input)?;
-        let (input, name) = is_not("\0")(input)?;
-        let (input, _zero) = tag("\0")(input)?;
-        let (input, bank_id) = le_u32(input)?;
+    pub fn parse(src: &[u8]) -> Result<Self, (BigBankIndexPart, &[u8])> {
+        let _banks_count = read_pod::<u32, _>(src, BigBankIndexPart::BanksCount)?;
+
+        let name_len = src
+            .iter()
+            .position(|c| *c == 0u8)
+            .ok_or_else(|| (BigBankIndexPart::NameLen, src));
+        let name = src
+            .take(..name_len)
+            .ok_or_else(|| (BigBankIndexPart::Name, src))?;
+
+        let _zero = tag("\0")(input)?;
+        let bank_id = read_pod::<u32, _>(src, BigBankIndexPart::BankId)?;
 
         let (_, name) = decode_bytes_as_utf8_string(name)?;
 
-        let (input, bank_entries_count) = le_u32(input)?;
-        let (input, index_start) = le_u32(input)?;
-        let (input, index_size) = le_u32(input)?;
-        let (input, block_size) = le_u32(input)?;
+        let (input, bank_entries_count) =
+            read_pod::<u32, _>(src, BigBankIndexPart::BankEntriesCount)?;
+        let (input, index_start) = read_pod::<u32, _>(src, BigBankIndexPart::IndexStart)?;
+        let (input, index_size) = read_pod::<u32, _>(src, BigBankIndexPart::IndexSize)?;
+        let (input, block_size) = read_pod::<u32, _>(src, BigBankIndexPart::BlockSize)?;
 
         Ok((
             input,
             BigBankIndex {
+                _banks_count,
                 name,
+                _zero,
                 bank_id,
                 bank_entries_count,
                 index_start,

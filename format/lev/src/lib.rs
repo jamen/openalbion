@@ -1,3 +1,5 @@
+#![feature(slice_take)]
+
 mod compile;
 mod parse;
 
