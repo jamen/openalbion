@@ -13,4 +13,3 @@ futures = { version = "0.3", default-features = false, features = [ "executor" ]
 log = "0.4.17"
 renderer = { path = "../renderer" }
 winit = { version = "0.26.1", default-features = false, features = [ "x11" ] }
-assets_pipeline = { path = "../assets_pipeline" }

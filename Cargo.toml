@@ -1,6 +1,11 @@
 [workspace]
 members = [
-    "format/*",
-    "engine/*",
+    "crates/*",
+    "crates/formats/*",
+    "crates/edit/src-tauri",
+]
+exclude = [
+    "crates/edit",
+    "crates/formats",
 ]
 resolver = "2"
