@@ -2,10 +2,10 @@
 members = [
     "crates/*",
     "crates/formats/*",
-    "crates/edit/src-tauri",
+    "crates/explorer/src-tauri",
 ]
 exclude = [
-    "crates/edit",
+    "crates/explorer",
     "crates/formats",
 ]
 resolver = "2"
