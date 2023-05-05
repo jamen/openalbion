@@ -1,12 +1,15 @@
-<script>
-    import { invoke } from "@tauri-apps/api/tauri";
-    import { onMount } from "svelte";
+<script lang="ts">
+    import { open } from "@tauri-apps/api/dialog";
 
-    let message = "";
+    let path: string | string[] | null = null;
 
-    onMount(async () => {
-        message = await invoke("greet", { name: "world" });
-    });
+    async function onClick() {
+        path = await open({
+            directory: true,
+            multiple: false,
+        });
+    }
 </script>
 
-{message}
+<button on:click={onClick}>Open File</button>
+<span>{path}</span>
