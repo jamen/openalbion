@@ -1,54 +1,36 @@
-use futures::executor::block_on;
+pub mod game;
+pub mod render;
+pub mod window;
 
-use winit::{
-    dpi::PhysicalSize,
-    event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-};
-
-use renderer::Renderer;
+use game::GameSystemParams;
+use render::RenderSystemParams;
+use std::sync::mpsc::channel;
+use window::{SharedControlFlow, WindowSystemParams};
 
 fn main() {
     env_logger::init();
 
-    let event_loop = EventLoop::new();
+    let (event_loop, window) = window::new().unwrap();
 
-    let size = [1024, 768u32];
+    // Shared state
+    let control_flow = SharedControlFlow::default();
+    let (event_sender, event_receiver) = channel();
 
-    let window = WindowBuilder::new()
-        .with_inner_size(PhysicalSize::<u32>::from(size))
-        .with_visible(false)
-        .with_title("Rust Renderer Example")
-        .with_resizable(false)
-        .build(&event_loop)
-        .unwrap();
+    // Start render system
+    render::spawn(RenderSystemParams {
+        window: window.clone(),
+    });
 
-    let mut renderer = block_on(Renderer::new(&window, size)).unwrap();
+    // Start game system
+    game::spawn(GameSystemParams {
+        window: window.clone(),
+        event_receiver,
+        control_flow: control_flow.clone(),
+    });
 
-    //  TODO: Populate the renderer with graphics at some point
-
-    let _ = renderer.render();
-
-    window.set_visible(true);
-
-    event_loop.run(move |event, _target, control_flow| {
-        *control_flow = ControlFlow::Poll;
-
-        match event {
-            Event::WindowEvent {
-                event: window_event,
-                ..
-            } => match window_event {
-                WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
-                }
-                _ => {}
-            },
-            Event::MainEventsCleared => {
-                let _ = renderer.render();
-            }
-            _ => {}
-        }
+    window::spawn(WindowSystemParams {
+        event_loop,
+        control_flow,
+        event_sender,
     });
 }
