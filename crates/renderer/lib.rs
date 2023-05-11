@@ -1,9 +1,10 @@
-//! A 2D and 3D renderer for Fable.
+pub(crate) mod bind_group;
+pub(crate) mod buffer;
+pub(crate) mod pass;
+pub(crate) mod pipeline;
+pub(crate) mod renderer;
+pub(crate) mod shader;
+pub(crate) mod texture;
+pub(crate) mod transfer;
 
-mod base;
-mod model_pipeline;
-mod renderer;
-
-pub use base::*;
-pub use model_pipeline::*;
-pub use renderer::*;
+pub use renderer::Renderer;

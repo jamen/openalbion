@@ -5,11 +5,11 @@ edition = "2021"
 
 [[bin]]
 name = "open_albion"
-path = "src/main.rs"
+path = "main.rs"
 
 [dependencies]
 env_logger = "0.9.0"
 futures = { version = "0.3", default-features = false, features = [ "executor" ] }
 log = "0.4.17"
+winit = { version = "0.27.5", default-features = false, features = [ "x11" ] }
 renderer = { path = "../renderer" }
-winit = { version = "0.26.1", default-features = false, features = [ "x11" ] }
