@@ -7,7 +7,7 @@ use std::{
 use winit::window::Window;
 
 pub struct RenderSystemParams {
-    pub window: Arc<Window>,
+    pub window_ref: Arc<Window>,
 }
 
 pub fn spawn(params: RenderSystemParams) -> JoinHandle<()> {
@@ -15,24 +15,27 @@ pub fn spawn(params: RenderSystemParams) -> JoinHandle<()> {
 }
 
 struct RenderSystem {
-    window: Arc<Window>,
+    window_ref: Arc<Window>,
     renderer: Renderer,
 }
 
 impl RenderSystem {
     fn new(params: RenderSystemParams) -> Self {
-        let window = params.window;
+        let window_ref = params.window_ref;
 
-        let size: [u32; 2] = window.inner_size().into();
+        let size: [u32; 2] = window_ref.inner_size().into();
 
-        let renderer = block_on(Renderer::new(&*window, size)).unwrap();
+        let renderer = block_on(Renderer::new(&*window_ref, size)).unwrap();
 
-        Self { window, renderer }
+        Self {
+            window_ref,
+            renderer,
+        }
     }
     fn run(mut self) -> ! {
         self.render();
 
-        self.window.set_visible(true);
+        self.window_ref.set_visible(true);
 
         loop {
             self.render();

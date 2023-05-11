@@ -1,16 +1,27 @@
+mod action;
 mod event;
 
-use crate::window::SharedControlFlow;
+use crate::{reader::big::BigReader, window::SharedControlFlow};
 use std::{
+    collections::HashMap,
+    fs::File,
+    io::BufReader,
+    path::PathBuf,
     sync::{mpsc::Receiver, Arc},
     thread::{self, JoinHandle},
 };
-use winit::{event::Event, window::Window};
+use winit::{
+    event::{Event, ModifiersState},
+    window::Window,
+};
+
+use self::action::{Action, KeyState};
 
 pub struct GameSystemParams {
-    pub window: Arc<Window>,
+    pub window_ref: Arc<Window>,
     pub event_receiver: Receiver<Event<'static, ()>>,
     pub control_flow: SharedControlFlow,
+    pub game_path: PathBuf,
 }
 
 pub fn spawn(params: GameSystemParams) -> JoinHandle<()> {
@@ -19,12 +30,28 @@ pub fn spawn(params: GameSystemParams) -> JoinHandle<()> {
 
 struct GameSystem {
     event_receiver: Receiver<Event<'static, ()>>,
+    control_flow: SharedControlFlow,
+    modifiers: ModifiersState,
+    key_bindings: HashMap<KeyState, Action>,
+    big_reader: BigReader<BufReader<File>>,
 }
 
 impl GameSystem {
     fn new(params: GameSystemParams) -> Self {
+        println!("{:?}", params.game_path);
+
+        let graphics_path = params.game_path.join("data/graphics/graphics.big");
+
+        println!("{:?}", graphics_path);
+
+        let graphics_file = BufReader::new(File::open(graphics_path).unwrap());
+
         Self {
             event_receiver: params.event_receiver,
+            control_flow: params.control_flow,
+            key_bindings: HashMap::default(),
+            modifiers: ModifiersState::empty(),
+            big_reader: BigReader::new(graphics_file),
         }
     }
 
@@ -42,8 +69,4 @@ impl GameSystem {
             }
         }
     }
-}
-
-impl GameSystem {
-    pub fn load_default_key_bindings(&mut self) {}
 }

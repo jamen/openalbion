@@ -16,7 +16,7 @@ pub enum NewWindowError {
 pub fn new() -> Result<(EventLoop<()>, Arc<Window>), NewWindowError> {
     let event_loop = EventLoop::new();
 
-    let window = Arc::new(
+    let window_ref = Arc::new(
         WindowBuilder::new()
             .with_inner_size(LogicalSize::<u32>::from([1024, 768]))
             .with_visible(true)
@@ -25,7 +25,7 @@ pub fn new() -> Result<(EventLoop<()>, Arc<Window>), NewWindowError> {
             .build(&event_loop)?,
     );
 
-    Ok((event_loop, window))
+    Ok((event_loop, window_ref))
 }
 
 pub struct WindowSystemParams {

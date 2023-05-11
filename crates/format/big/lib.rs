@@ -21,11 +21,16 @@ pub struct BigHeader {
     pub unknown_1: u32,
 }
 
+#[derive(Debug)]
 pub enum BigHeaderPart {
     Magic,
     Version,
     BankAddress,
     Unknown1,
+}
+
+impl BigHeader {
+    pub const TOTAL_BYTE_SIZE: usize = 16;
 }
 
 #[derive(Debug, PartialEq)]
