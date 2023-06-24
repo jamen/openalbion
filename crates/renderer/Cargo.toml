@@ -7,6 +7,6 @@ edition = "2021"
 path = "lib.rs"
 
 [dependencies]
-raw-window-handle = "0.5.2"
-thiserror = "1.0.40"
-wgpu = "0.16.0"
+raw-window-handle.workspace = true
+thiserror.workspace = true
+wgpu.workspace = true
