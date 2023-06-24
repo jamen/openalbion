@@ -1,6 +1,6 @@
 use crate::{put, take};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct WadHeader {
     pub magic: [u8; 4],
     pub version: [u32; 3],

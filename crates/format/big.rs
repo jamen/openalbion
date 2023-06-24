@@ -346,6 +346,7 @@ impl BigSubHeader {
 
     pub fn parse(i: &mut &[u8], file_type: u32) -> Result<Self, BigSubHeaderPart> {
         use BigSubHeaderPart::*;
+
         Ok(match file_type {
             0 => Self::Texture(BigSubHeaderTexture::parse(i).map_err(Texture)?),
             1 | 2 | 4 | 5 => Self::Mesh(BigSubHeaderMesh::parse(i).map_err(Mesh)?),
@@ -359,16 +360,21 @@ impl BigSubHeader {
 
     pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderPart> {
         use BigSubHeaderPart::*;
-        match self {
-            Self::None => Ok(()),
-            Self::Texture(x) => x.compile(out).map_err(Texture),
-            Self::Mesh(x) => x.compile(out).map_err(Mesh),
-            Self::Animation(x) => x.compile(out).map_err(Animation),
+        Ok(match self {
+            Self::None => {}
+            Self::Texture(x) => {
+                x.compile(out).map_err(Texture)?;
+            }
+            Self::Mesh(x) => {
+                x.compile(out).map_err(Mesh)?;
+            }
+            Self::Animation(x) => {
+                x.compile(out).map_err(Animation)?;
+            }
             Self::Unknown(x) => {
                 out.take_mut(..x.len()).ok_or(Unknown)?.copy_from_slice(x);
-                Ok(())
             }
-        }
+        })
     }
 }
 
@@ -416,7 +422,41 @@ impl BigSubHeaderTexture {
     }
 
     pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderTexturePart> {
-        todo!()
+        use BigSubHeaderTexturePart::*;
+
+        let width = take::<u16>(i).ok_or(Width)?.to_le();
+        let height = take::<u16>(i).ok_or(Height)?.to_le();
+        let depth = take::<u16>(i).ok_or(Depth)?.to_le();
+        let frame_width = take::<u16>(i).ok_or(FrameWidth)?.to_le();
+        let frame_height = take::<u16>(i).ok_or(FrameHeight)?.to_le();
+        let frame_count = take::<u16>(i).ok_or(FrameCount)?.to_le();
+        let dxt_compression = take::<u16>(i).ok_or(DxtCompression)?.to_le();
+        let unknown1 = take::<u16>(i).ok_or(Unknown1)?.to_le();
+        let transparency = take::<u8>(i).ok_or(Transparency)?.to_le();
+        let mip_maps = take::<u8>(i).ok_or(MipMaps)?.to_le();
+        let unknown2 = take::<u16>(i).ok_or(Unknown2)?.to_le();
+        let top_mip_map_size = take::<u32>(i).ok_or(TopMipMapSize)?.to_le();
+        let top_mip_map_compressed_size = take::<u32>(i).ok_or(TopMipMapCompressedSize)?.to_le();
+        let unknown3 = take::<u16>(i).ok_or(Unknown3)?.to_le();
+        let unknown4 = take::<u32>(i).ok_or(Unknown4)?.to_le();
+
+        Ok(Self {
+            width,
+            height,
+            depth,
+            frame_width,
+            frame_height,
+            frame_count,
+            dxt_compression,
+            unknown1,
+            transparency,
+            mip_maps,
+            unknown2,
+            top_mip_map_size,
+            top_mip_map_compressed_size,
+            unknown3,
+            unknown4,
+        })
     }
 
     pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderTexturePart> {
@@ -427,7 +467,7 @@ impl BigSubHeaderTexture {
 #[derive(Debug, PartialEq)]
 pub struct BigSubHeaderMesh {
     pub physics_mesh: u32,
-    pub unknown1: Vec<f32>,
+    pub unknown1: [f32; 10],
     pub size_compressed_lod: Vec<u32>,
     pub padding: u32,
     pub unknown2: Vec<u32>,
@@ -450,11 +490,83 @@ impl BigSubHeaderMesh {
     }
 
     pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderMeshPart> {
-        todo!()
+        use BigSubHeaderMeshPart::*;
+
+        let physics_mesh = take::<u32>(i).ok_or(PhysicsMesh)?.to_le();
+
+        let &unknown1 = take::<[f32; 10]>(i).ok_or(Unknown1)?;
+
+        let size_compressed_lod_count = take::<u32>(i).ok_or(SizeCompressedLod)?.to_le();
+        let size_compressed_lod_count =
+            usize::try_from(size_compressed_lod_count).or(Err(SizeCompressedLod))?;
+        let mut size_compressed_lod = Vec::with_capacity(size_compressed_lod_count);
+
+        for _ in 0..size_compressed_lod_count {
+            let unknown = take::<u32>(i).ok_or(SizeCompressedLod)?.to_le();
+            size_compressed_lod.push(unknown);
+        }
+
+        let padding = take::<u32>(i).ok_or(Padding)?.to_le();
+
+        let unknown2_count = size_compressed_lod_count - 1;
+        let mut unknown2 = Vec::with_capacity(unknown2_count);
+
+        for _ in 0..unknown2_count {
+            let unknown = take::<u32>(i).ok_or(Unknown2)?.to_le();
+            unknown2.push(unknown);
+        }
+
+        let texture_ids_count = take::<u32>(i).ok_or(TextureIds)?.to_le();
+        let texture_ids_count = usize::try_from(texture_ids_count).or(Err(TextureIds))?;
+        let mut texture_ids = Vec::with_capacity(texture_ids_count);
+
+        for _ in 0..texture_ids_count {
+            let texture_id = take::<u32>(i).ok_or(TextureIds)?.to_le();
+            texture_ids.push(texture_id);
+        }
+
+        Ok(Self {
+            physics_mesh,
+            unknown1,
+            size_compressed_lod,
+            padding,
+            unknown2,
+            texture_ids,
+        })
     }
 
     pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderMeshPart> {
-        todo!()
+        use BigSubHeaderMeshPart::*;
+
+        put(out, &self.physics_mesh.to_le()).ok_or(PhysicsMesh)?;
+        put(out, &self.unknown1).ok_or(Unknown1)?;
+
+        let size_compressed_lod_count =
+            u32::try_from(self.size_compressed_lod.len()).or(Err(SizeCompressedLod))?;
+
+        put(out, &size_compressed_lod_count).ok_or(SizeCompressedLod)?;
+
+        for size_compressed_lod in &self.size_compressed_lod {
+            put(out, &size_compressed_lod.to_le()).ok_or(SizeCompressedLod)?;
+        }
+
+        put(out, &self.padding).ok_or(Padding)?;
+
+        let unknown2_count = self.size_compressed_lod.len() - 1;
+
+        for v in &self.unknown2 {
+            put(out, &v.to_le()).ok_or(Unknown2)?;
+        }
+
+        let texture_ids_count = u32::try_from(self.texture_ids.len()).or(Err(TextureIds))?;
+
+        put(out, &texture_ids_count).ok_or(TextureIds)?;
+
+        for texture_id in &self.texture_ids {
+            put(out, &texture_id.to_le()).ok_or(TextureIds)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -478,128 +590,29 @@ impl BigSubHeaderAnimation {
     }
 
     pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderAnimationPart> {
-        todo!()
+        use BigSubHeaderAnimationPart::*;
+
+        let &unknown1 = take::<f32>(i).ok_or(Unknown1)?;
+        let &unknown2 = take::<f32>(i).ok_or(Unknown2)?;
+        let unknown3 = i.to_vec();
+
+        Ok(Self {
+            unknown1,
+            unknown2,
+            unknown3,
+        })
     }
 
     pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderAnimationPart> {
-        todo!()
+        use BigSubHeaderAnimationPart::*;
+
+        put(out, &self.unknown1).ok_or(Unknown1)?;
+        put(out, &self.unknown2).ok_or(Unknown2)?;
+
+        out.take_mut(..self.unknown3.len())
+            .ok_or(Unknown3)?
+            .copy_from_slice(&self.unknown3);
+
+        Ok(())
     }
 }
-
-//     // pub fn decode_big_sub_header(file_type: u32) -> impl Fn(&[u8]) -> IResult<&[u8], BigSubHeader, Error> {
-//     //     move |input: &[u8]| {
-//     //         match file_type {
-//     //             0 =>
-//     //                 Self::decode_big_sub_header_texture(input),
-//     //             1 | 2 | 4 | 5 =>
-//     //                 Self::decode_big_sub_header_mesh(input),
-//     //             // ? =>
-//     //             //     decode_big_sub_header_anim(input),
-//     //             // ? =>
-//     //             //     Ok((b"", BigSubHeader::None)),
-//     //             _ =>
-//     //                 Ok((b"", BigSubHeader::Unknown(input.to_vec()))),
-//     //         }
-//     //     }
-//     // }
-
-//     // pub fn decode_big_sub_header_texture(input: &[u8]) -> IResult<&[u8], BigSubHeader, Error> {
-//     //     let (input, width) = le_u16(input)?;
-//     //     let (input, height) = le_u16(input)?;
-//     //     let (input, depth) = le_u16(input)?;
-//     //     let (input, frame_width) = le_u16(input)?;
-//     //     let (input, frame_height) = le_u16(input)?;
-//     //     let (input, frame_count) = le_u16(input)?;
-//     //     let (input, dxt_compression) = le_u16(input)?;
-//     //     let (input, unknown1) = le_u16(input)?;
-//     //     let (input, transparency) = le_u8(input)?;
-//     //     let (input, mip_maps) = le_u8(input)?;
-//     //     let (input, unknown2) = le_u16(input)?;
-//     //     let (input, top_mip_map_size) = le_u32(input)?;
-//     //     let (input, top_mip_map_compressed_size) = le_u32(input)?;
-//     //     let (input, unknown3) = le_u16(input)?;
-//     //     let (input, unknown4) = le_u32(input)?;
-
-//     //     Ok(
-//     //         (
-//     //             input,
-//     //             BigSubHeader::Texture(
-//     //                 BigSubHeaderTexture {
-//     //                     width: width,
-//     //                     height: height,
-//     //                     depth: depth,
-//     //                     frame_width: frame_width,
-//     //                     frame_height: frame_height,
-//     //                     frame_count: frame_count,
-//     //                     dxt_compression: dxt_compression,
-//     //                     unknown1: unknown1,
-//     //                     transparency: transparency,
-//     //                     mip_maps: mip_maps,
-//     //                     unknown2: unknown2,
-//     //                     top_mip_map_size: top_mip_map_size,
-//     //                     top_mip_map_compressed_size: top_mip_map_compressed_size,
-//     //                     unknown3: unknown3,
-//     //                     unknown4: unknown4,
-//     //                 }
-//     //             )
-//     //         )
-//     //     )
-//     // }
-
-//     // pub fn decode_big_sub_header_mesh(input: &[u8]) -> IResult<&[u8], BigSubHeader, Error> {
-//     //     // Check if this entry has no subheader.
-//     //     if input.len() == 0 {
-//     //         return Ok((b"", BigSubHeader::None))
-//     //     }
-
-//     //     let (input, physics_mesh) = le_u32(input)?;
-
-//     //     // let (input, unknown1) = count(float, 10)(input)?;
-//     //     // let (input, unknown1) = take(40usize)(input)?;
-//     //     let (input, unknown1) = count(le_f32, 10usize)(input)?;
-
-//     //     let (input, size_compressed_lod_count) = le_u32(input)?;
-//     //     let (input, size_compressed_lod) = count(le_u32, size_compressed_lod_count as usize)(input)?;
-
-//     //     let (input, padding) = le_u32(input)?;
-
-//     //     let (input, unknown2) = count(le_u32, (size_compressed_lod_count - 1) as usize)(input)?;
-
-//     //     let (input, texture_ids_count) = le_u32(input)?;
-//     //     let (input, texture_ids) = count(le_u32, texture_ids_count as usize)(input)?;
-
-//     //     Ok(
-//     //         (
-//     //             input,
-//     //             BigSubHeader::Mesh(
-//     //                 BigSubHeaderMesh {
-//     //                     physics_mesh: physics_mesh,
-//     //                     unknown1: unknown1.to_vec(),
-//     //                     size_compressed_lod: size_compressed_lod,
-//     //                     padding: padding,
-//     //                     unknown2: unknown2,
-//     //                     texture_ids: texture_ids,
-//     //                 }
-//     //             )
-//     //         )
-//     //     )
-//     // }
-
-//     // pub fn decode_big_sub_header_anim(input: &[u8]) -> IResult<&[u8], BigSubHeader, Error> {
-//     //     let (input, unknown1) = le_f32(input)?;
-//     //     let (input, unknown2) = le_f32(input)?;
-//     //     let unknown3 = input.to_vec();
-//     //     Ok(
-//     //         (
-//     //             b"",
-//     //             BigSubHeader::Animation(
-//     //                 BigSubHeaderAnimation {
-//     //                     unknown1: unknown1,
-//     //                     unknown2: unknown2,
-//     //                     unknown3: unknown3,
-//     //                 }
-//     //             )
-//     //         )
-//     //     )
-//     // }
-// }
