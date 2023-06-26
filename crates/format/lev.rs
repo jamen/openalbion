@@ -1,25 +1,3 @@
-#![feature(slice_take)]
-
-mod compile;
-mod parse;
-
-pub use compile::*;
-pub use parse::*;
-
-/// Level cells and nodes.
-///
-/// ## Format
-///
-/// WIP
-#[derive(Debug, PartialEq)]
-pub struct Lev {
-    pub header: LevHeader,
-    // pub heightmap_cells: Vec<LevHeightCell>,
-    // pub soundmap_cells: Vec<LevSoundCell>,
-    // pub navigation_header: LevNavigationHeader,
-    // pub navigation_section: LevNavigationSection
-}
-
 #[derive(Debug, PartialEq)]
 pub struct LevHeader {
     pub version: u16,

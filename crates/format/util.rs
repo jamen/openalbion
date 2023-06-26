@@ -11,14 +11,14 @@ pub(crate) fn put<'a, T: Pod>(out: &mut &'a mut [u8], item: &T) -> Option<()> {
     Some(())
 }
 
-pub(crate) fn take_null_terminated<'a>(i: &mut &'a [u8]) -> Option<&'a [u8]> {
+pub(crate) fn null_terminated_buf<'a>(i: &mut &'a [u8]) -> Option<&'a [u8]> {
     let len = i.iter().position(|c| *c == 0u8)?;
     let value = i.take(..len)?;
     let _null = i.take(..1)?;
     Some(value)
 }
 
-pub(crate) fn take_run_length_le_u32<'a>(i: &mut &'a [u8]) -> Option<&'a [u8]> {
+pub(crate) fn run_le_u32_buf<'a>(i: &mut &'a [u8]) -> Option<&'a [u8]> {
     let len = take::<u32>(i)?.to_le();
     let len = usize::try_from(len).ok()?;
     i.take(..len)

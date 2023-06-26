@@ -1,4 +1,4 @@
-use crate::{put, take, take_null_terminated, util::take_run_length_le_u32};
+use crate::{null_terminated_buf, put, take, util::run_le_u32_buf};
 
 #[derive(Debug, PartialEq)]
 pub struct BigHeader {
@@ -74,14 +74,14 @@ pub enum BigBankIndexPart {
 
 impl<'a> BigBankIndex<'a> {
     pub fn byte_size(&self) -> usize {
-        todo!()
+        25 + self.name.len()
     }
 
     pub fn parse(i: &mut &'a [u8]) -> Result<Self, BigBankIndexPart> {
         use BigBankIndexPart::*;
 
         let banks_count = take::<u32>(i).ok_or(BanksCount)?.to_le();
-        let name = take_null_terminated(i).ok_or(Name)?;
+        let name = null_terminated_buf(i).ok_or(Name)?;
         let bank_id = take::<u32>(i).ok_or(BankId)?.to_le();
         let bank_entries_count = take::<u32>(i).ok_or(BankEntriesCount)?.to_le();
         let index_start = take::<u32>(i).ok_or(IndexStart)?.to_le();
@@ -240,7 +240,7 @@ impl BigFileEntry<'_, '_> {
         let start = take::<u32>(i).ok_or(Start)?.to_le();
         let file_type_dev = take::<u32>(i).ok_or(FileTypeDev)?.to_le();
 
-        let symbol_name = take_run_length_le_u32(i).ok_or(SymbolName)?;
+        let symbol_name = run_le_u32_buf(i).ok_or(SymbolName)?;
 
         let crc = take::<u32>(i).ok_or(Crc)?.to_le();
 
@@ -249,10 +249,10 @@ impl BigFileEntry<'_, '_> {
         let files = Vec::with_capacity(files_count);
 
         for _ in 0..files_count {
-            let name = take_run_length_le_u32(i).ok_or(Files)?;
+            let name = run_le_u32_buf(i).ok_or(Files)?;
         }
 
-        let mut sub_header_bytes = take_run_length_le_u32(i).ok_or(SubHeaderSize)?;
+        let mut sub_header_bytes = run_le_u32_buf(i).ok_or(SubHeaderSize)?;
         let sub_header =
             BigSubHeader::parse(&mut sub_header_bytes, file_type).map_err(SubHeader)?;
 
