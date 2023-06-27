@@ -153,9 +153,7 @@ pub struct LevHeader {
 
 use common::{bytemuck::PodCastError, read_pod};
 
-pub enum LevParseError {
-
-};
+pub enum LevParseError {}
 
 impl Lev {
     pub fn parse(input: &[u8]) -> Result<Lev, LevParseError> {
@@ -208,8 +206,7 @@ pub enum LevHeaderParseError {
     AmbientSoundVersion,
     SoundThemesCount,
     SoundPalette,
-
-};
+}
 
 impl From<PodCastError> for LevHeaderParseError {
     fn from(x: PodCastError) -> Self {

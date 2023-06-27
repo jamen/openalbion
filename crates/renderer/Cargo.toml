@@ -10,3 +10,4 @@ path = "lib.rs"
 raw-window-handle.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true
+bytemuck.workspace = true

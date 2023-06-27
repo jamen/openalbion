@@ -1,14 +1,18 @@
+mod pass;
+
 use raw_window_handle::{HasRawWindowHandle, HasRawDisplayHandle};
 use thiserror::Error;
+use crate::{texture::Textures, buffer::Buffers, bind_group::BindGroups, pipeline::Pipelines, bind_group_layout::BindGroupLayouts, pipeline_layout::PipelineLayouts};
 
-use crate::{texture::Textures, buffer::Buffers, bind_group::BindGroups, pipeline::Pipelines};
+use self::pass::MainCommands;
 
 pub struct Renderer {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     pub(crate) surface: wgpu::Surface,
     pub(crate) surface_config: wgpu::SurfaceConfiguration,
-    pub(crate) main_encoder: wgpu::CommandEncoder,
+    pub(crate) view: wgpu::TextureView,
+    pub(crate) main_cmds: MainCommands,
     pub(crate) textures: Textures,
     pub(crate) buffers: Buffers,
     pub(crate) bind_groups: BindGroups,
@@ -27,7 +31,10 @@ pub enum RendererError {
     NoPreferredFormat,
 
     #[error("create surface error. {0}")]
-    CreateSurface(#[from] wgpu::CreateSurfaceError),
+    NoSurface(#[from] wgpu::CreateSurfaceError),
+
+    #[error("no surface view. {0}")]
+    NoSurfaceView(#[from] wgpu::SurfaceError),
 }
 
 impl Renderer {
@@ -74,18 +81,23 @@ impl Renderer {
 
         surface.configure(&device, &surface_config);
 
-        let main_encoder = device.create_command_encoder(&Default::default());
+        let view = surface.get_current_texture()?.texture.create_view(&Default::default());
+        let main_cmds = MainCommands::new(&device);
         let textures = Textures::new(&device, &surface_config);
-        let buffers = Buffers::new(&device, &surface_config);
-        let bind_groups = BindGroups::new(&device, &surface, &surface_config, &buffers, &textures);
-        let pipelines = Pipelines::new(&device, &surface_config, &bind_groups);
+        let buffers = Buffers::new(&device, 2048, 2048, 2048);
+
+        let bg_layouts = BindGroupLayouts::new(&device);
+        let bind_groups = BindGroups::new(&device, &bg_layouts);
+        let pipeline_layouts = PipelineLayouts::new(&device, &bg_layouts);
+        let pipelines = Pipelines::new(&device, &surface_config, &pipeline_layouts);
 
         Ok(Self {
             device,
             queue,
             surface,
             surface_config,
-            main_encoder,
+            view,
+            main_cmds,
             textures,
             buffers,
             bind_groups,

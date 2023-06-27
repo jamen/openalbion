@@ -118,10 +118,10 @@ impl<'a> BigBankIndex<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigFileIndex<'a, 'b> {
+pub struct BigFileIndex<'a> {
     pub file_type: u32,
     pub types_map: Vec<[u32; 2]>,
-    pub entries: Vec<BigFileEntry<'a, 'b>>,
+    pub entries: Vec<BigFileEntry<'a>>,
 }
 
 #[derive(Debug)]
@@ -133,12 +133,12 @@ pub enum BigFileIndexPart {
     Entry(BigFileEntryPart),
 }
 
-impl BigFileIndex<'_, '_> {
+impl<'a> BigFileIndex<'a> {
     pub fn byte_size(&self) -> usize {
         todo!()
     }
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigFileIndexPart> {
+    pub fn parse(i: &mut &'a [u8]) -> Result<Self, BigFileIndexPart> {
         use BigFileIndexPart::*;
 
         let types_count = take::<u32>(i).ok_or(TypesCount)?.to_le();
@@ -195,7 +195,7 @@ impl BigFileIndex<'_, '_> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigFileEntry<'a, 'b> {
+pub struct BigFileEntry<'a> {
     pub magic: u32,
     pub id: u32,
     pub file_type: u32,
@@ -204,7 +204,7 @@ pub struct BigFileEntry<'a, 'b> {
     pub file_type_dev: u32,
     pub symbol_name: &'a [u8],
     pub crc: u32,
-    pub files: Vec<&'b [u8]>,
+    pub files: Vec<&'a [u8]>,
     pub sub_header: BigSubHeader,
     // pub sub_header: Vec<u8>,
 }
@@ -225,12 +225,12 @@ pub enum BigFileEntryPart {
     SubHeader(BigSubHeaderPart),
 }
 
-impl BigFileEntry<'_, '_> {
+impl<'a> BigFileEntry<'a> {
     pub fn byte_size(&self) -> usize {
         todo!()
     }
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigFileEntryPart> {
+    pub fn parse(i: &mut &'a [u8]) -> Result<Self, BigFileEntryPart> {
         use BigFileEntryPart::*;
 
         let magic = take::<u32>(i).ok_or(Magic)?.to_le();
@@ -246,10 +246,11 @@ impl BigFileEntry<'_, '_> {
 
         let files_count = take::<u32>(i).ok_or(FilesCount)?.to_le();
         let files_count = usize::try_from(files_count).or(Err(FilesCount))?;
-        let files = Vec::with_capacity(files_count);
+        let mut files = Vec::with_capacity(files_count);
 
         for _ in 0..files_count {
             let name = run_le_u32_buf(i).ok_or(Files)?;
+            files.push(name);
         }
 
         let mut sub_header_bytes = run_le_u32_buf(i).ok_or(SubHeaderSize)?;
@@ -306,7 +307,7 @@ impl BigFileEntry<'_, '_> {
 
         let sub_header_size = self.sub_header.byte_size();
 
-        put(out, &sub_header_size.to_le()).ok_or(SubHeaderSize);
+        put(out, &sub_header_size.to_le()).ok_or(SubHeaderSize)?;
 
         self.sub_header
             .compile(out)
@@ -459,7 +460,7 @@ impl BigSubHeaderTexture {
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderTexturePart> {
+    pub fn compile(&self, _out: &mut &mut [u8]) -> Result<(), BigSubHeaderTexturePart> {
         todo!()
     }
 }
@@ -552,7 +553,7 @@ impl BigSubHeaderMesh {
 
         put(out, &self.padding).ok_or(Padding)?;
 
-        let unknown2_count = self.size_compressed_lod.len() - 1;
+        // let unknown2_count = self.size_compressed_lod.len() - 1;
 
         for v in &self.unknown2 {
             put(out, &v.to_le()).ok_or(Unknown2)?;

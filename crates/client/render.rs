@@ -1,25 +1,30 @@
+use crate::window::WindowRef;
 use futures::executor::block_on;
 use renderer::Renderer;
-use std::{
-    sync::Arc,
-    thread::{self, JoinHandle},
-};
-use winit::window::Window;
+use std::thread::{self, JoinHandle};
 
 pub struct RenderSystemParams {
-    pub window_ref: Arc<Window>,
+    pub window_ref: WindowRef,
 }
 
-pub fn spawn(params: RenderSystemParams) -> JoinHandle<()> {
-    thread::spawn(move || RenderSystem::new(params).run())
+pub struct RenderHandle(JoinHandle<()>);
+
+impl AsRef<JoinHandle<()>> for RenderHandle {
+    fn as_ref(&self) -> &JoinHandle<()> {
+        &self.0
+    }
 }
 
-struct RenderSystem {
-    window_ref: Arc<Window>,
+pub struct RenderSystem {
+    window_ref: WindowRef,
     renderer: Renderer,
 }
 
 impl RenderSystem {
+    pub fn spawn(params: RenderSystemParams) -> RenderHandle {
+        RenderHandle(thread::spawn(move || RenderSystem::new(params).run()))
+    }
+
     fn new(params: RenderSystemParams) -> Self {
         let window_ref = params.window_ref;
 
@@ -32,6 +37,7 @@ impl RenderSystem {
             renderer,
         }
     }
+
     fn run(mut self) -> ! {
         self.render();
 
@@ -41,9 +47,7 @@ impl RenderSystem {
             self.render();
         }
     }
-}
 
-impl RenderSystem {
     fn render(&mut self) {
         if let Err(error) = self.renderer.render() {
             log::error!("{error:?}");
