@@ -3,13 +3,28 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.dependencies]
-env_logger = "0.9.0"
+env_logger = "0.10.0"
 format = { path = "./crates/format" }
-futures = { version = "0.3", default-features = false, features = ["executor"] }
-log = "0.4.17"
+log = "0.4.19"
 raw-window-handle = "0.5.2"
 renderer = { path = "./crates/renderer" }
-thiserror = "1.0.40"
 wgpu = "0.16.0"
-winit = { version = "0.27.5", default-features = false, features = ["x11"] }
-bytemuck = { version = "1.13.1", features = ["derive"] }
+
+[workspace.dependencies.bytemuck]
+features = ["derive"]
+version = "1.13.1"
+
+[workspace.dependencies.futures]
+default-features = false
+features = ["executor"]
+version = "0.3"
+
+[workspace.dependencies.derive_more]
+default-features = false
+features = ["from", "display"]
+version = "0.99.17"
+
+[workspace.dependencies.winit]
+default-features = false
+features = ["x11"]
+version = "0.27.5"

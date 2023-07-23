@@ -13,5 +13,4 @@ format.workspace = true
 futures.workspace = true
 log.workspace = true
 renderer.workspace = true
-thiserror.workspace = true
 winit.workspace = true

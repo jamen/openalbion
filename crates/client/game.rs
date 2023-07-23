@@ -38,7 +38,7 @@ pub struct GameSystem {
 
 impl GameSystem {
     pub fn spawn(params: GameSystemParams) -> GameHandle {
-        GameHandle(thread::spawn(move || GameSystem::new(params).run()))
+        GameHandle(thread::spawn(move || Self::new(params).run()))
     }
 
     fn new(params: GameSystemParams) -> Self {

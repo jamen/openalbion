@@ -24,7 +24,7 @@ impl BigHeader {
     pub fn parse(i: &mut &[u8]) -> Result<Self, BigHeaderPart> {
         use BigHeaderPart::*;
 
-        let &magic = take::<[u8; 4]>(i).ok_or(Magic)?;
+        let magic = take::<[u8; 4]>(i).ok_or(Magic)?;
         let version = take::<u32>(i).ok_or(Version)?.to_le();
         let bank_address = take::<u32>(i).ok_or(BankAddress)?.to_le();
         let unknown_1 = take::<u32>(i).ok_or(Unknown1)?.to_le();
@@ -495,7 +495,7 @@ impl BigSubHeaderMesh {
 
         let physics_mesh = take::<u32>(i).ok_or(PhysicsMesh)?.to_le();
 
-        let &unknown1 = take::<[f32; 10]>(i).ok_or(Unknown1)?;
+        let unknown1 = take::<[f32; 10]>(i).ok_or(Unknown1)?;
 
         let size_compressed_lod_count = take::<u32>(i).ok_or(SizeCompressedLod)?.to_le();
         let size_compressed_lod_count =
@@ -593,8 +593,8 @@ impl BigSubHeaderAnimation {
     pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderAnimationPart> {
         use BigSubHeaderAnimationPart::*;
 
-        let &unknown1 = take::<f32>(i).ok_or(Unknown1)?;
-        let &unknown2 = take::<f32>(i).ok_or(Unknown2)?;
+        let unknown1 = take::<f32>(i).ok_or(Unknown1)?;
+        let unknown2 = take::<f32>(i).ok_or(Unknown2)?;
         let unknown3 = i.to_vec();
 
         Ok(Self {

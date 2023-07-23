@@ -11,3 +11,6 @@ path = "main.rs"
 
 [dependencies]
 format.workspace = true
+env_logger.workspace = true
+log.workspace = true
+derive_more.workspace = true

@@ -1,13 +1,14 @@
-use bytemuck::{bytes_of, Pod};
+use bytemuck::{bytes_of, AnyBitPattern, NoUninit};
 use core::mem::size_of;
 
-pub(crate) fn take<'a, T: Pod>(src: &'_ mut &'a [u8]) -> Option<&'a T> {
-    bytemuck::try_from_bytes(src.take(..size_of::<T>())?).ok()
+pub(crate) fn take<T: AnyBitPattern>(source: &mut &[u8]) -> Option<T> {
+    bytemuck::try_pod_read_unaligned(source.take(..size_of::<T>())?).ok()
 }
 
-pub(crate) fn put<'a, T: Pod>(out: &mut &'a mut [u8], item: &T) -> Option<()> {
-    out.take_mut(..size_of::<T>())?
-        .copy_from_slice(bytes_of(item));
+pub(crate) fn put<T: NoUninit>(output: &mut &mut [u8], value: &T) -> Option<()> {
+    output
+        .take_mut(..size_of::<T>())?
+        .copy_from_slice(bytes_of(value));
     Some(())
 }
 

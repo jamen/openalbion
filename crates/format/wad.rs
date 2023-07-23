@@ -28,7 +28,7 @@ impl WadHeader {
     pub fn parse(i: &mut &[u8]) -> Result<Self, WadHeaderPart> {
         use WadHeaderPart::*;
 
-        let &magic = take::<[u8; 4]>(i).ok_or(Magic)?;
+        let magic = take::<[u8; 4]>(i).ok_or(Magic)?;
         let version = take::<[u32; 3]>(i).ok_or(Version)?.map(u32::to_le);
         let block_size = take::<u32>(i).ok_or(BlockSize)?.to_le();
         let entry_count = take::<u32>(i).ok_or(EntryCount)?.to_le();
@@ -98,7 +98,7 @@ impl<'a> WadEntry<'a> {
     pub fn parse(i: &mut &'a [u8]) -> Result<WadEntry<'a>, WadEntryPart> {
         use WadEntryPart::*;
 
-        let &unknown_1 = take::<[u8; 16]>(i).ok_or(Unknown1)?;
+        let unknown_1 = take::<[u8; 16]>(i).ok_or(Unknown1)?;
         let id = take::<u32>(i).ok_or(Id)?.to_le();
         let unknown_2 = take::<u32>(i).ok_or(Unknown2)?.to_le();
         let offset = take::<u32>(i).ok_or(Offset)?.to_le();
@@ -108,7 +108,7 @@ impl<'a> WadEntry<'a> {
         let path_len = take::<u32>(i).ok_or(PathLen)?.to_le() as usize;
         let path = i.take(..path_len).ok_or(Path)?;
 
-        let &unknown_4 = take::<[u8; 16]>(i).ok_or(Unknown4)?;
+        let unknown_4 = take::<[u8; 16]>(i).ok_or(Unknown4)?;
         let created = take::<[u32; 7]>(i).ok_or(Created)?.map(u32::to_le);
         let accessed = take::<[u32; 7]>(i).ok_or(Accessed)?.map(u32::to_le);
         let modified = take::<[u32; 5]>(i).ok_or(Modified)?.map(u32::to_le);
