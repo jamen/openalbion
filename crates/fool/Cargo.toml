@@ -10,7 +10,7 @@ name = "fool"
 path = "main.rs"
 
 [dependencies]
-format.workspace = true
+asset_manager.workspace = true
 env_logger.workspace = true
 log.workspace = true
 derive_more.workspace = true

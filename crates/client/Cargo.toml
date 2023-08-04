@@ -9,7 +9,7 @@ path = "main.rs"
 
 [dependencies]
 env_logger.workspace = true
-format.workspace = true
+asset_manager.workspace = true
 futures.workspace = true
 log.workspace = true
 renderer.workspace = true

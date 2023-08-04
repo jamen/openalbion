@@ -3,6 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.dependencies]
+asset_manager = { path = "./crates/asset_manager" }
 env_logger = "0.10.0"
 format = { path = "./crates/format" }
 log = "0.4.19"
