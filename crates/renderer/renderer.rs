@@ -1,10 +1,9 @@
-mod pass;
+use std::{mem::swap, slice, any::type_name};
 
 use raw_window_handle::{HasRawWindowHandle, HasRawDisplayHandle};
-use thiserror::Error;
-use crate::{texture::Textures, buffer::Buffers, bind_group::BindGroups, pipeline::Pipelines, bind_group_layout::BindGroupLayouts, pipeline_layout::PipelineLayouts};
+use derive_more::{From, Display};
 
-use self::pass::MainCommands;
+use crate::texture::Textures;
 
 pub struct Renderer {
     pub(crate) device: wgpu::Device,
@@ -19,22 +18,22 @@ pub struct Renderer {
     pub(crate) pipelines: Pipelines,
 }
 
-#[derive(Error, Debug)]
+#[derive(Display, From, Debug)]
 pub enum RendererError {
-    #[error("no adapter")]
+    #[display(fmt = "no adapter")]
     NoAdapter,
 
-    #[error("no device. {0}")]
-    NoDevice(#[from] wgpu::RequestDeviceError),
+    #[display(fmt = "no device. {}", _0)]
+    NoDevice(wgpu::RequestDeviceError),
 
-    #[error("no preferred format")]
+    #[display(fmt = "no preferred format")]
     NoPreferredFormat,
 
-    #[error("create surface error. {0}")]
-    NoSurface(#[from] wgpu::CreateSurfaceError),
+    #[display(fmt = "create surface error. {}", _0)]
+    NoSurface(wgpu::CreateSurfaceError),
 
-    #[error("no surface view. {0}")]
-    NoSurfaceView(#[from] wgpu::SurfaceError),
+    #[display(fmt = "no surface view. {}", _0)]
+    NoSurfaceView(wgpu::SurfaceError),
 }
 
 impl Renderer {
@@ -84,7 +83,7 @@ impl Renderer {
         let view = surface.get_current_texture()?.texture.create_view(&Default::default());
         let main_cmds = MainCommands::new(&device);
         let textures = Textures::new(&device, &surface_config);
-        let buffers = Buffers::new(&device, 2048, 2048, 2048);
+        // let buffers = Buffers::new(&device, 2048, 2048, 2048);
 
         let bg_layouts = BindGroupLayouts::new(&device);
         let bind_groups = BindGroups::new(&device, &bg_layouts);
@@ -103,5 +102,91 @@ impl Renderer {
             bind_groups,
             pipelines,
         })
+    }
+}
+
+pub struct MainCommands(wgpu::CommandEncoder);
+
+impl MainCommands {
+    pub fn new(device: &wgpu::Device) -> Self {
+        Self(
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some(type_name::<MainCommands>()),
+            }),
+        )
+    }
+
+    fn into_inner(self) -> wgpu::CommandEncoder {
+        self.0
+    }
+}
+
+// impl AsRef<wgpu::CommandEncoder> for MainEncoder {
+//     fn as_ref(&self) -> &wgpu::CommandEncoder {
+//         &self.0
+//     }
+// }
+
+impl AsMut<wgpu::CommandEncoder> for MainCommands {
+    fn as_mut(&mut self) -> &mut wgpu::CommandEncoder {
+        &mut self.0
+    }
+}
+
+impl Renderer {
+    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // TODO: Write this on resize, instead of every frame
+        self.set_surface_size(&[
+            self.surface_config.width as f32,
+            self.surface_config.height as f32,
+        ]);
+
+        // Next frame
+        let frame = self.surface.get_current_texture()?;
+
+        self.view = frame.texture.create_view(&Default::default());
+
+        // Passes
+        self.color_pass();
+
+        // Next command buffer
+        let mut main_cmds = MainCommands::new(&self.device);
+
+        swap(&mut main_cmds, &mut self.main_cmds);
+
+        // Present frame
+        self.queue.submit([main_cmds.into_inner().finish()]);
+
+        frame.present();
+
+        Ok(())
+    }
+
+    fn set_surface_size(&mut self, size: &[f32; 2]) {
+        self.buffers.param.surface_size.
+            inner()
+            .write_buffer(&self.queue, 0, slice::from_ref(size));
+    }
+
+    fn color_pass(&mut self) {
+        let cmds = self.main_cmds.as_mut();
+
+        let mut rpass = cmds.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &self.view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                    store: false,
+                },
+            })],
+            depth_stencil_attachment: None,
+        });
+
+        rpass.set_pipeline(self.pipelines.color.as_ref());
+        rpass.set_bind_group(0, self.bind_groups.color.as_ref(), &[]);
+
+        // ...
     }
 }

@@ -1078,6 +1078,7 @@ name = "renderer"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "derive_more",
  "raw-window-handle 0.5.2",
  "wgpu",
 ]
