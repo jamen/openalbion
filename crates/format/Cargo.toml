@@ -3,8 +3,6 @@ name = "format"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-path = "lib.rs"
-
-[dependencies]
-bytemuck.workspace = true
+[dependencies.bytemuck]
+features = ["derive"]
+version = "1.13.1"
