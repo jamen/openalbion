@@ -63,7 +63,7 @@ impl WadHeader {
     }
 
     /// Computes the minimum size of an output buffer needed for serialization.
-    pub const fn output_buffer_size() -> usize {
+    pub const fn byte_size() -> usize {
         // Magic
         mem::size_of::<[u8; 4]>() +
         // Version
@@ -83,15 +83,30 @@ impl WadHeader {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WadEntry<'a> {
     pub unknown_1: [u8; 16],
     pub id: u32,
     pub unknown_2: u32,
-    pub offset: u32,
     pub length: u32,
+    pub offset: u32,
     pub unknown_3: u32,
     pub path: &'a [u8],
+    pub unknown_4: [u8; 16],
+    pub created: [u32; 7],
+    pub accessed: [u32; 7],
+    pub modified: [u32; 5],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WadEntryOwned {
+    pub unknown_1: [u8; 16],
+    pub id: u32,
+    pub unknown_2: u32,
+    pub length: u32,
+    pub offset: u32,
+    pub unknown_3: u32,
+    pub path: Vec<u8>,
     pub unknown_4: [u8; 16],
     pub created: [u32; 7],
     pub accessed: [u32; 7],
@@ -123,8 +138,8 @@ impl<'a> WadEntry<'a> {
         let unknown_1 = p.take::<[u8; 16], _>(Unknown1)?;
         let id = p.take::<u32, _>(Id)?.to_le();
         let unknown_2 = p.take::<u32, _>(Unknown2)?.to_le();
-        let offset = p.take::<u32, _>(Offset)?.to_le();
         let length = p.take::<u32, _>(Length)?.to_le();
+        let offset = p.take::<u32, _>(Offset)?.to_le();
         let unknown_3 = p.take::<u32, _>(Unknown3)?.to_le();
 
         let path_len = p.take::<u32, _>(PathLen)?.to_le() as usize;
@@ -140,8 +155,8 @@ impl<'a> WadEntry<'a> {
             unknown_1,
             id,
             unknown_2,
-            offset,
             length,
+            offset,
             unknown_3,
             path,
             unknown_4,
@@ -164,8 +179,8 @@ impl<'a> WadEntry<'a> {
         s.put(&self.unknown_1, Unknown1)?;
         s.put(&self.id.to_le(), Id)?;
         s.put(&self.unknown_2.to_le(), Unknown2)?;
-        s.put(&self.offset.to_le(), Offset)?;
         s.put(&self.length.to_le(), Length)?;
+        s.put(&self.offset.to_le(), Offset)?;
         s.put(&self.unknown_3.to_le(), Unknown3)?;
 
         let path_len = u32::try_from(self.path.len()).map_err(|_| s.new_error(PathLen))?;
@@ -182,7 +197,7 @@ impl<'a> WadEntry<'a> {
         Ok(())
     }
 
-    pub fn output_buffer_size(&self) -> usize {
+    pub fn byte_size(&self) -> usize {
         // Unknown 1
         mem::size_of::<[u8; 16]>() +
         // Id
@@ -211,5 +226,21 @@ impl<'a> WadEntry<'a> {
 
     pub fn to_bytes(&self, out: &mut [u8]) -> Result<(), BinarySerializerError<WadEntryPart>> {
         self.serialize(&mut BinarySerializer::new(out))
+    }
+
+    pub fn to_owned(&self) -> WadEntryOwned {
+        WadEntryOwned {
+            unknown_1: self.unknown_1,
+            id: self.id,
+            unknown_2: self.unknown_2,
+            length: self.length,
+            offset: self.offset,
+            unknown_3: self.unknown_3,
+            path: self.path.to_vec(),
+            unknown_4: self.unknown_4,
+            created: self.created,
+            accessed: self.accessed,
+            modified: self.modified,
+        }
     }
 }

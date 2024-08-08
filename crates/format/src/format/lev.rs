@@ -1,3 +1,5 @@
+use crate::{BinaryParser, BinaryParserError};
+
 #[derive(Debug, PartialEq)]
 pub struct LevHeader {
     pub version: u16,
@@ -151,44 +153,43 @@ pub struct LevHeader {
 //     pub root: u8,
 // }
 
-use common::{bytemuck::PodCastError, read_pod};
+// pub enum LevParseError {}
 
-pub enum LevParseError {}
+// impl Lev {
+//     pub fn parse(input: &[u8]) -> Result<Lev, LevParseError> {
+//         let header = LevHeader::parse(input)?;
 
-impl Lev {
-    pub fn parse(input: &[u8]) -> Result<Lev, LevParseError> {
-        let header = LevHeader::parse(input)?;
+//         let heightmap_cell_count = ((header.width + 1) * (header.height + 1)) as usize;
+//         let (input, heightmap_cells) =
+//             count(Self::decode_heightmap_cell, heightmap_cell_count)(input)?;
 
-        let heightmap_cell_count = ((header.width + 1) * (header.height + 1)) as usize;
-        let (input, heightmap_cells) =
-            count(Self::decode_heightmap_cell, heightmap_cell_count)(input)?;
+//         // fabletlcmod.com seems to have the wrong amount, using a temporary one.
+//         // let soundmap_cell_count = ((header.height - 1) * (header.width - 1)) as usize;
+//         let soundmap_cell_count = 1024usize;
+//         let (_input, soundmap_cells) =
+//             count(Self::decode_soundmap_cell, soundmap_cell_count)(input)?;
 
-        // fabletlcmod.com seems to have the wrong amount, using a temporary one.
-        // let soundmap_cell_count = ((header.height - 1) * (header.width - 1)) as usize;
-        let soundmap_cell_count = 1024usize;
-        let (_input, soundmap_cells) =
-            count(Self::decode_soundmap_cell, soundmap_cell_count)(input)?;
+//         // let navigation_header_data = &input[header.navigation_offset as usize..];
+//         // let (_input, navigation_header) = Self::decode_navigation_header(navigation_header_data)?;
 
-        // let navigation_header_data = &input[header.navigation_offset as usize..];
-        // let (_input, navigation_header) = Self::decode_navigation_header(navigation_header_data)?;
+//         // let navigation_section_data = &input[navigation_header.sections_start as usize..];
+//         // let (input, navigation_section) = Self::decode_navigation_section(navigation_section_data)?;
 
-        // let navigation_section_data = &input[navigation_header.sections_start as usize..];
-        // let (input, navigation_section) = Self::decode_navigation_section(navigation_section_data)?;
+//         Ok((
+//             input,
+//             Lev {
+//                 header: header,
+//                 heightmap_cells: heightmap_cells,
+//                 soundmap_cells: soundmap_cells,
+//                 // navigation_header: navigation_header,
+//                 // navigation_section: navigation_section,
+//             },
+//         ))
+//     }
+// }
 
-        Ok((
-            input,
-            Lev {
-                header: header,
-                heightmap_cells: heightmap_cells,
-                soundmap_cells: soundmap_cells,
-                // navigation_header: navigation_header,
-                // navigation_section: navigation_section,
-            },
-        ))
-    }
-}
-
-pub enum LevHeaderParseError {
+#[derive(Debug, Copy, Clone)]
+pub enum LevHeaderPart {
     HeaderSize,
     Version,
     Unknown1,
@@ -206,50 +207,50 @@ pub enum LevHeaderParseError {
     AmbientSoundVersion,
     SoundThemesCount,
     SoundPalette,
-}
-
-impl From<PodCastError> for LevHeaderParseError {
-    fn from(x: PodCastError) -> Self {
-        Self
-    }
+    Checksum,
+    SoundThemeLen,
+    SoundTheme,
 }
 
 impl LevHeader {
-    pub fn parse(bytes: &[u8]) -> Result<LevHeader, (LevHeaderParseError, &[u8])> {
-        let _header_size = read_pod::<u16, _>(bytes, LevHeaderParseError::HeaderSize)?.to_le();
-        let version = read_pod::<u16, _>(bytes, LevHeaderParseError::Version)?.to_le();
+    pub fn parse(p: &mut BinaryParser) -> Result<LevHeader, BinaryParserError<LevHeaderPart>> {
+        use LevHeaderPart::*;
+
+        let _header_size = p.take::<u16, _>(HeaderSize)?.to_le();
+        let version = p.take::<u16, _>(Version)?.to_le();
         // fabletlcmod.com: 3 bytes of padding. see checksum.
-        let _unknown_1 = bytes.read_pod::<[u8; 3]>();
-        let _unknown_2 = bytes.read_pod::<u32>()?.to_le();
-        let obsolete_offset = bytes.read_pod::<u32>()?.to_le();
-        let _unknown_3 = bytes.read_pod::<u32>()?.to_le();
-        let navigation_offset = bytes.read_pod::<u32>()?.to_le();
-        let _map_header_size = bytes.read_pod::<u8>()?;
+        let _unknown_1 = p.take::<[u8; 3], _>(Unknown1);
+        let _unknown_2 = p.take::<u32, _>(Unknown2)?.to_le();
+        let obsolete_offset = p.take::<u32, _>(ObsoleteOffset)?.to_le();
+        let _unknown_3 = p.take::<u32, _>(Unknown3)?.to_le();
+        let navigation_offset = p.take::<u32, _>(NavigationOffset)?.to_le();
+        let _map_header_size = p.take::<u8, _>(MapHeaderSize)?;
         // fabletlcmod.com:  An 8 bit integer (with 3 bytes of padding)
-        let map_version = bytes.read_pod::<u32>()?.to_le();
-        let unique_id_count = bytes.read_pod::<u64>()?.to_le();
-        let width = bytes.read_pod::<u32>()?.to_le();
-        let height = bytes.read_pod::<u32>()?.to_le();
-        let _always_true = bytes.read_pod::<u8>()?;
+        let map_version = p.take::<u32, _>(MapVersion)?.to_le();
+        let unique_id_count = p.take::<u64, _>(UniqueIdCount)?.to_le();
+        let width = p.take::<u32, _>(Width)?.to_le();
+        let height = p.take::<u32, _>(Height)?.to_le();
+        let _always_true = p.take::<u8, _>(AlwaysTrue)?;
 
         // TODO: figure this out
-        let _heightmap_palette = bytes.take(..33792).ok_or(LevHeaderParseError)?;
+        let _heightmap_palette = p.take_bytes(33792, HeightmapPalette)?;
 
-        let ambient_sound_version = bytes.read_pod::<u32>()?.to_le();
-        let sound_themes_count = bytes.read_pod::<u32>()?.to_le();
+        let ambient_sound_version = p.take::<u32, _>(AmbientSoundVersion)?.to_le();
+        let sound_themes_count = p.take::<u32, _>(SoundThemesCount)?.to_le();
 
         // TODO: figure this out
-        let _sound_palette = bytes.take(..33792).ok_or(LevHeaderParseError)?;
+        let _sound_palette = p.take_bytes(33792, SoundPalette)?;
 
         // fabletlcmod.com: only if the map header pad byte 2 is 9.
-        let checksum = bytes.read_pod::<u32>()?.to_le();
+        let checksum = p.take::<u32, _>(Checksum)?.to_le();
 
         let mut sound_themes = Vec::with_capacity((sound_themes_count - 1) as usize);
 
         for _ in 0..(sound_themes_count - 1) {
-            let sound_theme_len = bytes.read_pod::<u32>()?.to_le() as usize;
-            let sound_theme = bytes.take(..sound_theme_len).ok_or(LevHeaderParseError)?;
-            let sound_theme = std::str::from_utf8(sound_theme).or(Err(LevHeaderParseError))?;
+            let sound_theme_len = p.take::<u32, _>(SoundThemeLen)?.to_le() as usize;
+            let sound_theme = p.take_bytes(sound_theme_len, SoundTheme)?;
+            let sound_theme =
+                std::str::from_utf8(sound_theme).map_err(|_| p.new_error(SoundTheme, None))?;
             sound_themes.push(sound_theme.to_owned());
         }
 

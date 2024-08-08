@@ -1,3 +1,3 @@
 mod binary_buf;
 
-pub(crate) use binary_buf::*;
+pub use binary_buf::*;
