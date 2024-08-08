@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use clap::{Parser, Subcommand};
+use clap::{Args, Subcommand};
 use format::{WadEntry, WadHeader};
 use std::{
     fs::{self, File},
@@ -7,20 +7,14 @@ use std::{
 };
 use typed_path::{Utf8PathBuf, Utf8WindowsEncoding};
 
-#[derive(Parser, Debug)]
-#[command(
-    version,
-    about = "Command line utility to extract, pack, or inspect Fable's .wad files.",
-    long_about = None,
-    arg_required_else_help = true
-)]
-struct Cli {
+#[derive(Args, Debug, Clone)]
+pub struct WadArgs {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Option<WadCommand>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
-enum Commands {
+enum WadCommand {
     #[command(about = "Extract a .wad file into a directory.")]
     Extract {
         file: String,
@@ -47,26 +41,12 @@ enum Commands {
     },
 }
 
-fn main() {
-    if let Err(err) = try_main() {
-        let renderer = annotate_snippets::Renderer::styled();
-
-        err.chain().for_each(|err| {
-            let message = err.to_string();
-            let snippet = annotate_snippets::Level::Error.title(&message);
-            anstream::eprintln!("{}", renderer.render(snippet));
-        })
-    }
-}
-
-fn try_main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
-    match cli.command {
+pub fn handle(args: WadArgs) -> anyhow::Result<()> {
+    match args.command {
         None => Ok(()),
-        Some(Commands::Extract { file, output }) => extract(file, output),
-        Some(Commands::Pack { directory, output }) => pack(directory, output),
-        Some(Commands::Inspect { file, compress }) => inspect(file, compress),
+        Some(WadCommand::Extract { file, output }) => extract(file, output),
+        Some(WadCommand::Pack { directory, output }) => pack(directory, output),
+        Some(WadCommand::Inspect { file, compress }) => inspect(file, compress),
     }
 }
 
