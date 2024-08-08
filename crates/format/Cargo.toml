@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies.bytemuck]
 features = ["derive"]
-version = "1.13.1"
+version = "1.16.3"

@@ -1,4 +1,5 @@
-use crate::{put, put_bytes, take, take_bytes, Loc};
+use crate::{BinaryParser, BinaryParserError, BinarySerializer, BinarySerializerError};
+use std::mem;
 
 #[derive(Debug, Copy, Clone, Default)]
 pub struct WadHeader {
@@ -10,41 +11,26 @@ pub struct WadHeader {
     pub first_entry_position: u32,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum WadHeaderPart {
     Magic,
     Version,
     BlockSize,
     EntryCount,
-    RepeatedEntryCount,
-    FirstEntryOffset,
+    EntryCountRepeated,
+    FirstEntryPosition,
 }
 
 impl WadHeader {
-    pub fn parse(i: &mut &[u8]) -> Result<Self, Loc<WadHeaderPart>> {
+    pub fn parse(p: &mut BinaryParser) -> Result<Self, BinaryParserError<WadHeaderPart>> {
         use WadHeaderPart::*;
 
-        let magic = take::<[u8; 4]>(i).ok_or_else(|| Loc::new(i, Magic))?;
-
-        let version = take::<[u32; 3]>(i)
-            .ok_or_else(|| Loc::new(i, Version))?
-            .map(u32::to_le);
-
-        let block_size = take::<u32>(i)
-            .ok_or_else(|| Loc::new(i, BlockSize))?
-            .to_le();
-
-        let entry_count = take::<u32>(i)
-            .ok_or_else(|| Loc::new(i, EntryCount))?
-            .to_le();
-
-        let entry_count_repeated = take::<u32>(i)
-            .ok_or_else(|| Loc::new(i, RepeatedEntryCount))?
-            .to_le();
-
-        let first_entry_position = take::<u32>(i)
-            .ok_or_else(|| Loc::new(i, FirstEntryOffset))?
-            .to_le();
+        let magic = p.take::<[u8; 4], _>(Magic)?;
+        let version = p.take::<[u32; 3], _>(Version)?.map(u32::to_le);
+        let block_size = p.take::<u32, _>(BlockSize)?.to_le();
+        let entry_count = p.take::<u32, _>(EntryCount)?.to_le();
+        let entry_count_repeated = p.take::<u32, _>(EntryCountRepeated)?.to_le();
+        let first_entry_position = p.take::<u32, _>(FirstEntryPosition)?.to_le();
 
         Ok(WadHeader {
             magic,
@@ -56,17 +42,44 @@ impl WadHeader {
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), WadHeaderPart> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, BinaryParserError<WadHeaderPart>> {
+        Self::parse(&mut BinaryParser::new(bytes))
+    }
+
+    pub fn serialize(
+        &self,
+        s: &mut BinarySerializer,
+    ) -> Result<(), BinarySerializerError<WadHeaderPart>> {
         use WadHeaderPart::*;
 
-        put(out, &self.magic).ok_or(Magic)?;
-        put(out, &self.version.map(u32::to_le)).ok_or(Version)?;
-        put(out, &self.block_size.to_le()).ok_or(BlockSize)?;
-        put(out, &self.entry_count.to_le()).ok_or(EntryCount)?;
-        put(out, &self.entry_count_repeated.to_le()).ok_or(RepeatedEntryCount)?;
-        put(out, &self.first_entry_position.to_le()).ok_or(FirstEntryOffset)?;
+        s.put(&self.magic, Magic)?;
+        s.put(&self.version.map(u32::to_le), Version)?;
+        s.put(&self.block_size.to_le(), BlockSize)?;
+        s.put(&self.entry_count.to_le(), EntryCount)?;
+        s.put(&self.entry_count_repeated.to_le(), EntryCountRepeated)?;
+        s.put(&self.first_entry_position.to_le(), FirstEntryPosition)?;
 
         Ok(())
+    }
+
+    /// Computes the minimum size of an output buffer needed for serialization.
+    pub const fn output_buffer_size() -> usize {
+        // Magic
+        mem::size_of::<[u8; 4]>() +
+        // Version
+        mem::size_of::<[u32; 3]>() +
+        // Block size
+        mem::size_of::<u32>() +
+        // Entry count
+        mem::size_of::<u32>() +
+        // Entry count repeated
+        mem::size_of::<u32>() +
+        // First entry position
+        mem::size_of::<u32>()
+    }
+
+    pub fn to_bytes(&self, out: &mut [u8]) -> Result<(), BinarySerializerError<WadHeaderPart>> {
+        self.serialize(&mut BinarySerializer::new(out))
     }
 }
 
@@ -85,7 +98,7 @@ pub struct WadEntry<'a> {
     pub modified: [u32; 5],
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum WadEntryPart {
     Unknown1,
     Id,
@@ -102,32 +115,26 @@ pub enum WadEntryPart {
 }
 
 impl<'a> WadEntry<'a> {
-    pub fn parse(i: &mut &'a [u8]) -> Result<WadEntry<'a>, Loc<WadEntryPart>> {
+    pub fn parse(
+        p: &mut BinaryParser<'a>,
+    ) -> Result<WadEntry<'a>, BinaryParserError<WadEntryPart>> {
         use WadEntryPart::*;
 
-        let unknown_1 = take::<[u8; 16]>(i).ok_or_else(|| Loc::new(i, Unknown1))?;
-        let id = take::<u32>(i).ok_or_else(|| Loc::new(i, Id))?.to_le();
-        let unknown_2 = take::<u32>(i).ok_or_else(|| Loc::new(i, Unknown2))?.to_le();
-        let offset = take::<u32>(i).ok_or_else(|| Loc::new(i, Offset))?.to_le();
-        let length = take::<u32>(i).ok_or_else(|| Loc::new(i, Length))?.to_le();
-        let unknown_3 = take::<u32>(i).ok_or_else(|| Loc::new(i, Unknown3))?.to_le();
+        let unknown_1 = p.take::<[u8; 16], _>(Unknown1)?;
+        let id = p.take::<u32, _>(Id)?.to_le();
+        let unknown_2 = p.take::<u32, _>(Unknown2)?.to_le();
+        let offset = p.take::<u32, _>(Offset)?.to_le();
+        let length = p.take::<u32, _>(Length)?.to_le();
+        let unknown_3 = p.take::<u32, _>(Unknown3)?.to_le();
 
-        let path_len = take::<u32>(i).ok_or_else(|| Loc::new(i, PathLen))?.to_le() as usize;
-        let path = take_bytes(i, path_len).ok_or_else(|| Loc::new(i, Path))?;
+        let path_len = p.take::<u32, _>(PathLen)?.to_le() as usize;
+        let path = p.take_bytes(path_len, Path)?;
 
-        let unknown_4 = take::<[u8; 16]>(i).ok_or_else(|| Loc::new(i, Unknown4))?;
+        let unknown_4 = p.take::<[u8; 16], _>(Unknown4)?;
 
-        let created = take::<[u32; 7]>(i)
-            .ok_or_else(|| Loc::new(i, Created))?
-            .map(u32::to_le);
-
-        let accessed = take::<[u32; 7]>(i)
-            .ok_or_else(|| Loc::new(i, Accessed))?
-            .map(u32::to_le);
-
-        let modified = take::<[u32; 5]>(i)
-            .ok_or_else(|| Loc::new(i, Modified))?
-            .map(u32::to_le);
+        let created = p.take::<[u32; 7], _>(Created)?.map(u32::to_le);
+        let accessed = p.take::<[u32; 7], _>(Accessed)?.map(u32::to_le);
+        let modified = p.take::<[u32; 5], _>(Modified)?.map(u32::to_le);
 
         Ok(WadEntry {
             unknown_1,
@@ -144,27 +151,65 @@ impl<'a> WadEntry<'a> {
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), WadEntryPart> {
+    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, BinaryParserError<WadEntryPart>> {
+        Self::parse(&mut BinaryParser::new(bytes))
+    }
+
+    pub fn serialize(
+        &self,
+        s: &mut BinarySerializer,
+    ) -> Result<(), BinarySerializerError<WadEntryPart>> {
         use WadEntryPart::*;
 
-        put(out, &self.unknown_1).ok_or(Unknown1)?;
-        put(out, &self.id.to_le()).ok_or(Id)?;
-        put(out, &self.unknown_2.to_le()).ok_or(Unknown2)?;
-        put(out, &self.offset.to_le()).ok_or(Offset)?;
-        put(out, &self.length.to_le()).ok_or(Length)?;
-        put(out, &self.unknown_3.to_le()).ok_or(Unknown3)?;
+        s.put(&self.unknown_1, Unknown1)?;
+        s.put(&self.id.to_le(), Id)?;
+        s.put(&self.unknown_2.to_le(), Unknown2)?;
+        s.put(&self.offset.to_le(), Offset)?;
+        s.put(&self.length.to_le(), Length)?;
+        s.put(&self.unknown_3.to_le(), Unknown3)?;
 
-        let path_size = u32::try_from(self.path.len()).or(Err(PathLen))?;
+        let path_len = u32::try_from(self.path.len()).map_err(|_| s.new_error(PathLen))?;
 
-        put(out, &path_size.to_le()).ok_or(PathLen)?;
+        s.put(&path_len.to_le(), PathLen)?;
 
-        put_bytes(out, &self.path).ok_or(Path)?;
+        s.put_bytes(&self.path, Path)?;
 
-        put(out, &self.unknown_4).ok_or(Unknown4)?;
-        put(out, &self.created.map(u32::to_le)).ok_or(Created)?;
-        put(out, &self.accessed.map(u32::to_le)).ok_or(Accessed)?;
-        put(out, &self.modified.map(u32::to_le)).ok_or(Modified)?;
+        s.put(&self.unknown_4, Unknown4)?;
+        s.put(&self.created.map(u32::to_le), Created)?;
+        s.put(&self.accessed.map(u32::to_le), Accessed)?;
+        s.put(&self.modified.map(u32::to_le), Modified)?;
 
         Ok(())
+    }
+
+    pub fn output_buffer_size(&self) -> usize {
+        // Unknown 1
+        mem::size_of::<[u8; 16]>() +
+        // Id
+        mem::size_of::<u32>() +
+        // Unknown 2
+        mem::size_of::<u32>() +
+        // Offset
+        mem::size_of::<u32>() +
+        // Length
+        mem::size_of::<u32>() +
+        // Unknown 3
+        mem::size_of::<u32>() +
+        // Path len
+        mem::size_of::<u32>() +
+        // Path
+        self.path.len() +
+        // Unknown 4
+        mem::size_of::<[u8; 16]>() +
+        // Created
+        mem::size_of::<[u32; 7]>() +
+        // Accessed
+        mem::size_of::<[u32; 7]>() +
+        // Modified
+        mem::size_of::<[u32; 5]>()
+    }
+
+    pub fn to_bytes(&self, out: &mut [u8]) -> Result<(), BinarySerializerError<WadEntryPart>> {
+        self.serialize(&mut BinarySerializer::new(out))
     }
 }
