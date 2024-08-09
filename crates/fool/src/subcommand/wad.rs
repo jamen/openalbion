@@ -98,10 +98,7 @@ fn extract(file_path: String, output_path: Option<String>) -> anyhow::Result<()>
     }
 
     for entry in &entries {
-        let entry_path = std::str::from_utf8(&entry.path)
-            .map_err(|_e| anyhow!("failed to convert entry path to string."))?;
-
-        let entry_path = Utf8PathBuf::<Utf8WindowsEncoding>::from(entry_path);
+        let entry_path = Utf8PathBuf::<Utf8WindowsEncoding>::from(&entry.path);
 
         let entry_file_name = entry_path
             .file_name()
@@ -128,6 +125,47 @@ fn pack(directory: String, output: Option<String>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn inspect(file: String, compress: bool) -> anyhow::Result<()> {
+fn inspect(file_path: String, compress: bool) -> anyhow::Result<()> {
+    let file_path = Utf8PathBuf::from(file_path);
+    let file = File::open(&file_path).map_err(|_e| anyhow!("file not found."))?;
+    let mut buf = BufReader::new(file);
+    let mut header_bytes = vec![0; WadHeader::byte_size()];
+
+    buf.read_exact(&mut header_bytes)
+        .map_err(|_e| anyhow!("could not read file."))?;
+
+    let header =
+        WadHeader::from_bytes(&header_bytes).map_err(|_e| anyhow!("could not parse header."))?;
+    let entry_count = header.entry_count as usize;
+    let mut current_position = header.first_entry_position as usize;
+    let mut entry_bytes = vec![0; 1 << 13]; // 8KiB
+    let mut entries = Vec::with_capacity(entry_count);
+
+    for _ in 0..entry_count {
+        buf.seek(SeekFrom::Start(current_position as u64))
+            .map_err(|_e| anyhow!("failed to seek through wad file."))?;
+
+        buf.read(&mut entry_bytes)
+            .map_err(|_e| anyhow!("failed to read entry."))?;
+
+        let entry = WadEntry::from_bytes(&entry_bytes)
+            .map_err(|e| anyhow!("failed to parse entry. {:?}", e))?;
+
+        current_position += entry.byte_size();
+
+        entries.push(entry.to_owned());
+    }
+
+    let json = serde_json::json!({ "header": header, "entries": entries });
+
+    let json_str = if compress {
+        serde_json::to_string(&json)
+            .map_err(|_| anyhow!("failed to serialize JSON (compressed)."))?
+    } else {
+        serde_json::to_string_pretty(&json).map_err(|_| anyhow!("failed to serialize JSON"))?
+    };
+
+    println!("{}", json_str);
+
     Ok(())
 }

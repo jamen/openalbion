@@ -1,6 +1,7 @@
 use crate::{BinaryParser, BinaryParserError};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct LevHeader {
     pub version: u16,
     pub obsolete_offset: u32,
@@ -216,7 +217,7 @@ impl LevHeader {
     pub fn parse(p: &mut BinaryParser) -> Result<LevHeader, BinaryParserError<LevHeaderPart>> {
         use LevHeaderPart::*;
 
-        let _header_size = p.take::<u16, _>(HeaderSize)?.to_le();
+        let _header_size = p.take::<u32, _>(HeaderSize)?.to_le();
         let version = p.take::<u16, _>(Version)?.to_le();
         // fabletlcmod.com: 3 bytes of padding. see checksum.
         let _unknown_1 = p.take::<[u8; 3], _>(Unknown1);
@@ -268,6 +269,10 @@ impl LevHeader {
             checksum,
             sound_themes,
         })
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, BinaryParserError<LevHeaderPart>> {
+        Self::parse(&mut BinaryParser::new(bytes))
     }
 }
 

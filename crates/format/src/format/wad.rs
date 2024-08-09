@@ -1,7 +1,8 @@
 use crate::{BinaryParser, BinaryParserError, BinarySerializer, BinarySerializerError};
+use serde::{Deserialize, Serialize};
 use std::mem;
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, Serialize, Deserialize)]
 pub struct WadHeader {
     pub magic: [u8; 4],
     pub version: [u32; 3],
@@ -83,7 +84,7 @@ impl WadHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WadEntry<'a> {
     pub unknown_1: [u8; 16],
     pub id: u32,
@@ -91,14 +92,14 @@ pub struct WadEntry<'a> {
     pub length: u32,
     pub offset: u32,
     pub unknown_3: u32,
-    pub path: &'a [u8],
+    pub path: &'a str,
     pub unknown_4: [u8; 16],
     pub created: [u32; 7],
     pub accessed: [u32; 7],
     pub modified: [u32; 5],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WadEntryOwned {
     pub unknown_1: [u8; 16],
     pub id: u32,
@@ -106,7 +107,7 @@ pub struct WadEntryOwned {
     pub length: u32,
     pub offset: u32,
     pub unknown_3: u32,
-    pub path: Vec<u8>,
+    pub path: String,
     pub unknown_4: [u8; 16],
     pub created: [u32; 7],
     pub accessed: [u32; 7],
@@ -144,6 +145,7 @@ impl<'a> WadEntry<'a> {
 
         let path_len = p.take::<u32, _>(PathLen)?.to_le() as usize;
         let path = p.take_bytes(path_len, Path)?;
+        let path = std::str::from_utf8(path).map_err(|_| p.new_error(Path, None))?;
 
         let unknown_4 = p.take::<[u8; 16], _>(Unknown4)?;
 
@@ -187,7 +189,7 @@ impl<'a> WadEntry<'a> {
 
         s.put(&path_len.to_le(), PathLen)?;
 
-        s.put_bytes(&self.path, Path)?;
+        s.put_bytes(&self.path.as_bytes(), Path)?;
 
         s.put(&self.unknown_4, Unknown4)?;
         s.put(&self.created.map(u32::to_le), Created)?;
@@ -236,7 +238,7 @@ impl<'a> WadEntry<'a> {
             length: self.length,
             offset: self.offset,
             unknown_3: self.unknown_3,
-            path: self.path.to_vec(),
+            path: self.path.to_owned(),
             unknown_4: self.unknown_4,
             created: self.created,
             accessed: self.accessed,
