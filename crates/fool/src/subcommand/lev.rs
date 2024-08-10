@@ -1,12 +1,11 @@
+use anyhow::anyhow;
+use clap::{Args, Subcommand};
+use format::LevHeader;
 use std::{
     fs::File,
     io::{BufReader, Read},
 };
-
-use anyhow::anyhow;
-use clap::{Args, Subcommand};
-use format::LevHeader;
-use typed_path::{Utf8Path, Utf8PathBuf};
+use typed_path::Utf8PathBuf;
 
 #[derive(Args, Debug, Clone)]
 pub struct LevArgs {

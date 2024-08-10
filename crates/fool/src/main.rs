@@ -1,7 +1,7 @@
 mod subcommand;
 
 use clap::{Parser, Subcommand};
-use subcommand::{LevArgs, WadArgs};
+use subcommand::{LevArgs, TngArgs, WadArgs};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -22,6 +22,9 @@ enum Commands {
 
     #[command(arg_required_else_help = true)]
     Lev(LevArgs),
+
+    #[command(arg_required_else_help = true)]
+    Tng(TngArgs),
 }
 
 fn main() {
@@ -41,7 +44,8 @@ fn try_main() -> anyhow::Result<()> {
 
     match cli.command {
         None => Ok(()),
-        Some(Commands::Wad(wad_args)) => subcommand::wad::handle(wad_args),
-        Some(Commands::Lev(lev_args)) => subcommand::lev::handle(lev_args),
+        Some(Commands::Wad(args)) => subcommand::wad::handle(args),
+        Some(Commands::Lev(args)) => subcommand::lev::handle(args),
+        Some(Commands::Tng(args)) => subcommand::tng::handle(args),
     }
 }

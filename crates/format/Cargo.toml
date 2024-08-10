@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 serde = { version = "1.0.205", features = ["derive"] }
+unicode-segmentation = "1.11.0"
 
 [dependencies.bytemuck]
 features = ["derive"]

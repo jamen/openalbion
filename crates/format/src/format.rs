@@ -13,7 +13,7 @@ mod lev;
 // mod qst;
 // mod save;
 // mod stb;
-// mod tng;
+mod tng;
 mod wad;
 // mod wld;
 
@@ -32,6 +32,6 @@ pub use lev::*;
 // pub use qst::*;
 // pub use save::*;
 // pub use stb::*;
-// pub use tng::*;
+pub use tng::*;
 pub use wad::*;
 // pub use wld::*;
