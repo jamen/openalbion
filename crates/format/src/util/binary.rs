@@ -14,11 +14,11 @@ impl<'a> BinaryParser<'a> {
         }
     }
 
-    pub(crate) fn pos(&self) -> usize {
+    pub fn pos(&self) -> usize {
         self.original_len - self.bytes.len()
     }
 
-    pub(crate) fn new_error<SectionId>(
+    pub fn new_error<SectionId>(
         &self,
         section_id: SectionId,
         cast_error: Option<PodCastError>,
@@ -30,7 +30,7 @@ impl<'a> BinaryParser<'a> {
     ///
     /// If successful, a byte slice is returned and the original slice is advanced forward.
     /// Upon failure, the part identifier and length of the slice are returned, and the slice remains as-is.
-    pub(crate) fn take_bytes<SectionId: Copy>(
+    pub fn take_bytes<SectionId: Copy>(
         &mut self,
         split_index: usize,
         section_id: SectionId,
@@ -46,7 +46,7 @@ impl<'a> BinaryParser<'a> {
     /// Take a value from the front of a byte slice.
     ///
     /// The value must satisfy `bytemuck::AnyBitPattern`, which includes any value satisfying `bytemuck::Pod`.
-    pub(crate) fn take<T: AnyBitPattern, SectionId: Copy>(
+    pub fn take<T: AnyBitPattern, SectionId: Copy>(
         &mut self,
         section_id: SectionId,
     ) -> Result<T, BinaryParserError<SectionId>> {
@@ -93,21 +93,18 @@ impl<'a> BinarySerializer<'a> {
         }
     }
 
-    pub(crate) fn pos(&self) -> usize {
+    pub fn pos(&self) -> usize {
         self.original_len - self.bytes.len()
     }
 
-    pub(crate) fn new_error<SectionId>(
-        &self,
-        section_id: SectionId,
-    ) -> BinarySerializerError<SectionId> {
+    pub fn new_error<SectionId>(&self, section_id: SectionId) -> BinarySerializerError<SectionId> {
         BinarySerializerError::new(self.pos(), section_id)
     }
 
     /// Put bytes in the front of a byte slice.
     ///
     /// The original byte slice is advanced forward.
-    pub(crate) fn put_bytes<SectionId>(
+    pub fn put_bytes<SectionId>(
         &mut self,
         bytes: &[u8],
         section_id: SectionId,
@@ -125,7 +122,7 @@ impl<'a> BinarySerializer<'a> {
     /// Put a value in the front of a byte slice.
     ///
     /// The value must satisfy `bytemuck::NoUninit`, which includes any value satisfying `bytemuck::Pod`.
-    pub(crate) fn put<T: NoUninit, SectionId>(
+    pub fn put<T: NoUninit, SectionId>(
         &mut self,
         value: &T,
         section_id: SectionId,

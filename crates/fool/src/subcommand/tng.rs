@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use clap::{Args, Subcommand};
-use format::TngLexer;
+use format::Lexer;
 use std::fs;
 use typed_path::Utf8PathBuf;
 
@@ -27,7 +27,7 @@ fn lex(file_path: String) -> anyhow::Result<()> {
     let file_path = Utf8PathBuf::from(file_path);
     let tng_source = fs::read_to_string(file_path).map_err(|_| anyhow!("failed to read file."))?;
 
-    let mut lex = TngLexer::new(&tng_source);
+    let mut lex = Lexer::new(&tng_source);
 
     loop {
         match lex.next_token() {
