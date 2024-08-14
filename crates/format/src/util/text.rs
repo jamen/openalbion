@@ -210,7 +210,7 @@ impl<'a> Lexer<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Token<'a> {
     pub kind: TokenKind,
     pub location: Location,
