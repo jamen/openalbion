@@ -1,55 +1,80 @@
 use crate::{Lexer, Location, Token};
 
-pub struct TngParser<'a> {
-    lexer: Lexer<'a>,
-    current_token: Option<Token<'a>>,
-    following_token: Option<Token<'a>>,
+pub struct Tng {
+    version: u64,
+    sections: Vec<TngSection>,
 }
 
-impl<'a> TngParser<'a> {
-    pub fn new(source: &'a str) -> Self {
+impl Tng {
+    // The parser has two stages. The first stage produces a simple AST where every node shares
+    // a single `TngNode` type, and expresses the key-value list. The second stage produces a
+    // refined AST that reflects the structures found in a Tng file, each node having its own type.
+    fn parse(source: &str) -> Result<Self, Location> {}
+}
+
+pub struct TngSection {
+    name: Option<String>,
+    items: Vec<TngSectionItem>,
+}
+
+pub enum TngSectionItem {
+    Thing(TngThing),
+    Object(TngObject),
+    Marker(TngMarker),
+}
+
+pub struct TngThing {}
+
+pub struct TngObject {}
+
+pub struct TngMarker {}
+
+struct TngParserStageOne {
+    state: TngParserStageOneState,
+    current_node: Option<TngNode>,
+    list: Vec<(TngKey, TngValue)>,
+}
+
+impl TngParserStageOne {
+    fn new() -> Self {
         Self {
-            lexer: Lexer::new(source),
-            current_token: None,
-            following_token: None,
+            state: TngParserStageOneState::Root,
+            current_node: None,
+            list: Vec::new(),
         }
     }
-
-    pub fn parse(&mut self) -> Result<TngRaw, Location> {
-        self.following_token = self.lexer.next_token()?;
-
-        loop {
-            self.current_token = self.following_token;
-            self.following_token = self.lexer.next_token()?;
-        }
-    }
-
-    fn parse_key(&mut self) -> Result<TngRawKey, Location> {}
-
-    fn parse_value(&mut self) -> Result<TngRawValue, Location> {}
 }
 
-pub struct TngRaw {
-    pub pairs: Vec<(TngRawKey, TngRawValue)>,
+enum TngParserStageOneState {
+    Root,
 }
 
-pub struct TngRawKey {
-    pub path: Vec<TngRawPathPart>,
+enum TngNode {
+    Key(TngKey),
+    Value(TngValue),
 }
 
-enum TngRawPathPart {
+enum TngKey {
+    // TODO: Determine the possible key identifiers and turn this into an enum
     Identifier(String),
-    ArrayIndex(u32),
+    // TODO: Determine the possible object index names and turn this into an enum
     ObjectIndex(String),
+    ArrayIndex(u64),
 }
 
-enum TngRawValue {
-    None,
-    Identifier(String),
-    String(String),
-    Bool(bool),
-    Uid(u64),
+enum TngValue {
     Number(i64),
+    Uid(u64),
     Float(f32),
-    Coord3D(f32, f32, f32),
+    String(String),
+    // TODO: Determine every possible name and turn it into an enum
+    Struct(String, Vec<TngValue>),
+    Bool(bool),
+    // TODO: Determine the possible identifiers and turn this into an enum
+    Identifier(String),
+    Empty,
+}
+
+struct TngParserStageTwo {
+    root: Tng,
 }
