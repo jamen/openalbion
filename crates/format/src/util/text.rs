@@ -18,7 +18,8 @@ enum LexerState {
     Identifier,
     EnterString,
     ExitString,
-    Number,
+    Integer,
+    Float,
 }
 
 impl<'a> Lexer<'a> {
@@ -82,7 +83,8 @@ impl<'a> Lexer<'a> {
             LexerState::Root => self.do_root(grapheme),
             LexerState::EnterString => self.do_enter_string(grapheme),
             LexerState::ExitString => self.do_exit_string(grapheme),
-            LexerState::Number => self.do_number(grapheme),
+            LexerState::Integer => self.do_number(grapheme),
+            LexerState::Float => self.do_float(grapheme),
             LexerState::Identifier => self.do_identifier(grapheme),
         };
 
@@ -119,7 +121,7 @@ impl<'a> Lexer<'a> {
                 ))
             }
             // Symbol
-            "(" | ")" | "[" | "]" | "." | "," | "-" | ";" => {
+            "(" | ")" | "[" | "]" | "." | "," | ";" => {
                 self.source = &self.source[grapheme.len()..];
                 self.state = LexerState::Root;
                 Some(Token::new(
@@ -129,8 +131,8 @@ impl<'a> Lexer<'a> {
                 ))
             }
             // Number
-            "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
-                self.state = LexerState::Number;
+            "-" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+                self.state = LexerState::Integer;
                 self.token_location = self.grapheme_location;
                 None
             }
@@ -190,13 +192,36 @@ impl<'a> Lexer<'a> {
                 self.grapheme_position += grapheme.len();
                 None
             }
+            "." => {
+                self.grapheme_position += grapheme.len();
+                self.state = LexerState::Float;
+                None
+            }
             _ => {
                 let text = &self.source[..self.grapheme_position];
 
                 self.source = &self.source[self.grapheme_position..];
                 self.state = LexerState::Root;
 
-                Some(Token::new(TokenKind::Number, self.token_location, text))
+                Some(Token::new(TokenKind::Integer, self.token_location, text))
+            }
+        })
+    }
+
+    fn do_float(&mut self, grapheme: &'a str) -> Result<Option<Token<'a>>, Location> {
+        Ok(match grapheme {
+            "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => {
+                // Advance to the next grapheme.
+                self.grapheme_position += grapheme.len();
+                None
+            }
+            _ => {
+                let text = &self.source[..self.grapheme_position];
+
+                self.source = &self.source[self.grapheme_position..];
+                self.state = LexerState::Root;
+
+                Some(Token::new(TokenKind::Float, self.token_location, text))
             }
         })
     }
@@ -235,15 +260,31 @@ impl<'a> Token<'a> {
             text,
         }
     }
+
+    pub fn to_owned_token(&self) -> OwnedToken {
+        OwnedToken {
+            kind: self.kind,
+            location: self.location,
+            text: self.text.to_owned(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum TokenKind {
     Identifier,
     String,
-    Number,
+    Integer,
+    Float,
     Symbol,
     Whitespace,
+}
+
+#[derive(Clone, Debug)]
+pub struct OwnedToken {
+    pub kind: TokenKind,
+    pub location: Location,
+    pub text: String,
 }
 
 // Location of a token, or unrecognized token upon error.
