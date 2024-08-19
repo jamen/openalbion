@@ -1,5 +1,2 @@
-mod binary;
-mod text;
-
-pub use binary::*;
-pub use text::*;
+pub(crate) mod binary;
+pub(crate) mod text;

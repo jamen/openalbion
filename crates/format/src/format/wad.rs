@@ -1,4 +1,6 @@
-use crate::{BinaryParser, BinaryParserError, BinarySerializer, BinarySerializerError};
+use crate::util::binary::{
+    BinaryParser, BinaryParserError, BinarySerializer, BinarySerializerError,
+};
 use serde::{Deserialize, Serialize};
 use std::mem;
 

@@ -22,6 +22,61 @@ enum LexerState {
     Float,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Token<'a> {
+    pub kind: TokenKind,
+    pub location: Location,
+    pub text: &'a str,
+}
+
+#[derive(Clone, Debug)]
+pub struct OwnedToken {
+    pub kind: TokenKind,
+    pub location: Location,
+    pub text: String,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TokenKind {
+    Identifier,
+    String,
+    Integer,
+    Float,
+    Symbol,
+    Whitespace,
+}
+
+impl<'a> Token<'a> {
+    fn new(kind: TokenKind, location: Location, text: &'a str) -> Self {
+        Self {
+            kind,
+            location,
+            text,
+        }
+    }
+
+    pub fn to_owned_token(&self) -> OwnedToken {
+        OwnedToken {
+            kind: self.kind,
+            location: self.location,
+            text: self.text.to_owned(),
+        }
+    }
+}
+
+// Location of a token, or unrecognized token upon error.
+#[derive(Default, Copy, Clone, Debug)]
+pub struct Location {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl Location {
+    pub fn new(line: usize, column: usize) -> Self {
+        Location { line, column }
+    }
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
         Lexer {
@@ -33,6 +88,18 @@ impl<'a> Lexer<'a> {
         }
         // If it is a newline, reset the grapheme column and update the grapheme line.
         // If it is anything other than a new line, update the grapheme column.
+    }
+
+    pub fn tokenize(source: &'a str) -> Result<Vec<Token>, Location> {
+        let mut lexer = Self::new(source);
+
+        let mut tokens = Vec::new();
+
+        while let Some(token) = lexer.next_token()? {
+            tokens.push(token)
+        }
+
+        Ok(tokens)
     }
 
     pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Location> {
@@ -59,16 +126,6 @@ impl<'a> Lexer<'a> {
                 Err(location) => return Err(location),
             }
         }
-    }
-
-    pub fn tokenize(&mut self) -> Result<Vec<Token>, Location> {
-        let mut tokens = Vec::new();
-
-        while let Some(token) = self.next_token()? {
-            tokens.push(token)
-        }
-
-        Ok(tokens)
     }
 
     fn next_grapheme(&mut self) -> Result<Option<Token<'a>>, Location> {
@@ -243,53 +300,4 @@ impl<'a> Lexer<'a> {
             },
         )
     }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct Token<'a> {
-    pub kind: TokenKind,
-    pub location: Location,
-    pub text: &'a str,
-}
-
-impl<'a> Token<'a> {
-    fn new(kind: TokenKind, location: Location, text: &'a str) -> Self {
-        Self {
-            kind,
-            location,
-            text,
-        }
-    }
-
-    pub fn to_owned_token(&self) -> OwnedToken {
-        OwnedToken {
-            kind: self.kind,
-            location: self.location,
-            text: self.text.to_owned(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum TokenKind {
-    Identifier,
-    String,
-    Integer,
-    Float,
-    Symbol,
-    Whitespace,
-}
-
-#[derive(Clone, Debug)]
-pub struct OwnedToken {
-    pub kind: TokenKind,
-    pub location: Location,
-    pub text: String,
-}
-
-// Location of a token, or unrecognized token upon error.
-#[derive(Default, Copy, Clone, Debug)]
-pub struct Location {
-    pub line: usize,
-    pub column: usize,
 }

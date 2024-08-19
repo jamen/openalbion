@@ -1,5 +1,5 @@
 mod format;
-mod util;
+pub(crate) mod util;
 
 pub use format::*;
-pub use util::*;
+pub use util::text::Location;

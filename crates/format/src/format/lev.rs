@@ -1,4 +1,4 @@
-use crate::{BinaryParser, BinaryParserError};
+use crate::util::binary::{BinaryParser, BinaryParserError};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
