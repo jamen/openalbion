@@ -5,22 +5,6 @@ pub struct Tng {
     sections: Vec<TngSection>,
 }
 
-impl Tng {
-    // The parser has two stages. The first stage produces a simple AST where every node shares
-    // a single `TngNode` type, and expresses the key-value list. The second stage produces a
-    // refined AST that reflects the structures found in a Tng file, each node having its own type.
-    pub fn parse(source: &str) -> Result<Self, TngParseError> {
-        let mut lexer = Lexer::new(source);
-        let tokens = lexer.tokenize().map_err(|location| TngParseError {
-            location,
-            reason: TngParseErrorReason::TokenizerFailure,
-        })?;
-        let list = Self::parse_stage_one(&tokens)?;
-        let tng = Self::parse_stage_two(list)?;
-        Ok(tng)
-    }
-}
-
 pub struct TngSection {
     name: Option<String>,
     items: Vec<TngSectionItem>,
@@ -37,10 +21,6 @@ pub struct TngThing {}
 pub struct TngObject {}
 
 pub struct TngMarker {}
-
-impl Tng {
-    fn parse_stage_two(list: TngList) -> Result<Tng, TngParseError> {}
-}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum TngParserStageOneState {
@@ -97,6 +77,20 @@ pub enum TngParseErrorReason {
 }
 
 impl Tng {
+    // The parser has two stages. The first stage produces a simple AST where every node shares
+    // a single `TngNode` type, and expresses the key-value list. The second stage produces a
+    // refined AST that reflects the structures found in a Tng file, each node having its own type.
+    pub fn parse(source: &str) -> Result<Self, TngParseError> {
+        let mut lexer = Lexer::new(source);
+        let tokens = lexer.tokenize().map_err(|location| TngParseError {
+            location,
+            reason: TngParseErrorReason::TokenizerFailure,
+        })?;
+        let list = Self::parse_stage_one(&tokens)?;
+        let tng = Self::parse_stage_two(list)?;
+        Ok(tng)
+    }
+
     fn parse_stage_one<'a>(mut tokens: &[Token]) -> Result<TngList, TngParseError> {
         use TngParserStageOneState as S;
         use TokenKind as T;
@@ -145,5 +139,9 @@ impl Tng {
         }
 
         Ok(TngList { items })
+    }
+
+    fn parse_stage_two(list: TngList) -> Result<Tng, TngParseError> {
+        todo!()
     }
 }
