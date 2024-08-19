@@ -29,15 +29,15 @@ pub struct TngObject {}
 pub struct TngMarker {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum TngParserStageOneState {
+pub enum TngParserStageOneState {
     Root,
     Key,
     KeyUid,
     KeyArrayPart,
     KeyObjectPart,
+    KeyCall,
     Value,
     ValueUid,
-    ValueIdentifier,
     ValueStructArg,
     ValueStructNextArg,
 }
@@ -66,6 +66,7 @@ enum TngKeyPart {
     // TODO: Determine the possible object index names and turn this into an enum
     ObjectIndex(String),
     ArrayIndex(u64),
+    Call,
 }
 
 #[derive(Clone, Debug)]
@@ -141,11 +142,14 @@ impl Tng {
                     state = match id {
                         // TODO: Figure out better system for handling UIDs
                         "UID"
+                        | "ThingUID"
                         | "OwnerUID"
                         | "VillageUID"
                         | "ThingToCalculateRouteToUID"
                         | "WorkBuildingUID"
-                        | "HomeBuildingUID" => S::KeyUid,
+                        | "HomeBuildingUID"
+                        | "LinkedToUID1"
+                        | "LinkedToUID2" => S::KeyUid,
                         _ => S::Key,
                     };
                 }
@@ -212,7 +216,27 @@ impl Tng {
 
                     state = S::Key;
                 }
+                ("(", T::Symbol, S::Key) => {
+                    match current_key {
+                        Some(TngKey::SinglePart(part)) => {
+                            current_key = Some(TngKey::MultiPart(vec![part, TngKeyPart::Call]))
+                        }
+                        Some(TngKey::MultiPart(ref mut parts)) => parts.push(TngKeyPart::Call),
+                        None => {
+                            return Err(TngParseError {
+                                location: token.location,
+                                token: Some(token.to_owned_token()),
+                                stage_one_state: Some(state),
+                                reason: R::InvalidState,
+                            })
+                        }
+                    }
 
+                    state = S::KeyCall;
+                }
+                (")", T::Symbol, S::KeyCall) => {
+                    state = S::Key;
+                }
                 (" ", T::Whitespace, S::Key) => {
                     state = S::Value;
                 }
