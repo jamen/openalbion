@@ -60,6 +60,16 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn tokenize(&mut self) -> Result<Vec<Token>, Location> {
+        let mut tokens = Vec::new();
+
+        while let Some(token) = self.next_token()? {
+            tokens.push(token)
+        }
+
+        Ok(tokens)
+    }
+
     fn next_grapheme(&mut self) -> Result<Option<Token<'a>>, Location> {
         // Grab the next grapheme in the source, if there is one, else return that we're finished.
         let grapheme = match self.source[self.grapheme_position..].graphemes(true).next() {
