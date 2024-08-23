@@ -134,6 +134,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fd119d74b830634cea2a0f58bbd0d54540518a14397557951e79340abc28c0"
 
 [[package]]
+name = "data_formats"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "serde",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "fool"
 version = "0.1.0"
 dependencies = [
@@ -141,18 +150,9 @@ dependencies = [
  "anstream",
  "anyhow",
  "clap",
- "format",
+ "data_formats",
  "serde_json",
  "typed-path",
-]
-
-[[package]]
-name = "format"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "serde",
- "unicode-segmentation",
 ]
 
 [[package]]

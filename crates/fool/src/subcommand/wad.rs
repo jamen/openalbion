@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use clap::{Args, Subcommand};
-use format::{WadEntry, WadHeader};
+use data_formats::wad::{WadEntry, WadHeader};
 use std::{
     fs::{self, File},
     io::{BufReader, Read, Seek, SeekFrom},

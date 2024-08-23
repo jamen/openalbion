@@ -41,6 +41,7 @@ pub enum TokenKind {
     Identifier,
     String,
     Integer,
+    Uid,
     Float,
     Symbol,
     Whitespace,
@@ -90,14 +91,20 @@ impl<'a> Lexer<'a> {
         // If it is anything other than a new line, update the grapheme column.
     }
 
-    pub fn tokenize(source: &'a str) -> Result<Vec<Token>, Location> {
+    pub fn finished(&self) -> bool {
+        self.source.len() <= self.grapheme_position
+    }
+
+    pub fn tokenize(source: &'a str) -> Result<Tokens, Location> {
         let mut lexer = Self::new(source);
 
-        let mut tokens = Vec::new();
+        let mut list = Vec::new();
 
         while let Some(token) = lexer.next_token()? {
-            tokens.push(token)
+            list.push(token)
         }
+
+        let tokens = Tokens { list };
 
         Ok(tokens)
     }
@@ -260,7 +267,13 @@ impl<'a> Lexer<'a> {
                 self.source = &self.source[self.grapheme_position..];
                 self.state = LexerState::Root;
 
-                Some(Token::new(TokenKind::Integer, self.token_location, text))
+                // Determine whether this is a regular integer or a Uid
+
+                if text.parse::<i32>().is_ok() {
+                    Some(Token::new(TokenKind::Integer, self.token_location, text))
+                } else {
+                    Some(Token::new(TokenKind::Uid, self.token_location, text))
+                }
             }
         })
     }

@@ -1,6 +1,6 @@
 mod util;
 
-use format::WadHeader;
+use data_formats::wad::WadHeader;
 use std::fs;
 
 #[test]

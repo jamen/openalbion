@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use clap::{Args, Subcommand};
-use format::LevHeader;
+use data_formats::lev::LevHeader;
 use std::{
     fs::File,
     io::{BufReader, Read},

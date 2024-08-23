@@ -1,6 +1,9 @@
-use crate::{util::text::Lexer, Location};
+// The parser has two stages. The first stage produces a simple AST where every node shares
+// a single `TngNode` type, and expresses the key-value list. The second stage produces a
+// refined AST that reflects the structures found in a Tng file, each node having its own type.
 
 use super::list::{TngList, TngListParseError, TngValue, TngValueContents};
+use crate::{util::text::Lexer, Location};
 
 #[derive(Clone, Debug)]
 pub struct Tng {
@@ -53,24 +56,7 @@ enum TngParseState {
 }
 
 impl Tng {
-    // The parser has two stages. The first stage produces a simple AST where every node shares
-    // a single `TngNode` type, and expresses the key-value list. The second stage produces a
-    // refined AST that reflects the structures found in a Tng file, each node having its own type.
-    pub fn parse(source: &str) -> Result<Self, TngParseError> {
-        let tokens = Lexer::tokenize(source).map_err(|location| TngParseError {
-            location,
-            list_error: None,
-            kind: TngParseErrorKind::TokenizeFailed,
-        })?;
-
-        let list = TngList::parse(&tokens).map_err(|list_error| TngParseError {
-            location: list_error.location,
-            list_error: Some(list_error),
-            kind: TngParseErrorKind::ListParseError,
-        })?;
-
-        Self::parse_list(list)
-    }
+    pub fn parse(source: &str) -> Result<Self, TngParseError> {}
 
     fn parse_list(list: TngList) -> Result<Tng, TngParseError> {
         use TngParseState as S;
