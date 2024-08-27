@@ -95,7 +95,7 @@ impl<'a> Lexer<'a> {
         self.source.len() <= self.grapheme_position
     }
 
-    pub fn tokenize(source: &'a str) -> Result<Tokens, Location> {
+    pub fn tokenize(source: &'a str) -> Result<Vec<Token>, Location> {
         let mut lexer = Self::new(source);
 
         let mut list = Vec::new();
@@ -104,9 +104,7 @@ impl<'a> Lexer<'a> {
             list.push(token)
         }
 
-        let tokens = Tokens { list };
-
-        Ok(tokens)
+        Ok(list)
     }
 
     pub fn next_token(&mut self) -> Result<Option<Token<'a>>, Location> {
