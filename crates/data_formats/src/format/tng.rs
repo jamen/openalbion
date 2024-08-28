@@ -1,53 +1,253 @@
+use std::str::FromStr;
+
 use crate::util::{
     slice::TakeSliceExt,
     text::{Lexer, Location, Token, TokenKind},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Tng {
-    // pub raw_tng: RawTng,
-}
-
-// pub struct Tng {
-//     // TODO: Use hashmap?
-//     sections: Vec<TngSection>,
-// }
-
-// pub struct TngSection {
-//     // TODO: Use hashmap?
-//     items: Vec<TngSectionItem>,
-// }
-
-// pub enum TngSectionItem {
-//     Thing(TngThing),
-//     Marker(TngMarker),
-//     Object(TngObject),
-// }
-
-// pub struct TngThing {}
-
-// pub struct TngMarker {}
-
-// pub struct TngObject {}
-
-#[derive(Clone, Debug)]
-pub struct TngParseError {
-    raw: Option<RawTngParseError>,
+    // TODO: Use hashmap?
+    sections: Vec<TngSection>,
 }
 
 impl Tng {
     pub fn parse(source: &str) -> Result<Tng, TngParseError> {
-        let tokens = Lexer::tokenize(source).map_err(|_loc| TngParseError { raw: None })?;
+        let tokens = Lexer::tokenize(source).map_err(|location| TngParseError {
+            location: Some(location),
+            kind: TngParseErrorKind::TokenizeFailed,
+        })?;
 
-        let raw_tng = RawTng::parse(&tokens).map_err(|raw| TngParseError { raw: Some(raw) })?;
+        let raw_tng = RawTng::parse(&tokens)?;
 
         Self::parse_raw_tng(raw_tng)
     }
 
     fn parse_raw_tng(raw_tng: RawTng) -> Result<Tng, TngParseError> {
-        // TODO: Temporary, to test if the RawTng parsing works
-        // Ok(Self { raw_tng })
+        use RawTngKeyIdentifier as I;
+        use TngParseErrorKind as E;
+
+        let mut pairs = &raw_tng.list[..];
+
+        let version = pairs.grab_first().ok_or_else(|| TngParseError {
+            location: None,
+            kind: E::UnexpectedEOF,
+        })?;
+
+        if version.key.ident != I::Version {
+            return Err(TngParseError {
+                location: Some(version.key.location),
+                kind: E::UnexpectedKey,
+            });
+        }
+
+        let mut sections = Vec::new();
+
+        while !pairs.is_empty() {
+            sections.push(TngSection::parse(&mut pairs)?);
+        }
+
+        Ok(Tng { sections })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TngSection {
+    // TODO: Use hashmap?
+    things: Vec<TngSectionItem>,
+}
+
+impl TngSection {
+    fn parse(mut pairs: &mut &[RawTngPair]) -> Result<Self, TngParseError> {
+        use RawTngKeyIdentifier as I;
+        use TngParseErrorKind as E;
+
+        let section_start = pairs.grab_first().ok_or_else(|| TngParseError {
+            location: None,
+            kind: E::UnexpectedEOF,
+        })?;
+
+        if section_start.key.ident != I::XXXSectionStart {
+            return Err(TngParseError {
+                location: Some(section_start.key.location),
+                kind: E::UnexpectedKey,
+            });
+        }
+
+        let mut items = Vec::new();
+
+        while !pairs.is_empty() {
+            items.push(TngSectionItem::parse(&mut pairs)?);
+        }
+
+        Ok(TngSection { things: items })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum TngSectionItem {
+    Thing(TngThing),
+    Marker(TngMarker),
+    Object(TngObject),
+    HolySite(TngHolySite),
+}
+
+impl TngSectionItem {
+    fn parse(pairs: &mut &[RawTngPair]) -> Result<Self, TngParseError> {
+        use RawTngKeyIdentifier as I;
+        use TngParseErrorKind as E;
+
+        let new_thing = pairs.grab_first().ok_or_else(|| TngParseError {
+            location: None,
+            kind: E::UnexpectedEOF,
+        })?;
+
+        if new_thing.key.ident != I::NewThing {
+            return Err(TngParseError {
+                location: Some(new_thing.key.location),
+                kind: E::UnexpectedKey,
+            });
+        }
+
+        let kind = match &new_thing.value {
+            RawTngValue::Identifier(x) => x,
+            _ => {
+                return Err(TngParseError {
+                    location: Some(new_thing.key.location),
+                    kind: E::UnexpectedValue,
+                })
+            }
+        };
+
+        Ok(match kind.as_str() {
+            "Thing" => TngSectionItem::Thing(TngThing::parse(pairs)?),
+            "Object" => TngSectionItem::Object(TngObject::parse(pairs)?),
+            "Marker" => TngSectionItem::Marker(TngMarker::parse(pairs)?),
+            "Holy Site" => TngSectionItem::HolySite(TngHolySite::parse(pairs)?),
+            _ => {
+                return Err(TngParseError {
+                    location: Some(new_thing.key.location),
+                    kind: E::UnexpectedValue,
+                })
+            }
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TngThing {}
+
+impl TngThing {
+    fn parse(pairs: &mut &[RawTngPair]) -> Result<Self, TngParseError> {
         Ok(Self {})
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TngMarker {}
+
+impl TngMarker {
+    fn parse(pairs: &mut &[RawTngPair]) -> Result<Self, TngParseError> {
+        Ok(Self {})
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TngObject {
+    player: Option<i32>,
+    uid: Option<u64>,
+    definition_type: Option<String>,
+    script_name: Option<String>,
+    script_data: Option<String>,
+    create_tc: Option<String>,
+}
+
+impl TngObject {
+    fn parse(pairs: &mut &[RawTngPair]) -> Result<Self, TngParseError> {
+        use RawTngKeyIdentifier as I;
+        use TngParseErrorKind as E;
+
+        let mut obj = Self::default();
+
+        loop {
+            let prop = pairs.grab_first().ok_or_else(|| TngParseError {
+                location: None,
+                kind: E::UnexpectedEOF,
+            })?;
+
+            match prop.key.ident {
+                I::EndThing => break,
+                I::Player => {
+                    obj.player = Some(prop.has_no_path().and_then(|_| prop.get_integer())?)
+                }
+                I::UID => obj.uid = Some(prop.has_no_path().and_then(|_| prop.get_uid())?),
+                I::DefinitionType => {
+                    obj.definition_type = Some(prop.has_no_path().and_then(|_| prop.get_string())?)
+                }
+                I::ScriptName => {
+                    obj.script_name = Some(prop.has_no_path().and_then(|_| prop.get_ident_value())?)
+                }
+                I::ScriptData => {
+                    obj.script_data = Some(prop.has_no_path().and_then(|_| prop.get_string())?)
+                }
+                I::CreateTC => {
+                    obj.create_tc = Some(prop.has_no_path().and_then(|_| prop.get_string())?)
+                }
+                _ => {
+                    return Err(TngParseError {
+                        location: Some(prop.key.location),
+                        kind: E::UnexpectedKey,
+                    })
+                }
+            }
+        }
+
+        Ok(obj)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TngHolySite {}
+
+impl TngHolySite {
+    fn parse(pairs: &mut &[RawTngPair]) -> Result<Self, TngParseError> {
+        Ok(Self {})
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TngParseError {
+    location: Option<Location>,
+    kind: TngParseErrorKind,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum TngParseErrorKind {
+    TokenizeFailed,
+    UnexpectedEOF,
+    UnexpectedToken,
+    UnrecognizedIdentifier,
+    ParseIntError,
+    UnexpectedKey,
+    UnexpectedValue,
+}
+
+impl From<RawTngParseError> for TngParseError {
+    fn from(raw: RawTngParseError) -> Self {
+        use RawTngParseErrorKind as R;
+        use TngParseErrorKind as K;
+
+        let kind = match raw.kind {
+            R::UnexpectedEOF => K::UnexpectedEOF,
+            R::UnexpectedToken => K::UnexpectedToken,
+            R::UnrecognizedIdentifier => K::UnrecognizedIdentifier,
+            R::ParseIntError => K::ParseIntError,
+        };
+
+        Self {
+            location: raw.location,
+            kind,
+        }
     }
 }
 
@@ -82,10 +282,113 @@ impl RawTngPair {
         let value = RawTngValue::parse(&mut tokens)?;
         Ok(RawTngPair { key, value })
     }
+
+    fn has_ident(&self, ident: RawTngKeyIdentifier) -> Result<(), TngParseError> {
+        if self.key.ident == ident {
+            Ok(())
+        } else {
+            Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedKey,
+            })
+        }
+    }
+
+    fn has_no_path(&self) -> Result<(), TngParseError> {
+        if self.key.path.is_empty() {
+            Ok(())
+        } else {
+            Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedKey,
+            })
+        }
+    }
+
+    fn get_integer(&self) -> Result<i32, TngParseError> {
+        match self.value {
+            RawTngValue::Integer(x) => Ok(x),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
+
+    fn get_uid(&self) -> Result<u64, TngParseError> {
+        match self.value {
+            RawTngValue::Uid(x) => Ok(x),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
+
+    fn get_float(&self) -> Result<f32, TngParseError> {
+        match self.value {
+            RawTngValue::Float(x) => Ok(x),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
+
+    fn get_string(&self) -> Result<String, TngParseError> {
+        match self.value.clone() {
+            RawTngValue::String(x) => Ok(x),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
+
+    fn get_ident_value(&self) -> Result<String, TngParseError> {
+        match self.value.clone() {
+            RawTngValue::Identifier(x) => Ok(x),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
+
+    fn get_c3dcoordf(&self) -> Result<[f32; 3], TngParseError> {
+        match self.value.clone() {
+            RawTngValue::C3DCoordF(x, y, z) => Ok([x, y, z]),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
+
+    fn get_c2dcoordf(&self) -> Result<[f32; 2], TngParseError> {
+        match self.value.clone() {
+            RawTngValue::C2DCoordF(x, y) => Ok([x, y]),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
+
+    fn get_crgbcolour(&self) -> Result<[u8; 4], TngParseError> {
+        match self.value.clone() {
+            RawTngValue::CRGBColour(r, g, b, a) => Ok([r, g, b, a]),
+            _ => Err(TngParseError {
+                location: Some(self.key.location),
+                kind: TngParseErrorKind::UnexpectedValue,
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 struct RawTngKey {
+    location: Location,
     ident: RawTngKeyIdentifier,
     path: Vec<RawTngKeyIndex>,
 }
@@ -94,6 +397,14 @@ impl RawTngKey {
     fn parse(mut tokens: &mut &[Token]) -> Result<Self, RawTngParseError> {
         use RawTngParseErrorKind as E;
         use TokenKind as T;
+
+        let location = tokens
+            .first()
+            .map(|t| t.location)
+            .ok_or_else(|| RawTngParseError {
+                location: None,
+                kind: E::UnexpectedEOF,
+            })?;
 
         let ident = RawTngKeyIdentifier::parse(&mut tokens)?;
 
@@ -116,7 +427,11 @@ impl RawTngKey {
             path.push(index);
         }
 
-        Ok(RawTngKey { ident, path })
+        Ok(RawTngKey {
+            location,
+            ident,
+            path,
+        })
     }
 }
 
@@ -218,7 +533,9 @@ enum RawTngValue {
     Boolean(bool),
     Identifier(String),
     String(String),
-    Struct(RawTngStructName, Vec<RawTngValue>),
+    C2DCoordF(f32, f32),
+    C3DCoordF(f32, f32, f32),
+    CRGBColour(u8, u8, u8, u8),
     Empty,
 }
 
@@ -249,8 +566,6 @@ impl RawTngValue {
             (T::Float, _) => Self::parse_float(tokens),
             // (T::String, _) => Self::parse_string(tokens),
             (T::Symbol, "\"") => Self::parse_string(tokens),
-            (T::Identifier, "TRUE") => Ok(RawTngValue::Boolean(true)),
-            (T::Identifier, "FALSE") => Ok(RawTngValue::Boolean(false)),
             (T::Identifier, _) => Self::parse_ident(tokens),
             (T::Symbol, ";") => Ok(RawTngValue::Empty),
             _ => Err(RawTngParseError {
@@ -261,78 +576,18 @@ impl RawTngValue {
     }
 
     fn parse_integer(tokens: &mut &[Token]) -> Result<Self, RawTngParseError> {
-        use RawTngParseErrorKind as E;
-        use TokenKind as T;
-
-        let integer_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
-            location: None,
-            kind: E::UnexpectedEOF,
-        })?;
-
-        if integer_token.kind != T::Integer {
-            return Err(RawTngParseError {
-                location: Some(integer_token.location),
-                kind: E::UnexpectedToken,
-            });
-        }
-
-        match integer_token.text.parse::<i32>() {
-            Ok(integer) => Ok(Self::Integer(integer)),
-            Err(_) => Err(RawTngParseError {
-                location: Some(integer_token.location),
-                kind: E::ParseIntError,
-            }),
-        }
+        Ok(RawTngValue::Integer(parse_int::<i32>(
+            tokens,
+            TokenKind::Integer,
+        )?))
     }
 
     fn parse_uid(tokens: &mut &[Token]) -> Result<Self, RawTngParseError> {
-        use RawTngParseErrorKind as E;
-        use TokenKind as T;
-
-        let uid_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
-            location: None,
-            kind: E::UnexpectedEOF,
-        })?;
-
-        if uid_token.kind != T::Uid {
-            return Err(RawTngParseError {
-                location: Some(uid_token.location),
-                kind: E::UnexpectedToken,
-            });
-        }
-
-        match uid_token.text.parse::<u64>() {
-            Ok(integer) => Ok(Self::Uid(integer)),
-            Err(_) => Err(RawTngParseError {
-                location: Some(uid_token.location),
-                kind: E::ParseIntError,
-            }),
-        }
+        Ok(RawTngValue::Uid(parse_int::<u64>(tokens, TokenKind::Uid)?))
     }
 
     fn parse_float(tokens: &mut &[Token]) -> Result<Self, RawTngParseError> {
-        use RawTngParseErrorKind as E;
-        use TokenKind as T;
-
-        let float_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
-            location: None,
-            kind: E::UnexpectedEOF,
-        })?;
-
-        if float_token.kind != T::Float {
-            return Err(RawTngParseError {
-                location: Some(float_token.location),
-                kind: E::UnexpectedToken,
-            });
-        }
-
-        match float_token.text.parse::<f32>() {
-            Ok(integer) => Ok(Self::Float(integer)),
-            Err(_) => Err(RawTngParseError {
-                location: Some(float_token.location),
-                kind: E::ParseIntError,
-            }),
-        }
+        Ok(RawTngValue::Float(parse_float(tokens)?))
     }
 
     fn parse_string(tokens: &mut &[Token]) -> Result<Self, RawTngParseError> {
@@ -394,6 +649,15 @@ impl RawTngValue {
             });
         }
 
+        match ident_token.text {
+            "TRUE" => return Ok(Self::Boolean(true)),
+            "FALSE" => return Ok(Self::Boolean(false)),
+            "C3DCoordF" => return Self::parse_c3dcoordf(tokens),
+            "C2DCoordF" => return Self::parse_c2dcoordf(tokens),
+            "CRGBColour" => return Self::parse_crgbcolour(tokens),
+            _ => {}
+        }
+
         skip_spaces(tokens)?;
 
         // Look at next token to determine if ident may be struct-like or series-like.
@@ -401,12 +665,6 @@ impl RawTngValue {
             location: None,
             kind: E::UnexpectedEOF,
         })?;
-
-        if next_token.kind == T::Symbol && next_token.text == "(" {
-            let args = Self::parse_struct_args(tokens)?;
-            let ident = ident_token.text.to_string();
-            return Ok(Self::Struct(ident, args));
-        }
 
         // Handle the case of identifiers having spaces in them, like "Holy Site".
         if next_token.kind == T::Identifier {
@@ -442,49 +700,103 @@ impl RawTngValue {
         Ok(Self::Identifier(ident_token.text.to_string()))
     }
 
-    fn parse_struct_args(tokens: &mut &[Token]) -> Result<Vec<Self>, RawTngParseError> {
+    fn parse_c2dcoordf(tokens: &mut &[Token]) -> Result<RawTngValue, RawTngParseError> {
+        let _ = Self::parse_arg_open(tokens)?;
+        let x = parse_float(tokens)?;
+        let _ = Self::parse_arg_separator(tokens)?;
+        let y = parse_float(tokens)?;
+        let _ = Self::parse_arg_close(tokens)?;
+        Ok(Self::C2DCoordF(x, y))
+    }
+
+    fn parse_c3dcoordf(tokens: &mut &[Token]) -> Result<RawTngValue, RawTngParseError> {
+        let _ = Self::parse_arg_open(tokens)?;
+        let x = parse_float(tokens)?;
+        let _ = Self::parse_arg_separator(tokens)?;
+        let y = parse_float(tokens)?;
+        let _ = Self::parse_arg_separator(tokens)?;
+        let z = parse_float(tokens)?;
+        let _ = Self::parse_arg_close(tokens)?;
+        Ok(Self::C3DCoordF(x, y, z))
+    }
+
+    fn parse_crgbcolour(tokens: &mut &[Token]) -> Result<RawTngValue, RawTngParseError> {
+        use TokenKind as K;
+        let _ = Self::parse_arg_open(tokens)?;
+        let r = parse_int::<u8>(tokens, K::Integer)?;
+        let _ = Self::parse_arg_separator(tokens)?;
+        let g = parse_int::<u8>(tokens, K::Integer)?;
+        let _ = Self::parse_arg_separator(tokens)?;
+        let b = parse_int::<u8>(tokens, K::Integer)?;
+        let _ = Self::parse_arg_separator(tokens)?;
+        let a = parse_int::<u8>(tokens, K::Integer)?;
+        let _ = Self::parse_arg_close(tokens)?;
+        Ok(Self::CRGBColour(r, g, b, a))
+    }
+
+    fn parse_arg_open(tokens: &mut &[Token]) -> Result<(), RawTngParseError> {
         use RawTngParseErrorKind as E;
         use TokenKind as T;
 
-        let &open_paren_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
+        skip_spaces(tokens)?;
+
+        let open_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
             location: None,
             kind: E::UnexpectedEOF,
         })?;
 
-        if open_paren_token.kind != T::Symbol || open_paren_token.text != "(" {
+        if open_token.kind != T::Symbol || open_token.text != "(" {
             return Err(RawTngParseError {
-                location: Some(open_paren_token.location),
+                location: Some(open_token.location),
                 kind: E::UnexpectedToken,
             });
         }
 
-        let mut args = Vec::new();
+        Ok(())
+    }
 
-        loop {
-            skip_spaces(tokens)?;
+    fn parse_arg_close(tokens: &mut &[Token]) -> Result<(), RawTngParseError> {
+        use RawTngParseErrorKind as E;
+        use TokenKind as T;
 
-            let arg = Self::parse_value(tokens)?;
+        skip_spaces(tokens)?;
 
-            args.push(arg);
+        let open_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
+            location: None,
+            kind: E::UnexpectedEOF,
+        })?;
 
-            let &next_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
-                location: None,
-                kind: E::UnexpectedEOF,
-            })?;
-
-            match (next_token.kind, next_token.text) {
-                (T::Symbol, ")") => break,
-                (T::Symbol, ",") => {}
-                _ => {
-                    return Err(RawTngParseError {
-                        location: Some(next_token.location),
-                        kind: E::UnexpectedToken,
-                    });
-                }
-            }
+        if open_token.kind != T::Symbol || open_token.text != ")" {
+            return Err(RawTngParseError {
+                location: Some(open_token.location),
+                kind: E::UnexpectedToken,
+            });
         }
 
-        Ok(args)
+        Ok(())
+    }
+
+    fn parse_arg_separator(tokens: &mut &[Token]) -> Result<(), RawTngParseError> {
+        use RawTngParseErrorKind as E;
+        use TokenKind as T;
+
+        skip_spaces(tokens)?;
+
+        let sep_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
+            location: None,
+            kind: E::UnexpectedEOF,
+        })?;
+
+        if sep_token.kind != T::Symbol || sep_token.text != "," {
+            return Err(RawTngParseError {
+                location: Some(sep_token.location),
+                kind: E::UnexpectedToken,
+            });
+        }
+
+        skip_spaces(tokens)?;
+
+        Ok(())
     }
 
     fn parse_closing(tokens: &mut &[Token]) -> Result<(), RawTngParseError> {
@@ -538,22 +850,71 @@ fn skip_whitespace(tokens: &mut &[Token]) -> Result<(), RawTngParseError> {
     }
 }
 
+fn parse_int<I: FromStr>(tokens: &mut &[Token], kind: TokenKind) -> Result<I, RawTngParseError> {
+    use RawTngParseErrorKind as E;
+    use TokenKind as T;
+
+    let uid_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
+        location: None,
+        kind: E::UnexpectedEOF,
+    })?;
+
+    if uid_token.kind != kind {
+        return Err(RawTngParseError {
+            location: Some(uid_token.location),
+            kind: E::UnexpectedToken,
+        });
+    }
+
+    match uid_token.text.parse::<I>() {
+        Ok(integer) => Ok(integer),
+        Err(_) => Err(RawTngParseError {
+            location: Some(uid_token.location),
+            kind: E::ParseIntError,
+        }),
+    }
+}
+
+fn parse_float(tokens: &mut &[Token]) -> Result<f32, RawTngParseError> {
+    use RawTngParseErrorKind as E;
+    use TokenKind as T;
+
+    let float_token = tokens.grab_first().ok_or_else(|| RawTngParseError {
+        location: None,
+        kind: E::UnexpectedEOF,
+    })?;
+
+    if float_token.kind != T::Float {
+        return Err(RawTngParseError {
+            location: Some(float_token.location),
+            kind: E::UnexpectedToken,
+        });
+    }
+
+    match float_token.text.parse::<f32>() {
+        Ok(float) => Ok(float),
+        Err(_) => Err(RawTngParseError {
+            location: Some(float_token.location),
+            kind: E::ParseIntError,
+        }),
+    }
+}
+
 #[derive(Clone, Debug)]
 struct RawTngParseError {
     location: Option<Location>,
     kind: RawTngParseErrorKind,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum RawTngParseErrorKind {
     UnexpectedEOF,
     UnexpectedToken,
     UnrecognizedIdentifier,
     ParseIntError,
-    ParseBoolError,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 enum RawTngKeyProperty {
     AnimationSpeed,
@@ -617,7 +978,7 @@ impl RawTngKeyProperty {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
 enum RawTngKeyIdentifier {
     ActivateOnActivate,
