@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Clone, Debug)]
 pub struct Kv<'a> {
-    fields: Vec<KvField<'a>>,
+    pub fields: Vec<KvField<'a>>,
 }
 
 #[derive(Copy, Clone, Debug, Error)]
@@ -65,12 +65,14 @@ impl<'a> KvField<'a> {
         match line.split_once(";") {
             Some((field, _)) => {
                 // Split the key and accessor from the value
-                let (key, value) = match field.split_once(" ") {
+                let (key, mut value) = match field.split_once(" ") {
                     Some((key, value)) => (key, value),
                     None => (field, ""),
                 };
 
                 let key = KvKey::new(key)?;
+
+                skip_spaces(&mut value);
 
                 let value = KvValue::new(value);
 
@@ -112,11 +114,16 @@ pub enum KvValueError {
     NonString,
     #[error("non-identifier value")]
     NonIdent,
+    #[error("non-C2DCoordF value")]
+    NonC2DCoordF,
+    #[error("non-C3DCoordF value")]
+    NonC3DCoordF,
+    #[error("non-CRGBColour value")]
+    NonCRGBColour,
 }
 
 impl<'a> KvValue<'a> {
-    fn new(mut source: &'a str) -> Self {
-        skip_spaces(&mut source);
+    fn new(source: &'a str) -> Self {
         Self { source }
     }
 
@@ -175,6 +182,126 @@ impl<'a> KvValue<'a> {
             Ok(self.source)
         } else {
             Err(KvValueError::NonIdent)
+        }
+    }
+
+    fn c2dcoordf(&self) -> Result<[f32; 2], KvValueError> {
+        let (name, mut rest) = match self.source.split_once("(") {
+            Some(x) => x,
+            None => return Err(KvValueError::NonC2DCoordF),
+        };
+
+        if name != "C2DCoordF" {
+            return Err(KvValueError::NonC2DCoordF);
+        }
+
+        skip_spaces(&mut rest);
+
+        let (x, mut rest) = rest
+            .split_once(",")
+            .ok_or_else(|| KvValueError::NonC2DCoordF)?;
+
+        skip_spaces(&mut rest);
+
+        let (y, mut rest) = rest
+            .split_once(",")
+            .ok_or_else(|| KvValueError::NonC2DCoordF)?;
+
+        skip_spaces(&mut rest);
+
+        if rest.is_empty() {
+            let y = y.parse::<f32>().map_err(|_| KvValueError::NonC2DCoordF)?;
+            let x = x.parse::<f32>().map_err(|_| KvValueError::NonC2DCoordF)?;
+            Ok([x, y])
+        } else {
+            Err(KvValueError::NonC2DCoordF)
+        }
+    }
+
+    fn c3dcoordf(&self) -> Result<[f32; 3], KvValueError> {
+        let (name, mut rest) = match self.source.split_once("(") {
+            Some(x) => x,
+            None => return Err(KvValueError::NonC3DCoordF),
+        };
+
+        if name != "C3DCoordF" {
+            return Err(KvValueError::NonC3DCoordF);
+        }
+
+        skip_spaces(&mut rest);
+
+        let (x, mut rest) = rest
+            .split_once(",")
+            .ok_or_else(|| KvValueError::NonC3DCoordF)?;
+
+        skip_spaces(&mut rest);
+
+        let (y, mut rest) = rest
+            .split_once(",")
+            .ok_or_else(|| KvValueError::NonC3DCoordF)?;
+
+        skip_spaces(&mut rest);
+
+        let (z, mut rest) = rest
+            .split_once(")")
+            .ok_or_else(|| KvValueError::NonC3DCoordF)?;
+
+        skip_spaces(&mut rest);
+
+        if rest.is_empty() {
+            let y = y.parse::<f32>().map_err(|_| KvValueError::NonC3DCoordF)?;
+            let x = x.parse::<f32>().map_err(|_| KvValueError::NonC3DCoordF)?;
+            let z = z.parse::<f32>().map_err(|_| KvValueError::NonC3DCoordF)?;
+            Ok([x, y, z])
+        } else {
+            Err(KvValueError::NonC3DCoordF)
+        }
+    }
+
+    fn crgbcolour(&self) -> Result<[u8; 4], KvValueError> {
+        let (name, mut rest) = match self.source.split_once("(") {
+            Some(x) => x,
+            None => return Err(KvValueError::NonCRGBColour),
+        };
+
+        if name != "CRGBColour" {
+            return Err(KvValueError::NonCRGBColour);
+        }
+
+        skip_spaces(&mut rest);
+
+        let (r, mut rest) = rest
+            .split_once(",")
+            .ok_or_else(|| KvValueError::NonCRGBColour)?;
+
+        skip_spaces(&mut rest);
+
+        let (g, mut rest) = rest
+            .split_once(",")
+            .ok_or_else(|| KvValueError::NonCRGBColour)?;
+
+        skip_spaces(&mut rest);
+
+        let (b, mut rest) = rest
+            .split_once(",")
+            .ok_or_else(|| KvValueError::NonCRGBColour)?;
+
+        skip_spaces(&mut rest);
+
+        let (a, mut rest) = rest
+            .split_once(")")
+            .ok_or_else(|| KvValueError::NonCRGBColour)?;
+
+        skip_spaces(&mut rest);
+
+        if rest.is_empty() {
+            let r = r.parse::<u8>().map_err(|_| KvValueError::NonCRGBColour)?;
+            let g = g.parse::<u8>().map_err(|_| KvValueError::NonCRGBColour)?;
+            let b = b.parse::<u8>().map_err(|_| KvValueError::NonCRGBColour)?;
+            let a = a.parse::<u8>().map_err(|_| KvValueError::NonCRGBColour)?;
+            Ok([r, g, b, a])
+        } else {
+            Err(KvValueError::NonCRGBColour)
         }
     }
 }
