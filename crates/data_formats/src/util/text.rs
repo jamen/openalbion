@@ -78,6 +78,30 @@ impl Location {
     }
 }
 
+#[derive(Default, Copy, Clone, Debug)]
+pub struct Span {
+    pub start: Location,
+    pub end: Location,
+}
+
+impl Span {
+    pub fn new(start: Location, end: Location) -> Self {
+        Self { start, end }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct WithSpan<T> {
+    pub span: Span,
+    pub inner: T,
+}
+
+impl<T> WithSpan<T> {
+    pub fn new(inner: T, span: Span) -> Self {
+        Self { span, inner }
+    }
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
         Lexer {
