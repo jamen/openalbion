@@ -6,7 +6,7 @@ pub struct Kv<'a> {
 }
 
 #[derive(Copy, Clone, Debug, Error)]
-#[error("{field_error} error on line {line_num}")]
+#[error("{field_error} on line {line_num}")]
 pub struct KvError {
     line_num: usize,
     field_error: KvFieldError,
@@ -40,9 +40,9 @@ impl<'a> Kv<'a> {
 
 #[derive(Clone, Debug)]
 pub struct KvField<'a> {
-    key: KvKey<'a>,
-    value: KvValue<'a>,
-    line_num: usize,
+    pub key: KvKey<'a>,
+    pub value: KvValue<'a>,
+    pub line_num: usize,
 }
 
 #[derive(Copy, Clone, Debug, Error)]
@@ -127,7 +127,7 @@ impl<'a> KvValue<'a> {
         Self { source }
     }
 
-    fn empty(&self) -> Result<(), KvValueError> {
+    pub fn empty(&self) -> Result<(), KvValueError> {
         if self.source.is_empty() {
             Ok(())
         } else {
@@ -135,23 +135,23 @@ impl<'a> KvValue<'a> {
         }
     }
 
-    fn integer(&self) -> Result<i32, KvValueError> {
+    pub fn integer(&self) -> Result<i32, KvValueError> {
         self.source
             .parse::<i32>()
             .map_err(|_| KvValueError::NonInteger)
     }
 
-    fn uid(&self) -> Result<u64, KvValueError> {
+    pub fn uid(&self) -> Result<u64, KvValueError> {
         self.source.parse::<u64>().map_err(|_| KvValueError::NonUid)
     }
 
-    fn float(&self) -> Result<f32, KvValueError> {
+    pub fn float(&self) -> Result<f32, KvValueError> {
         self.source
             .parse::<f32>()
             .map_err(|_| KvValueError::NonFloat)
     }
 
-    fn bool(&self) -> Result<bool, KvValueError> {
+    pub fn bool(&self) -> Result<bool, KvValueError> {
         match self.source {
             "TRUE" => Ok(true),
             "FALSE" => Ok(false),
@@ -159,7 +159,7 @@ impl<'a> KvValue<'a> {
         }
     }
 
-    fn string(&self) -> Result<&str, KvValueError> {
+    pub fn string(&self) -> Result<&str, KvValueError> {
         let mut chars = self.source.chars();
 
         if chars.next() == Some('\"') && chars.last() == Some('\"') {
@@ -169,7 +169,7 @@ impl<'a> KvValue<'a> {
         }
     }
 
-    fn ident(&self) -> Result<&str, KvValueError> {
+    pub fn ident(&self) -> Result<&str, KvValueError> {
         let chars = self.source.chars();
 
         if chars.enumerate().all(|(i, c)| {
@@ -185,15 +185,11 @@ impl<'a> KvValue<'a> {
         }
     }
 
-    fn c2dcoordf(&self) -> Result<[f32; 2], KvValueError> {
-        let (name, mut rest) = match self.source.split_once("(") {
+    pub fn c2dcoordf(&self) -> Result<[f32; 2], KvValueError> {
+        let (_, mut rest) = match self.source.split_once("C2DCoordF(") {
             Some(x) => x,
             None => return Err(KvValueError::NonC2DCoordF),
         };
-
-        if name != "C2DCoordF" {
-            return Err(KvValueError::NonC2DCoordF);
-        }
 
         skip_spaces(&mut rest);
 
@@ -218,15 +214,11 @@ impl<'a> KvValue<'a> {
         }
     }
 
-    fn c3dcoordf(&self) -> Result<[f32; 3], KvValueError> {
-        let (name, mut rest) = match self.source.split_once("(") {
+    pub fn c3dcoordf(&self) -> Result<[f32; 3], KvValueError> {
+        let (_, mut rest) = match self.source.split_once("C3DCoordF(") {
             Some(x) => x,
             None => return Err(KvValueError::NonC3DCoordF),
         };
-
-        if name != "C3DCoordF" {
-            return Err(KvValueError::NonC3DCoordF);
-        }
 
         skip_spaces(&mut rest);
 
@@ -258,15 +250,11 @@ impl<'a> KvValue<'a> {
         }
     }
 
-    fn crgbcolour(&self) -> Result<[u8; 4], KvValueError> {
-        let (name, mut rest) = match self.source.split_once("(") {
+    pub fn crgbcolour(&self) -> Result<[u8; 4], KvValueError> {
+        let (_, mut rest) = match self.source.split_once("CRGBColour(") {
             Some(x) => x,
             None => return Err(KvValueError::NonCRGBColour),
         };
-
-        if name != "CRGBColour" {
-            return Err(KvValueError::NonCRGBColour);
-        }
 
         skip_spaces(&mut rest);
 
@@ -308,8 +296,8 @@ impl<'a> KvValue<'a> {
 
 #[derive(Clone, Debug)]
 pub struct KvKey<'a> {
-    ident: &'a str,
-    path: KvPath<'a>,
+    pub ident: &'a str,
+    pub path: KvPath<'a>,
 }
 
 #[derive(Copy, Clone, Debug, Error)]
@@ -362,7 +350,7 @@ impl<'a> KvPath<'a> {
         Self { source }
     }
 
-    fn iter(&self) -> KvPathIter<'a> {
+    pub fn iter(&self) -> KvPathIter<'a> {
         KvPathIter::new(self.source)
     }
 }
