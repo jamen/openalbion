@@ -5,6 +5,8 @@ edition = "2021"
 publish = false
 
 [dependencies]
+arrayvec = "0.7.6"
+fallible-iterator = "0.3.0"
 serde = { version = "1.0.205", features = ["derive"] }
 thiserror = "1.0.63"
 unicode-segmentation = "1.11.0"

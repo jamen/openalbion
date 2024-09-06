@@ -29,7 +29,7 @@ fn inspect(file_path: String) -> anyhow::Result<()> {
 
     let tng = Tng::parse(&tng_source);
 
-    println!("{:#?}", tng);
+    // println!("{:#?}", tng);
 
     Ok(())
 
