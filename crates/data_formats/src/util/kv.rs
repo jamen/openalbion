@@ -43,7 +43,7 @@ impl<'a> Kv<'a> {
 pub struct KvField<'a> {
     pub key: KvKey<'a>,
     pub value: KvValue<'a>,
-    pub line_num: usize,
+    pub line: usize,
 }
 
 #[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
@@ -56,6 +56,30 @@ pub enum KvFieldError {
 
     #[error(transparent)]
     Value(#[from] KvValueError),
+}
+
+#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+pub enum CommonFieldError {
+    #[error("unexpected end of input")]
+    UnexpectedEnd,
+
+    #[error("unexpected field on line {line}")]
+    UnexpectedField { line: usize },
+
+    #[error("invalid path for field on line {line}")]
+    InvalidPath { line: usize },
+
+    #[error("expected {expected} value for field on line {line}")]
+    InvalidValue { line: usize, expected: KvValueKind },
+
+    #[error("missing field {name} in field list ending on line {line}")]
+    MissingField { line: usize, name: &'static str },
+}
+
+use CommonFieldError::{InvalidPath, InvalidValue, UnexpectedField};
+
+pub fn missing_field(line: usize, name: &'static str) -> CommonFieldError {
+    CommonFieldError::MissingField { line, name }
 }
 
 impl<'a> KvField<'a> {
@@ -80,7 +104,7 @@ impl<'a> KvField<'a> {
                 Ok(Some(Self {
                     key,
                     value,
-                    line_num,
+                    line: line_num,
                 }))
             }
             None => {
@@ -97,142 +121,136 @@ impl<'a> KvField<'a> {
         self.with_no_value().is_ok()
     }
 
-    pub fn with_key(&self, identifier: &str) -> Result<&Self, UnexpectedField> {
+    pub fn with_key(&self, identifier: &str) -> Result<&Self, CommonFieldError> {
         if self.key.identifier == identifier {
             Ok(self)
         } else {
-            Err(UnexpectedField {
-                line_num: self.line_num,
-            })
+            Err(UnexpectedField { line: self.line })
         }
     }
 
-    pub fn with_no_path(&self) -> Result<&Self, InvalidPath> {
+    pub fn with_no_path(&self) -> Result<&Self, CommonFieldError> {
         if self.key.path.iter().next().is_none() {
             Ok(self)
         } else {
-            Err(InvalidPath {
-                line_num: self.line_num,
-            })
+            Err(InvalidPath { line: self.line })
         }
     }
 
-    pub fn with_path(&self) -> Result<(&Self, ArrayVec<KvPathItem, MAX_PATH_ITEMS>), InvalidPath> {
+    pub fn with_path(
+        &self,
+    ) -> Result<(&Self, ArrayVec<KvPathItem, MAX_PATH_ITEMS>), CommonFieldError> {
         let mut path_iter = self.key.path.iter();
 
         let path = path_iter
             .by_ref()
             .take(MAX_PATH_ITEMS)
             .collect::<Result<_, KvPathError>>()
-            .map_err(|_| InvalidPath {
-                line_num: self.line_num,
-            })?;
+            .map_err(|_| InvalidPath { line: self.line })?;
 
         if path_iter.next().is_some() {
-            Err(InvalidPath {
-                line_num: self.line_num,
-            })?
+            Err(InvalidPath { line: self.line })?
         }
 
         Ok((self, path))
     }
 
-    pub fn with_no_value(&self) -> Result<&Self, InvalidValue> {
+    pub fn with_no_value(&self) -> Result<&Self, CommonFieldError> {
         match self.value.empty() {
             Ok(()) => Ok(self),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_integer_value(&self) -> Result<(&Self, i32), InvalidValue> {
+    pub fn with_integer_value(&self) -> Result<(&Self, i32), CommonFieldError> {
         match self.value.integer() {
             Ok(integer) => Ok((self, integer)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_uid_value(&self) -> Result<(&Self, u64), InvalidValue> {
+    pub fn with_uid_value(&self) -> Result<(&Self, u64), CommonFieldError> {
         match self.value.uid() {
             Ok(uid) => Ok((self, uid)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_float_value(&self) -> Result<(&Self, f32), InvalidValue> {
+    pub fn with_float_value(&self) -> Result<(&Self, f32), CommonFieldError> {
         match self.value.float() {
             Ok(float) => Ok((self, float)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn bool(&self) -> Result<(&Self, bool), InvalidValue> {
+    pub fn with_bool_value(&self) -> Result<(&Self, bool), CommonFieldError> {
         match self.value.bool() {
             Ok(bool) => Ok((self, bool)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_string_value(&self) -> Result<(&Self, &str), InvalidValue> {
+    pub fn with_string_value(&self) -> Result<(&Self, &str), CommonFieldError> {
         match self.value.string() {
             Ok(string) => Ok((self, string)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_identifier_value(&self) -> Result<(&Self, &str), InvalidValue> {
+    pub fn with_identifier_value(&self) -> Result<(&Self, &str), CommonFieldError> {
         match self.value.identifier() {
             Ok(identifier) => Ok((self, identifier)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_c2dcoordf_value(&self) -> Result<(&Self, [f32; 2]), InvalidValue> {
+    pub fn with_c2dcoordf_value(&self) -> Result<(&Self, [f32; 2]), CommonFieldError> {
         match self.value.c2dcoordf() {
             Ok(identifier) => Ok((self, identifier)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_c3dcoordf_value(&self) -> Result<(&Self, [f32; 3]), InvalidValue> {
+    pub fn with_c3dcoordf_value(&self) -> Result<(&Self, [f32; 3]), CommonFieldError> {
         match self.value.c3dcoordf() {
             Ok(identifier) => Ok((self, identifier)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
 
-    pub fn with_crgbcolour_value(&self) -> Result<(&Self, [u8; 4]), InvalidValue> {
+    pub fn with_crgbcolour_value(&self) -> Result<(&Self, [u8; 4]), CommonFieldError> {
         match self.value.crgbcolour() {
             Ok(identifier) => Ok((self, identifier)),
             Err(KvValueError(expected)) => Err(InvalidValue {
                 expected,
-                line_num: self.line_num,
+                line: self.line,
             }),
         }
     }
@@ -628,23 +646,4 @@ fn skip_spaces(source: &mut &str) {
     let (_spaces, rest) = source.split_at(space_ends);
 
     *source = rest;
-}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-#[error("field on line {line_num} was unexpected")]
-pub struct UnexpectedField {
-    pub line_num: usize,
-}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-#[error("field with invalid path on line {line_num}")]
-pub struct InvalidPath {
-    pub line_num: usize,
-}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-#[error("expected {expected} value on line {line_num}")]
-pub struct InvalidValue {
-    pub expected: KvValueKind,
-    pub line_num: usize,
 }
