@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::util::{
     kv::{
         missing_field,
@@ -58,7 +60,7 @@ impl Tng {
 #[derive(Clone, Debug)]
 pub struct TngSection {
     name: String,
-    things: Vec<TngThingItem>,
+    things: Vec<TngThing>,
 }
 
 #[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
@@ -67,7 +69,7 @@ pub enum TngSectionError {
     Common(#[from] CommonFieldError),
 
     #[error(transparent)]
-    Thing(#[from] TngThingItemError),
+    Thing(#[from] TngThingError),
 }
 
 impl TngSection {
@@ -92,7 +94,7 @@ impl TngSection {
             let line_num = field.line;
 
             match field.key.identifier {
-                "NewThing" => things.push(TngThingItem::parse(&mut fields)?),
+                "NewThing" => things.push(TngThing::parse(&mut fields)?),
                 "XXXSectionEnd" => {
                     let _ = field.with_no_value()?;
                     let _ = fields.grab_first();
@@ -107,84 +109,46 @@ impl TngSection {
 }
 
 #[derive(Clone, Debug)]
-pub enum TngThingItem {
-    Thing(TngThing),
-    Marker(TngMarker),
-    Object(TngObject),
-    HolySite(TngHolySite),
-    Building(TngBuilding),
-    Village(TngVillage),
-    AICreature(TngAICreature),
-    TrackNode(TngTrackNode),
-    Switch(TngSwitch),
+pub enum TngThingKind {
+    Thing,
+    Marker,
+    Object,
+    HolySite,
+    Building,
+    Village,
+    AICreature,
+    TrackNode,
+    Switch,
 }
 
 #[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngThingItemError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
+#[error("unrecognized kind")]
+pub struct TngThingKindError;
 
-    #[error("unexpected thing variant at {line_num}")]
-    UnrecognizedThing { line_num: usize },
+impl TngThingKind {}
 
-    #[error(transparent)]
-    ThingItem(#[from] TngThingError),
+impl FromStr for TngThingKind {
+    type Err = TngThingKindError;
 
-    #[error(transparent)]
-    Marker(#[from] TngMarkerError),
-
-    #[error(transparent)]
-    Object(#[from] TngObjectError),
-
-    #[error(transparent)]
-    HolySite(#[from] TngHolySiteError),
-
-    #[error(transparent)]
-    Building(#[from] TngBuildingError),
-
-    #[error(transparent)]
-    Village(#[from] TngVillageError),
-
-    #[error(transparent)]
-    AICreature(#[from] TngAICreatureError),
-
-    #[error(transparent)]
-    TrackNode(#[from] TngTrackNodeError),
-
-    #[error(transparent)]
-    Switch(#[from] TngSwitchError),
-}
-
-impl TngThingItem {
-    fn parse(mut fields: &mut &[KvField]) -> Result<Self, TngThingItemError> {
-        let (new_thing_field, thing_kind) = fields
-            .grab_first()
-            .ok_or_else(|| UnexpectedEnd)?
-            .with_key("NewThing")?
-            .with_no_path()?
-            .with_identifier_value()?;
-
-        let thing_item = match thing_kind {
-            "Thing" => Self::Thing(TngThing::parse(&mut fields)?),
-            "Marker" => Self::Marker(TngMarker::parse(&mut fields)?),
-            "Object" => Self::Object(TngObject::parse(&mut fields)?),
-            "Holy Site" => Self::HolySite(TngHolySite::parse(&mut fields)?),
-            "Building" => Self::Building(TngBuilding::parse(&mut fields)?),
-            "Village" => Self::Village(TngVillage::parse(&mut fields)?),
-            "AICreature" => Self::AICreature(TngAICreature::parse(&mut fields)?),
-            "TrackNode" => Self::TrackNode(TngTrackNode::parse(&mut fields)?),
-            "Switch" => Self::Switch(TngSwitch::parse(&mut fields)?),
-            _ => Err(TngThingItemError::UnrecognizedThing {
-                line_num: new_thing_field.line,
-            })?,
-        };
-
-        Ok(thing_item)
+    fn from_str(source: &str) -> Result<Self, Self::Err> {
+        Ok(match source {
+            "Thing" => Self::Thing,
+            "Marker" => Self::Marker,
+            "Object" => Self::Object,
+            "Holy Site" => Self::HolySite,
+            "Building" => Self::Building,
+            "Village" => Self::Village,
+            "AICreature" => Self::AICreature,
+            "TrackNode" => Self::TrackNode,
+            "Switch" => Self::Switch,
+            _ => Err(TngThingKindError)?,
+        })
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct TngThing {
+    kind: TngThingKind,
     player: i32,
     uid: u64,
     definition_type: String,
@@ -193,6 +157,11 @@ pub struct TngThing {
     thing_game_persistent: bool,
     thing_level_persistent: bool,
     ctc_editor: CTCEditor,
+    extras: Option<Box<TngThingExtras>>,
+}
+
+#[derive(Clone, Debug)]
+struct TngThingExtras {
     create_tc: Option<String>,
     ctc_physics_light: Option<CTCPhysicsLight>,
     ctcd_navigation_seed: Option<CTCDNavigationSeed>,
@@ -216,6 +185,9 @@ pub struct TngThing {
 pub enum TngThingError {
     #[error(transparent)]
     Common(#[from] CommonFieldError),
+
+    #[error("thing of unrecognized kind on line {line}")]
+    Unrecognized { line: usize },
 
     #[error(transparent)]
     CTCPhysicsLight(#[from] CTCPhysicsLightError),
@@ -270,7 +242,25 @@ pub enum TngThingError {
 }
 
 impl TngThing {
+    fn parse_kind(field: &KvField) -> Result<TngThingKind, TngThingError> {
+        let (new_thing_field, kind_source) = field
+            .with_key("NewThing")?
+            .with_no_path()?
+            .with_identifier_value()?;
+
+        let kind =
+            kind_source
+                .parse::<TngThingKind>()
+                .map_err(|_| TngThingError::Unrecognized {
+                    line: new_thing_field.line,
+                })?;
+
+        Ok(kind)
+    }
+
     fn parse(fields: &mut &[KvField]) -> Result<Self, TngThingError> {
+        // Required
+        let mut kind = None;
         let mut player = None;
         let mut uid = None;
         let mut definition_type = None;
@@ -278,9 +268,11 @@ impl TngThing {
         let mut script_data = None;
         let mut thing_game_persistent = None;
         let mut thing_level_persistent = None;
+        let mut ctc_editor = None;
+
+        // Extras
         let mut create_tc = None;
         let mut ctc_physics_light = None;
-        let mut ctc_editor = None;
         let mut ctcd_navigation_seed = None;
         let mut ctc_physics_standard = None;
         let mut ctc_camera_point = None;
@@ -301,6 +293,9 @@ impl TngThing {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
+                "NewThing" => {
+                    kind = Some(Self::parse_kind(&field)?);
+                }
                 "Player" => {
                     player = Some(field.with_no_path()?.with_integer_value()?.1);
                 }
@@ -381,7 +376,8 @@ impl TngThing {
                     let end_thing = field.with_no_path()?.with_no_value()?;
                     let ln = end_thing.line;
 
-                    // Required fields
+                    // Required
+                    let kind = kind.ok_or_else(|| TngThingError::Unrecognized { line: ln })?;
                     let player = player.ok_or_else(|| missing_field(ln, "Player"))?;
                     let uid = uid.ok_or_else(|| missing_field(ln, "UID"))?;
                     let definition_type =
@@ -395,17 +391,10 @@ impl TngThing {
                     let ctc_editor =
                         ctc_editor.ok_or_else(|| missing_field(ln, "StartCTCEditor"))?;
 
-                    return Ok(Self {
-                        player,
-                        uid,
-                        definition_type,
-                        script_name,
-                        script_data,
-                        thing_game_persistent,
-                        thing_level_persistent,
+                    // Extras
+                    let extras = TngThingExtras {
                         create_tc,
                         ctc_physics_light,
-                        ctc_editor,
                         ctcd_navigation_seed,
                         ctc_physics_standard,
                         ctc_camera_point,
@@ -421,93 +410,12 @@ impl TngThing {
                         ctc_camera_point_general_case,
                         ctc_targeted,
                         ctc_action_use_scripted_hook,
-                    });
-                }
-                _ => Err(UnexpectedField { line: field.line })?,
-            }
-        }
-    }
-}
+                    };
 
-#[derive(Clone, Debug)]
-pub struct TngMarker {
-    player: i32,
-    uid: u64,
-    definition_type: String,
-    script_name: String,
-    script_data: String,
-    thing_game_persistent: bool,
-    thing_level_persistent: bool,
-    ctc_editor: CTCEditor,
-}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngMarkerError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-
-    #[error(transparent)]
-    CTCEditor(#[from] CTCEditorError),
-}
-
-impl TngMarker {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngMarkerError> {
-        let mut player = None;
-        let mut uid = None;
-        let mut definition_type = None;
-        let mut script_name = None;
-        let mut script_data = None;
-        let mut thing_game_persistent = None;
-        let mut thing_level_persistent = None;
-        let mut ctc_editor = None;
-
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "Player" => {
-                    player = Some(field.with_no_path()?.with_integer_value()?.1);
-                }
-                "UID" => {
-                    uid = Some(field.with_no_path()?.with_uid_value()?.1);
-                }
-                "DefinitionType" => {
-                    definition_type = Some(field.with_no_path()?.with_string_value()?.1.to_owned())
-                }
-                "ScriptName" => {
-                    script_name = Some(field.with_no_path()?.with_identifier_value()?.1.to_owned())
-                }
-                "ScriptData" => {
-                    script_data = Some(field.with_no_path()?.with_string_value()?.1.to_owned())
-                }
-                "ThingGamePersistent" => {
-                    thing_game_persistent = Some(field.with_no_path()?.with_bool_value()?.1)
-                }
-                "ThingLevelPersistent" => {
-                    thing_level_persistent = Some(field.with_no_path()?.with_bool_value()?.1)
-                }
-                "StartCTCEditor" => {
-                    ctc_editor = Some(CTCEditor::parse(fields)?);
-                }
-                "EndThing" => {
-                    let field = field.with_no_path()?.with_no_value()?;
-                    let ln = field.line;
-
-                    // Required fields
-                    let player = player.ok_or_else(|| missing_field(ln, "Player"))?;
-                    let uid = uid.ok_or_else(|| missing_field(ln, "UID"))?;
-                    let definition_type =
-                        definition_type.ok_or_else(|| missing_field(ln, "DefinitionType"))?;
-                    let script_name = script_name.ok_or_else(|| missing_field(ln, "ScriptName"))?;
-                    let script_data = script_data.ok_or_else(|| missing_field(ln, "ScriptData"))?;
-                    let thing_game_persistent = thing_game_persistent
-                        .ok_or_else(|| missing_field(ln, "ThingGamePersistent"))?;
-                    let thing_level_persistent = thing_level_persistent
-                        .ok_or_else(|| missing_field(ln, "ThingLevelPersistent"))?;
-                    let ctc_editor =
-                        ctc_editor.ok_or_else(|| missing_field(ln, "StartCTCEditor"))?;
+                    let extras = Some(Box::new(extras));
 
                     return Ok(Self {
+                        kind,
                         player,
                         uid,
                         definition_type,
@@ -516,249 +424,13 @@ impl TngMarker {
                         thing_game_persistent,
                         thing_level_persistent,
                         ctc_editor,
+                        extras,
                     });
                 }
-                _ => Err(UnexpectedField { line: field.line })?,
+                // _ => Err(UnexpectedField { line: field.line })?,
+                _ => {}
             }
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TngObject {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngObjectError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
-impl TngObject {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngObjectError> {
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_path()?;
-                    break;
-                }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
-            }
-        }
-
-        Ok(Self {})
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TngHolySite {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngHolySiteError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
-impl TngHolySite {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngHolySiteError> {
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_path()?;
-                    break;
-                }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
-            }
-        }
-
-        Ok(Self {})
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TngBuilding {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngBuildingError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
-impl TngBuilding {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngBuildingError> {
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_path()?;
-                    break;
-                }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
-            }
-        }
-
-        Ok(Self {})
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TngVillage {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngVillageError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
-impl TngVillage {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngVillageError> {
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_path()?;
-                    break;
-                }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
-            }
-        }
-
-        Ok(Self {})
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TngAICreature {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngAICreatureError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
-impl TngAICreature {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngAICreatureError> {
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_path()?;
-                    break;
-                }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
-            }
-        }
-
-        Ok(Self {})
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TngTrackNode {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngTrackNodeError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
-impl TngTrackNode {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngTrackNodeError> {
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_path()?;
-                    break;
-                }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
-            }
-        }
-
-        Ok(Self {})
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct TngSwitch {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum TngSwitchError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
-impl TngSwitch {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, TngSwitchError> {
-        loop {
-            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-
-            match field.key.identifier {
-                "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_path()?;
-                    break;
-                }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
-            }
-        }
-
-        Ok(Self {})
     }
 }
 
