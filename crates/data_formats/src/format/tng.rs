@@ -430,36 +430,97 @@ impl TngThing {
 }
 
 #[derive(Clone, Debug)]
-pub struct TngMarker {}
+pub struct TngMarker {
+    player: i32,
+    uid: u64,
+    definition_type: String,
+    script_name: String,
+    script_data: String,
+    thing_game_persistent: bool,
+    thing_level_persistent: bool,
+    ctc_editor: CTCEditor,
+}
 
 #[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
 pub enum TngMarkerError {
     #[error(transparent)]
     Common(#[from] CommonFieldError),
+
+    #[error(transparent)]
+    CTCEditor(#[from] CTCEditorError),
 }
 
 impl TngMarker {
     fn parse(fields: &mut &[KvField]) -> Result<Self, TngMarkerError> {
+        let mut player = None;
+        let mut uid = None;
+        let mut definition_type = None;
+        let mut script_name = None;
+        let mut script_data = None;
+        let mut thing_game_persistent = None;
+        let mut thing_level_persistent = None;
+        let mut ctc_editor = None;
+
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
+                "Player" => {
+                    player = Some(field.with_no_path()?.with_integer_value()?.1);
+                }
+                "UID" => {
+                    uid = Some(field.with_no_path()?.with_uid_value()?.1);
+                }
+                "DefinitionType" => {
+                    definition_type = Some(field.with_no_path()?.with_string_value()?.1.to_owned())
+                }
+                "ScriptName" => {
+                    script_name = Some(field.with_no_path()?.with_identifier_value()?.1.to_owned())
+                }
+                "ScriptData" => {
+                    script_data = Some(field.with_no_path()?.with_string_value()?.1.to_owned())
+                }
+                "ThingGamePersistent" => {
+                    thing_game_persistent = Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "ThingLevelPersistent" => {
+                    thing_level_persistent = Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "StartCTCEditor" => {
+                    ctc_editor = Some(CTCEditor::parse(fields)?);
+                }
                 "EndThing" => {
-                    let _ = field.with_no_path()?.with_no_value()?;
-                    break;
+                    let field = field.with_no_path()?.with_no_value()?;
+                    let ln = field.line;
+
+                    // Required fields
+                    let player = player.ok_or_else(|| missing_field(ln, "Player"))?;
+                    let uid = uid.ok_or_else(|| missing_field(ln, "UID"))?;
+                    let definition_type =
+                        definition_type.ok_or_else(|| missing_field(ln, "DefinitionType"))?;
+                    let script_name = script_name.ok_or_else(|| missing_field(ln, "ScriptName"))?;
+                    let script_data = script_data.ok_or_else(|| missing_field(ln, "ScriptData"))?;
+                    let thing_game_persistent = thing_game_persistent
+                        .ok_or_else(|| missing_field(ln, "ThingGamePersistent"))?;
+                    let thing_level_persistent = thing_level_persistent
+                        .ok_or_else(|| missing_field(ln, "ThingLevelPersistent"))?;
+                    let ctc_editor =
+                        ctc_editor.ok_or_else(|| missing_field(ln, "StartCTCEditor"))?;
+
+                    return Ok(Self {
+                        player,
+                        uid,
+                        definition_type,
+                        script_name,
+                        script_data,
+                        thing_game_persistent,
+                        thing_level_persistent,
+                        ctc_editor,
+                    });
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
