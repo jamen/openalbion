@@ -3,8 +3,8 @@ use std::str::FromStr;
 use crate::util::{
     kv::{
         missing_field,
-        CommonFieldError::{self, InvalidPath, InvalidValue, UnexpectedEnd, UnexpectedField},
-        Kv, KvError, KvField,
+        CommonFieldError::{self, UnexpectedEnd, UnexpectedField},
+        Kv, KvError, KvField, KvPathItem,
     },
     slice::TakeSliceExt,
 };
@@ -157,12 +157,33 @@ pub struct TngThing {
     thing_game_persistent: bool,
     thing_level_persistent: bool,
     ctc_editor: CTCEditor,
-    extras: Option<Box<TngThingExtras>>,
+    extras: Box<TngThingExtras>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct TngThingExtras {
     create_tc: Option<String>,
+    health: Option<f32>,
+    object_scale: Option<f32>,
+    linked_to_uid_1: Option<u64>,
+    linked_to_uid_2: Option<u64>,
+    start: Option<bool>,
+    end: Option<bool>,
+    has_information: Option<bool>,
+    wander_with_information: Option<bool>,
+    wave_with_information: Option<bool>,
+    continue_ai_with_information: Option<bool>,
+    enable_creature_auto_placing: Option<bool>,
+    allowed_to_follow_hero: Option<bool>,
+    region_following_overridden_from_script: Option<bool>,
+    responding_to_follow_and_wait: Option<bool>,
+    can_be_courted: Option<bool>,
+    can_be_married: Option<bool>,
+    initial_pos_x: Option<f32>,
+    initial_pos_y: Option<f32>,
+    initial_pos_z: Option<f32>,
+    overriding_brain_name: Option<String>,
+    can_come_between_camera_and_hero: Option<i32>,
     ctc_physics_light: Option<CTCPhysicsLight>,
     ctcd_navigation_seed: Option<CTCDNavigationSeed>,
     ctc_physics_standard: Option<CTCPhysicsStandard>,
@@ -179,6 +200,23 @@ struct TngThingExtras {
     ctc_camera_point_general_case: Option<CTCCameraPointGeneralCase>,
     ctc_targeted: Option<CTCTargeted>,
     ctc_action_use_scripted_hook: Option<CTCActionUseScriptedHook>,
+    ctc_door: Option<CTCDoor>,
+    ctc_village_member: Option<CTCVillageMember>,
+    ctc_shop: Option<CTCShop>,
+    ctc_buyable_house: Option<CTCBuyableHouse>,
+    ctc_village: Option<CTCVillage>,
+    ctc_enemy: Option<CTCEnemy>,
+    ctc_creature_opinion_of_hero: Option<CTCCreatureOpinionOfHero>,
+    ctc_teleporter: Option<CTCTeleporter>,
+    ctc_chest: Option<CTCChest>,
+    ctc_searchable_container: Option<CTCSearchableContainer>,
+    ctc_light: Option<CTCLight>,
+    ctc_atmos_player: Option<CTCAtmosPlayer>,
+    ctc_physics_navigator: Option<CTCPhysicsNavigator>,
+    ctc_talk: Option<CTCTalk>,
+    ctc_action_use_bed: Option<CTCActionUseBed>,
+    ctc_hero_centre_door_marker: Option<CTCHeroCentreDoorMarker>,
+    ctc_hero: Option<CTCHero>,
 }
 
 #[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
@@ -188,57 +226,6 @@ pub enum TngThingError {
 
     #[error("thing of unrecognized kind on line {line}")]
     Unrecognized { line: usize },
-
-    #[error(transparent)]
-    CTCPhysicsLight(#[from] CTCPhysicsLightError),
-
-    #[error(transparent)]
-    CTCEditor(#[from] CTCEditorError),
-
-    #[error(transparent)]
-    CTCDNavigationSeed(#[from] CTCDNavigationSeedError),
-
-    #[error(transparent)]
-    CTCPhysicsStandard(#[from] CTCPhysicsStandardError),
-
-    #[error(transparent)]
-    CTCDCameraPoint(#[from] CTCDCameraPointError),
-
-    #[error(transparent)]
-    CTCCameraPointScripted(#[from] CTCCameraPointScriptedError),
-
-    #[error(transparent)]
-    CTCCameraPointScriptedSpline(#[from] CTCCameraPointScriptedSplineError),
-
-    #[error(transparent)]
-    CTCDParticleEmitter(#[from] CTCDParticleEmitterError),
-
-    #[error(transparent)]
-    CTCDRegionExit(#[from] CTCDRegionExitError),
-
-    #[error(transparent)]
-    CTCDRegionEntrance(#[from] CTCDRegionEntranceError),
-
-    #[error(transparent)]
-    CTCOwnedEntity(#[from] CTCOwnedEntityError),
-
-    #[error(transparent)]
-    CTCCameraPointFixedPoint(#[from] CTCCameraPointFixedPointError),
-
-    #[error(transparent)]
-    CTCShapeManager(#[from] CTCShapeManagerError),
-
-    #[error(transparent)]
-    CTCCameraPointTrack(#[from] CTCCameraPointTrackError),
-
-    #[error(transparent)]
-    CTCCameraPointGeneralCase(#[from] CTCCameraPointGeneralCaseError),
-
-    #[error(transparent)]
-    CTCTargeted(#[from] CTCTargetedError),
-
-    #[error(transparent)]
-    CTCActionUseScriptedHook(#[from] CTCActionUseScriptedHookError),
 }
 
 impl TngThing {
@@ -272,6 +259,28 @@ impl TngThing {
 
         // Extras
         let mut create_tc = None;
+        let mut health = None;
+        let mut object_scale = None;
+        let mut linked_to_uid_1 = None;
+        let mut linked_to_uid_2 = None;
+        let mut start = None;
+        let mut end = None;
+        let mut has_information = None;
+        let mut wander_with_information = None;
+        let mut wave_with_information = None;
+        let mut continue_ai_with_information = None;
+        let mut enable_creature_auto_placing = None;
+        let mut allowed_to_follow_hero = None;
+        let mut region_following_overridden_from_script = None;
+        let mut responding_to_follow_and_wait = None;
+        let mut can_be_courted = None;
+        let mut can_be_married = None;
+        let mut initial_pos_x = None;
+        let mut initial_pos_y = None;
+        let mut initial_pos_z = None;
+        let mut can_come_between_camera_and_hero = None;
+
+        // Extras (structured)
         let mut ctc_physics_light = None;
         let mut ctcd_navigation_seed = None;
         let mut ctc_physics_standard = None;
@@ -288,11 +297,30 @@ impl TngThing {
         let mut ctc_camera_point_general_case = None;
         let mut ctc_targeted = None;
         let mut ctc_action_use_scripted_hook = None;
+        let mut ctc_door = None;
+        let mut ctc_village_member = None;
+        let mut ctc_shop = None;
+        let mut ctc_buyable_house = None;
+        let mut ctc_village = None;
+        let mut ctc_enemy = None;
+        let mut ctc_creature_opinion_of_hero = None;
+        let mut ctc_teleporter = None;
+        let mut ctc_chest = None;
+        let mut ctc_searchable_container = None;
+        let mut ctc_light = None;
+        let mut ctc_atmos_player = None;
+        let mut ctc_physics_navigator = None;
+        let mut ctc_talk = None;
+        let mut overriding_brain_name = None;
+        let mut ctc_action_use_bed = None;
+        let mut ctc_hero_centre_door_marker = None;
+        let mut ctc_hero = None;
 
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
+                // Required field
                 "NewThing" => {
                     kind = Some(Self::parse_kind(&field)?);
                 }
@@ -317,14 +345,71 @@ impl TngThing {
                 "ThingLevelPersistent" => {
                     thing_level_persistent = Some(field.with_no_path()?.with_bool_value()?.1)
                 }
+                "StartCTCEditor" => {
+                    ctc_editor = Some(CTCEditor::parse(fields)?);
+                }
+
+                // Extra
                 "CreateTC" => {
                     create_tc = Some(field.with_no_path()?.with_string_value()?.1.to_owned());
                 }
+                "Health" => health = Some(field.with_no_path()?.with_float_value()?.1),
+                "ObjectScale" => object_scale = Some(field.with_no_path()?.with_float_value()?.1),
+                "LinkedToUID1" => linked_to_uid_1 = Some(field.with_no_path()?.with_uid_value()?.1),
+                "LinkedToUID2" => linked_to_uid_2 = Some(field.with_no_path()?.with_uid_value()?.1),
+                "Start" => start = Some(field.with_no_path()?.with_bool_value()?.1),
+                "End" => end = Some(field.with_no_path()?.with_bool_value()?.1),
+                "HasInformation" => {
+                    has_information = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "WanderWithInformation" => {
+                    wander_with_information = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "WaveWithInformation" => {
+                    wave_with_information = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "ContinueAIWithInformation" => {
+                    continue_ai_with_information = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "EnableCreatureAutoPlacing" => {
+                    enable_creature_auto_placing = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "AllowedToFollowHero" => {
+                    allowed_to_follow_hero = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "RegionFollowingOverriddenFromScript" => {
+                    region_following_overridden_from_script =
+                        Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "RespondingToFollowAndWait" => {
+                    responding_to_follow_and_wait =
+                        Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "CanBeCourted" => {
+                    can_be_courted = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "CanBeMarried" => {
+                    can_be_married = Some(field.with_no_path()?.with_bool_value()?.1);
+                }
+                "InitialPosX" => {
+                    initial_pos_x = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "InitialPosY" => {
+                    initial_pos_y = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "InitialPosZ" => {
+                    initial_pos_z = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "OverridingBrainName" => {
+                    overriding_brain_name =
+                        Some(field.with_no_path()?.with_identifier_value()?.1.to_owned())
+                }
+                "CanComeBetweenCameraAndHero" => {
+                    can_come_between_camera_and_hero =
+                        Some(field.with_no_path()?.with_integer_value()?.1.to_owned());
+                }
                 "StartCTCPhysicsLight" => {
                     ctc_physics_light = Some(CTCPhysicsLight::parse(fields)?);
-                }
-                "StartCTCEditor" => {
-                    ctc_editor = Some(CTCEditor::parse(fields)?);
                 }
                 "StartCTCDNavigationSeed" => {
                     ctcd_navigation_seed = Some(CTCDNavigationSeed::parse(fields)?);
@@ -372,28 +457,102 @@ impl TngThing {
                 "StartCTCActionUseScriptedHook" => {
                     ctc_action_use_scripted_hook = Some(CTCActionUseScriptedHook::parse(fields)?);
                 }
+                "StartCTCDoor" => {
+                    ctc_door = Some(CTCDoor::parse(fields)?);
+                }
+                "StartCTCVillageMember" => {
+                    ctc_village_member = Some(CTCVillageMember::parse(fields)?);
+                }
+                "StartCTCShop" => {
+                    ctc_shop = Some(CTCShop::parse(fields)?);
+                }
+                "StartCTCBuyableHouse" => {
+                    ctc_buyable_house = Some(CTCBuyableHouse::parse(fields)?);
+                }
+                "StartCTCVillage" => {
+                    ctc_village = Some(CTCVillage::parse(fields)?);
+                }
+                "StartCTCEnemy" => {
+                    ctc_enemy = Some(CTCEnemy::parse(fields)?);
+                }
+                "StartCTCCreatureOpinionOfHero" => {
+                    ctc_creature_opinion_of_hero = Some(CTCCreatureOpinionOfHero::parse(fields)?);
+                }
+                "StartCTCTeleporter" => {
+                    ctc_teleporter = Some(CTCTeleporter::parse(fields)?);
+                }
+                "StartCTCChest" => {
+                    ctc_chest = Some(CTCChest::parse(fields)?);
+                }
+                "StartCTCSearchableContainer" => {
+                    ctc_searchable_container = Some(CTCSearchableContainer::parse(fields)?);
+                }
+                "StartCTCLight" => {
+                    ctc_light = Some(CTCLight::parse(fields)?);
+                }
+                "StartCTCAtmosPlayer" => {
+                    ctc_atmos_player = Some(CTCAtmosPlayer::parse(fields)?);
+                }
+                "StartCTCPhysicsNavigator" => {
+                    ctc_physics_navigator = Some(CTCPhysicsNavigator::parse(fields)?);
+                }
+                "StartCTCTalk" => {
+                    ctc_talk = Some(CTCTalk::parse(fields)?);
+                }
+                "StartCTCActionUseBed" => {
+                    ctc_action_use_bed = Some(CTCActionUseBed::parse(fields)?);
+                }
+                "StartCTCHeroCentreDoorMarker" => {
+                    ctc_hero_centre_door_marker = Some(CTCHeroCentreDoorMarker::parse(fields)?);
+                }
+                "StartCTCHero" => {
+                    ctc_hero = Some(CTCHero::parse(fields)?);
+                }
+
+                // Final field
                 "EndThing" => {
                     let end_thing = field.with_no_path()?.with_no_value()?;
-                    let ln = end_thing.line;
+                    let line = end_thing.line;
 
-                    // Required
-                    let kind = kind.ok_or_else(|| TngThingError::Unrecognized { line: ln })?;
-                    let player = player.ok_or_else(|| missing_field(ln, "Player"))?;
-                    let uid = uid.ok_or_else(|| missing_field(ln, "UID"))?;
+                    let kind = kind.ok_or_else(|| TngThingError::Unrecognized { line })?;
+                    let player = player.ok_or_else(|| missing_field(line, "Player"))?;
+                    let uid = uid.ok_or_else(|| missing_field(line, "UID"))?;
                     let definition_type =
-                        definition_type.ok_or_else(|| missing_field(ln, "DefinitionType"))?;
-                    let script_name = script_name.ok_or_else(|| missing_field(ln, "ScriptName"))?;
-                    let script_data = script_data.ok_or_else(|| missing_field(ln, "ScriptData"))?;
+                        definition_type.ok_or_else(|| missing_field(line, "DefinitionType"))?;
+                    let script_name =
+                        script_name.ok_or_else(|| missing_field(line, "ScriptName"))?;
+                    let script_data =
+                        script_data.ok_or_else(|| missing_field(line, "ScriptData"))?;
                     let thing_game_persistent = thing_game_persistent
-                        .ok_or_else(|| missing_field(ln, "ThingGamePersistent"))?;
+                        .ok_or_else(|| missing_field(line, "ThingGamePersistent"))?;
                     let thing_level_persistent = thing_level_persistent
-                        .ok_or_else(|| missing_field(ln, "ThingLevelPersistent"))?;
+                        .ok_or_else(|| missing_field(line, "ThingLevelPersistent"))?;
                     let ctc_editor =
-                        ctc_editor.ok_or_else(|| missing_field(ln, "StartCTCEditor"))?;
+                        ctc_editor.ok_or_else(|| missing_field(line, "StartCTCEditor"))?;
 
-                    // Extras
-                    let extras = TngThingExtras {
+                    let extras = Box::new(TngThingExtras {
                         create_tc,
+                        health,
+                        object_scale,
+                        linked_to_uid_1,
+                        linked_to_uid_2,
+                        start,
+                        end,
+                        overriding_brain_name,
+                        has_information,
+                        wander_with_information,
+                        wave_with_information,
+                        continue_ai_with_information,
+                        enable_creature_auto_placing,
+                        allowed_to_follow_hero,
+                        region_following_overridden_from_script,
+                        responding_to_follow_and_wait,
+                        can_be_courted,
+                        can_be_married,
+                        initial_pos_x,
+                        initial_pos_y,
+                        initial_pos_z,
+                        can_come_between_camera_and_hero,
                         ctc_physics_light,
                         ctcd_navigation_seed,
                         ctc_physics_standard,
@@ -410,9 +569,24 @@ impl TngThing {
                         ctc_camera_point_general_case,
                         ctc_targeted,
                         ctc_action_use_scripted_hook,
-                    };
-
-                    let extras = Some(Box::new(extras));
+                        ctc_door,
+                        ctc_village_member,
+                        ctc_shop,
+                        ctc_buyable_house,
+                        ctc_village,
+                        ctc_enemy,
+                        ctc_creature_opinion_of_hero,
+                        ctc_teleporter,
+                        ctc_chest,
+                        ctc_searchable_container,
+                        ctc_light,
+                        ctc_atmos_player,
+                        ctc_physics_navigator,
+                        ctc_talk,
+                        ctc_action_use_bed,
+                        ctc_hero_centre_door_marker,
+                        ctc_hero,
+                    });
 
                     return Ok(Self {
                         kind,
@@ -427,8 +601,8 @@ impl TngThing {
                         extras,
                     });
                 }
-                // _ => Err(UnexpectedField { line: field.line })?,
-                _ => {}
+                _ => Err(UnexpectedField { line: field.line })?,
+                // _ => {}
             }
         }
     }
@@ -437,577 +611,923 @@ impl TngThing {
 #[derive(Clone, Debug)]
 pub struct CTCPhysicsLight {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCPhysicsLightError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCPhysicsLight {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCPhysicsLightError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCPhysicsLight" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCEditor {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCEditorError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCEditor {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCEditorError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCEditor" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
+    }
+}
 
-        Ok(Self {})
+#[derive(Clone, Debug)]
+pub struct CTCDoor {}
+
+impl CTCDoor {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCDoor" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCDNavigationSeed {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCDNavigationSeedError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCDNavigationSeed {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCDNavigationSeedError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCDNavigationSeed" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct CTCPhysicsStandard {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCPhysicsStandardError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
+pub struct CTCPhysicsStandard {
+    position_x: f32,
+    position_y: f32,
+    position_z: f32,
+    rh_set_forward_x: f32,
+    rh_set_forward_y: f32,
+    rh_set_forward_z: f32,
+    rh_set_up_x: f32,
+    rh_set_up_y: f32,
+    rh_set_up_z: f32,
 }
 
 impl CTCPhysicsStandard {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCPhysicsStandardError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut position_x = None;
+        let mut position_y = None;
+        let mut position_z = None;
+        let mut rh_set_forward_x = None;
+        let mut rh_set_forward_y = None;
+        let mut rh_set_forward_z = None;
+        let mut rh_set_up_x = None;
+        let mut rh_set_up_y = None;
+        let mut rh_set_up_z = None;
+
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCPhysicsStandard" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    let line = field.line;
+
+                    let position_x = position_x.ok_or_else(|| missing_field(line, "PositionX"))?;
+                    let position_y = position_y.ok_or_else(|| missing_field(line, "PositionY"))?;
+                    let position_z = position_z.ok_or_else(|| missing_field(line, "PositionZ"))?;
+                    let rh_set_forward_x =
+                        rh_set_forward_x.ok_or_else(|| missing_field(line, "RHSetForwardX"))?;
+                    let rh_set_forward_y =
+                        rh_set_forward_y.ok_or_else(|| missing_field(line, "RHSetForwardY"))?;
+                    let rh_set_forward_z =
+                        rh_set_forward_z.ok_or_else(|| missing_field(line, "RHSetForwardZ"))?;
+                    let rh_set_up_x = rh_set_up_x.ok_or_else(|| missing_field(line, "RHSetUpX"))?;
+                    let rh_set_up_y = rh_set_up_y.ok_or_else(|| missing_field(line, "RHSetUpY"))?;
+                    let rh_set_up_z = rh_set_up_z.ok_or_else(|| missing_field(line, "RHSetUpZ"))?;
+
+                    return Ok(Self {
+                        position_x,
+                        position_y,
+                        position_z,
+                        rh_set_forward_x,
+                        rh_set_forward_y,
+                        rh_set_forward_z,
+                        rh_set_up_x,
+                        rh_set_up_y,
+                        rh_set_up_z,
+                    });
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
+                "PositionX" => {
+                    position_x = Some(field.with_no_path()?.with_float_value()?.1);
                 }
+                "PositionY" => {
+                    position_y = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "PositionZ" => {
+                    position_z = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "RHSetForwardX" => {
+                    rh_set_forward_x = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "RHSetForwardY" => {
+                    rh_set_forward_y = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "RHSetForwardZ" => {
+                    rh_set_forward_z = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "RHSetUpX" => {
+                    rh_set_up_x = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "RHSetUpY" => {
+                    rh_set_up_y = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                "RHSetUpZ" => {
+                    rh_set_up_z = Some(field.with_no_path()?.with_float_value()?.1);
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCDCameraPoint {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCDCameraPointError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCDCameraPoint {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCDCameraPointError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCDCameraPoint" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct CTCCameraPointScripted {}
-
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCCameraPointScriptedError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
+pub struct CTCCameraPointScripted {
+    cut_into: bool,
+    cut_out_of: bool,
+    test_angle_before_activation: bool,
+    self_terminate: bool,
+    hero_is_subject: bool,
+    fov: f32,
+    is_coord_base_relative_to_parent: bool,
+    coord_base: [f32; 3],
+    coord_axis_up: [f32; 3],
+    coord_axis_fwd: [f32; 3],
+    using_relative_coords: bool,
+    using_relative_orientation: bool,
+    look_direction: [f32; 3],
+    look_direction_end: [f32; 3],
+    start_pos: [f32; 3],
+    end_pos: [f32; 3],
+    transition_time: f32,
 }
 
 impl CTCCameraPointScripted {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCCameraPointScriptedError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut cut_into = None;
+        let mut cut_out_of = None;
+        let mut test_angle_before_activation = None;
+        let mut self_terminate = None;
+        let mut hero_is_subject = None;
+        let mut fov = None;
+        let mut is_coord_base_relative_to_parent = None;
+        let mut coord_base = None;
+        let mut coord_axis_up = None;
+        let mut coord_axis_fwd = None;
+        let mut using_relative_coords = None;
+        let mut using_relative_orientation = None;
+        let mut look_direction = [None, None, None];
+        let mut look_direction_end = [None, None, None];
+        let mut start_pos = [None, None, None];
+        let mut end_pos = [None, None, None];
+        let mut transition_time = None;
+
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
+                "CutInto" => cut_into = Some(field.with_no_path()?.with_bool_value()?.1),
+                "CutOutOf" => cut_out_of = Some(field.with_no_path()?.with_bool_value()?.1),
+                "TestAngleBeforeActivation" => {
+                    test_angle_before_activation = Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "SelfTerminate" => {
+                    self_terminate = Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "HeroIsSubject" => {
+                    hero_is_subject = Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "FOV" => fov = Some(field.with_no_path()?.with_float_value()?.1),
+                "IsCoordBaseRelativeToParent" => {
+                    is_coord_base_relative_to_parent =
+                        Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "CoordBase" => coord_base = Some(field.with_no_path()?.with_c3dcoordf_value()?.1),
+                "CoordAxisUp" => {
+                    coord_axis_up = Some(field.with_no_path()?.with_c3dcoordf_value()?.1)
+                }
+                "CoordAxisFwd" => {
+                    coord_axis_fwd = Some(field.with_no_path()?.with_c3dcoordf_value()?.1)
+                }
+                "UsingRelativeCoords" => {
+                    using_relative_coords = Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "UsingRelativeOrientation" => {
+                    using_relative_orientation = Some(field.with_no_path()?.with_bool_value()?.1)
+                }
+                "LookDirection" => {
+                    let (_, path) = field.with_path()?;
+
+                    if path.len() != 1 {
+                        Err(CommonFieldError::InvalidPath { line: field.line })?;
+                    }
+
+                    let index = match path[0] {
+                        KvPathItem::Property("X") => 0,
+                        KvPathItem::Property("Y") => 1,
+                        KvPathItem::Property("Z") => 2,
+                        _ => Err(CommonFieldError::InvalidPath { line: field.line })?,
+                    };
+
+                    let (_, float) = field.with_float_value()?;
+
+                    look_direction[index] = Some(float);
+                }
+                "LookDirectionEnd" => {
+                    let (_, path) = field.with_path()?;
+
+                    if path.len() != 1 {
+                        Err(CommonFieldError::InvalidPath { line: field.line })?;
+                    }
+
+                    let index = match path[0] {
+                        KvPathItem::Property("X") => 0,
+                        KvPathItem::Property("Y") => 1,
+                        KvPathItem::Property("Z") => 2,
+                        _ => Err(CommonFieldError::InvalidPath { line: field.line })?,
+                    };
+
+                    let (_, float) = field.with_float_value()?;
+
+                    look_direction_end[index] = Some(float);
+                }
+                "StartPos" => {
+                    let (_, path) = field.with_path()?;
+
+                    if path.len() != 1 {
+                        Err(CommonFieldError::InvalidPath { line: field.line })?;
+                    }
+
+                    let index = match path[0] {
+                        KvPathItem::Property("X") => 0,
+                        KvPathItem::Property("Y") => 1,
+                        KvPathItem::Property("Z") => 2,
+                        _ => Err(CommonFieldError::InvalidPath { line: field.line })?,
+                    };
+
+                    let (_, float) = field.with_float_value()?;
+
+                    start_pos[index] = Some(float);
+                }
+                "EndPos" => {
+                    let (_, path) = field.with_path()?;
+
+                    if path.len() != 1 {
+                        Err(CommonFieldError::InvalidPath { line: field.line })?;
+                    }
+
+                    let index = match path[0] {
+                        KvPathItem::Property("X") => 0,
+                        KvPathItem::Property("Y") => 1,
+                        KvPathItem::Property("Z") => 2,
+                        _ => Err(CommonFieldError::InvalidPath { line: field.line })?,
+                    };
+
+                    let (_, float) = field.with_float_value()?;
+
+                    end_pos[index] = Some(float);
+                }
+                "TransitionTime" => {
+                    transition_time = Some(field.with_no_path()?.with_float_value()?.1)
+                }
                 "EndCTCCameraPointScripted" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    let line = field.line;
+
+                    let cut_into = cut_into.ok_or_else(|| missing_field(line, "CutInto"))?;
+                    let cut_out_of = cut_out_of.ok_or_else(|| missing_field(line, "CutOutOf"))?;
+                    let test_angle_before_activation = test_angle_before_activation
+                        .ok_or_else(|| missing_field(line, "TestAngleBeforeActivation"))?;
+                    let self_terminate =
+                        self_terminate.ok_or_else(|| missing_field(line, "SelfTerminate"))?;
+                    let hero_is_subject =
+                        hero_is_subject.ok_or_else(|| missing_field(line, "HeroIsSubject"))?;
+                    let fov = fov.ok_or_else(|| missing_field(line, "FOV"))?;
+                    let is_coord_base_relative_to_parent = is_coord_base_relative_to_parent
+                        .ok_or_else(|| missing_field(line, "IsCoordBaseRelativeToParent"))?;
+                    let coord_base = coord_base.ok_or_else(|| missing_field(line, "CoordBase"))?;
+                    let coord_axis_up =
+                        coord_axis_up.ok_or_else(|| missing_field(line, "CoordAxisUp"))?;
+                    let coord_axis_fwd =
+                        coord_axis_fwd.ok_or_else(|| missing_field(line, "CoordAxisFwd"))?;
+                    let using_relative_coords = using_relative_coords
+                        .ok_or_else(|| missing_field(line, "UsingRelativeCoords"))?;
+                    let using_relative_orientation = using_relative_orientation
+                        .ok_or_else(|| missing_field(line, "UsingRelativeOrientation"))?;
+                    let look_direction = [
+                        look_direction[0].ok_or_else(|| missing_field(line, "LookDirection.X"))?,
+                        look_direction[1].ok_or_else(|| missing_field(line, "LookDirection.Y"))?,
+                        look_direction[2].ok_or_else(|| missing_field(line, "LookDirection.Z"))?,
+                    ];
+                    let look_direction_end = [
+                        look_direction_end[0]
+                            .ok_or_else(|| missing_field(line, "LookDirectionEnd.X"))?,
+                        look_direction_end[1]
+                            .ok_or_else(|| missing_field(line, "LookDirectionEnd.Y"))?,
+                        look_direction_end[2]
+                            .ok_or_else(|| missing_field(line, "LookDirectionEnd.Z"))?,
+                    ];
+                    let start_pos = [
+                        start_pos[0].ok_or_else(|| missing_field(line, "StartPos.X"))?,
+                        start_pos[1].ok_or_else(|| missing_field(line, "StartPos.Y"))?,
+                        start_pos[2].ok_or_else(|| missing_field(line, "StartPos.Z"))?,
+                    ];
+                    let end_pos = [
+                        end_pos[0].ok_or_else(|| missing_field(line, "EndPos.X"))?,
+                        end_pos[1].ok_or_else(|| missing_field(line, "EndPos.Y"))?,
+                        end_pos[2].ok_or_else(|| missing_field(line, "EndPos.Z"))?,
+                    ];
+                    let transition_time =
+                        transition_time.ok_or_else(|| missing_field(line, "TransitionTime"))?;
+
+                    return Ok(Self {
+                        cut_into,
+                        cut_out_of,
+                        test_angle_before_activation,
+                        self_terminate,
+                        hero_is_subject,
+                        fov,
+                        is_coord_base_relative_to_parent,
+                        coord_base,
+                        coord_axis_up,
+                        coord_axis_fwd,
+                        using_relative_coords,
+                        using_relative_orientation,
+                        look_direction,
+                        look_direction_end,
+                        start_pos,
+                        end_pos,
+                        transition_time,
+                    });
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCCameraPointScriptedSpline {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCCameraPointScriptedSplineError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCCameraPointScriptedSpline {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCCameraPointScriptedSplineError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCCameraPointScriptedSpline" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCDParticleEmitter {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCDParticleEmitterError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCDParticleEmitter {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCDParticleEmitterError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCDParticleEmitter" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCDRegionExit {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCDRegionExitError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCDRegionExit {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCDRegionExitError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCDRegionExit" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCDRegionEntrance {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCDRegionEntranceError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCDRegionEntrance {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCDRegionEntranceError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCDRegionEntrance" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCOwnedEntity {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCOwnedEntityError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCOwnedEntity {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCOwnedEntityError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCOwnedEntity" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCCameraPointFixedPoint {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCCameraPointFixedPointError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCCameraPointFixedPoint {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCCameraPointFixedPointError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCCameraPointFixedPoint" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCShapeManager {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCShapeManagerError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCShapeManager {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCShapeManagerError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCShapeManager" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCCameraPointTrack {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCCameraPointTrackError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCCameraPointTrack {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCCameraPointTrackError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCCameraPointTrack" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCCameraPointGeneralCase {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCCameraPointGeneralCaseError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCCameraPointGeneralCase {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCCameraPointGeneralCaseError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCCameraPointGeneralCase" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCTargeted {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCTargetedError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCTargeted {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCTargetedError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCTargeted" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
-
-        Ok(Self {})
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct CTCActionUseScriptedHook {}
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-pub enum CTCActionUseScriptedHookError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-}
-
 impl CTCActionUseScriptedHook {
-    fn parse(fields: &mut &[KvField]) -> Result<Self, CTCActionUseScriptedHookError> {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
 
             match field.key.identifier {
                 "EndCTCActionUseScriptedHook" => {
                     let _ = field.with_no_path()?.with_no_path()?;
-                    break;
+                    return Ok(Self {});
                 }
-                // _ => {
-                //     return Err(TngThingError::UnexpectedField {
-                //         line_num: field.line_num,
-                //     })
-                // }
-                _ => {
-                    // println!("{:?}", field);
-                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
             }
         }
+    }
+}
 
-        Ok(Self {})
+#[derive(Clone, Debug)]
+pub struct CTCVillageMember {}
+
+impl CTCVillageMember {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCVillageMember" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCShop {}
+
+impl CTCShop {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCShop" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCBuyableHouse {}
+
+impl CTCBuyableHouse {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCBuyableHouse" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCVillage {}
+
+impl CTCVillage {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCVillage" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCEnemy {}
+
+impl CTCEnemy {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCEnemy" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCCreatureOpinionOfHero {}
+
+impl CTCCreatureOpinionOfHero {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCCreatureOpinionOfHero" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCTeleporter {}
+
+impl CTCTeleporter {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCTeleporter" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCChest {}
+
+impl CTCChest {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCChest" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCSearchableContainer {}
+
+impl CTCSearchableContainer {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCSearchableContainer" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCLight {}
+
+impl CTCLight {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCLight" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCAtmosPlayer {}
+
+impl CTCAtmosPlayer {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCAtmosPlayer" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCPhysicsNavigator {}
+
+impl CTCPhysicsNavigator {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCPhysicsNavigator" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCTalk {}
+
+impl CTCTalk {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCTalk" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCActionUseBed {}
+
+impl CTCActionUseBed {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCActionUseBed" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCHeroCentreDoorMarker {}
+
+impl CTCHeroCentreDoorMarker {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCHeroCentreDoorMarker" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCHero {}
+
+impl CTCHero {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+
+            match field.key.identifier {
+                "EndCTCHero" => {
+                    let _ = field.with_no_path()?.with_no_path()?;
+                    return Ok(Self {});
+                }
+                _ => Err(CommonFieldError::UnexpectedField { line: field.line })?,
+            }
+        }
     }
 }
