@@ -63,22 +63,25 @@ pub enum CommonFieldError {
     #[error("unexpected end of input")]
     UnexpectedEnd,
 
-    #[error("unexpected field on line {line}")]
+    #[error("line {line} unexpected field")]
     UnexpectedField { line: usize },
 
-    #[error("invalid path for field on line {line}")]
+    #[error("line {line} invalid path")]
     InvalidPath { line: usize },
 
-    #[error("expected {expected} value for field on line {line}")]
+    #[error("line {line} expected {expected} value")]
     InvalidValue { line: usize, expected: KvValueKind },
 
-    #[error("missing field {name} in field list ending on line {line}")]
+    #[error("line {line} missing field {name}")]
     MissingField { line: usize, name: &'static str },
+
+    #[error("line {line} index {index} is out of bounds")]
+    OutOfBounds { line: usize, index: isize },
 }
 
 use CommonFieldError::{InvalidPath, InvalidValue, UnexpectedField};
 
-pub fn missing_field(line: usize, name: &'static str) -> CommonFieldError {
+pub fn missing(line: usize, name: &'static str) -> CommonFieldError {
     CommonFieldError::MissingField { line, name }
 }
 
@@ -118,7 +121,7 @@ impl<'a> KvField<'a> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.with_no_value().is_ok()
+        self.empty_value().is_ok()
     }
 
     pub fn with_key(&self, identifier: &str) -> Result<&Self, CommonFieldError> {
@@ -129,17 +132,7 @@ impl<'a> KvField<'a> {
         }
     }
 
-    pub fn with_no_path(&self) -> Result<&Self, CommonFieldError> {
-        if self.key.path.iter().next().is_none() {
-            Ok(self)
-        } else {
-            Err(InvalidPath { line: self.line })
-        }
-    }
-
-    pub fn with_path(
-        &self,
-    ) -> Result<(&Self, ArrayVec<KvPathItem, MAX_PATH_ITEMS>), CommonFieldError> {
+    pub fn path(&self) -> Result<ArrayVec<KvPathItem, MAX_PATH_ITEMS>, CommonFieldError> {
         let mut path_iter = self.key.path.iter();
 
         let path = path_iter
@@ -152,107 +145,97 @@ impl<'a> KvField<'a> {
             Err(InvalidPath { line: self.line })?
         }
 
-        Ok((self, path))
+        Ok(path)
     }
 
-    pub fn with_no_value(&self) -> Result<&Self, CommonFieldError> {
-        match self.value.empty() {
-            Ok(()) => Ok(self),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn empty_value(&self) -> Result<(), CommonFieldError> {
+        self.value
+            .empty()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_integer_value(&self) -> Result<(&Self, i32), CommonFieldError> {
-        match self.value.integer() {
-            Ok(integer) => Ok((self, integer)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn integer_value(&self) -> Result<i32, CommonFieldError> {
+        self.value
+            .integer()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_uid_value(&self) -> Result<(&Self, u64), CommonFieldError> {
-        match self.value.uid() {
-            Ok(uid) => Ok((self, uid)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn uid_value(&self) -> Result<u64, CommonFieldError> {
+        self.value
+            .uid()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_float_value(&self) -> Result<(&Self, f32), CommonFieldError> {
-        match self.value.float() {
-            Ok(float) => Ok((self, float)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn float_value(&self) -> Result<f32, CommonFieldError> {
+        self.value
+            .float()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_bool_value(&self) -> Result<(&Self, bool), CommonFieldError> {
-        match self.value.bool() {
-            Ok(bool) => Ok((self, bool)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn bool_value(&self) -> Result<bool, CommonFieldError> {
+        self.value
+            .bool()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_string_value(&self) -> Result<(&Self, &str), CommonFieldError> {
-        match self.value.string() {
-            Ok(string) => Ok((self, string)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn string_value(&self) -> Result<&str, CommonFieldError> {
+        self.value
+            .string()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_identifier_value(&self) -> Result<(&Self, &str), CommonFieldError> {
-        match self.value.identifier() {
-            Ok(identifier) => Ok((self, identifier)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn identifier_value(&self) -> Result<&str, CommonFieldError> {
+        self.value
+            .identifier()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_c2dcoordf_value(&self) -> Result<(&Self, [f32; 2]), CommonFieldError> {
-        match self.value.c2dcoordf() {
-            Ok(identifier) => Ok((self, identifier)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn c2dcoordf_value(&self) -> Result<[f32; 2], CommonFieldError> {
+        self.value
+            .c2dcoordf()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_c3dcoordf_value(&self) -> Result<(&Self, [f32; 3]), CommonFieldError> {
-        match self.value.c3dcoordf() {
-            Ok(identifier) => Ok((self, identifier)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn c3dcoordf_value(&self) -> Result<[f32; 3], CommonFieldError> {
+        self.value
+            .c3dcoordf()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 
-    pub fn with_crgbcolour_value(&self) -> Result<(&Self, [u8; 4]), CommonFieldError> {
-        match self.value.crgbcolour() {
-            Ok(identifier) => Ok((self, identifier)),
-            Err(KvValueError(expected)) => Err(InvalidValue {
+    pub fn crgbcolour_value(&self) -> Result<[u8; 4], CommonFieldError> {
+        self.value
+            .crgbcolour()
+            .map_err(|KvValueError(expected)| InvalidValue {
                 expected,
                 line: self.line,
-            }),
-        }
+            })
     }
 }
 
