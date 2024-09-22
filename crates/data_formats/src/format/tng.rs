@@ -1448,6 +1448,7 @@ pub struct TngShape {
     pub size: i32,
     pub pos: Vec<[f32; 3]>,
 }
+
 impl TngShape {
     fn parse_by_index(fields: &mut &[KvField], index: usize) -> Result<Self, CommonFieldError> {
         let mut r#type = None;
@@ -1544,9 +1545,23 @@ impl TngShape {
             let field = fields.first().ok_or_else(|| UnexpectedEnd)?;
             line = field.line;
 
-            if let index = path.get(2);
+            if field.key.identifier != "Shape" {
+                break;
+            }
 
             let path = field.path()?;
+
+            let field_index = path
+                .get(2)
+                .ok_or_else(|| missing(line, "Shape[..].pos[..]"))?;
+
+            if index > field_index {
+                break;
+            }
+
+            let position = path
+                .get(3)
+                .ok_or_else(|| missing(line, "Shape[..].pos[..].X,Y,Z"))?;
         }
     }
 
@@ -1554,7 +1569,6 @@ impl TngShape {
         fields: &mut &[KvField],
         length: usize,
     ) -> Result<Vec<[f32; 3]>, CommonFieldError> {
-
     }
 
     fn parse_list(fields: &mut &[KvField], length: usize) -> Result<Vec<Self>, CommonFieldError> {}
