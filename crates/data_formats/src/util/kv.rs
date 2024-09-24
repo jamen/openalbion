@@ -361,7 +361,7 @@ impl<'a> KvValue<'a> {
         skip_spaces(&mut rest);
 
         let (y, mut rest) = rest
-            .split_once(",")
+            .split_once(")")
             .ok_or_else(|| KvValueError(C2DCoordF))?;
 
         skip_spaces(&mut rest);
@@ -610,7 +610,7 @@ impl<'a> Iterator for KvPathIter<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KvPathItem<'a> {
     Property(&'a str),
     Index(i32),

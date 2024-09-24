@@ -3,9 +3,7 @@ use std::{collections::BTreeMap, str::FromStr};
 use crate::util::{
     kv::{
         missing,
-        CommonFieldError::{
-            self, InvalidPath, InvalidValue, OutOfBounds, UnexpectedEnd, UnexpectedField,
-        },
+        CommonFieldError::{self, InvalidPath, InvalidValue, UnexpectedEnd, UnexpectedField},
         Kv, KvError, KvField, KvPathItem, KvValueKind,
     },
     slice::TakeSliceExt,
@@ -182,6 +180,11 @@ pub struct TngThingExtras {
     pub overriding_brain_name: Option<String>,
     pub can_come_between_camera_and_hero: Option<i32>,
     pub work_building_uid: Option<u64>,
+    pub trigger_radius: Option<f32>,
+    pub triggered_by_thing: Option<String>,
+    pub environment_def: Option<String>,
+    pub time_to_change_environment_def: Option<f32>,
+    pub home_building_uid: Option<u64>,
 
     pub ctc_physics_light: Option<CTCPhysicsLight>,
     pub ctcd_navigation_seed: Option<CTCDNavigationSeed>,
@@ -233,6 +236,14 @@ pub struct TngThingExtras {
     pub ctc_carried_action_use_read: Option<CTCCarriedActionUseRead>,
     pub ctc_action_use_readable: Option<CTCActionUseReadable>,
     pub ctc_digging_spot: Option<CTCDiggingSpot>,
+    pub ctc_wall_mount: Option<CTCWallMount>,
+    pub ctc_ai_scratchpad: Option<CTCAIScratchpad>,
+    pub ctc_pre_calculated_navigation_route: Option<CTCPreCalculatedNavigationRoute>,
+    pub ctc_exploding_object: Option<CTCExplodingObject>,
+    pub ctc_stealable_item_location: Option<CTCStealableItemLocation>,
+    pub ctc_activation_receptor_door: Option<CTCActivationReceptorDoor>,
+    pub ctc_boasting_area: Option<CTCBoastingArea>,
+    pub ctc_trophy: Option<CTCTrophy>,
 }
 
 #[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
@@ -292,6 +303,11 @@ impl TngThing {
         let mut initial_pos_z = None;
         let mut can_come_between_camera_and_hero = None;
         let mut work_building_uid = None;
+        let mut trigger_radius = None;
+        let mut triggered_by_thing = None;
+        let mut environment_def = None;
+        let mut time_to_change_environment_def = None;
+        let mut home_building_uid = None;
 
         let mut ctc_physics_light = None;
         let mut ctcd_navigation_seed = None;
@@ -344,6 +360,14 @@ impl TngThing {
         let mut ctc_carried_action_use_read = None;
         let mut ctc_action_use_readable = None;
         let mut ctc_digging_spot = None;
+        let mut ctc_wall_mount = None;
+        let mut ctc_ai_scratchpad = None;
+        let mut ctc_pre_calculated_navigation_route = None;
+        let mut ctc_exploding_object = None;
+        let mut ctc_stealable_item_location = None;
+        let mut ctc_activation_receptor_door = None;
+        let mut ctc_boasting_area = None;
+        let mut ctc_trophy = None;
 
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
@@ -409,7 +433,23 @@ impl TngThing {
                 "WorkBuildingUID" => {
                     work_building_uid = Some(field.uid_value()?);
                 }
+                "TriggerRadius" => {
+                    trigger_radius = Some(field.float_value()?);
+                }
+                "TriggeredByThing" => {
+                    triggered_by_thing = Some(field.identifier_value()?.to_owned());
+                }
+                "EnvironmentDef" => {
+                    environment_def = Some(field.identifier_value()?.to_owned());
+                }
+                "TimeToChangeEnvironmentDef" => {
+                    time_to_change_environment_def = Some(field.float_value()?);
+                }
+                "HomeBuildingUID" => {
+                    home_building_uid = Some(field.uid_value()?);
+                }
 
+                // Extra (structured)
                 "StartCTCPhysicsLight" => {
                     ctc_physics_light = Some(CTCPhysicsLight::parse(fields)?);
                 }
@@ -559,6 +599,23 @@ impl TngThing {
                     ctc_action_use_readable = Some(CTCActionUseReadable::parse(fields)?)
                 }
                 "StartCTCDiggingSpot" => ctc_digging_spot = Some(CTCDiggingSpot::parse(fields)?),
+                "StartCTCWallMount" => ctc_wall_mount = Some(CTCWallMount::parse(fields)?),
+                "StartCTCAIScratchpad" => ctc_ai_scratchpad = Some(CTCAIScratchpad::parse(fields)?),
+                "StartCTCPreCalculatedNavigationRoute" => {
+                    ctc_pre_calculated_navigation_route =
+                        Some(CTCPreCalculatedNavigationRoute::parse(fields)?)
+                }
+                "StartCTCExplodingObject" => {
+                    ctc_exploding_object = Some(CTCExplodingObject::parse(fields)?)
+                }
+                "StartCTCStealableItemLocation" => {
+                    ctc_stealable_item_location = Some(CTCStealableItemLocation::parse(fields)?)
+                }
+                "StartCTCActivationReceptorDoor" => {
+                    ctc_activation_receptor_door = Some(CTCActivationReceptorDoor::parse(fields)?)
+                }
+                "StartCTCBoastingArea" => ctc_boasting_area = Some(CTCBoastingArea::parse(fields)?),
+                "StartCTCTrophy" => ctc_trophy = Some(CTCTrophy::parse(fields)?),
 
                 "EndThing" => {
                     let end_thing = field;
@@ -602,6 +659,12 @@ impl TngThing {
                         initial_pos_z,
                         can_come_between_camera_and_hero,
                         work_building_uid,
+                        trigger_radius,
+                        triggered_by_thing,
+                        environment_def,
+                        time_to_change_environment_def,
+                        home_building_uid,
+
                         ctc_physics_light,
                         ctcd_navigation_seed,
                         ctc_physics_standard,
@@ -652,6 +715,14 @@ impl TngThing {
                         ctc_carried_action_use_read,
                         ctc_action_use_readable,
                         ctc_digging_spot,
+                        ctc_wall_mount,
+                        ctc_ai_scratchpad,
+                        ctc_pre_calculated_navigation_route,
+                        ctc_exploding_object,
+                        ctc_stealable_item_location,
+                        ctc_activation_receptor_door,
+                        ctc_boasting_area,
+                        ctc_trophy,
                     });
 
                     return Ok(Self {
@@ -713,17 +784,22 @@ impl CTCPhysicsLight {
 }
 
 #[derive(Clone, Debug)]
-pub struct CTCEditor {}
+pub struct CTCEditor {
+    pub locked_in_place: Option<bool>,
+}
 
 impl CTCEditor {
     fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut locked_in_place = None;
+
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
             let line = field.line;
 
             match field.key.identifier {
+                "LockedInPlace" => locked_in_place = Some(field.bool_value()?),
                 "EndCTCEditor" => {
-                    return Ok(Self {});
+                    return Ok(Self { locked_in_place });
                 }
                 _ => Err(UnexpectedField { line })?,
             }
@@ -734,11 +810,13 @@ impl CTCEditor {
 #[derive(Clone, Debug)]
 pub struct CTCDoor {
     pub open: bool,
+    pub door_trigger_type: Option<i32>,
 }
 
 impl CTCDoor {
     fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         let mut open = None;
+        let mut door_trigger_type = None;
 
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
@@ -746,10 +824,14 @@ impl CTCDoor {
 
             match field.key.identifier {
                 "Open" => open = Some(field.bool_value()?),
+                "DoorTriggerType" => door_trigger_type = Some(field.integer_value()?),
                 "EndCTCDoor" => {
                     let open = open.ok_or_else(|| missing(line, "Open"))?;
 
-                    return Ok(Self { open });
+                    return Ok(Self {
+                        open,
+                        door_trigger_type,
+                    });
                 }
                 _ => Err(UnexpectedField { line })?,
             }
@@ -903,6 +985,7 @@ pub struct CTCCameraPointScripted {
     pub start_pos: [f32; 3],
     pub end_pos: [f32; 3],
     pub transition_time: f32,
+    pub thing_uid: Option<u64>,
 }
 
 impl CTCCameraPointScripted {
@@ -924,6 +1007,7 @@ impl CTCCameraPointScripted {
         let mut start_pos = [None, None, None];
         let mut end_pos = [None, None, None];
         let mut transition_time = None;
+        let mut thing_uid = None;
 
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
@@ -1013,6 +1097,7 @@ impl CTCCameraPointScripted {
                     end_pos[index] = Some(field.float_value()?);
                 }
                 "TransitionTime" => transition_time = Some(field.float_value()?),
+                "ThingUID" => thing_uid = Some(field.uid_value()?),
                 "EndCTCCameraPointScripted" => {
                     let line = field.line;
 
@@ -1077,6 +1162,7 @@ impl CTCCameraPointScripted {
                         start_pos,
                         end_pos,
                         transition_time,
+                        thing_uid,
                     });
                 }
                 _ => Err(UnexpectedField { line })?,
@@ -1103,6 +1189,7 @@ pub struct CTCCameraPointScriptedSpline {
     pub tension: f32,
     pub num_key_cameras: i32,
     pub key_cameras: Vec<TngKeyCamera>,
+    pub valid_anims: BTreeMap<usize, String>,
 }
 
 impl CTCCameraPointScriptedSpline {
@@ -1123,6 +1210,7 @@ impl CTCCameraPointScriptedSpline {
         let mut tension = None;
         let mut num_key_cameras = None;
         let mut key_cameras = Vec::new();
+        let mut valid_anims = BTreeMap::new();
 
         loop {
             let peek_field = fields.first().ok_or_else(|| UnexpectedEnd)?;
@@ -1159,6 +1247,29 @@ impl CTCCameraPointScriptedSpline {
                 "TimeToPlay" => time_to_play = Some(field.float_value()?),
                 "Tension" => tension = Some(field.float_value()?),
                 "NumKeyCameras" => num_key_cameras = Some(field.integer_value()?),
+                "ValidAnims" => {
+                    let path = field.path()?;
+
+                    if path.len() != 1 {
+                        Err(InvalidPath { line })?
+                    }
+
+                    let valid_anim_index = if let KvPathItem::Index(valid_anim_index) = path[0] {
+                        if valid_anim_index < 0 {
+                            Err(InvalidPath { line })?
+                        }
+
+                        valid_anim_index as usize
+                    } else {
+                        Err(InvalidPath { line })?
+                    };
+
+                    let value = field.string_value()?.to_owned();
+
+                    if valid_anims.insert(valid_anim_index, value).is_some() {
+                        Err(UnexpectedField { line })?
+                    };
+                }
                 "EndCTCCameraPointScriptedSpline" => {
                     let cut_into = cut_into.ok_or_else(|| missing(line, "CutInto"))?;
                     let cut_out_of = cut_out_of.ok_or_else(|| missing(line, "CutOutOf"))?;
@@ -1202,6 +1313,7 @@ impl CTCCameraPointScriptedSpline {
                         tension,
                         num_key_cameras,
                         key_cameras,
+                        valid_anims,
                     });
                 }
                 _ => Err(UnexpectedField { line })?,
@@ -1250,8 +1362,8 @@ pub struct CTCDRegionExit {
     pub active: bool,
     pub radius: f32,
     pub message_radius: f32,
-    pub reversed_on_mini_map: bool,
-    pub hidden_on_mini_map: bool,
+    pub reversed_on_mini_map: Option<bool>,
+    pub hidden_on_mini_map: Option<bool>,
     pub entrance_connected_to_uid: u64,
 }
 
@@ -1280,10 +1392,6 @@ impl CTCDRegionExit {
                     let radius = radius.ok_or_else(|| missing(line, "Radius"))?;
                     let message_radius =
                         message_radius.ok_or_else(|| missing(line, "MessageRadius"))?;
-                    let reversed_on_mini_map =
-                        reversed_on_mini_map.ok_or_else(|| missing(line, "ReversedOnMiniMap"))?;
-                    let hidden_on_mini_map =
-                        hidden_on_mini_map.ok_or_else(|| missing(line, "HiddenOnMiniMap"))?;
                     let entrance_connected_to_uid = entrance_connected_to_uid
                         .ok_or_else(|| missing(line, "EntranceConnectedToUID"))?;
 
@@ -1369,17 +1477,129 @@ impl CTCOwnedEntity {
 }
 
 #[derive(Clone, Debug)]
-pub struct CTCCameraPointFixedPoint {}
+pub struct CTCCameraPointFixedPoint {
+    pub cut_into: bool,
+    pub cut_out_of: bool,
+    pub test_angle_before_activation: bool,
+    pub self_terminate: bool,
+    pub hero_is_subject: bool,
+    pub fov: f32,
+    pub is_coord_base_relative_to_parent: bool,
+    pub coord_base: [f32; 3],
+    pub coord_axis_up: [f32; 3],
+    pub coord_axis_fwd: [f32; 3],
+    pub using_relative_coords: bool,
+    pub using_relative_orientation: bool,
+    pub track_thing: bool,
+    pub look_vector: [f32; 3],
+}
 
 impl CTCCameraPointFixedPoint {
     fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut cut_into = None;
+        let mut cut_out_of = None;
+        let mut test_angle_before_activation = None;
+        let mut self_terminate = None;
+        let mut hero_is_subject = None;
+        let mut fov = None;
+        let mut is_coord_base_relative_to_parent = None;
+        let mut coord_base = None;
+        let mut coord_axis_up = None;
+        let mut coord_axis_fwd = None;
+        let mut using_relative_coords = None;
+        let mut using_relative_orientation = None;
+        let mut track_thing = None;
+        let mut look_vector = [None, None, None];
+
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
-            let line = field.lin;
+            let line = field.line;
 
             match field.key.identifier {
+                "CutInto" => cut_into = Some(field.bool_value()?),
+                "CutOutOf" => cut_out_of = Some(field.bool_value()?),
+                "TestAngleBeforeActivation" => {
+                    test_angle_before_activation = Some(field.bool_value()?)
+                }
+                "SelfTerminate" => self_terminate = Some(field.bool_value()?),
+                "HeroIsSubject" => hero_is_subject = Some(field.bool_value()?),
+                "FOV" => fov = Some(field.float_value()?),
+                "IsCoordBaseRelativeToParent" => {
+                    is_coord_base_relative_to_parent = Some(field.bool_value()?)
+                }
+                "CoordBase" => coord_base = Some(field.c3dcoordf_value()?),
+                "CoordAxisUp" => coord_axis_up = Some(field.c3dcoordf_value()?),
+                "CoordAxisFwd" => coord_axis_fwd = Some(field.c3dcoordf_value()?),
+                "UsingRelativeCoords" => using_relative_coords = Some(field.bool_value()?),
+                "UsingRelativeOrientation" => {
+                    using_relative_orientation = Some(field.bool_value()?)
+                }
+                "TrackThing" => track_thing = Some(field.bool_value()?),
+                "LookVector" => {
+                    let path = field.path()?;
+
+                    if path.len() != 1 {
+                        Err(InvalidPath { line })?
+                    }
+
+                    let coord = if let KvPathItem::Property(coord) = path[0] {
+                        coord
+                    } else {
+                        Err(InvalidPath { line })?
+                    };
+
+                    match coord {
+                        "X" => look_vector[0] = Some(field.float_value()?),
+                        "Y" => look_vector[1] = Some(field.float_value()?),
+                        "Z" => look_vector[2] = Some(field.float_value()?),
+                        _ => Err(InvalidPath { line })?,
+                    }
+                }
                 "EndCTCCameraPointFixedPoint" => {
-                    return Ok(Self {});
+                    let cut_into = cut_into.ok_or_else(|| missing(line, "CutInto"))?;
+                    let cut_out_of = cut_out_of.ok_or_else(|| missing(line, "CutOutOf"))?;
+                    let test_angle_before_activation = test_angle_before_activation
+                        .ok_or_else(|| missing(line, "TestAngleBeforeActivation"))?;
+                    let self_terminate =
+                        self_terminate.ok_or_else(|| missing(line, "SelfTerminate"))?;
+                    let hero_is_subject =
+                        hero_is_subject.ok_or_else(|| missing(line, "HeroIsSubject"))?;
+                    let fov = fov.ok_or_else(|| missing(line, "FOV"))?;
+                    let is_coord_base_relative_to_parent = is_coord_base_relative_to_parent
+                        .ok_or_else(|| missing(line, "IsCoordBaseRelativeToParent"))?;
+                    let coord_base = coord_base.ok_or_else(|| missing(line, "CoordBase"))?;
+                    let coord_axis_up =
+                        coord_axis_up.ok_or_else(|| missing(line, "CoordAxisUp"))?;
+                    let coord_axis_fwd =
+                        coord_axis_fwd.ok_or_else(|| missing(line, "CoordAxisFwd"))?;
+                    let using_relative_coords = using_relative_coords
+                        .ok_or_else(|| missing(line, "UsingRelativeCoords"))?;
+                    let using_relative_orientation = using_relative_orientation
+                        .ok_or_else(|| missing(line, "UsingRelativeOrientation"))?;
+                    let track_thing = track_thing.ok_or_else(|| missing(line, "TrackThing"))?;
+
+                    let look_vector = [
+                        look_vector[0].ok_or_else(|| missing(line, "LookVector.X"))?,
+                        look_vector[1].ok_or_else(|| missing(line, "LookVector.Y"))?,
+                        look_vector[2].ok_or_else(|| missing(line, "LookVector.Z"))?,
+                    ];
+
+                    return Ok(Self {
+                        cut_into,
+                        cut_out_of,
+                        test_angle_before_activation,
+                        self_terminate,
+                        hero_is_subject,
+                        fov,
+                        is_coord_base_relative_to_parent,
+                        coord_base,
+                        coord_axis_up,
+                        coord_axis_fwd,
+                        using_relative_coords,
+                        using_relative_orientation,
+                        track_thing,
+                        look_vector,
+                    });
                 }
                 _ => Err(UnexpectedField { line })?,
             }
@@ -1391,41 +1611,116 @@ impl CTCCameraPointFixedPoint {
 pub struct CTCShapeManager {
     pub is_coords_relative_to_map: bool,
     pub num_shapes: i32,
-    pub shapes: Vec<TngShape>,
+    pub shape_info: BTreeMap<usize, TngShapeInfo>,
+    pub shape_positions: BTreeMap<TngShapeIndex, f32>,
 }
 
 impl CTCShapeManager {
     fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
         let mut is_coords_relative_to_map = None;
         let mut num_shapes = None;
-        let mut shapes = Vec::new();
+
+        // Instead of parsing these `Shape` fields into a tree of structs,
+        // I think it'll be simpler to parse it into a couple BTreeMaps.
+        let mut shape_info = BTreeMap::new();
+        let mut shape_positions = BTreeMap::new();
+
+        let mut shape_type = None;
+        let mut shape_pos_size = None;
 
         loop {
-            let field = fields.first().ok_or_else(|| UnexpectedEnd)?;
-            let line = field.line;
-
-            if field.key.identifier == "Shape" {
-                let num_shapes = num_shapes.ok_or_else(|| missing(line, "NumShapes"))?;
-
-                let num_shapes = if num_shapes > 0 {
-                    num_shapes as usize
-                } else {
-                    Err(InvalidValue {
-                        line,
-                        expected: KvValueKind::Integer,
-                    })?
-                };
-
-                shapes = TngShape::parse_list(fields, num_shapes)?;
-
-                continue;
-            }
-
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
 
             match field.key.identifier {
                 "IsCoordsRelativeToMap" => is_coords_relative_to_map = Some(field.bool_value()?),
                 "NumShapes" => num_shapes = Some(field.integer_value()?),
+                "Shape" => {
+                    let path = field.path()?;
+
+                    let shape_index: usize =
+                        if let Some(&KvPathItem::Index(shape_index)) = path.get(0) {
+                            shape_index.try_into().map_err(|_| InvalidPath { line })?
+                        } else {
+                            Err(InvalidPath { line })?
+                        };
+
+                    let shape_prop = if let Some(&KvPathItem::Property(name)) = path.get(1) {
+                        name
+                    } else {
+                        Err(InvalidPath { line })?
+                    };
+
+                    match shape_prop {
+                        "Type" => shape_type = Some(TngShapeType::parse(field)?),
+                        "size" => {
+                            // NOTE: Unusual path item. Not sure what its for, but check for it.
+                            if let Some(KvPathItem::Call) = path.get(2) {
+                                shape_pos_size = Some(field.integer_value()?)
+                            } else {
+                                Err(InvalidPath { line })?
+                            }
+
+                            let r#type =
+                                shape_type.clone().ok_or_else(|| UnexpectedField { line })?;
+
+                            let position_size =
+                                shape_pos_size.ok_or_else(|| UnexpectedField { line })?;
+
+                            let info = TngShapeInfo {
+                                r#type,
+                                position_size,
+                            };
+
+                            if shape_info.insert(shape_index, info).is_some() {
+                                Err(InvalidPath { line })?
+                            }
+                        }
+                        "pos" => {
+                            let position_size =
+                                shape_pos_size.ok_or_else(|| UnexpectedField { line })?;
+
+                            let position_index =
+                                if let Some(&KvPathItem::Index(position_index)) = path.get(2) {
+                                    if position_index < 0 {
+                                        Err(InvalidPath { line })?
+                                    }
+
+                                    if position_index >= position_size {
+                                        Err(InvalidPath { line })?
+                                    }
+
+                                    position_index as usize
+                                } else {
+                                    Err(InvalidPath { line })?
+                                };
+
+                            let position_coord =
+                                if let Some(&KvPathItem::Property(position_coord)) = path.get(3) {
+                                    TngShapeCoord::parse(position_coord)
+                                        .ok_or_else(|| InvalidPath { line })?
+                                } else {
+                                    Err(InvalidPath { line })?
+                                };
+
+                            let complete_shape_index = TngShapeIndex {
+                                shape_index,
+                                position_index,
+                                position_coord,
+                            };
+
+                            let value = field.float_value()?;
+
+                            if shape_positions
+                                .insert(complete_shape_index, value)
+                                .is_some()
+                            {
+                                Err(UnexpectedField { line })?
+                            }
+                        }
+                        _ => Err(InvalidPath { line })?,
+                    }
+                }
                 "EndCTCShapeManager" => {
                     let is_coords_relative_to_map = is_coords_relative_to_map
                         .ok_or_else(|| missing(line, "IsCoordsRelativeToMap"))?;
@@ -1434,7 +1729,8 @@ impl CTCShapeManager {
                     return Ok(Self {
                         is_coords_relative_to_map,
                         num_shapes,
-                        shapes,
+                        shape_info,
+                        shape_positions,
                     });
                 }
                 _ => Err(UnexpectedField { line })?,
@@ -1443,135 +1739,56 @@ impl CTCShapeManager {
     }
 }
 
-pub struct TngShape {
-    pub r#type: String,
-    pub size: i32,
-    pub pos: Vec<[f32; 3]>,
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TngShapeIndex {
+    pub shape_index: usize,
+    pub position_index: usize,
+    pub position_coord: TngShapeCoord,
 }
 
-impl TngShape {
-    fn parse_by_index(fields: &mut &[KvField], index: usize) -> Result<Self, CommonFieldError> {
-        let mut r#type = None;
-        let mut size = None;
-        let mut pos = Vec::new();
-        let mut line;
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TngShapeCoord {
+    X,
+    Y,
+    Z,
+}
 
-        loop {
-            let field = fields.first().ok_or_else(|| UnexpectedEnd)?;
-            line = field.line;
-
-            if field.key.identifier != "Shape" {
-                break;
-            }
-
-            let path = field.path()?;
-
-            if path.len() < 2 || path.len() > 5 {
-                Err(InvalidPath { line })?
-            }
-
-            let path_index = if let Some(KvPathItem::Index(path_index)) = path.get(0) {
-                let path_index = *path_index;
-
-                if path_index < 0 {
-                    Err(OutOfBounds {
-                        line,
-                        index: path_index as isize,
-                    })?
-                }
-
-                path_index as usize
-            } else {
-                Err(InvalidPath { line })?
-            };
-
-            if path_index != index {
-                break;
-            }
-
-            let shape_prop = if let Some(KvPathItem::Property(shape_prop)) = path.get(1) {
-                *shape_prop
-            } else {
-                Err(InvalidPath { line })?
-            };
-
-            match shape_prop {
-                "Type" => r#type = Some(field.string_value()?.to_owned()),
-                "size" => {
-                    // Unusual. Not sure what its for
-                    if let Some(KvPathItem::Call) = path.get(2) {
-                        size = Some(field.integer_value()?)
-                    } else {
-                        Err(InvalidPath { line })?
-                    }
-                }
-                "pos" => {
-                    pos = {
-                        let size = size.ok_or_else(|| missing(line, "Shape[I].size() S"))?;
-
-                        let size = if size < 0 {
-                            Err(OutOfBounds {
-                                line,
-                                index: size as isize,
-                            })?
-                        } else {
-                            size as usize
-                        };
-
-                        Self::parse_pos_list(fields, size)?
-                    }
-                }
-                _ => Err(UnexpectedField { line })?,
-            }
-        }
-
-        let r#type = r#type.ok_or_else(|| missing(line, "Type"))?;
-        let size = size.ok_or_else(|| missing(line, "size"))?;
-
-        if pos.is_empty() {
-            Err(missing(line, "pos"))?
-        }
-
-        Ok(Self { r#type, size, pos })
-    }
-
-    fn parse_pos_by_index(
-        fields: &mut &[KvField],
-        index: usize,
-    ) -> Result<[f32; 3], CommonFieldError> {
-        let mut line = 0;
-
-        loop {
-            let field = fields.first().ok_or_else(|| UnexpectedEnd)?;
-            line = field.line;
-
-            if field.key.identifier != "Shape" {
-                break;
-            }
-
-            let path = field.path()?;
-
-            let field_index = path
-                .get(2)
-                .ok_or_else(|| missing(line, "Shape[..].pos[..]"))?;
-
-            if index > field_index {
-                break;
-            }
-
-            let position = path
-                .get(3)
-                .ok_or_else(|| missing(line, "Shape[..].pos[..].X,Y,Z"))?;
+impl TngShapeCoord {
+    fn parse(coord: &str) -> Option<Self> {
+        match coord {
+            "X" => Some(Self::X),
+            "Y" => Some(Self::Y),
+            "Z" => Some(Self::Z),
+            _ => None,
         }
     }
+}
 
-    fn parse_pos_list(
-        fields: &mut &[KvField],
-        length: usize,
-    ) -> Result<Vec<[f32; 3]>, CommonFieldError> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TngShapeInfo {
+    pub position_size: i32,
+    pub r#type: TngShapeType,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TngShapeType {
+    Line,
+    Closed,
+}
+
+impl TngShapeType {
+    pub fn parse(field: &KvField) -> Result<Self, CommonFieldError> {
+        let line = field.line;
+
+        match field.string_value()? {
+            "SHAPE_TYPE_LINE" => Ok(Self::Line),
+            "SHAPE_TYPE_CLOSED" => Ok(Self::Closed),
+            _ => Err(InvalidValue {
+                line,
+                expected: KvValueKind::String,
+            }),
+        }
     }
-
-    fn parse_list(fields: &mut &[KvField], length: usize) -> Result<Vec<Self>, CommonFieldError> {}
 }
 
 #[derive(Clone, Debug)]
@@ -1683,17 +1900,142 @@ impl CTCCameraPointTrack {
 }
 
 #[derive(Clone, Debug)]
-pub struct CTCCameraPointGeneralCase {}
+pub struct CTCCameraPointGeneralCase {
+    pub cut_into: bool,
+    pub cut_out_of: bool,
+    pub test_angle_before_activation: bool,
+    pub self_terminate: bool,
+    pub hero_is_subject: bool,
+    pub fov: f32,
+    pub is_coord_base_relative_to_parent: bool,
+    pub coord_base: [f32; 3],
+    pub coord_axis_up: [f32; 3],
+    pub coord_axis_fwd: [f32; 3],
+    pub using_relative_coords: bool,
+    pub using_relative_orientation: bool,
+    pub string_length: f32,
+    pub cage_radius: f32,
+    pub height_offset: f32,
+    pub allow_right_stick_zoom: bool,
+    pub allow_right_stick_rotation: bool,
+    pub allow_z_target: bool,
+    pub auto_go_behind: bool,
+    pub auto_go_behind_time: f32,
+}
 
 impl CTCCameraPointGeneralCase {
     fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut cut_into = None;
+        let mut cut_out_of = None;
+        let mut test_angle_before_activation = None;
+        let mut self_terminate = None;
+        let mut hero_is_subject = None;
+        let mut fov = None;
+        let mut is_coord_base_relative_to_parent = None;
+        let mut coord_base = None;
+        let mut coord_axis_up = None;
+        let mut coord_axis_fwd = None;
+        let mut using_relative_coords = None;
+        let mut using_relative_orientation = None;
+        let mut string_length = None;
+        let mut cage_radius = None;
+        let mut height_offset = None;
+        let mut allow_right_stick_zoom = None;
+        let mut allow_right_stick_rotation = None;
+        let mut allow_z_target = None;
+        let mut auto_go_behind = None;
+        let mut auto_go_behind_time = None;
+
         loop {
             let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
             let line = field.line;
 
             match field.key.identifier {
+                "CutInto" => cut_into = Some(field.bool_value()?),
+                "CutOutOf" => cut_out_of = Some(field.bool_value()?),
+                "TestAngleBeforeActivation" => {
+                    test_angle_before_activation = Some(field.bool_value()?)
+                }
+                "SelfTerminate" => self_terminate = Some(field.bool_value()?),
+                "HeroIsSubject" => hero_is_subject = Some(field.bool_value()?),
+                "FOV" => fov = Some(field.float_value()?),
+                "IsCoordBaseRelativeToParent" => {
+                    is_coord_base_relative_to_parent = Some(field.bool_value()?)
+                }
+                "CoordBase" => coord_base = Some(field.c3dcoordf_value()?),
+                "CoordAxisUp" => coord_axis_up = Some(field.c3dcoordf_value()?),
+                "CoordAxisFwd" => coord_axis_fwd = Some(field.c3dcoordf_value()?),
+                "UsingRelativeCoords" => using_relative_coords = Some(field.bool_value()?),
+                "UsingRelativeOrientation" => {
+                    using_relative_orientation = Some(field.bool_value()?)
+                }
+                "StringLength" => string_length = Some(field.float_value()?),
+                "CageRadius" => cage_radius = Some(field.float_value()?),
+                "HeightOffset" => height_offset = Some(field.float_value()?),
+                "AllowRightStickZoom" => allow_right_stick_zoom = Some(field.bool_value()?),
+                "AllowRightStickRotation" => allow_right_stick_rotation = Some(field.bool_value()?),
+                "AllowZTarget" => allow_z_target = Some(field.bool_value()?),
+                "AutoGoBehind" => auto_go_behind = Some(field.bool_value()?),
+                "AutoGoBehindTime" => auto_go_behind_time = Some(field.float_value()?),
                 "EndCTCCameraPointGeneralCase" => {
-                    return Ok(Self {});
+                    let cut_into = cut_into.ok_or_else(|| missing(line, "CutInto"))?;
+                    let cut_out_of = cut_out_of.ok_or_else(|| missing(line, "CutOutOf"))?;
+                    let test_angle_before_activation = test_angle_before_activation
+                        .ok_or_else(|| missing(line, "TestAngleBeforeActivation"))?;
+                    let self_terminate =
+                        self_terminate.ok_or_else(|| missing(line, "SelfTerminate"))?;
+                    let hero_is_subject =
+                        hero_is_subject.ok_or_else(|| missing(line, "HeroIsSubject"))?;
+                    let fov = fov.ok_or_else(|| missing(line, "FOV"))?;
+                    let is_coord_base_relative_to_parent = is_coord_base_relative_to_parent
+                        .ok_or_else(|| missing(line, "IsCoordBaseRelativeToParent"))?;
+                    let coord_base = coord_base.ok_or_else(|| missing(line, "CoordBase"))?;
+                    let coord_axis_up =
+                        coord_axis_up.ok_or_else(|| missing(line, "CoordAxisUp"))?;
+                    let coord_axis_fwd =
+                        coord_axis_fwd.ok_or_else(|| missing(line, "CoordAxisFwd"))?;
+                    let using_relative_coords = using_relative_coords
+                        .ok_or_else(|| missing(line, "UsingRelativeCoords"))?;
+                    let using_relative_orientation = using_relative_orientation
+                        .ok_or_else(|| missing(line, "UsingRelativeOrientation"))?;
+                    let string_length =
+                        string_length.ok_or_else(|| missing(line, "StringLength"))?;
+                    let cage_radius = cage_radius.ok_or_else(|| missing(line, "CageRadius"))?;
+                    let height_offset =
+                        height_offset.ok_or_else(|| missing(line, "HeightOffset"))?;
+                    let allow_right_stick_zoom = allow_right_stick_zoom
+                        .ok_or_else(|| missing(line, "AllowRightStickZoom"))?;
+                    let allow_right_stick_rotation = allow_right_stick_rotation
+                        .ok_or_else(|| missing(line, "AllowRightStickRotation"))?;
+                    let allow_z_target =
+                        allow_z_target.ok_or_else(|| missing(line, "AllowZTarget"))?;
+                    let auto_go_behind =
+                        auto_go_behind.ok_or_else(|| missing(line, "AutoGoBehind"))?;
+                    let auto_go_behind_time =
+                        auto_go_behind_time.ok_or_else(|| missing(line, "AutoGoBehindTime"))?;
+
+                    return Ok(Self {
+                        cut_into,
+                        cut_out_of,
+                        test_angle_before_activation,
+                        self_terminate,
+                        hero_is_subject,
+                        fov,
+                        is_coord_base_relative_to_parent,
+                        coord_base,
+                        coord_axis_up,
+                        coord_axis_fwd,
+                        using_relative_coords,
+                        using_relative_orientation,
+                        string_length,
+                        cage_radius,
+                        height_offset,
+                        allow_right_stick_zoom,
+                        allow_right_stick_rotation,
+                        allow_z_target,
+                        auto_go_behind,
+                        auto_go_behind_time,
+                    });
                 }
                 _ => Err(UnexpectedField { line })?,
             }
@@ -1730,8 +2072,8 @@ impl CTCTargeted {
 #[derive(Clone, Debug)]
 pub struct CTCActionUseScriptedHook {
     pub usable: bool,
-    pub reversed_on_mini_map: bool,
-    pub hidden_on_mini_map: bool,
+    pub reversed_on_mini_map: Option<bool>,
+    pub hidden_on_mini_map: Option<bool>,
     pub version_number: i32,
     pub force_confirmation: bool,
     pub teleport_to_region_entrance: bool,
@@ -1776,10 +2118,6 @@ impl CTCActionUseScriptedHook {
                 "ReplacementObject" => replacement_object = Some(field.integer_value()?),
                 "EndCTCActionUseScriptedHook" => {
                     let usable = usable.ok_or_else(|| missing(line, "Usable"))?;
-                    let reversed_on_mini_map =
-                        reversed_on_mini_map.ok_or_else(|| missing(line, "ReversedOnMiniMap"))?;
-                    let hidden_on_mini_map =
-                        hidden_on_mini_map.ok_or_else(|| missing(line, "HiddenOnMiniMap"))?;
                     let version_number =
                         version_number.ok_or_else(|| missing(line, "VersionNumber"))?;
                     let force_confirmation =
@@ -1866,7 +2204,7 @@ pub struct CTCBuyableHouse {
     pub day_next_rent_is_due: i32,
     pub current_dress_level: i32,
     pub virtual_money_bags: i32,
-    pub is_residential: bool,
+    pub is_residential: Option<bool>,
 }
 
 impl CTCBuyableHouse {
@@ -1906,8 +2244,6 @@ impl CTCBuyableHouse {
                         current_dress_level.ok_or_else(|| missing(line, "CurrentDressLevel"))?;
                     let virtual_money_bags =
                         virtual_money_bags.ok_or_else(|| missing(line, "VirtualMoneyBags"))?;
-                    let is_residential =
-                        is_residential.ok_or_else(|| missing(line, "IsResidential"))?;
 
                     return Ok(Self {
                         wife_living_here,
@@ -1983,8 +2319,8 @@ impl CTCVillage {
 #[derive(Clone, Debug)]
 pub struct CTCEnemy {
     pub friends_with_everything_flag: bool,
-    pub enable_followers_enemy_proxy: bool,
-    pub faction_name: String,
+    pub enable_followers_enemy_proxy: Option<bool>,
+    pub faction_name: Option<String>,
 }
 
 impl CTCEnemy {
@@ -2008,9 +2344,6 @@ impl CTCEnemy {
                 "EndCTCEnemy" => {
                     let friends_with_everything_flag = friends_with_everything_flag
                         .ok_or_else(|| missing(line, "FriendsWithEverythingFlag"))?;
-                    let enable_followers_enemy_proxy = enable_followers_enemy_proxy
-                        .ok_or_else(|| missing(line, "EnableFollowersEnemyProxy"))?;
-                    let faction_name = faction_name.ok_or_else(|| missing(line, "FactionName"))?;
 
                     return Ok(Self {
                         friends_with_everything_flag,
@@ -2026,14 +2359,14 @@ impl CTCEnemy {
 
 #[derive(Clone, Debug)]
 pub struct CTCCreatureOpinionOfHero {
-    pub interacted_flag: bool,
+    pub interacted_flag: Option<bool>,
     pub greeted_flag: bool,
     pub last_opinion_reaction_frame: i32,
     pub number_of_times_hit: f32,
     pub tolerance_to_being_hit_override: f32,
     pub frame_to_decay_number_of_times_hit: i32,
     pub forced_attitude: i32,
-    pub hero_opinion_enemy: bool,
+    pub hero_opinion_enemy: Option<bool>,
 }
 
 impl CTCCreatureOpinionOfHero {
@@ -2067,8 +2400,6 @@ impl CTCCreatureOpinionOfHero {
                 "ForcedAttitude" => forced_attitude = Some(field.integer_value()?),
                 "HeroOpinionEnemy" => hero_opinion_enemy = Some(field.bool_value()?),
                 "EndCTCCreatureOpinionOfHero" => {
-                    let interacted_flag =
-                        interacted_flag.ok_or_else(|| missing(line, "InteractedFlag"))?;
                     let greeted_flag = greeted_flag.ok_or_else(|| missing(line, "GreetedFlag"))?;
                     let last_opinion_reaction_frame = last_opinion_reaction_frame
                         .ok_or_else(|| missing(line, "LastOpinionReactionFrame"))?;
@@ -2080,8 +2411,6 @@ impl CTCCreatureOpinionOfHero {
                         .ok_or_else(|| missing(line, "FrameToDecayNumberOfTimesHit"))?;
                     let forced_attitude =
                         forced_attitude.ok_or_else(|| missing(line, "ForcedAttitude"))?;
-                    let hero_opinion_enemy =
-                        hero_opinion_enemy.ok_or_else(|| missing(line, "HeroOpinionEnemy"))?;
 
                     return Ok(Self {
                         interacted_flag,
@@ -2160,10 +2489,6 @@ impl CTCChest {
                     container_contents.insert(index, field.string_value()?.to_owned());
                 }
                 "EndCTCChest" => {
-                    if container_contents.is_empty() {
-                        Err(missing(line, "ContainerContents"))?;
-                    }
-
                     let chest_open = chest_open.ok_or_else(|| missing(line, "ChestOpen"))?;
 
                     return Ok(Self {
@@ -2701,7 +3026,7 @@ pub struct CTCWife {
     pub courting_blocked: bool,
     pub permitted_to_region_follow: bool,
     pub frame_got_married_to_the_player: i32,
-    pub divorced_hero: bool,
+    pub divorced_hero: Option<bool>,
     pub just_married: bool,
     pub needs_to_change_brain: bool,
     pub frame_to_check_appearance_changes: i32,
@@ -2848,8 +3173,6 @@ impl CTCWife {
                         .ok_or_else(|| missing(line, "PermittedToRegionFollow"))?;
                     let frame_got_married_to_the_player = frame_got_married_to_the_player
                         .ok_or_else(|| missing(line, "FrameGotMarriedToThePlayer"))?;
-                    let divorced_hero =
-                        divorced_hero.ok_or_else(|| missing(line, "DivorcedHero"))?;
                     let just_married = just_married.ok_or_else(|| missing(line, "JustMarried"))?;
                     let needs_to_change_brain =
                         needs_to_change_brain.ok_or_else(|| missing(line, "NeedsToChangeBrain"))?;
@@ -3525,6 +3848,358 @@ impl CTCDiggingSpot {
                     let hidden = hidden.ok_or_else(|| missing(line, "Hidden"))?;
 
                     return Ok(Self { hidden });
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCWallMount {
+    pub bought_for_amount: i32,
+    pub trophy_id: i32,
+}
+
+impl CTCWallMount {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut bought_for_amount = None;
+        let mut trophy_id = None;
+
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "BoughtForAmount" => bought_for_amount = Some(field.integer_value()?),
+                "TrophyID" => trophy_id = Some(field.integer_value()?),
+                "EndCTCWallMount" => {
+                    let bought_for_amount =
+                        bought_for_amount.ok_or_else(|| missing(line, "BoughtForAmount"))?;
+                    let trophy_id = trophy_id.ok_or_else(|| missing(line, "TrophyID"))?;
+
+                    return Ok(Self {
+                        bought_for_amount,
+                        trophy_id,
+                    });
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCAIScratchpad;
+
+impl CTCAIScratchpad {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "EndCTCAIScratchpad" => {
+                    return Ok(Self);
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCPreCalculatedNavigationRoute {
+    pub prec_calculated_navigation_route_version: i32,
+    pub thing_to_calculate_route_to_uid: u64,
+    pub number_of_steps_on_route: i32,
+    pub nav_position_0: Option<[f32; 2]>,
+    pub nav_layer_0: Option<i32>,
+    pub nav_position_1: Option<[f32; 2]>,
+    pub nav_layer_1: Option<i32>,
+    pub nav_position_2: Option<[f32; 2]>,
+    pub nav_layer_2: Option<i32>,
+    pub nav_position_3: Option<[f32; 2]>,
+    pub nav_layer_3: Option<i32>,
+    pub nav_position_4: Option<[f32; 2]>,
+    pub nav_layer_4: Option<i32>,
+    pub nav_position_5: Option<[f32; 2]>,
+    pub nav_layer_5: Option<i32>,
+    pub nav_position_6: Option<[f32; 2]>,
+    pub nav_layer_6: Option<i32>,
+    pub nav_position_7: Option<[f32; 2]>,
+    pub nav_layer_7: Option<i32>,
+}
+
+impl CTCPreCalculatedNavigationRoute {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut prec_calculated_navigation_route_version = None;
+        let mut thing_to_calculate_route_to_uid = None;
+        let mut number_of_steps_on_route = None;
+        let mut nav_position_0 = None;
+        let mut nav_layer_0 = None;
+        let mut nav_position_1 = None;
+        let mut nav_layer_1 = None;
+        let mut nav_position_2 = None;
+        let mut nav_layer_2 = None;
+        let mut nav_position_3 = None;
+        let mut nav_layer_3 = None;
+        let mut nav_position_4 = None;
+        let mut nav_layer_4 = None;
+        let mut nav_position_5 = None;
+        let mut nav_layer_5 = None;
+        let mut nav_position_6 = None;
+        let mut nav_layer_6 = None;
+        let mut nav_position_7 = None;
+        let mut nav_layer_7 = None;
+
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "PrecCalculatedNavigationRouteVersion" => {
+                    prec_calculated_navigation_route_version = Some(field.integer_value()?)
+                }
+                "ThingToCalculateRouteToUID" => {
+                    thing_to_calculate_route_to_uid = Some(field.uid_value()?)
+                }
+                "NumberOfStepsOnRoute" => number_of_steps_on_route = Some(field.integer_value()?),
+                "NavPosition0" => nav_position_0 = Some(field.c2dcoordf_value()?),
+                "NavLayer0" => nav_layer_0 = Some(field.integer_value()?),
+                "NavPosition1" => nav_position_1 = Some(field.c2dcoordf_value()?),
+                "NavLayer1" => nav_layer_1 = Some(field.integer_value()?),
+                "NavPosition2" => nav_position_2 = Some(field.c2dcoordf_value()?),
+                "NavLayer2" => nav_layer_2 = Some(field.integer_value()?),
+                "NavPosition3" => nav_position_3 = Some(field.c2dcoordf_value()?),
+                "NavLayer3" => nav_layer_3 = Some(field.integer_value()?),
+                "NavPosition4" => nav_position_4 = Some(field.c2dcoordf_value()?),
+                "NavLayer4" => nav_layer_4 = Some(field.integer_value()?),
+                "NavPosition5" => nav_position_5 = Some(field.c2dcoordf_value()?),
+                "NavLayer5" => nav_layer_5 = Some(field.integer_value()?),
+                "NavPosition6" => nav_position_6 = Some(field.c2dcoordf_value()?),
+                "NavLayer6" => nav_layer_6 = Some(field.integer_value()?),
+                "NavPosition7" => nav_position_7 = Some(field.c2dcoordf_value()?),
+                "NavLayer7" => nav_layer_7 = Some(field.integer_value()?),
+                "EndCTCPreCalculatedNavigationRoute" => {
+                    let prec_calculated_navigation_route_version =
+                        prec_calculated_navigation_route_version
+                            .ok_or_else(|| missing(line, "PrecCalculatedNavigationRouteVersion"))?;
+                    let thing_to_calculate_route_to_uid = thing_to_calculate_route_to_uid
+                        .ok_or_else(|| missing(line, "ThingToCalculateRouteToUID"))?;
+                    let number_of_steps_on_route = number_of_steps_on_route
+                        .ok_or_else(|| missing(line, "NumberOfStepsOnRoute"))?;
+
+                    return Ok(Self {
+                        prec_calculated_navigation_route_version,
+                        thing_to_calculate_route_to_uid,
+                        number_of_steps_on_route,
+                        nav_position_0,
+                        nav_layer_0,
+                        nav_position_1,
+                        nav_layer_1,
+                        nav_position_2,
+                        nav_layer_2,
+                        nav_position_3,
+                        nav_layer_3,
+                        nav_position_4,
+                        nav_layer_4,
+                        nav_position_5,
+                        nav_layer_5,
+                        nav_position_6,
+                        nav_layer_6,
+                        nav_position_7,
+                        nav_layer_7,
+                    });
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCExplodingObject {
+    pub max_damage: f32,
+    pub radius: f32,
+    pub fire_damage: i32,
+    pub triggered_on_creature_proximity: bool,
+    pub trigger_radius: f32,
+}
+
+impl CTCExplodingObject {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut max_damage = None;
+        let mut radius = None;
+        let mut fire_damage = None;
+        let mut triggered_on_creature_proximity = None;
+        let mut trigger_radius = None;
+
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "MaxDamage" => max_damage = Some(field.float_value()?),
+                "Radius" => radius = Some(field.float_value()?),
+                "FireDamage" => fire_damage = Some(field.integer_value()?),
+                "TriggeredOnCreatureProximity" => {
+                    triggered_on_creature_proximity = Some(field.bool_value()?)
+                }
+                "TriggerRadius" => trigger_radius = Some(field.float_value()?),
+                "EndCTCExplodingObject" => {
+                    let max_damage = max_damage.ok_or_else(|| missing(line, "MaxDamage"))?;
+                    let radius = radius.ok_or_else(|| missing(line, "Radius"))?;
+                    let fire_damage = fire_damage.ok_or_else(|| missing(line, "FireDamage"))?;
+                    let triggered_on_creature_proximity = triggered_on_creature_proximity
+                        .ok_or_else(|| missing(line, "TriggeredOnCreatureProximity"))?;
+                    let trigger_radius =
+                        trigger_radius.ok_or_else(|| missing(line, "TriggerRadius"))?;
+
+                    return Ok(Self {
+                        max_damage,
+                        radius,
+                        fire_damage,
+                        triggered_on_creature_proximity,
+                        trigger_radius,
+                    });
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCStealableItemLocation {
+    pub radius_to_be_within: f32,
+    pub radius_to_take_items_back_to: f32,
+}
+
+impl CTCStealableItemLocation {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut radius_to_be_within = None;
+        let mut radius_to_take_items_back_to = None;
+
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "RadiusToBeWithin" => radius_to_be_within = Some(field.float_value()?),
+                "RadiusToTakeItemsBackTo" => {
+                    radius_to_take_items_back_to = Some(field.float_value()?)
+                }
+                "EndCTCStealableItemLocation" => {
+                    let radius_to_be_within =
+                        radius_to_be_within.ok_or_else(|| missing(line, "RadiusToBeWithin"))?;
+                    let radius_to_take_items_back_to = radius_to_take_items_back_to
+                        .ok_or_else(|| missing(line, "RadiusToTakeItemsBackTo"))?;
+
+                    return Ok(Self {
+                        radius_to_be_within,
+                        radius_to_take_items_back_to,
+                    });
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCActivationReceptorDoor {
+    pub deactivate_after_set_time: bool,
+    pub frames_after_activation_to_deactivate: i32,
+}
+
+impl CTCActivationReceptorDoor {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut deactivate_after_set_time = None;
+        let mut frames_after_activation_to_deactivate = None;
+
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "DeactivateAfterSetTime" => deactivate_after_set_time = Some(field.bool_value()?),
+                "FramesAfterActivationToDeactivate" => {
+                    frames_after_activation_to_deactivate = Some(field.integer_value()?)
+                }
+                "EndCTCActivationReceptorDoor" => {
+                    let deactivate_after_set_time = deactivate_after_set_time
+                        .ok_or_else(|| missing(line, "DeactivateAfterSetTime"))?;
+                    let frames_after_activation_to_deactivate =
+                        frames_after_activation_to_deactivate
+                            .ok_or_else(|| missing(line, "FramesAfterActivationToDeactivate"))?;
+
+                    return Ok(Self {
+                        deactivate_after_set_time,
+                        frames_after_activation_to_deactivate,
+                    });
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCBoastingArea {
+    pub radius: f32,
+}
+
+impl CTCBoastingArea {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut radius = None;
+
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "Radius" => radius = Some(field.float_value()?),
+                "EndCTCBoastingArea" => {
+                    let radius = radius.ok_or_else(|| missing(line, "Radius"))?;
+
+                    return Ok(Self { radius });
+                }
+                _ => Err(UnexpectedField { line })?,
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CTCTrophy {
+    pub best_witnesses_ahead_to_date: i32,
+    pub mountable: bool,
+}
+
+impl CTCTrophy {
+    fn parse(fields: &mut &[KvField]) -> Result<Self, CommonFieldError> {
+        let mut best_witnesses_ahead_to_date = None;
+        let mut mountable = None;
+
+        loop {
+            let field = fields.grab_first().ok_or_else(|| UnexpectedEnd)?;
+            let line = field.line;
+
+            match field.key.identifier {
+                "BestWitnessesAheadToDate" => {
+                    best_witnesses_ahead_to_date = Some(field.integer_value()?)
+                }
+                "Mountable" => mountable = Some(field.bool_value()?),
+                "EndCTCTrophy" => {
+                    let best_witnesses_ahead_to_date = best_witnesses_ahead_to_date
+                        .ok_or_else(|| missing(line, "BestWitnessesAheadToDate"))?;
+                    let mountable = mountable.ok_or_else(|| missing(line, "Mountable"))?;
+
+                    return Ok(Self {
+                        best_witnesses_ahead_to_date,
+                        mountable,
+                    });
                 }
                 _ => Err(UnexpectedField { line })?,
             }
