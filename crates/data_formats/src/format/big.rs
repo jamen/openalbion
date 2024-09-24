@@ -1,4 +1,6 @@
-use crate::{null_terminated_buf, put, take, util::run_le_u32_buf};
+use crate::util::binary::{
+    BinaryParser, BinaryParserError, BinarySerializer, BinarySerializerError,
+};
 
 #[derive(Debug, PartialEq)]
 pub struct BigHeader {
@@ -8,7 +10,7 @@ pub struct BigHeader {
     pub unknown_1: u32,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum BigHeaderPart {
     Magic,
     Version,
@@ -21,13 +23,13 @@ impl BigHeader {
         16
     }
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigHeaderPart> {
+    pub fn parse(p: &mut BinaryParser) -> Result<Self, BinaryParserError<BigHeaderPart>> {
         use BigHeaderPart::*;
 
-        let magic = take::<[u8; 4]>(i).ok_or(Magic)?;
-        let version = take::<u32>(i).ok_or(Version)?.to_le();
-        let bank_address = take::<u32>(i).ok_or(BankAddress)?.to_le();
-        let unknown_1 = take::<u32>(i).ok_or(Unknown1)?.to_le();
+        let magic = p.take::<[u8; 4], _>(Magic)?;
+        let version = p.take::<u32, _>(Version)?.to_le();
+        let bank_address = p.take::<u32, _>(BankAddress)?.to_le();
+        let unknown_1 = p.take::<u32, _>(Unknown1)?.to_le();
 
         Ok(BigHeader {
             magic,
@@ -37,13 +39,16 @@ impl BigHeader {
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigHeaderPart> {
+    pub fn compile(
+        &self,
+        s: &mut BinarySerializer,
+    ) -> Result<(), BinarySerializerError<BigHeaderPart>> {
         use BigHeaderPart::*;
 
-        put(out, &self.magic).ok_or(Magic)?;
-        put(out, &self.version.to_le()).ok_or(Version)?;
-        put(out, &self.bank_address.to_le()).ok_or(BankAddress)?;
-        put(out, &self.unknown_1.to_le()).ok_or(Unknown1)?;
+        s.put(&self.magic, Magic)?;
+        s.put(&self.version.to_le(), Version)?;
+        s.put(&self.bank_address.to_le(), BankAddress)?;
+        s.put(&self.unknown_1.to_le(), Unknown1)?;
 
         Ok(())
     }
@@ -61,7 +66,7 @@ pub struct BigBankIndex<'a> {
     pub block_size: u32,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum BigBankIndexPart {
     BanksCount,
     Name,
@@ -77,16 +82,16 @@ impl<'a> BigBankIndex<'a> {
         25 + self.name.len()
     }
 
-    pub fn parse(i: &mut &'a [u8]) -> Result<Self, BigBankIndexPart> {
+    pub fn parse(p: &mut BinaryParser) -> Result<Self, BinaryParserError<BigBankIndexPart>> {
         use BigBankIndexPart::*;
 
-        let banks_count = take::<u32>(i).ok_or(BanksCount)?.to_le();
+        let banks_count = p.take::<u32, _>(BanksCount)?.to_le();
         let name = null_terminated_buf(i).ok_or(Name)?;
-        let bank_id = take::<u32>(i).ok_or(BankId)?.to_le();
-        let bank_entries_count = take::<u32>(i).ok_or(BankEntriesCount)?.to_le();
-        let index_start = take::<u32>(i).ok_or(IndexStart)?.to_le();
-        let index_size = take::<u32>(i).ok_or(IndexSize)?.to_le();
-        let block_size = take::<u32>(i).ok_or(BlockSize)?.to_le();
+        let bank_id = p.take::<u32, _>(BankId)?.to_le();
+        let bank_entries_count = p.take::<u32, _>(BankEntriesCount)?.to_le();
+        let index_start = p.take::<u32, _>(IndexStart)?.to_le();
+        let index_size = p.take::<u32, _>(IndexSize)?.to_le();
+        let block_size = p.take::<u32, _>(BlockSize)?.to_le();
 
         Ok(BigBankIndex {
             banks_count,
