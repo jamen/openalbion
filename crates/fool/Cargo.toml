@@ -9,6 +9,6 @@ annotate-snippets = "0.11.4"
 anstream = "0.6.15"
 anyhow = "1.0.86"
 clap = { version = "4.5.13", features = ["derive", "error-context", "color"] }
-data_formats = { path = "../data_formats", version = "0.1.0" }
+fable_format = { path = "../fable_format", version = "0.1.0" }
 serde_json = "1.0.122"
 typed-path = "0.9.1"

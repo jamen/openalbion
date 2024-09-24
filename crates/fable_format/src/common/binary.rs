@@ -4,7 +4,7 @@ use std::mem;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
 #[display("Unexpected end of input")]
-struct UnexpectedEnd;
+pub struct UnexpectedEnd;
 
 /// Take bytes from the front of a slice.
 pub fn take_bytes<'a>(bytes: &mut &'a [u8], size: usize) -> Result<&'a [u8], UnexpectedEnd> {
@@ -26,7 +26,7 @@ pub fn take_bytes_nul_terminated<'a>(bytes: &mut &'a [u8]) -> Result<&'a [u8], U
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, From, Display)]
-enum TakeError {
+pub enum TakeError {
     UnexpectedEnd(UnexpectedEnd),
     PodCast(PodCastError),
 }
@@ -40,11 +40,11 @@ pub fn take<T: AnyBitPattern>(bytes: &mut &[u8]) -> Result<T, TakeError> {
 
 /// Put bytes in front of a byte slice and advance forward.
 pub fn put_bytes(out: &mut &mut [u8], inp: &[u8]) -> Result<(), UnexpectedEnd> {
-    let split_index = inp.len();
-    if split_index > out.len() {
+    let index = inp.len();
+    if index > out.len() {
         Err(UnexpectedEnd)?
     }
-    let (front, back) = mem::take(out).split_at_mut(split_index);
+    let (front, back) = mem::take(out).split_at_mut(index);
     *out = back;
     front.copy_from_slice(inp);
     Ok(())
@@ -53,4 +53,22 @@ pub fn put_bytes(out: &mut &mut [u8], inp: &[u8]) -> Result<(), UnexpectedEnd> {
 /// Put a value implementing `bytemuck::NoUninit` in front of a byte slice and advance forward.
 pub fn put<T: NoUninit>(out: &mut &mut [u8], value: &T) -> Result<(), UnexpectedEnd> {
     put_bytes(out, bytemuck::bytes_of(value))
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, From, Display)]
+#[display("{error} at position {position}")]
+pub struct PositionalError<E> {
+    pub position: usize,
+    pub error: E,
+}
+
+impl<E> PositionalError<E> {
+    pub fn new(original: &[u8], partially_parsed: &[u8], error: E) -> Result<Self, UnexpectedEnd> {
+        let position = original
+            .len()
+            .checked_sub(partially_parsed.len())
+            .ok_or_else(|| UnexpectedEnd)?;
+
+        Ok(Self { position, error })
+    }
 }

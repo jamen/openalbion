@@ -1,5 +1,5 @@
 [package]
-name = "data_formats"
+name = "fable_io"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -7,9 +7,6 @@ publish = false
 [dependencies]
 arrayvec = "0.7.6"
 derive_more = { version = "1.0.0", features = ["from", "display"] }
-fallible-iterator = "0.3.0"
-serde = { version = "1.0.205", features = ["derive"] }
-unicode-segmentation = "1.11.0"
 
 [dependencies.bytemuck]
 features = ["derive"]

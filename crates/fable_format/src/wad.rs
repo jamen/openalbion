@@ -1,6 +1,5 @@
-use crate::util::binary::{
-    BinaryParser, BinaryParserError, BinarySerializer, BinarySerializerError,
-};
+use crate::util::binary::{take, TakeError};
+use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use std::mem;
 
@@ -14,7 +13,13 @@ pub struct WadHeader {
     pub first_entry_position: u32,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, From, Display)]
+enum WadHeaderError {
+    Take(TakeError),
+    Part(WadHeaderPart),
+}
+
+#[derive(Copy, Clone, Debug, Display)]
 pub enum WadHeaderPart {
     Magic,
     Version,
@@ -25,15 +30,13 @@ pub enum WadHeaderPart {
 }
 
 impl WadHeader {
-    pub fn parse(p: &mut BinaryParser) -> Result<Self, BinaryParserError<WadHeaderPart>> {
-        use WadHeaderPart::*;
-
-        let magic = p.take::<[u8; 4], _>(Magic)?;
-        let version = p.take::<[u32; 3], _>(Version)?.map(u32::to_le);
-        let block_size = p.take::<u32, _>(BlockSize)?.to_le();
-        let entry_count = p.take::<u32, _>(EntryCount)?.to_le();
-        let entry_count_repeated = p.take::<u32, _>(EntryCountRepeated)?.to_le();
-        let first_entry_position = p.take::<u32, _>(FirstEntryPosition)?.to_le();
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, WadHeaderError> {
+        let magic = take::<[u8; 4]>(inp)?;
+        let version = take::<[u32; 3]>(inp)?.map(u32::to_le);
+        let block_size = take::<u32>(inp)?.to_le();
+        let entry_count = take::<u32>(inp)?.to_le();
+        let entry_count_repeated = take::<u32>(inp)?.to_le();
+        let first_entry_position = take::<u32>(inp)?.to_le();
 
         Ok(WadHeader {
             magic,
@@ -45,8 +48,8 @@ impl WadHeader {
         })
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, BinaryParserError<WadHeaderPart>> {
-        Self::parse(&mut BinaryParser::new(bytes))
+    pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, WadHeaderError> {
+        Self::parse(&mut bytes)
     }
 
     pub fn serialize(
