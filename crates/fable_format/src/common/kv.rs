@@ -1,13 +1,13 @@
 use arrayvec::ArrayVec;
-use thiserror::Error;
+use derive_more::{Display, From};
 
 #[derive(Clone, Debug)]
 pub struct Kv<'a> {
     pub fields: Vec<KvField<'a>>,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-#[error("{field_error} on line {line_num}")]
+#[derive(Copy, Clone, Debug, Display, PartialEq, Eq)]
+#[display("{field_error} on line {line_num}")]
 pub struct KvError {
     line_num: usize,
     field_error: KvFieldError,
@@ -46,36 +46,32 @@ pub struct KvField<'a> {
     pub line: usize,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Display, From, PartialEq, Eq)]
 pub enum KvFieldError {
-    #[error("missing semicolon")]
+    #[display("missing semicolon")]
     MissingSemicolon,
-
-    #[error(transparent)]
     Key(#[from] KvKeyError),
-
-    #[error(transparent)]
     Value(#[from] KvValueError),
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Display, PartialEq, Eq)]
 pub enum CommonFieldError {
-    #[error("unexpected end of input")]
+    #[display("unexpected end of input")]
     UnexpectedEnd,
 
-    #[error("line {line} unexpected field")]
+    #[display("line {line} unexpected field")]
     UnexpectedField { line: usize },
 
-    #[error("line {line} invalid path")]
+    #[display("line {line} invalid path")]
     InvalidPath { line: usize },
 
-    #[error("line {line} expected {expected} value")]
+    #[display("line {line} expected {expected} value")]
     InvalidValue { line: usize, expected: KvValueKind },
 
-    #[error("line {line} missing field {name}")]
+    #[display("line {line} missing field {name}")]
     MissingField { line: usize, name: &'static str },
 
-    #[error("line {line} index {index} is out of bounds")]
+    #[display("line {line} index {index} is out of bounds")]
     OutOfBounds { line: usize, index: isize },
 }
 
@@ -244,8 +240,8 @@ pub struct KvValue<'a> {
     source: &'a str,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-#[error("expected {0} value but failed to parse one")]
+#[derive(Copy, Clone, Debug, Display, PartialEq, Eq)]
+#[display("expected {_0} value but failed to parse one")]
 pub struct KvValueError(KvValueKind);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -465,11 +461,11 @@ pub struct KvKey<'a> {
     pub path: KvPath<'a>,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Display, From, PartialEq, Eq)]
 pub enum KvKeyError {
-    #[error("empty key")]
+    #[display("empty key")]
     EmptyKey,
-    #[error("key {0}")]
+    #[display("key {_0}")]
     Path(#[from] KvPathError),
 }
 
@@ -501,15 +497,15 @@ pub struct KvPath<'a> {
     source: &'a str,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Display, PartialEq, Eq)]
 pub enum KvPathError {
-    #[error("unknown path item")]
+    #[display("unknown path item")]
     UnknownItem,
-    #[error("invalid property")]
+    #[display("invalid property")]
     InvalidProperty,
-    #[error("invalid index")]
+    #[display("invalid index")]
     InvalidIndex,
-    #[error("invalid call")]
+    #[display("invalid call")]
     InvalidCall,
 }
 

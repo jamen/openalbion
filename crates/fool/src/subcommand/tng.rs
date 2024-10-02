@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use clap::{Args, Subcommand};
-use data_formats::tng::Tng;
+use fable_format::tng::Tng;
 use std::fs;
 use typed_path::Utf8PathBuf;
 

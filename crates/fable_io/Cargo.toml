@@ -5,3 +5,5 @@ edition = "2021"
 publish = false
 
 [dependencies]
+derive_more = { version = "1.0.0", features = ["from", "display"] }
+fable_format = { version = "0.1.0", path = "../fable_format" }

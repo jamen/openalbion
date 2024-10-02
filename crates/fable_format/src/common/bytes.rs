@@ -54,21 +54,3 @@ pub fn put_bytes(out: &mut &mut [u8], inp: &[u8]) -> Result<(), UnexpectedEnd> {
 pub fn put<T: NoUninit>(out: &mut &mut [u8], value: &T) -> Result<(), UnexpectedEnd> {
     put_bytes(out, bytemuck::bytes_of(value))
 }
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, From, Display)]
-#[display("{error} at position {position}")]
-pub struct PositionalError<E> {
-    pub position: usize,
-    pub error: E,
-}
-
-impl<E> PositionalError<E> {
-    pub fn new(original: &[u8], partially_parsed: &[u8], error: E) -> Result<Self, UnexpectedEnd> {
-        let position = original
-            .len()
-            .checked_sub(partially_parsed.len())
-            .ok_or_else(|| UnexpectedEnd)?;
-
-        Ok(Self { position, error })
-    }
-}

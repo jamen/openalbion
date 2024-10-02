@@ -1,14 +1,20 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
+use derive_more::{Display, From};
+use fable_format::UnexpectedEnd;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, From, Display)]
+#[display("{error} at position {position}")]
+pub struct OffsetError<E> {
+    pub position: usize,
+    pub error: E,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl<E> OffsetError<E> {
+    pub fn new(original: &[u8], partially_parsed: &[u8], error: E) -> Result<Self, UnexpectedEnd> {
+        let position = original
+            .len()
+            .checked_sub(partially_parsed.len())
+            .ok_or_else(|| UnexpectedEnd)?;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+        Ok(Self { position, error })
     }
 }

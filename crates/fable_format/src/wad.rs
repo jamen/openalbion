@@ -1,7 +1,7 @@
-use crate::util::binary::{take, TakeError};
-use derive_more::{Display, From};
+use crate::common::bytes::{put, put_bytes, take, take_bytes, TakeError, UnexpectedEnd};
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
-use std::mem;
+use std::{mem, num::TryFromIntError, str::Utf8Error};
 
 #[derive(Debug, Copy, Clone, Default, Serialize, Deserialize)]
 pub struct WadHeader {
@@ -13,30 +13,34 @@ pub struct WadHeader {
     pub first_entry_position: u32,
 }
 
-#[derive(Copy, Clone, Debug, From, Display)]
-enum WadHeaderError {
-    Take(TakeError),
-    Part(WadHeaderPart),
-}
-
 #[derive(Copy, Clone, Debug, Display)]
-pub enum WadHeaderPart {
-    Magic,
-    Version,
-    BlockSize,
-    EntryCount,
-    EntryCountRepeated,
-    FirstEntryPosition,
+pub enum WadHeaderError<E> {
+    Magic(E),
+    Version(E),
+    BlockSize(E),
+    EntryCount(E),
+    EntryCountRepeated(E),
+    FirstEntryPosition(E),
 }
 
 impl WadHeader {
-    pub fn parse(inp: &mut &[u8]) -> Result<Self, WadHeaderError> {
-        let magic = take::<[u8; 4]>(inp)?;
-        let version = take::<[u32; 3]>(inp)?.map(u32::to_le);
-        let block_size = take::<u32>(inp)?.to_le();
-        let entry_count = take::<u32>(inp)?.to_le();
-        let entry_count_repeated = take::<u32>(inp)?.to_le();
-        let first_entry_position = take::<u32>(inp)?.to_le();
+    pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, WadHeaderError<TakeError>> {
+        Self::parse(&mut bytes)
+    }
+
+    pub fn to_bytes(&self, mut out: &mut [u8]) -> Result<(), WadHeaderError<UnexpectedEnd>> {
+        self.serialize(&mut out)
+    }
+
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, WadHeaderError<TakeError>> {
+        use WadHeaderError::*;
+
+        let magic = take::<[u8; 4]>(inp).map_err(Magic)?;
+        let version = take::<[u32; 3]>(inp).map_err(Version)?.map(u32::to_le);
+        let block_size = take::<u32>(inp).map_err(BlockSize)?.to_le();
+        let entry_count = take::<u32>(inp).map_err(EntryCount)?.to_le();
+        let entry_count_repeated = take::<u32>(inp).map_err(EntryCountRepeated)?.to_le();
+        let first_entry_position = take::<u32>(inp).map_err(FirstEntryPosition)?.to_le();
 
         Ok(WadHeader {
             magic,
@@ -48,22 +52,15 @@ impl WadHeader {
         })
     }
 
-    pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, WadHeaderError> {
-        Self::parse(&mut bytes)
-    }
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), WadHeaderError<UnexpectedEnd>> {
+        use WadHeaderError::*;
 
-    pub fn serialize(
-        &self,
-        s: &mut BinarySerializer,
-    ) -> Result<(), BinarySerializerError<WadHeaderPart>> {
-        use WadHeaderPart::*;
-
-        s.put(&self.magic, Magic)?;
-        s.put(&self.version.map(u32::to_le), Version)?;
-        s.put(&self.block_size.to_le(), BlockSize)?;
-        s.put(&self.entry_count.to_le(), EntryCount)?;
-        s.put(&self.entry_count_repeated.to_le(), EntryCountRepeated)?;
-        s.put(&self.first_entry_position.to_le(), FirstEntryPosition)?;
+        put(out, &self.magic).map_err(Magic)?;
+        put(out, &self.version.map(u32::to_le)).map_err(Version)?;
+        put(out, &self.block_size.to_le()).map_err(BlockSize)?;
+        put(out, &self.entry_count.to_le()).map_err(EntryCount)?;
+        put(out, &self.entry_count_repeated.to_le()).map_err(EntryCountRepeated)?;
+        put(out, &self.first_entry_position.to_le()).map_err(FirstEntryPosition)?;
 
         Ok(())
     }
@@ -82,10 +79,6 @@ impl WadHeader {
         mem::size_of::<u32>() +
         // First entry position
         mem::size_of::<u32>()
-    }
-
-    pub fn to_bytes(&self, out: &mut [u8]) -> Result<(), BinarySerializerError<WadHeaderPart>> {
-        self.serialize(&mut BinarySerializer::new(out))
     }
 }
 
@@ -120,43 +113,52 @@ pub struct WadEntryOwned {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum WadEntryPart {
-    Unknown1,
-    Id,
-    Unknown2,
-    Offset,
-    Length,
-    Unknown3,
-    PathLen,
-    Path,
-    Unknown4,
-    Created,
-    Accessed,
-    Modified,
+pub enum WadEntryError<E> {
+    Unknown1(E),
+    Id(E),
+    Unknown2(E),
+    Offset(E),
+    Length(E),
+    Unknown3(E),
+    PathLen(E),
+    PathLenInt(TryFromIntError),
+    Path(E),
+    PathString(Utf8Error),
+    Unknown4(E),
+    Created(E),
+    Accessed(E),
+    Modified(E),
 }
 
 impl<'a> WadEntry<'a> {
-    pub fn parse(
-        p: &mut BinaryParser<'a>,
-    ) -> Result<WadEntry<'a>, BinaryParserError<WadEntryPart>> {
-        use WadEntryPart::*;
+    pub fn from_bytes(mut bytes: &'a [u8]) -> Result<Self, WadEntryError<TakeError>> {
+        Self::parse(&mut bytes)
+    }
 
-        let unknown_1 = p.take::<[u8; 16], _>(Unknown1)?;
-        let id = p.take::<u32, _>(Id)?.to_le();
-        let unknown_2 = p.take::<u32, _>(Unknown2)?.to_le();
-        let length = p.take::<u32, _>(Length)?.to_le();
-        let offset = p.take::<u32, _>(Offset)?.to_le();
-        let unknown_3 = p.take::<u32, _>(Unknown3)?.to_le();
+    pub fn to_bytes(&self, mut out: &mut [u8]) -> Result<(), WadEntryError<UnexpectedEnd>> {
+        self.serialize(&mut out)
+    }
 
-        let path_len = p.take::<u32, _>(PathLen)?.to_le() as usize;
-        let path = p.take_bytes(path_len, Path)?;
-        let path = std::str::from_utf8(path).map_err(|_| p.new_error(Path, None))?;
+    pub fn parse(inp: &mut &'a [u8]) -> Result<WadEntry<'a>, WadEntryError<TakeError>> {
+        use WadEntryError::*;
 
-        let unknown_4 = p.take::<[u8; 16], _>(Unknown4)?;
+        let unknown_1 = take::<[u8; 16]>(inp).map_err(Unknown1)?;
+        let id = take::<u32>(inp).map_err(Id)?.to_le();
+        let unknown_2 = take::<u32>(inp).map_err(Unknown2)?.to_le();
+        let length = take::<u32>(inp).map_err(Length)?.to_le();
+        let offset = take::<u32>(inp).map_err(Offset)?.to_le();
+        let unknown_3 = take::<u32>(inp).map_err(Unknown3)?.to_le();
 
-        let created = p.take::<[u32; 7], _>(Created)?.map(u32::to_le);
-        let accessed = p.take::<[u32; 7], _>(Accessed)?.map(u32::to_le);
-        let modified = p.take::<[u32; 5], _>(Modified)?.map(u32::to_le);
+        let path_len =
+            usize::try_from(take::<u32>(inp).map_err(PathLen)?.to_le()).map_err(PathLenInt)?;
+        let path = take_bytes(inp, path_len).map_err(|e| Path(TakeError::UnexpectedEnd(e)))?;
+        let path = std::str::from_utf8(path).map_err(PathString)?;
+
+        let unknown_4 = take::<[u8; 16]>(inp).map_err(Unknown4)?;
+
+        let created = take::<[u32; 7]>(inp).map_err(Created)?.map(u32::to_le);
+        let accessed = take::<[u32; 7]>(inp).map_err(Accessed)?.map(u32::to_le);
+        let modified = take::<[u32; 5]>(inp).map_err(Modified)?.map(u32::to_le);
 
         Ok(WadEntry {
             unknown_1,
@@ -173,33 +175,26 @@ impl<'a> WadEntry<'a> {
         })
     }
 
-    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, BinaryParserError<WadEntryPart>> {
-        Self::parse(&mut BinaryParser::new(bytes))
-    }
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), WadEntryError<UnexpectedEnd>> {
+        use WadEntryError::*;
 
-    pub fn serialize(
-        &self,
-        s: &mut BinarySerializer,
-    ) -> Result<(), BinarySerializerError<WadEntryPart>> {
-        use WadEntryPart::*;
+        put(out, &self.unknown_1).map_err(Unknown1)?;
+        put(out, &self.id.to_le()).map_err(Id)?;
+        put(out, &self.unknown_2.to_le()).map_err(Unknown2)?;
+        put(out, &self.length.to_le()).map_err(Length)?;
+        put(out, &self.offset.to_le()).map_err(Offset)?;
+        put(out, &self.unknown_3.to_le()).map_err(Unknown3)?;
 
-        s.put(&self.unknown_1, Unknown1)?;
-        s.put(&self.id.to_le(), Id)?;
-        s.put(&self.unknown_2.to_le(), Unknown2)?;
-        s.put(&self.length.to_le(), Length)?;
-        s.put(&self.offset.to_le(), Offset)?;
-        s.put(&self.unknown_3.to_le(), Unknown3)?;
+        let path_len = u32::try_from(self.path.len()).map_err(PathLenInt)?;
 
-        let path_len = u32::try_from(self.path.len()).map_err(|_| s.new_error(PathLen))?;
+        put(out, &path_len.to_le()).map_err(PathLen)?;
 
-        s.put(&path_len.to_le(), PathLen)?;
+        put_bytes(out, &self.path.as_bytes()).map_err(Path)?;
 
-        s.put_bytes(&self.path.as_bytes(), Path)?;
-
-        s.put(&self.unknown_4, Unknown4)?;
-        s.put(&self.created.map(u32::to_le), Created)?;
-        s.put(&self.accessed.map(u32::to_le), Accessed)?;
-        s.put(&self.modified.map(u32::to_le), Modified)?;
+        put(out, &self.unknown_4).map_err(Unknown4)?;
+        put(out, &self.created.map(u32::to_le)).map_err(Created)?;
+        put(out, &self.accessed.map(u32::to_le)).map_err(Accessed)?;
+        put(out, &self.modified.map(u32::to_le)).map_err(Modified)?;
 
         Ok(())
     }
@@ -229,10 +224,6 @@ impl<'a> WadEntry<'a> {
         mem::size_of::<[u32; 7]>() +
         // Modified
         mem::size_of::<[u32; 5]>()
-    }
-
-    pub fn to_bytes(&self, out: &mut [u8]) -> Result<(), BinarySerializerError<WadEntryPart>> {
-        self.serialize(&mut BinarySerializer::new(out))
     }
 
     pub fn to_owned(&self) -> WadEntryOwned {

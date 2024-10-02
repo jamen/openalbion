@@ -1,6 +1,4 @@
-use std::{collections::BTreeMap, str::FromStr};
-
-use crate::util::{
+use crate::common::{
     kv::{
         missing,
         CommonFieldError::{self, InvalidPath, InvalidValue, UnexpectedEnd, UnexpectedField},
@@ -8,26 +6,26 @@ use crate::util::{
     },
     slice::TakeSliceExt,
 };
-use thiserror::Error;
+use derive_more::{Display, From};
+use std::{collections::BTreeMap, str::FromStr};
 
 #[derive(Clone, Debug)]
 pub struct Tng {
     pub sections: Vec<TngSection>,
 }
 
-#[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Clone, Debug, Display, From, PartialEq, Eq)]
 pub enum TngError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
+    Common(CommonFieldError),
 
-    #[error("version field on line {line} is an unsupported version")]
-    UnsupportedVersion { line: usize },
+    #[display("version field on line {line} is an unsupported version")]
+    UnsupportedVersion {
+        line: usize,
+    },
 
-    #[error(transparent)]
-    Kv(#[from] KvError),
+    Kv(KvError),
 
-    #[error(transparent)]
-    Section(#[from] TngSectionError),
+    Section(TngSectionError),
 }
 
 impl Tng {
@@ -63,13 +61,10 @@ pub struct TngSection {
     pub things: Vec<TngThing>,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Display, From, PartialEq, Eq)]
 pub enum TngSectionError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
-
-    #[error(transparent)]
-    Thing(#[from] TngThingError),
+    Common(CommonFieldError),
+    Thing(TngThingError),
 }
 
 impl TngSection {
@@ -116,8 +111,8 @@ pub enum TngThingKind {
     Switch,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
-#[error("unrecognized kind")]
+#[derive(Copy, Clone, Debug, Display, PartialEq, Eq)]
+#[display("unrecognized kind")]
 pub struct TngThingKindError;
 
 impl TngThingKind {}
@@ -246,13 +241,14 @@ pub struct TngThingExtras {
     pub ctc_trophy: Option<CTCTrophy>,
 }
 
-#[derive(Copy, Clone, Debug, Error, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Display, From, PartialEq, Eq)]
 pub enum TngThingError {
-    #[error(transparent)]
-    Common(#[from] CommonFieldError),
+    Common(CommonFieldError),
 
-    #[error("thing of unrecognized kind on line {line}")]
-    Unrecognized { line: usize },
+    #[display("thing of unrecognized kind on line {line}")]
+    Unrecognized {
+        line: usize,
+    },
 }
 
 impl TngThing {

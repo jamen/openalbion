@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use clap::{Args, Subcommand};
-use data_formats::wad::{WadEntry, WadHeader};
+use fable_format::wad::{WadEntry, WadHeader};
 use std::{
     fs::{self, File},
     io::{BufReader, Read, Seek, SeekFrom},
@@ -121,7 +121,7 @@ fn extract(file_path: String, output_path: Option<String>) -> anyhow::Result<()>
     Ok(())
 }
 
-fn pack(directory: String, output: Option<String>) -> anyhow::Result<()> {
+fn pack(_directory: String, _output: Option<String>) -> anyhow::Result<()> {
     Ok(())
 }
 

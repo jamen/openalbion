@@ -1,5 +1,7 @@
 pub(crate) mod common;
 
+pub use common::bytes::{TakeError, UnexpectedEnd};
+
 // mod bba;
 // mod bbm;
 pub mod big;

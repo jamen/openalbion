@@ -1,5 +1,7 @@
-use crate::util::binary::{
-    BinaryParser, BinaryParserError, BinarySerializer, BinarySerializerError,
+use std::num::TryFromIntError;
+
+use crate::common::bytes::{
+    put, put_bytes, take, take_bytes, take_bytes_nul_terminated, TakeError, UnexpectedEnd,
 };
 
 #[derive(Debug, PartialEq)]
@@ -11,25 +13,21 @@ pub struct BigHeader {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum BigHeaderPart {
-    Magic,
-    Version,
-    BankAddress,
-    Unknown1,
+pub enum BigHeaderError<E> {
+    Magic(E),
+    Version(E),
+    BankAddress(E),
+    Unknown1(E),
 }
 
 impl BigHeader {
-    pub fn byte_size(&self) -> usize {
-        16
-    }
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigHeaderError<TakeError>> {
+        use BigHeaderError::*;
 
-    pub fn parse(p: &mut BinaryParser) -> Result<Self, BinaryParserError<BigHeaderPart>> {
-        use BigHeaderPart::*;
-
-        let magic = p.take::<[u8; 4], _>(Magic)?;
-        let version = p.take::<u32, _>(Version)?.to_le();
-        let bank_address = p.take::<u32, _>(BankAddress)?.to_le();
-        let unknown_1 = p.take::<u32, _>(Unknown1)?.to_le();
+        let magic = take::<[u8; 4]>(inp).map_err(Magic)?;
+        let version = take::<u32>(inp).map_err(Version)?.to_le();
+        let bank_address = take::<u32>(inp).map_err(BankAddress)?.to_le();
+        let unknown_1 = take::<u32>(inp).map_err(Unknown1)?.to_le();
 
         Ok(BigHeader {
             magic,
@@ -39,18 +37,19 @@ impl BigHeader {
         })
     }
 
-    pub fn compile(
-        &self,
-        s: &mut BinarySerializer,
-    ) -> Result<(), BinarySerializerError<BigHeaderPart>> {
-        use BigHeaderPart::*;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigHeaderError<UnexpectedEnd>> {
+        use BigHeaderError::*;
 
-        s.put(&self.magic, Magic)?;
-        s.put(&self.version.to_le(), Version)?;
-        s.put(&self.bank_address.to_le(), BankAddress)?;
-        s.put(&self.unknown_1.to_le(), Unknown1)?;
+        put(out, &self.magic).map_err(Magic)?;
+        put(out, &self.version.to_le()).map_err(Version)?;
+        put(out, &self.bank_address.to_le()).map_err(BankAddress)?;
+        put(out, &self.unknown_1.to_le()).map_err(Unknown1)?;
 
         Ok(())
+    }
+
+    pub fn byte_size(&self) -> usize {
+        16
     }
 }
 
@@ -67,31 +66,27 @@ pub struct BigBankIndex<'a> {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum BigBankIndexPart {
-    BanksCount,
-    Name,
-    BankId,
-    BankEntriesCount,
-    IndexStart,
-    IndexSize,
-    BlockSize,
+pub enum BigBankIndexError<E> {
+    BanksCount(E),
+    Name(UnexpectedEnd),
+    BankId(E),
+    BankEntriesCount(E),
+    IndexStart(E),
+    IndexSize(E),
+    BlockSize(E),
 }
 
 impl<'a> BigBankIndex<'a> {
-    pub fn byte_size(&self) -> usize {
-        25 + self.name.len()
-    }
+    pub fn parse(inp: &mut &'a [u8]) -> Result<Self, BigBankIndexError<TakeError>> {
+        use BigBankIndexError::*;
 
-    pub fn parse(p: &mut BinaryParser) -> Result<Self, BinaryParserError<BigBankIndexPart>> {
-        use BigBankIndexPart::*;
-
-        let banks_count = p.take::<u32, _>(BanksCount)?.to_le();
-        let name = null_terminated_buf(i).ok_or(Name)?;
-        let bank_id = p.take::<u32, _>(BankId)?.to_le();
-        let bank_entries_count = p.take::<u32, _>(BankEntriesCount)?.to_le();
-        let index_start = p.take::<u32, _>(IndexStart)?.to_le();
-        let index_size = p.take::<u32, _>(IndexSize)?.to_le();
-        let block_size = p.take::<u32, _>(BlockSize)?.to_le();
+        let banks_count = take::<u32>(inp).map_err(BanksCount)?.to_le();
+        let name = take_bytes_nul_terminated(inp).map_err(Name)?;
+        let bank_id = take::<u32>(inp).map_err(BankId)?.to_le();
+        let bank_entries_count = take::<u32>(inp).map_err(BankEntriesCount)?.to_le();
+        let index_start = take::<u32>(inp).map_err(IndexStart)?.to_le();
+        let index_size = take::<u32>(inp).map_err(IndexSize)?.to_le();
+        let block_size = take::<u32>(inp).map_err(BlockSize)?.to_le();
 
         Ok(BigBankIndex {
             banks_count,
@@ -104,21 +99,25 @@ impl<'a> BigBankIndex<'a> {
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigBankIndexPart> {
-        use BigBankIndexPart::*;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigBankIndexError<UnexpectedEnd>> {
+        use BigBankIndexError::*;
 
-        put(out, &self.banks_count.to_le()).ok_or(BanksCount)?;
-        out.take_mut(..self.name.len())
-            .ok_or(Name)?
-            .clone_from_slice(&self.name);
-        put(out, b"\0").ok_or(Name)?;
-        put(out, &self.bank_id.to_le()).ok_or(BankId)?;
-        put(out, &self.bank_entries_count.to_le()).ok_or(BankEntriesCount)?;
-        put(out, &self.index_start.to_le()).ok_or(IndexStart)?;
-        put(out, &self.index_size.to_le()).ok_or(IndexSize)?;
-        put(out, &self.block_size.to_le()).ok_or(BlockSize)?;
+        put(out, &self.banks_count.to_le()).map_err(BanksCount)?;
+
+        put_bytes(out, &self.name).map_err(Name)?;
+        put(out, b"\0").map_err(Name)?;
+
+        put(out, &self.bank_id.to_le()).map_err(BankId)?;
+        put(out, &self.bank_entries_count.to_le()).map_err(BankEntriesCount)?;
+        put(out, &self.index_start.to_le()).map_err(IndexStart)?;
+        put(out, &self.index_size.to_le()).map_err(IndexSize)?;
+        put(out, &self.block_size.to_le()).map_err(BlockSize)?;
 
         Ok(())
+    }
+
+    pub fn byte_size(&self) -> usize {
+        25 + self.name.len()
     }
 }
 
@@ -130,40 +129,38 @@ pub struct BigFileIndex<'a> {
 }
 
 #[derive(Debug)]
-pub enum BigFileIndexPart {
-    TypesCount,
-    FileType,
-    EntriesCount,
-    TypesMap,
-    Entry(BigFileEntryPart),
+pub enum BigFileIndexError<E> {
+    TypesCount(E),
+    TypesCountInt(TryFromIntError),
+    FileType(E),
+    EntriesCount(E),
+    EntriesCountInt(TryFromIntError),
+    TypesMap(E),
+    Entry(BigFileEntryError<E>),
 }
 
 impl<'a> BigFileIndex<'a> {
-    pub fn byte_size(&self) -> usize {
-        todo!()
-    }
+    pub fn parse(inp: &mut &'a [u8]) -> Result<Self, BigFileIndexError<TakeError>> {
+        use BigFileIndexError::*;
 
-    pub fn parse(i: &mut &'a [u8]) -> Result<Self, BigFileIndexPart> {
-        use BigFileIndexPart::*;
+        let types_count = take::<u32>(inp).map_err(TypesCount)?.to_le();
+        let file_type = take::<u32>(inp).map_err(FileType)?.to_le();
+        let entries_count = take::<u32>(inp).map_err(EntriesCount)?.to_le();
 
-        let types_count = take::<u32>(i).ok_or(TypesCount)?.to_le();
-        let file_type = take::<u32>(i).ok_or(FileType)?.to_le();
-        let entries_count = take::<u32>(i).ok_or(EntriesCount)?.to_le();
-
-        let types_map_count = (types_count - 1) as usize;
+        let types_map_count = usize::try_from(types_count - 1).map_err(TypesCountInt)?;
 
         let mut types_map = Vec::with_capacity(types_map_count);
 
         for _ in 0..types_map_count {
-            let v1 = take::<u32>(i).ok_or(TypesMap)?.to_le();
-            let v2 = take::<u32>(i).ok_or(TypesMap)?.to_le();
+            let v1 = take::<u32>(inp).map_err(TypesMap)?.to_le();
+            let v2 = take::<u32>(inp).map_err(TypesMap)?.to_le();
             types_map.push([v1, v2]);
         }
 
         let mut entries = Vec::with_capacity(entries_count.try_into().unwrap());
 
         for _ in 0..entries_count {
-            let entry = BigFileEntry::parse(i).map_err(BigFileIndexPart::Entry)?;
+            let entry = BigFileEntry::parse(inp).map_err(BigFileIndexError::Entry)?;
             entries.push(entry);
         }
 
@@ -174,28 +171,32 @@ impl<'a> BigFileIndex<'a> {
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigFileIndexPart> {
-        use BigFileIndexPart::*;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigFileIndexError<UnexpectedEnd>> {
+        use BigFileIndexError::*;
 
-        let types_count = u32::try_from(self.types_map.len()).or(Err(TypesCount))?;
+        let types_count = u32::try_from(self.types_map.len()).map_err(TypesCountInt)?;
         let types_count = types_count + 1;
 
-        put(out, &types_count.to_le()).ok_or(TypesCount)?;
-        put(out, &self.file_type.to_le()).ok_or(FileType)?;
+        put(out, &types_count.to_le()).map_err(TypesCount)?;
+        put(out, &self.file_type.to_le()).map_err(FileType)?;
 
-        let entries_count = u32::try_from(self.entries.len()).or(Err(EntriesCount))?;
+        let entries_count = u32::try_from(self.entries.len()).map_err(EntriesCountInt)?;
 
-        put(out, &entries_count.to_le()).ok_or(EntriesCount)?;
+        put(out, &entries_count.to_le()).map_err(EntriesCount)?;
 
         for entry in &self.types_map {
-            put(out, entry).ok_or(TypesMap)?;
+            put(out, entry).map_err(TypesMap)?;
         }
 
         for entries in &self.entries {
-            entries.compile(out).map_err(Entry)?;
+            entries.serialize(out).map_err(Entry)?;
         }
 
         Ok(())
+    }
+
+    pub fn byte_size(&self) -> usize {
+        todo!()
     }
 }
 
@@ -215,50 +216,61 @@ pub struct BigFileEntry<'a> {
 }
 
 #[derive(Debug)]
-pub enum BigFileEntryPart {
-    Magic,
-    Id,
-    FileType,
-    Size,
-    Start,
-    FileTypeDev,
-    SymbolName,
-    Crc,
-    FilesCount,
-    Files,
-    SubHeaderSize,
-    SubHeader(BigSubHeaderPart),
+pub enum BigFileEntryError<E> {
+    Magic(E),
+    Id(E),
+    FileType(E),
+    Size(E),
+    Start(E),
+    FileTypeDev(E),
+    SymbolNameLen(E),
+    SymbolNameLenInt(TryFromIntError),
+    SymbolName(UnexpectedEnd),
+    Crc(E),
+    FileNamesCount(E),
+    FileNamesCountInt(TryFromIntError),
+    FileNameLen(E),
+    FileNameLenInt(TryFromIntError),
+    FileName(UnexpectedEnd),
+    SubHeaderLen(E),
+    SubHeaderLenInt(TryFromIntError),
+    SubHeaderBytes(UnexpectedEnd),
+    SubHeader(BigSubHeaderError<E>),
 }
 
 impl<'a> BigFileEntry<'a> {
-    pub fn byte_size(&self) -> usize {
-        todo!()
-    }
+    pub fn parse(inp: &mut &'a [u8]) -> Result<Self, BigFileEntryError<TakeError>> {
+        use BigFileEntryError::*;
 
-    pub fn parse(i: &mut &'a [u8]) -> Result<Self, BigFileEntryPart> {
-        use BigFileEntryPart::*;
+        let magic = take::<u32>(inp).map_err(Magic)?.to_le();
+        let id = take::<u32>(inp).map_err(Id)?.to_le();
+        let file_type = take::<u32>(inp).map_err(FileType)?.to_le();
+        let size = take::<u32>(inp).map_err(Size)?.to_le();
+        let start = take::<u32>(inp).map_err(Start)?.to_le();
+        let file_type_dev = take::<u32>(inp).map_err(FileTypeDev)?.to_le();
 
-        let magic = take::<u32>(i).ok_or(Magic)?.to_le();
-        let id = take::<u32>(i).ok_or(Id)?.to_le();
-        let file_type = take::<u32>(i).ok_or(FileType)?.to_le();
-        let size = take::<u32>(i).ok_or(Size)?.to_le();
-        let start = take::<u32>(i).ok_or(Start)?.to_le();
-        let file_type_dev = take::<u32>(i).ok_or(FileTypeDev)?.to_le();
+        let symbol_name_len = take::<u32>(inp).map_err(SymbolNameLen)?.to_le();
+        let symbol_name_len = usize::try_from(symbol_name_len).map_err(SymbolNameLenInt)?;
+        let symbol_name = take_bytes(inp, symbol_name_len).map_err(SymbolName)?;
 
-        let symbol_name = run_le_u32_buf(i).ok_or(SymbolName)?;
+        let crc = take::<u32>(inp).map_err(Crc)?.to_le();
 
-        let crc = take::<u32>(i).ok_or(Crc)?.to_le();
+        let files_count = take::<u32>(inp).map_err(FileNamesCount)?.to_le();
+        let files_count = usize::try_from(files_count).map_err(FileNamesCountInt)?;
 
-        let files_count = take::<u32>(i).ok_or(FilesCount)?.to_le();
-        let files_count = usize::try_from(files_count).or(Err(FilesCount))?;
         let mut files = Vec::with_capacity(files_count);
 
         for _ in 0..files_count {
-            let name = run_le_u32_buf(i).ok_or(Files)?;
+            let name_len = take::<u32>(inp).map_err(FileNameLen)?;
+            let name_len = usize::try_from(name_len).map_err(FileNameLenInt)?;
+            let name = take_bytes(inp, name_len).map_err(FileName)?;
+
             files.push(name);
         }
 
-        let mut sub_header_bytes = run_le_u32_buf(i).ok_or(SubHeaderSize)?;
+        let sub_header_len = take::<u32>(inp).map_err(SubHeaderLen)?;
+        let sub_header_len = usize::try_from(sub_header_len).map_err(SubHeaderLenInt)?;
+        let mut sub_header_bytes = take_bytes(inp, sub_header_len).map_err(SubHeaderBytes)?;
         let sub_header =
             BigSubHeader::parse(&mut sub_header_bytes, file_type).map_err(SubHeader)?;
 
@@ -276,49 +288,40 @@ impl<'a> BigFileEntry<'a> {
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigFileEntryPart> {
-        use BigFileEntryPart::*;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigFileEntryError<UnexpectedEnd>> {
+        use BigFileEntryError::*;
 
-        put(out, &self.magic.to_le()).ok_or(Magic)?;
-        put(out, &self.id.to_le()).ok_or(Id)?;
-        put(out, &self.file_type.to_le()).ok_or(FileType)?;
-        put(out, &self.size.to_le()).ok_or(Size)?;
-        put(out, &self.start.to_le()).ok_or(Start)?;
-        put(out, &self.file_type_dev.to_le()).ok_or(FileTypeDev)?;
+        put(out, &self.magic.to_le()).map_err(Magic)?;
+        put(out, &self.id.to_le()).map_err(Id)?;
+        put(out, &self.file_type.to_le()).map_err(FileType)?;
+        put(out, &self.size.to_le()).map_err(Size)?;
+        put(out, &self.start.to_le()).map_err(Start)?;
+        put(out, &self.file_type_dev.to_le()).map_err(FileTypeDev)?;
 
-        let symbol_name_size = u32::try_from(self.symbol_name.len()).or(Err(SymbolName))?;
+        let symbol_name_len = u32::try_from(self.symbol_name.len()).map_err(SymbolNameLenInt)?;
+        put(out, &symbol_name_len.to_le()).map_err(SymbolNameLen)?;
+        put_bytes(out, &self.symbol_name).map_err(SymbolName)?;
 
-        put(out, &symbol_name_size.to_le()).ok_or(SymbolName)?;
+        put(out, &self.crc.to_le()).map_err(Crc)?;
 
-        out.take_mut(..self.symbol_name.len())
-            .ok_or(SymbolName)?
-            .copy_from_slice(&self.symbol_name);
-
-        put(out, &self.crc.to_le()).ok_or(Crc)?;
-
-        let files_count = u32::try_from(self.files.len()).or(Err(Files))?;
-
-        put(out, &files_count.to_le()).ok_or(Files)?;
+        let file_names_count = u32::try_from(self.files.len()).map_err(FileNamesCountInt)?;
+        put(out, &file_names_count.to_le()).map_err(FileNamesCount)?;
 
         for name in &self.files {
-            let name_size = u32::try_from(name.len()).or(Err(Files))?;
-
-            put(out, &name_size.to_le()).ok_or(Files)?;
-
-            out.take_mut(..name.len())
-                .ok_or(Files)?
-                .copy_from_slice(&name)
+            let name_size = u32::try_from(name.len()).map_err(FileNameLenInt)?;
+            put(out, &name_size.to_le()).map_err(FileNameLen)?;
+            put_bytes(out, name).map_err(FileName)?;
         }
 
-        let sub_header_size = self.sub_header.byte_size();
-
-        put(out, &sub_header_size.to_le()).ok_or(SubHeaderSize)?;
-
-        self.sub_header
-            .compile(out)
-            .map_err(BigFileEntryPart::SubHeader)?;
+        let sub_header_len = u32::try_from(self.sub_header.byte_size()).map_err(SubHeaderLenInt)?;
+        put(out, &sub_header_len.to_le()).map_err(SubHeaderLen)?;
+        self.sub_header.serialize(out).map_err(SubHeader)?;
 
         Ok(())
+    }
+
+    pub fn byte_size(&self) -> usize {
+        todo!()
     }
 }
 
@@ -332,11 +335,11 @@ pub enum BigSubHeader {
 }
 
 #[derive(Debug)]
-pub enum BigSubHeaderPart {
-    Texture(BigSubHeaderTexturePart),
-    Mesh(BigSubHeaderMeshPart),
-    Animation(BigSubHeaderAnimationPart),
-    Unknown,
+pub enum BigSubHeaderError<E> {
+    Texture(BigSubHeaderTextureError<E>),
+    Mesh(BigSubHeaderMeshError<E>),
+    Animation(BigSubHeaderAnimationError<E>),
+    Unknown(E),
 }
 
 impl BigSubHeader {
@@ -350,35 +353,36 @@ impl BigSubHeader {
         }
     }
 
-    pub fn parse(i: &mut &[u8], file_type: u32) -> Result<Self, BigSubHeaderPart> {
-        use BigSubHeaderPart::*;
+    pub fn parse(inp: &mut &[u8], file_type: u32) -> Result<Self, BigSubHeaderError<TakeError>> {
+        use BigSubHeaderError::*;
 
         Ok(match file_type {
-            0 => Self::Texture(BigSubHeaderTexture::parse(i).map_err(Texture)?),
-            1 | 2 | 4 | 5 => Self::Mesh(BigSubHeaderMesh::parse(i).map_err(Mesh)?),
+            0 => Self::Texture(BigSubHeaderTexture::parse(inp).map_err(Texture)?),
+            1 | 2 | 4 | 5 => Self::Mesh(BigSubHeaderMesh::parse(inp).map_err(Mesh)?),
             // ? =>
             //     decode_big_sub_header_anim(input),
             // ? =>
             //     Ok((b"", BigSubHeader::None)),
-            _ => Self::Unknown(i.to_vec()),
+            _ => Self::Unknown(inp.to_vec()),
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderPart> {
-        use BigSubHeaderPart::*;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderError<UnexpectedEnd>> {
+        use BigSubHeaderError::*;
+
         Ok(match self {
             Self::None => {}
-            Self::Texture(x) => {
-                x.compile(out).map_err(Texture)?;
+            Self::Texture(subheader) => {
+                subheader.serialize(out).map_err(Texture)?;
             }
-            Self::Mesh(x) => {
-                x.compile(out).map_err(Mesh)?;
+            Self::Mesh(subheader) => {
+                subheader.serialize(out).map_err(Mesh)?;
             }
-            Self::Animation(x) => {
-                x.compile(out).map_err(Animation)?;
+            Self::Animation(subheader) => {
+                subheader.serialize(out).map_err(Animation)?;
             }
-            Self::Unknown(x) => {
-                out.take_mut(..x.len()).ok_or(Unknown)?.copy_from_slice(x);
+            Self::Unknown(subheader) => {
+                put_bytes(out, subheader).map_err(Unknown)?;
             }
         })
     }
@@ -404,47 +408,44 @@ pub struct BigSubHeaderTexture {
 }
 
 #[derive(Debug)]
-pub enum BigSubHeaderTexturePart {
-    Width,
-    Height,
-    Depth,
-    FrameWidth,
-    FrameHeight,
-    FrameCount,
-    DxtCompression,
-    Unknown1,
-    Transparency,
-    MipMaps,
-    Unknown2,
-    TopMipMapSize,
-    TopMipMapCompressedSize,
-    Unknown3,
-    Unknown4,
+pub enum BigSubHeaderTextureError<E> {
+    Width(E),
+    Height(E),
+    Depth(E),
+    FrameWidth(E),
+    FrameHeight(E),
+    FrameCount(E),
+    DxtCompression(E),
+    Unknown1(E),
+    Transparency(E),
+    MipMaps(E),
+    Unknown2(E),
+    TopMipMapSize(E),
+    TopMipMapCompressedSize(E),
+    Unknown3(E),
+    Unknown4(E),
 }
 
 impl BigSubHeaderTexture {
-    pub fn byte_size(&self) -> usize {
-        todo!()
-    }
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigSubHeaderTextureError<TakeError>> {
+        use BigSubHeaderTextureError::*;
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderTexturePart> {
-        use BigSubHeaderTexturePart::*;
-
-        let width = take::<u16>(i).ok_or(Width)?.to_le();
-        let height = take::<u16>(i).ok_or(Height)?.to_le();
-        let depth = take::<u16>(i).ok_or(Depth)?.to_le();
-        let frame_width = take::<u16>(i).ok_or(FrameWidth)?.to_le();
-        let frame_height = take::<u16>(i).ok_or(FrameHeight)?.to_le();
-        let frame_count = take::<u16>(i).ok_or(FrameCount)?.to_le();
-        let dxt_compression = take::<u16>(i).ok_or(DxtCompression)?.to_le();
-        let unknown1 = take::<u16>(i).ok_or(Unknown1)?.to_le();
-        let transparency = take::<u8>(i).ok_or(Transparency)?.to_le();
-        let mip_maps = take::<u8>(i).ok_or(MipMaps)?.to_le();
-        let unknown2 = take::<u16>(i).ok_or(Unknown2)?.to_le();
-        let top_mip_map_size = take::<u32>(i).ok_or(TopMipMapSize)?.to_le();
-        let top_mip_map_compressed_size = take::<u32>(i).ok_or(TopMipMapCompressedSize)?.to_le();
-        let unknown3 = take::<u16>(i).ok_or(Unknown3)?.to_le();
-        let unknown4 = take::<u32>(i).ok_or(Unknown4)?.to_le();
+        let width = take::<u16>(inp).map_err(Width)?.to_le();
+        let height = take::<u16>(inp).map_err(Height)?.to_le();
+        let depth = take::<u16>(inp).map_err(Depth)?.to_le();
+        let frame_width = take::<u16>(inp).map_err(FrameWidth)?.to_le();
+        let frame_height = take::<u16>(inp).map_err(FrameHeight)?.to_le();
+        let frame_count = take::<u16>(inp).map_err(FrameCount)?.to_le();
+        let dxt_compression = take::<u16>(inp).map_err(DxtCompression)?.to_le();
+        let unknown1 = take::<u16>(inp).map_err(Unknown1)?.to_le();
+        let transparency = take::<u8>(inp).map_err(Transparency)?.to_le();
+        let mip_maps = take::<u8>(inp).map_err(MipMaps)?.to_le();
+        let unknown2 = take::<u16>(inp).map_err(Unknown2)?.to_le();
+        let top_mip_map_size = take::<u32>(inp).map_err(TopMipMapSize)?.to_le();
+        let top_mip_map_compressed_size =
+            take::<u32>(inp).map_err(TopMipMapCompressedSize)?.to_le();
+        let unknown3 = take::<u16>(inp).map_err(Unknown3)?.to_le();
+        let unknown4 = take::<u32>(inp).map_err(Unknown4)?.to_le();
 
         Ok(Self {
             width,
@@ -465,7 +466,14 @@ impl BigSubHeaderTexture {
         })
     }
 
-    pub fn compile(&self, _out: &mut &mut [u8]) -> Result<(), BigSubHeaderTexturePart> {
+    pub fn serialize(
+        &self,
+        _out: &mut &mut [u8],
+    ) -> Result<(), BigSubHeaderTextureError<UnexpectedEnd>> {
+        todo!()
+    }
+
+    pub fn byte_size(&self) -> usize {
         todo!()
     }
 }
@@ -481,53 +489,54 @@ pub struct BigSubHeaderMesh {
 }
 
 #[derive(Debug)]
-pub enum BigSubHeaderMeshPart {
-    PhysicsMesh,
-    Unknown1,
-    SizeCompressedLod,
-    Padding,
-    Unknown2,
-    TextureIds,
+pub enum BigSubHeaderMeshError<E> {
+    PhysicsMesh(E),
+    Unknown1(E),
+    SizeCompressedLodCount(E),
+    SizeCompressedLodCountInt(TryFromIntError),
+    SizeCompressedLod(E),
+    Padding(E),
+    Unknown2(E),
+    TextureIdsCount(E),
+    TextureIdsCountInt(TryFromIntError),
+    TextureIds(E),
 }
 
 impl BigSubHeaderMesh {
-    pub fn byte_size(&self) -> usize {
-        todo!()
-    }
+    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderMeshError<TakeError>> {
+        use BigSubHeaderMeshError::*;
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderMeshPart> {
-        use BigSubHeaderMeshPart::*;
+        let physics_mesh = take::<u32>(i).map_err(PhysicsMesh)?.to_le();
 
-        let physics_mesh = take::<u32>(i).ok_or(PhysicsMesh)?.to_le();
+        let unknown1 = take::<[f32; 10]>(i).map_err(Unknown1)?;
 
-        let unknown1 = take::<[f32; 10]>(i).ok_or(Unknown1)?;
-
-        let size_compressed_lod_count = take::<u32>(i).ok_or(SizeCompressedLod)?.to_le();
+        let size_compressed_lod_count = take::<u32>(i).map_err(SizeCompressedLodCount)?.to_le();
         let size_compressed_lod_count =
-            usize::try_from(size_compressed_lod_count).or(Err(SizeCompressedLod))?;
+            usize::try_from(size_compressed_lod_count).map_err(SizeCompressedLodCountInt)?;
+
         let mut size_compressed_lod = Vec::with_capacity(size_compressed_lod_count);
 
         for _ in 0..size_compressed_lod_count {
-            let unknown = take::<u32>(i).ok_or(SizeCompressedLod)?.to_le();
+            let unknown = take::<u32>(i).map_err(SizeCompressedLod)?.to_le();
             size_compressed_lod.push(unknown);
         }
 
-        let padding = take::<u32>(i).ok_or(Padding)?.to_le();
+        let padding = take::<u32>(i).map_err(Padding)?.to_le();
 
         let unknown2_count = size_compressed_lod_count - 1;
         let mut unknown2 = Vec::with_capacity(unknown2_count);
 
         for _ in 0..unknown2_count {
-            let unknown = take::<u32>(i).ok_or(Unknown2)?.to_le();
+            let unknown = take::<u32>(i).map_err(Unknown2)?.to_le();
             unknown2.push(unknown);
         }
 
-        let texture_ids_count = take::<u32>(i).ok_or(TextureIds)?.to_le();
-        let texture_ids_count = usize::try_from(texture_ids_count).or(Err(TextureIds))?;
+        let texture_ids_count = take::<u32>(i).map_err(TextureIdsCount)?.to_le();
+        let texture_ids_count = usize::try_from(texture_ids_count).map_err(TextureIdsCountInt)?;
         let mut texture_ids = Vec::with_capacity(texture_ids_count);
 
         for _ in 0..texture_ids_count {
-            let texture_id = take::<u32>(i).ok_or(TextureIds)?.to_le();
+            let texture_id = take::<u32>(i).map_err(TextureIds)?.to_le();
             texture_ids.push(texture_id);
         }
 
@@ -541,38 +550,46 @@ impl BigSubHeaderMesh {
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderMeshPart> {
-        use BigSubHeaderMeshPart::*;
+    pub fn serialize(
+        &self,
+        out: &mut &mut [u8],
+    ) -> Result<(), BigSubHeaderMeshError<UnexpectedEnd>> {
+        use BigSubHeaderMeshError::*;
 
-        put(out, &self.physics_mesh.to_le()).ok_or(PhysicsMesh)?;
-        put(out, &self.unknown1).ok_or(Unknown1)?;
+        put(out, &self.physics_mesh.to_le()).map_err(PhysicsMesh)?;
+        put(out, &self.unknown1).map_err(Unknown1)?;
 
         let size_compressed_lod_count =
-            u32::try_from(self.size_compressed_lod.len()).or(Err(SizeCompressedLod))?;
+            u32::try_from(self.size_compressed_lod.len()).map_err(SizeCompressedLodCountInt)?;
 
-        put(out, &size_compressed_lod_count).ok_or(SizeCompressedLod)?;
+        put(out, &size_compressed_lod_count).map_err(SizeCompressedLodCount)?;
 
         for size_compressed_lod in &self.size_compressed_lod {
-            put(out, &size_compressed_lod.to_le()).ok_or(SizeCompressedLod)?;
+            put(out, &size_compressed_lod.to_le()).map_err(SizeCompressedLod)?;
         }
 
-        put(out, &self.padding).ok_or(Padding)?;
+        put(out, &self.padding).map_err(Padding)?;
 
         // let unknown2_count = self.size_compressed_lod.len() - 1;
 
         for v in &self.unknown2 {
-            put(out, &v.to_le()).ok_or(Unknown2)?;
+            put(out, &v.to_le()).map_err(Unknown2)?;
         }
 
-        let texture_ids_count = u32::try_from(self.texture_ids.len()).or(Err(TextureIds))?;
+        let texture_ids_count =
+            u32::try_from(self.texture_ids.len()).map_err(TextureIdsCountInt)?;
 
-        put(out, &texture_ids_count).ok_or(TextureIds)?;
+        put(out, &texture_ids_count).map_err(TextureIdsCount)?;
 
         for texture_id in &self.texture_ids {
-            put(out, &texture_id.to_le()).ok_or(TextureIds)?;
+            put(out, &texture_id.to_le()).map_err(TextureIds)?;
         }
 
         Ok(())
+    }
+
+    pub fn byte_size(&self) -> usize {
+        todo!()
     }
 }
 
@@ -584,10 +601,10 @@ pub struct BigSubHeaderAnimation {
 }
 
 #[derive(Debug)]
-pub enum BigSubHeaderAnimationPart {
-    Unknown1,
-    Unknown2,
-    Unknown3,
+pub enum BigSubHeaderAnimationError<E> {
+    Unknown1(E),
+    Unknown2(E),
+    Unknown3(E),
 }
 
 impl BigSubHeaderAnimation {
@@ -595,11 +612,11 @@ impl BigSubHeaderAnimation {
         todo!()
     }
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderAnimationPart> {
-        use BigSubHeaderAnimationPart::*;
+    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderAnimationError<TakeError>> {
+        use BigSubHeaderAnimationError::*;
 
-        let unknown1 = take::<f32>(i).ok_or(Unknown1)?;
-        let unknown2 = take::<f32>(i).ok_or(Unknown2)?;
+        let unknown1 = take::<f32>(i).map_err(Unknown1)?;
+        let unknown2 = take::<f32>(i).map_err(Unknown2)?;
         let unknown3 = i.to_vec();
 
         Ok(Self {
@@ -609,15 +626,15 @@ impl BigSubHeaderAnimation {
         })
     }
 
-    pub fn compile(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderAnimationPart> {
-        use BigSubHeaderAnimationPart::*;
+    pub fn serialize(
+        &self,
+        out: &mut &mut [u8],
+    ) -> Result<(), BigSubHeaderAnimationError<UnexpectedEnd>> {
+        use BigSubHeaderAnimationError::*;
 
-        put(out, &self.unknown1).ok_or(Unknown1)?;
-        put(out, &self.unknown2).ok_or(Unknown2)?;
-
-        out.take_mut(..self.unknown3.len())
-            .ok_or(Unknown3)?
-            .copy_from_slice(&self.unknown3);
+        put(out, &self.unknown1).map_err(Unknown1)?;
+        put(out, &self.unknown2).map_err(Unknown2)?;
+        put_bytes(out, &self.unknown3).map_err(Unknown3)?;
 
         Ok(())
     }

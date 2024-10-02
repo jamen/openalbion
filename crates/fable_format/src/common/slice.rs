@@ -1,6 +1,6 @@
 pub trait TakeSliceExt<T> {
     fn grab_first(&mut self) -> Option<&T>;
-    fn grab(&mut self, n: usize) -> Option<&[T]>;
+    // fn grab(&mut self, n: usize) -> Option<&[T]>;
 }
 
 impl<T> TakeSliceExt<T> for &[T] {
@@ -13,9 +13,9 @@ impl<T> TakeSliceExt<T> for &[T] {
         Some(first)
     }
 
-    fn grab(&mut self, n: usize) -> Option<&[T]> {
-        let (first, rest) = self.split_at(n);
-        *self = rest;
-        Some(first)
-    }
+    // fn grab(&mut self, n: usize) -> Option<&[T]> {
+    //     let (first, rest) = self.split_at(n);
+    //     *self = rest;
+    //     Some(first)
+    // }
 }
