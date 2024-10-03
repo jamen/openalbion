@@ -24,14 +24,6 @@ pub enum WadHeaderError<E> {
 }
 
 impl WadHeader {
-    pub fn from_bytes(mut bytes: &[u8]) -> Result<Self, WadHeaderError<TakeError>> {
-        Self::parse(&mut bytes)
-    }
-
-    pub fn to_bytes(&self, mut out: &mut [u8]) -> Result<(), WadHeaderError<UnexpectedEnd>> {
-        self.serialize(&mut out)
-    }
-
     pub fn parse(inp: &mut &[u8]) -> Result<Self, WadHeaderError<TakeError>> {
         use WadHeaderError::*;
 
@@ -131,14 +123,6 @@ pub enum WadEntryError<E> {
 }
 
 impl<'a> WadEntry<'a> {
-    pub fn from_bytes(mut bytes: &'a [u8]) -> Result<Self, WadEntryError<TakeError>> {
-        Self::parse(&mut bytes)
-    }
-
-    pub fn to_bytes(&self, mut out: &mut [u8]) -> Result<(), WadEntryError<UnexpectedEnd>> {
-        self.serialize(&mut out)
-    }
-
     pub fn parse(inp: &mut &'a [u8]) -> Result<WadEntry<'a>, WadEntryError<TakeError>> {
         use WadEntryError::*;
 
