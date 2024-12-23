@@ -186,7 +186,7 @@ dependencies = [
  "anstream",
  "anyhow",
  "clap",
- "fable_format",
+ "fable_io",
  "serde_json",
  "typed-path",
 ]

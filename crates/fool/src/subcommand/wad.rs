@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use clap::{Args, Subcommand};
-use fable_format::wad::{WadEntry, WadHeader};
+use fable_io::WadFile;
 use std::{
     fs::{self, File},
     io::{BufReader, Read, Seek, SeekFrom},

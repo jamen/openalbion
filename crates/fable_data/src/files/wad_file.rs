@@ -1,11 +1,11 @@
 use std::{fs::File, io, path::Path};
 
-use fable_format::wad::{WadEntryOwned, WadHeader};
+use crate::format::wad::{WadEntryOwned, WadHeader};
 
 pub struct WadFile {
-    source: File,
-    header: WadHeader,
-    entries: Vec<WadEntryOwned>,
+    file: File,
+    // header: WadHeader,
+    // entries: Vec<WadEntryOwned>,
 }
 
 pub enum WadFileError {
@@ -13,13 +13,13 @@ pub enum WadFileError {
 }
 
 impl WadFile {
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<WadFile, WadFileError> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, WadFileError> {
         use WadFileError::*;
 
         let file = File::open(path).map_err(Open)?;
 
         let header_bytes = vec![0; WadHeader::byte_size()];
 
-        Ok(WadFile { file })
+        Ok(Self { file })
     }
 }
