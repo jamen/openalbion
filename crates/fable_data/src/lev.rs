@@ -2,7 +2,7 @@ use std::str::Utf8Error;
 
 use serde::{Deserialize, Serialize};
 
-use crate::common::bytes::{take, take_bytes, TakeError, UnexpectedEnd};
+use super::bytes::{take, take_bytes, TakeError, UnexpectedEnd};
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct LevHeader {

@@ -1,8 +1,8 @@
 use bytemuck::{AnyBitPattern, NoUninit, PodCastError};
-use derive_more::{Display, From};
+use derive_more::{Display, Error, From};
 use std::mem;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Display)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Display, Error)]
 #[display("Unexpected end of input")]
 pub struct UnexpectedEnd;
 
@@ -25,7 +25,7 @@ pub fn take_bytes_nul_terminated<'a>(bytes: &mut &'a [u8]) -> Result<&'a [u8], U
     take_bytes(bytes, size)
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, From, Display)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, From, Display, Error)]
 pub enum TakeError {
     UnexpectedEnd(UnexpectedEnd),
     PodCast(PodCastError),

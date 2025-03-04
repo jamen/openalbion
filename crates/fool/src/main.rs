@@ -1,7 +1,6 @@
-mod subcommand;
-
 use clap::{Parser, Subcommand};
-use subcommand::{LevArgs, TngArgs, WadArgs};
+use fable_data::wad::WadReader;
+use std::{env, fs::File, io::BufReader, path::PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -18,13 +17,13 @@ struct Cli {
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
     #[command(arg_required_else_help = true)]
-    Wad(WadArgs),
+    Info(InfoArgs),
+}
 
-    #[command(arg_required_else_help = true)]
-    Lev(LevArgs),
-
-    #[command(arg_required_else_help = true)]
-    Tng(TngArgs),
+#[derive(Parser, Debug, Clone)]
+struct InfoArgs {
+    #[arg(short = 'F', long)]
+    fable_path: Option<PathBuf>,
 }
 
 fn main() {
@@ -44,8 +43,29 @@ fn try_main() -> anyhow::Result<()> {
 
     match cli.command {
         None => Ok(()),
-        Some(Commands::Wad(args)) => subcommand::wad::handle(args),
-        Some(Commands::Lev(args)) => subcommand::lev::handle(args),
-        Some(Commands::Tng(args)) => subcommand::tng::handle(args),
+        Some(Commands::Info(args)) => info(args),
     }
+}
+
+fn info(args: InfoArgs) -> anyhow::Result<()> {
+    let fable_path = args
+        .fable_path
+        .ok_or(())
+        .or_else(|_| default_fable_data())
+        .expect("error: Couldn't determine Fable's directory path. Try --fable-path.");
+
+    let final_albion_wad_file = File::open(fable_path.join("data/Levels/FinalAlbion.wad"))?;
+    let final_albion_wad_file = BufReader::new(final_albion_wad_file);
+
+    let mut final_albion_wad = WadReader::new(final_albion_wad_file)?;
+
+    let entries = final_albion_wad.entries();
+
+    println!("{:#?}", entries);
+
+    Ok(())
+}
+
+fn default_fable_data() -> Result<PathBuf, std::io::Error> {
+    env::current_dir()
 }

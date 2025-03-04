@@ -161,21 +161,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "fable_format"
+name = "fable_data"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
  "bytemuck",
  "derive_more",
  "serde",
-]
-
-[[package]]
-name = "fable_io"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "fable_format",
 ]
 
 [[package]]
@@ -186,7 +178,7 @@ dependencies = [
  "anstream",
  "anyhow",
  "clap",
- "fable_io",
+ "fable_data",
  "serde_json",
  "typed-path",
 ]

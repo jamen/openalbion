@@ -1,14 +1,67 @@
-use std::num::TryFromIntError;
-
-use crate::common::bytes::{
+use super::bytes::{
     put, put_bytes, take, take_bytes, take_bytes_nul_terminated, TakeError, UnexpectedEnd,
 };
+use std::{
+    io::{self, Read, Seek, SeekFrom},
+    num::TryFromIntError,
+    string::FromUtf8Error,
+};
+
+pub struct BigReader<S: Read + Seek> {
+    source: S,
+    header: BigHeader,
+    banks_count: u32,
+}
+
+pub enum BigReaderError {
+    SeekHeader(io::Error),
+    ReadHeader(io::Error),
+    ParseHeader(BigHeaderError<TakeError>),
+    SeekIndex(io::Error),
+    ReadIndex(io::Error),
+    ParseIndex(BigIndexError<TakeError>),
+}
+
+impl<S: Read + Seek> BigReader<S> {
+    pub fn new(mut source: S) -> Result<Self, BigReaderError> {
+        use BigReaderError::{
+            ParseHeader, ParseIndex, ReadHeader, ReadIndex, SeekHeader, SeekIndex,
+        };
+
+        let mut header_bytes = vec![0; BigHeader::BYTE_SIZE];
+
+        source.seek(SeekFrom::Start(0)).map_err(SeekHeader)?;
+        source.read_exact(&mut header_bytes).map_err(ReadHeader)?;
+
+        let header = BigHeader::parse(&mut &header_bytes[..]).map_err(ParseHeader)?;
+
+        let mut index_bytes = vec![0; BigBanksHeader::MAX_BYTE_SIZE];
+
+        source
+            .seek(SeekFrom::Start(header.index_position as u64))
+            .map_err(SeekIndex)?;
+        // TODO: Should this be read_to_end? Can't remember if index is placed before or after the banks.
+        source.read_exact(&mut index_bytes).map_err(ReadIndex)?;
+
+        let index = BigBanksHeader::parse(&mut &index_bytes[..]).map_err(ParseIndex)?;
+
+        Ok(Self {
+            source,
+            header,
+            index,
+        })
+    }
+
+    pub fn header(&self) -> &BigHeader {
+        &self.header
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct BigHeader {
     pub magic: [u8; 4],
     pub version: u32,
-    pub bank_address: u32,
+    pub groups_position: u32,
     pub unknown_1: u32,
 }
 
@@ -21,18 +74,20 @@ pub enum BigHeaderError<E> {
 }
 
 impl BigHeader {
+    pub const BYTE_SIZE: usize = 16;
+
     pub fn parse(inp: &mut &[u8]) -> Result<Self, BigHeaderError<TakeError>> {
         use BigHeaderError::*;
 
         let magic = take::<[u8; 4]>(inp).map_err(Magic)?;
         let version = take::<u32>(inp).map_err(Version)?.to_le();
-        let bank_address = take::<u32>(inp).map_err(BankAddress)?.to_le();
+        let index_position = take::<u32>(inp).map_err(BankAddress)?.to_le();
         let unknown_1 = take::<u32>(inp).map_err(Unknown1)?.to_le();
 
         Ok(BigHeader {
             magic,
             version,
-            bank_address,
+            index_position,
             unknown_1,
         })
     }
@@ -42,22 +97,18 @@ impl BigHeader {
 
         put(out, &self.magic).map_err(Magic)?;
         put(out, &self.version.to_le()).map_err(Version)?;
-        put(out, &self.bank_address.to_le()).map_err(BankAddress)?;
+        put(out, &self.index_position.to_le()).map_err(BankAddress)?;
         put(out, &self.unknown_1.to_le()).map_err(Unknown1)?;
 
         Ok(())
     }
-
-    pub fn byte_size(&self) -> usize {
-        16
-    }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigBankIndex<'a> {
+pub struct BigBanksHeader {
     pub banks_count: u32,
     // Null-terminated string
-    pub name: &'a [u8],
+    pub name: String,
     pub bank_id: u32,
     pub bank_entries_count: u32,
     pub index_start: u32,
@@ -65,10 +116,11 @@ pub struct BigBankIndex<'a> {
     pub block_size: u32,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum BigBankIndexError<E> {
+#[derive(Clone, Debug)]
+pub enum BigIndexError<E> {
     BanksCount(E),
-    Name(UnexpectedEnd),
+    NameBytes(UnexpectedEnd),
+    Name(FromUtf8Error),
     BankId(E),
     BankEntriesCount(E),
     IndexStart(E),
@@ -76,19 +128,27 @@ pub enum BigBankIndexError<E> {
     BlockSize(E),
 }
 
-impl<'a> BigBankIndex<'a> {
-    pub fn parse(inp: &mut &'a [u8]) -> Result<Self, BigBankIndexError<TakeError>> {
-        use BigBankIndexError::*;
+impl BigBanksHeader {
+    pub const MIN_BYTE_SIZE: usize = 25;
+    // TODO: I don't know the max size for the index, but 8KiB seems generous.
+    // TODO: Try creating a name that big to see if it crashes the game.
+    pub const MAX_BYTE_SIZE: usize = 8192;
+
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigIndexError<TakeError>> {
+        use BigIndexError::*;
 
         let banks_count = take::<u32>(inp).map_err(BanksCount)?.to_le();
-        let name = take_bytes_nul_terminated(inp).map_err(Name)?;
+
+        let name_bytes = take_bytes_nul_terminated(inp).map_err(NameBytes)?;
+        let name = String::from_utf8(name_bytes.to_vec()).map_err(Name)?;
+
         let bank_id = take::<u32>(inp).map_err(BankId)?.to_le();
         let bank_entries_count = take::<u32>(inp).map_err(BankEntriesCount)?.to_le();
         let index_start = take::<u32>(inp).map_err(IndexStart)?.to_le();
         let index_size = take::<u32>(inp).map_err(IndexSize)?.to_le();
         let block_size = take::<u32>(inp).map_err(BlockSize)?.to_le();
 
-        Ok(BigBankIndex {
+        Ok(BigBanksHeader {
             banks_count,
             name,
             bank_id,
@@ -99,13 +159,13 @@ impl<'a> BigBankIndex<'a> {
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigBankIndexError<UnexpectedEnd>> {
-        use BigBankIndexError::*;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigIndexError<UnexpectedEnd>> {
+        use BigIndexError::*;
 
         put(out, &self.banks_count.to_le()).map_err(BanksCount)?;
 
-        put_bytes(out, &self.name).map_err(Name)?;
-        put(out, b"\0").map_err(Name)?;
+        put_bytes(out, &self.name.as_bytes()).map_err(NameBytes)?;
+        put(out, b"\0").map_err(NameBytes)?;
 
         put(out, &self.bank_id.to_le()).map_err(BankId)?;
         put(out, &self.bank_entries_count.to_le()).map_err(BankEntriesCount)?;
@@ -117,7 +177,7 @@ impl<'a> BigBankIndex<'a> {
     }
 
     pub fn byte_size(&self) -> usize {
-        25 + self.name.len()
+        Self::MIN_BYTE_SIZE + self.name.len()
     }
 }
 
