@@ -16,14 +16,14 @@ pub fn take_bytes<'a>(bytes: &mut &'a [u8], size: usize) -> Result<&'a [u8], Une
     Ok(front)
 }
 
-/// Take bytes up until a NUL byte.
-pub fn take_bytes_nul_terminated<'a>(bytes: &mut &'a [u8]) -> Result<&'a [u8], UnexpectedEnd> {
-    let size = bytes
-        .iter()
-        .position(|&x| x == 0)
-        .ok_or_else(|| UnexpectedEnd)?;
-    take_bytes(bytes, size)
-}
+// /// Take bytes up until a NUL byte.
+// pub fn take_bytes_nul_terminated<'a>(bytes: &mut &'a [u8]) -> Result<&'a [u8], UnexpectedEnd> {
+//     let size = bytes
+//         .iter()
+//         .position(|&x| x == 0)
+//         .ok_or_else(|| UnexpectedEnd)?;
+//     take_bytes(bytes, size)
+// }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, From, Display, Error)]
 pub enum TakeError {

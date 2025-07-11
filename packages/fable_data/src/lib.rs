@@ -1,12 +1,10 @@
 pub(crate) mod bytes;
-pub(crate) mod kv;
-pub(crate) mod slice;
 
 pub use bytes::{TakeError, UnexpectedEnd};
 
 // mod bba;
 // mod bbm;
-pub mod big;
+// pub mod big;
 // mod bncfg;
 // mod bwd;
 // mod def;
@@ -14,11 +12,11 @@ pub mod big;
 // mod ini;
 // mod lug;
 // mod lut;
-pub mod lev;
+// pub mod lev;
 // mod met;
 // mod qst;
 // mod save;
 // mod stb;
-pub mod tng;
+// pub mod tng;
 pub mod wad;
 // mod wld;

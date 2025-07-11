@@ -1,71 +1,61 @@
+mod logger;
+mod unwad;
+mod wad;
+
+use crate::{unwad::UnwadArgs, wad::WadArgs};
+use anyhow::Context;
 use clap::{Parser, Subcommand};
-use fable_data::wad::WadReader;
-use std::{env, fs::File, io::BufReader, path::PathBuf};
+use log::LevelFilter;
+use std::{env, path::PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "Utility to extract, pack, or inspect Fable's files.",
+    about = "A tool for modifying and inspecting Fable's files.",
     long_about = None,
     arg_required_else_help = true
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    #[arg(short = 'F', long)]
+    fable_path: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
     #[command(arg_required_else_help = true)]
-    Info(InfoArgs),
-}
+    Unwad(UnwadArgs),
 
-#[derive(Parser, Debug, Clone)]
-struct InfoArgs {
-    #[arg(short = 'F', long)]
-    fable_path: Option<PathBuf>,
+    #[command(arg_required_else_help = true)]
+    Wad(WadArgs),
 }
 
 fn main() {
     if let Err(err) = try_main() {
-        let renderer = annotate_snippets::Renderer::styled();
-
-        err.chain().for_each(|err| {
-            let message = err.to_string();
-            let snippet = annotate_snippets::Level::Error.title(&message);
-            anstream::eprintln!("{}", renderer.render(snippet));
-        })
+        err.chain()
+            .for_each(|err| log::error!("{}", err.to_string()))
     }
 }
 
 fn try_main() -> anyhow::Result<()> {
+    logger::init(LevelFilter::Trace)?;
+
     let cli = Cli::parse();
 
-    match cli.command {
-        None => Ok(()),
-        Some(Commands::Info(args)) => info(args),
-    }
-}
-
-fn info(args: InfoArgs) -> anyhow::Result<()> {
-    let fable_path = args
+    let fable_path = cli
         .fable_path
-        .ok_or(())
-        .or_else(|_| default_fable_data())
-        .expect("error: Couldn't determine Fable's directory path. Try --fable-path.");
+        .or_else(|| env::current_dir().ok())
+        .context("Fable's directory not found. Try using the --fable-path flag")?;
 
-    let final_albion_wad_file = File::open(fable_path.join("data/Levels/FinalAlbion.wad"))?;
-    let final_albion_wad_file = BufReader::new(final_albion_wad_file);
+    let command = match cli.command {
+        None => return Ok(()),
+        Some(command) => command,
+    };
 
-    let mut final_albion_wad = WadReader::new(final_albion_wad_file)?;
-
-    let entries = final_albion_wad.entries();
-
-    println!("{:#?}", entries);
-
-    Ok(())
-}
-
-fn default_fable_data() -> Result<PathBuf, std::io::Error> {
-    env::current_dir()
+    match command {
+        Commands::Unwad(args) => unwad::handler(fable_path.as_path(), args),
+        Commands::Wad(args) => wad::handler(fable_path.as_path(), args),
+    }
 }
