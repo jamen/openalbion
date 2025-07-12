@@ -40,14 +40,6 @@ pub fn handler(_fable_path: &Path, args: UnwadArgs) -> anyhow::Result<()> {
     log::info!("Wad file path {:?}", wad_file_path);
     log::info!("Output path {:?}", output_path);
 
-    // Create the output directory. If an error is returned for it already existing, ignore
-    fs::create_dir_all(&output_path)
-        .or_else(|error| match error.kind() {
-            io::ErrorKind::AlreadyExists => Ok(()),
-            _ => Err(error),
-        })
-        .context("Failed to create output directory")?;
-
     let wad_file = File::open(&wad_file_path).context("Could not open wad file")?;
     let wad_file = BufReader::new(wad_file);
 
@@ -56,6 +48,14 @@ pub fn handler(_fable_path: &Path, args: UnwadArgs) -> anyhow::Result<()> {
     let wad_entries_iter = wad_reader
         .read_entries()
         .context("Could not read wad entries")?;
+
+    // Create the output directory. If an error is returned for it already existing, ignore
+    fs::create_dir_all(&output_path)
+        .or_else(|error| match error.kind() {
+            io::ErrorKind::AlreadyExists => Ok(()),
+            _ => Err(error),
+        })
+        .context("Failed to create output directory")?;
 
     for wad_entry_result in wad_entries_iter.into_iterator() {
         let wad_entry = wad_entry_result.context("Failed to read wad entry")?;

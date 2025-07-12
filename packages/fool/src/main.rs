@@ -1,8 +1,9 @@
 mod logger;
+mod unbig;
 mod unwad;
 mod wad;
 
-use crate::{unwad::UnwadArgs, wad::WadArgs};
+use crate::{unbig::UnbigArgs, unwad::UnwadArgs, wad::WadArgs};
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
@@ -30,6 +31,9 @@ enum Commands {
 
     #[command(arg_required_else_help = true)]
     Wad(WadArgs),
+
+    #[command(arg_required_else_help = true)]
+    Unbig(UnbigArgs),
 }
 
 fn main() {
@@ -57,5 +61,6 @@ fn try_main() -> anyhow::Result<()> {
     match command {
         Commands::Unwad(args) => unwad::handler(fable_path.as_path(), args),
         Commands::Wad(args) => wad::handler(fable_path.as_path(), args),
+        Commands::Unbig(args) => unbig::handler(fable_path.as_path(), args),
     }
 }
