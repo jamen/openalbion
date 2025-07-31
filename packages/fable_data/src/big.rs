@@ -182,21 +182,9 @@ impl BigBank {
         use BigBankError as E;
 
         let types_count = take::<u32>(inp).map_err(|_| E::TypesCount)?.to_le();
-
-        // println!("types_count {:?}", types_count);
-
         let bank_file_type = take::<u32>(inp).map_err(|_| E::FileType)?.to_le();
-
-        // println!("bank_file_type {:?}", bank_file_type);
-
         let entries_count = take::<u32>(inp).map_err(|_| E::EntriesCount)?.to_le();
-
-        // println!("entries_count {:?}", entries_count);
-
         let types_map_count = types_count.saturating_sub(1);
-
-        // println!("types_map_count {:?}", types_map_count);
-
         let mut types_map = BTreeMap::new();
 
         for _ in 0..types_map_count {
@@ -205,16 +193,12 @@ impl BigBank {
             types_map.insert(v1, v2);
         }
 
-        // println!("types_map {:?}", types_map);
-
         let mut entries = Vec::with_capacity(entries_count.try_into().unwrap());
 
         for _ in 0..entries_count {
             let entry = BigBankEntry::parse(inp).map_err(E::Entry)?;
             entries.push(entry);
         }
-
-        // println!("entries {:?}", entries);
 
         Ok(BigBank {
             file_type: bank_file_type,
@@ -264,7 +248,6 @@ pub struct BigBankEntry {
     pub crc: u32,
     pub files: Vec<String>,
     pub sub_header: BigSubHeader,
-    // pub sub_header: Vec<u8>,
 }
 
 #[derive(Debug, Display, Error)]
@@ -301,28 +284,15 @@ impl BigBankEntry {
         let start = take::<u32>(inp).map_err(|_| E::Start)?.to_le();
         let file_type_dev = take::<u32>(inp).map_err(|_| E::FileTypeDev)?.to_le();
 
-        // println!("magic {:?}", magic);
-        // println!("id {:?}", id);
-        // println!("file_type {:?}", file_type);
-        // println!("size {:?}", size);
-        // println!("start {:?}", start);
-        // println!("file_type_dev {:?}", file_type_dev);
-
         let symbol_name_len = take::<u32>(inp).map_err(|_| E::SymbolNameLen)?.to_le();
         let symbol_name_len = usize::try_from(symbol_name_len).map_err(|_| E::SymbolNameLenInt)?;
         let symbol_name = take_bytes(inp, symbol_name_len).map_err(|_| E::SymbolName)?;
         let symbol_name = String::from_utf8(symbol_name.to_vec()).map_err(|_| E::SymbolName)?;
 
-        // println!("symbol_name {:?}", symbol_name);
-
         let crc = take::<u32>(inp).map_err(|_| E::Crc)?.to_le();
-
-        // println!("crc {:?}", crc);
 
         let files_count = take::<u32>(inp).map_err(|_| E::FileNamesCount)?.to_le();
         let files_count = usize::try_from(files_count).map_err(|_| E::FileNamesCountInt)?;
-
-        // println!("files_count {:?}", files_count);
 
         let mut files = Vec::with_capacity(files_count);
 
@@ -335,12 +305,8 @@ impl BigBankEntry {
             files.push(name);
         }
 
-        // println!("files {:?}", files);
-
         let sub_header_len = take::<u32>(inp).map_err(|_| E::SubHeaderLen)?;
         let sub_header_len = usize::try_from(sub_header_len).map_err(|_| E::SubHeaderLenInt)?;
-
-        // println!("sub_header_len {:?}", sub_header_len);
 
         let sub_header = if sub_header_len == 0 {
             BigSubHeader::None
@@ -350,8 +316,6 @@ impl BigBankEntry {
 
             BigSubHeader::parse(&mut sub_header_bytes, sub_header_len).map_err(E::SubHeader)?
         };
-
-        // println!("file_type {:?}, sub_header {:?}", file_type, sub_header);
 
         Ok(Self {
             magic,
@@ -412,7 +376,6 @@ pub enum BigSubHeader {
     Texture(BigSubHeaderTexture),
     Mesh(BigSubHeaderMesh),
     Animation(BigSubHeaderAnimation),
-    Text(BigSubHeaderText),
     Dialogue(BigSubHeaderDialogue),
     Unknown(Vec<u8>),
 }
@@ -422,7 +385,6 @@ pub enum BigSubHeaderError {
     Texture(BigSubHeaderTextureError),
     Mesh(BigSubHeaderMeshError),
     Animation(BigSubHeaderAnimationError),
-    Text(BigSubHeaderTextError),
     Dialogue(BigSubHeaderDialogueError),
     Unknown,
 }
@@ -434,7 +396,6 @@ impl BigSubHeader {
             Self::Texture(x) => x.byte_size(),
             Self::Animation(x) => x.byte_size(),
             Self::Mesh(x) => x.byte_size(),
-            Self::Text(x) => x.byte_size(),
             Self::Dialogue(x) => x.byte_size(),
             Self::Unknown(x) => x.len(),
         }
@@ -465,9 +426,6 @@ impl BigSubHeader {
             }
             Self::Animation(subheader) => {
                 subheader.serialize(out).map_err(E::Animation)?;
-            }
-            Self::Text(subheader) => {
-                subheader.serialize(out).map_err(E::Text)?;
             }
             Self::Dialogue(subheader) => {
                 subheader.serialize(out).map_err(E::Dialogue)?;
@@ -721,38 +679,6 @@ impl BigSubHeaderAnimation {
         put(out, &self.unknown1).map_err(|_| E::Unknown1)?;
         put(out, &self.unknown2).map_err(|_| E::Unknown2)?;
         put_bytes(out, &self.unknown3).map_err(|_| E::Unknown3)?;
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct BigSubHeaderText {
-    unknown1: u32,
-}
-
-#[derive(Debug, Display, Error)]
-pub enum BigSubHeaderTextError {
-    Unknown1,
-}
-
-impl BigSubHeaderText {
-    pub fn byte_size(&self) -> usize {
-        todo!()
-    }
-
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderTextError> {
-        use BigSubHeaderTextError as E;
-
-        let unknown1 = take::<u32>(i).map_err(|_| E::Unknown1)?;
-
-        Ok(Self { unknown1 })
-    }
-
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderTextError> {
-        use BigSubHeaderTextError as E;
-
-        put(out, &self.unknown1.to_le()).map_err(|_| E::Unknown1)?;
 
         Ok(())
     }

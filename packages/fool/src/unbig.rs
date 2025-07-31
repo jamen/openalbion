@@ -2,7 +2,6 @@ use anyhow::{anyhow, Context};
 use clap::Parser;
 use fable_data::big::BigReader;
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
@@ -53,7 +52,7 @@ pub fn handler(_fable_data: &Path, args: UnbigArgs) -> anyhow::Result<()> {
     // println!("{:#?}", index);
 
     for index_entry in &index.entries {
-        let bank = big_reader
+        let _bank = big_reader
             .read_index_entry(&index_entry)
             .context("Could not read first index entry.")?;
 
