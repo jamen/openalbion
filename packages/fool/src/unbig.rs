@@ -50,14 +50,14 @@ pub fn handler(_fable_data: &Path, args: UnbigArgs) -> anyhow::Result<()> {
         .read_index()
         .context("Could not read big index")?;
 
-    println!("{:#?}", index);
+    // println!("{:#?}", index);
 
     for index_entry in &index.entries {
         let bank = big_reader
             .read_index_entry(&index_entry)
             .context("Could not read first index entry.")?;
 
-        println!("{:?}", bank);
+        // println!("{:?}", bank);
     }
 
     Ok(())
