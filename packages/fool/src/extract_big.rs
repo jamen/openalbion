@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use clap::Parser;
 use fable_data::big::BigReader;
 use std::{
@@ -8,15 +8,15 @@ use std::{
 };
 
 #[derive(Parser, Debug, Clone)]
-pub struct UnbigArgs {
-    // Input wad file to be extracted
+pub struct ExtractBigArgs {
+    /// Input big file to be extracted
     big_file_path: PathBuf,
 
-    // Output directory to extract into
+    /// Output directory to extract into
     output_path: Option<PathBuf>,
 }
 
-pub fn handler(_fable_data: &Path, args: UnbigArgs) -> anyhow::Result<()> {
+pub fn handler(_fable_data: &Path, args: ExtractBigArgs) -> anyhow::Result<()> {
     let big_file_path = args.big_file_path;
 
     // Get the output path, defaulting to one based on the input file path if none is provided

@@ -1,9 +1,13 @@
+mod extract_big;
+mod extract_wad;
+mod insert_texture_big;
 mod logger;
-mod unbig;
-mod unwad;
-mod wad;
+mod pack_wad;
 
-use crate::{unbig::UnbigArgs, unwad::UnwadArgs, wad::WadArgs};
+use crate::{
+    extract_big::ExtractBigArgs, extract_wad::ExtractWadArgs,
+    insert_texture_big::InsertTextureBigArgs, pack_wad::PackWadArgs,
+};
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use log::LevelFilter;
@@ -27,13 +31,16 @@ struct Cli {
 #[derive(Subcommand, Debug, Clone)]
 enum Commands {
     #[command(arg_required_else_help = true)]
-    Unwad(UnwadArgs),
+    ExtractWad(ExtractWadArgs),
 
     #[command(arg_required_else_help = true)]
-    Wad(WadArgs),
+    PackWad(PackWadArgs),
 
     #[command(arg_required_else_help = true)]
-    Unbig(UnbigArgs),
+    ExtractBig(ExtractBigArgs),
+
+    #[command(arg_required_else_help = true)]
+    InsertTextureBig(InsertTextureBigArgs),
 }
 
 fn main() {
@@ -59,8 +66,9 @@ fn try_main() -> anyhow::Result<()> {
     };
 
     match command {
-        Commands::Unwad(args) => unwad::handler(fable_path.as_path(), args),
-        Commands::Wad(args) => wad::handler(fable_path.as_path(), args),
-        Commands::Unbig(args) => unbig::handler(fable_path.as_path(), args),
+        Commands::ExtractWad(args) => extract_wad::handler(fable_path.as_path(), args),
+        Commands::PackWad(args) => pack_wad::handler(fable_path.as_path(), args),
+        Commands::ExtractBig(args) => extract_big::handler(fable_path.as_path(), args),
+        Commands::InsertTextureBig(args) => insert_texture_big::handler(fable_path.as_path(), args),
     }
 }

@@ -8,19 +8,19 @@ use std::{
 };
 
 #[derive(Parser, Debug, Clone)]
-pub struct WadArgs {
-    // Input directory whose files will be packed into a wad file
+pub struct PackWadArgs {
+    /// Input directory whose files will be packed into a wad file
     input_directory_path: PathBuf,
 
-    // Wad file output path
+    /// Wad file output path
     output_file_path: Option<PathBuf>,
 
-    // Prefix to use for wad entry paths, for example `"Data\Levels\FinalAlbion\"`
+    /// Prefix to use for wad entry paths. For example `"Data\Levels\FinalAlbion\"`
     #[clap(short = 'P', long, default_value = "")]
     entry_prefix: String,
 }
 
-pub fn handler(_fable_path: &Path, args: WadArgs) -> anyhow::Result<()> {
+pub fn handler(_fable_path: &Path, args: PackWadArgs) -> anyhow::Result<()> {
     let input_directory_path = args.input_directory_path;
     let entry_prefix = args.entry_prefix;
 

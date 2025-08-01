@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use clap::Parser;
 use fable_data::wad::WadReader;
 use std::{
@@ -8,15 +8,15 @@ use std::{
 };
 
 #[derive(Parser, Debug, Clone)]
-pub struct UnwadArgs {
-    // Input wad file to be extracted
+pub struct ExtractWadArgs {
+    /// Input wad file to be extracted
     wad_file_path: PathBuf,
 
-    // Output directory to extract into
+    /// Output directory to extract into
     output_path: Option<PathBuf>,
 }
 
-pub fn handler(_fable_path: &Path, args: UnwadArgs) -> anyhow::Result<()> {
+pub fn handler(_fable_path: &Path, args: ExtractWadArgs) -> anyhow::Result<()> {
     let wad_file_path = args.wad_file_path;
 
     // Get the output path, defaulting to one based on the wad file path if none is provided
