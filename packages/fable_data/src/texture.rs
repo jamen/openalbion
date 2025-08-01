@@ -1,5 +1,3 @@
-use std::fmt;
-
 use crate::bytes::{take, take_bytes};
 use bcndecode::BcnDecoderFormat;
 use derive_more::derive::{Display, Error};
@@ -27,6 +25,9 @@ impl Texture {
     ) -> Result<Self, TextureError> {
         use TextureError as E;
 
+        // The texture is prefixed with a variable length integer that tells us how long the first
+        // mip is.
+
         let small_length = take::<u16>(input).map_err(|_| E::SmallLength)?.to_le();
 
         let top_mip_compressed_length = if small_length == 0xffff {
@@ -34,6 +35,8 @@ impl Texture {
         } else {
             small_length as u32
         };
+
+        // The rest of the input is image data. It could be in several different formats
 
         let mut raw_image_data = Vec::new();
 
@@ -72,6 +75,10 @@ impl Texture {
         use TextureError as E;
 
         let top_mip_compressed = self.get_top_mip_bcn_image()?;
+
+        if top_mip_compressed.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let top_mip = bcndecode::decode(
             top_mip_compressed,
@@ -137,7 +144,7 @@ impl Into<BcnDecoderFormat> for TextureImageFormat {
     }
 }
 
-#[derive(Error, Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Error, Display, Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BcnError {
     ImageDecodingError,
     InvalidImageSize,
@@ -154,16 +161,5 @@ impl From<bcndecode::Error> for BcnError {
             F::FeatureNotImplemented => Self::FeatureNotImplemented,
             F::InvalidPixelFormat => Self::InvalidPixelFormat,
         }
-    }
-}
-
-impl fmt::Display for BcnError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match self {
-            Self::ImageDecodingError => "image decoding error",
-            Self::InvalidImageSize => "invalid image size",
-            Self::FeatureNotImplemented => "feature not implemented",
-            Self::InvalidPixelFormat => "invalid pixel format",
-        })
     }
 }
