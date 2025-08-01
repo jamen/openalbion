@@ -10,7 +10,7 @@ use core::{fmt, mem::MaybeUninit, ptr};
 
 use libc::{c_int, c_uchar, c_ulong, c_void};
 
-extern "C" {
+unsafe extern "C" {
     fn lzo1x_1_compress(
         src: *const c_uchar,
         src_len: c_ulong,
