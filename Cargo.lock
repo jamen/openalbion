@@ -172,6 +172,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "bcndecode"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65b99e3b6993783ea2515a09786816e0883c388ff5f81ee1dbe83f0a1da38cd"
+dependencies = [
+ "gcc",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -556,10 +565,11 @@ dependencies = [
 name = "fable_data"
 version = "0.1.0"
 dependencies = [
- "arrayvec",
+ "bcndecode",
  "bytemuck",
  "derive_more 1.0.0",
  "fallible-iterator",
+ "minilzo",
  "serde",
 ]
 
@@ -614,6 +624,12 @@ name = "foreign-types-shared"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
+
+[[package]]
+name = "gcc"
+version = "0.3.55"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f5f3913fa0bfe7ee1fd8248b6b9f42a5af4b9d65ec2dd2c3c26132b950ecfc2"
 
 [[package]]
 name = "generator"
@@ -985,6 +1001,14 @@ dependencies = [
  "log",
  "objc",
  "paste",
+]
+
+[[package]]
+name = "minilzo"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "libc",
 ]
 
 [[package]]

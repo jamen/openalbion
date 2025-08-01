@@ -2,9 +2,11 @@ pub(crate) mod bytes;
 
 pub use bytes::{TakeError, UnexpectedEnd};
 
+pub mod big;
+pub mod texture;
+pub mod wad;
 // mod bba;
 // mod bbm;
-pub mod big;
 // mod bncfg;
 // mod bwd;
 // mod def;
@@ -18,5 +20,4 @@ pub mod big;
 // mod save;
 // mod stb;
 // pub mod tng;
-pub mod wad;
 // mod wld;

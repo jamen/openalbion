@@ -1,0 +1,14 @@
+[package]
+name = "minilzo"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["std"]
+std = []
+
+[build-dependencies]
+cc = "1.0.70"
+
+[dependencies]
+libc = "0.2.108"
