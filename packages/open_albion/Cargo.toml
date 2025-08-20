@@ -1,8 +1,12 @@
 [package]
-name = "openalbion"
+name = "open_albion"
 version = "0.1.0"
 edition = "2024"
 publish = false
+
+[[bin]]
+name = "open-albion"
+path = "src/main.rs"
 
 [dependencies]
 wgpu = "26.0.1"

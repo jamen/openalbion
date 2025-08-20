@@ -75,14 +75,14 @@ impl WadHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WadEntry {
+pub struct WadEntry<'a> {
     pub unknown_1: [u8; 16],
     pub id: u32,
     pub unknown_2: u32,
     pub content_length: u32,
     pub content_position: u32,
     pub unknown_3: u32,
-    pub path: String,
+    pub path: Cow<'a, str>,
     pub unknown_4: [u8; 16],
     pub created: [u32; 7],
     pub accessed: [u32; 7],
@@ -106,8 +106,8 @@ pub enum WadEntryError {
     Modified,
 }
 
-impl WadEntry {
-    pub fn parse(inp: &mut &[u8]) -> Result<WadEntry, WadEntryError> {
+impl<'a> WadEntry<'a> {
+    pub fn parse(inp: &mut &'a [u8]) -> Result<WadEntry<'a>, WadEntryError> {
         use WadEntryError as E;
 
         let unknown_1 = take::<[u8; 16]>(inp).map_err(|_| E::Unknown1)?;
@@ -120,8 +120,9 @@ impl WadEntry {
         let path_len = usize::try_from(take::<u32>(inp).map_err(|_| E::PathLen)?.to_le())
             .map_err(|_| E::PathLen)?;
 
-        let path = take_bytes(inp, path_len).map_err(|_| E::Path)?.to_vec();
-        let path = String::from_utf8(path).map_err(|_| E::PathToString)?;
+        let path = take_bytes(inp, path_len).map_err(|_| E::Path)?;
+        let path = str::from_utf8(path).map_err(|_| E::PathToString)?;
+        let path = Cow::from(path);
 
         let unknown_4 = take::<[u8; 16]>(inp).map_err(|_| E::Unknown4)?;
 
@@ -187,6 +188,22 @@ impl WadEntry {
             + mem::size_of::<[u32; 7]>()
             + mem::size_of::<[u32; 7]>()
             + mem::size_of::<[u32; 5]>()
+    }
+
+    pub fn into_owned(self) -> WadEntry<'static> {
+        WadEntry {
+            unknown_1: self.unknown_1,
+            id: self.id,
+            unknown_2: self.unknown_2,
+            content_length: self.content_length,
+            content_position: self.content_position,
+            unknown_3: self.unknown_3,
+            path: Cow::Owned(self.path.into_owned()),
+            unknown_4: self.unknown_4,
+            created: self.created,
+            accessed: self.accessed,
+            modified: self.modified,
+        }
     }
 }
 
@@ -300,8 +317,8 @@ impl<'a> WadEntryReader<'a> {
         }
     }
 
-    pub fn into_owned(self) -> Self {
-        Self {
+    pub fn into_owned(self) -> WadEntryReader<'static> {
+        WadEntryReader {
             bytes: Cow::Owned(self.bytes.into_owned()),
             position: self.position,
             entries_left: self.entries_left,
@@ -314,7 +331,7 @@ impl<'a> WadEntryReader<'a> {
 }
 
 impl<'a> FallibleIterator for WadEntryReader<'a> {
-    type Item = WadEntry;
+    type Item = WadEntry<'static>;
     type Error = WadEntryError;
 
     fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
@@ -323,7 +340,7 @@ impl<'a> FallibleIterator for WadEntryReader<'a> {
             let entry = WadEntry::parse(&mut entry_bytes)?;
             self.position += entry.byte_size();
             self.entries_left -= 1;
-            Ok(Some(entry))
+            Ok(Some(entry.into_owned()))
         } else {
             Ok(None)
         }

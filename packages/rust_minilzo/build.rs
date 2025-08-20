@@ -1,7 +1,7 @@
 fn main() {
     cc::Build::new()
-        .file("./minilzo/minilzo.c")
-        .include("./minilzo")
-        .include("./minilzo/include/lzo")
+        .file("./include/minilzo/minilzo.c")
+        .include("./include/minilzo")
+        .include("./include/minilzo/include/lzo")
         .compile("minilzo");
 }

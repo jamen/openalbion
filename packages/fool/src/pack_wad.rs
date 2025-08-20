@@ -10,10 +10,10 @@ use std::{
 #[derive(Parser, Debug, Clone)]
 pub struct PackWadArgs {
     /// Input directory whose files will be packed into a wad file
-    input_directory_path: PathBuf,
+    input: PathBuf,
 
     /// Wad file output path
-    output_file_path: Option<PathBuf>,
+    output: Option<PathBuf>,
 
     /// Prefix to use for wad entry paths. For example `"Data\Levels\FinalAlbion\"`
     #[clap(short = 'P', long, default_value = "")]

@@ -1,6 +1,8 @@
 use super::bytes::{put, put_bytes, take, take_bytes, take_bytes_nul_terminated};
 use derive_more::derive::{Display, Error};
+use fallible_iterator::FallibleIterator;
 use std::{
+    borrow::Cow,
     collections::BTreeMap,
     io::{self, Read, Seek, SeekFrom},
 };
@@ -52,49 +54,103 @@ impl BigHeader {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct BigIndex {
-    pub entries: Vec<BigIndexEntry>,
+pub struct BigBanks<'a> {
+    count: u32,
+    bytes: Cow<'a, [u8]>,
+}
+
+impl<'a> BigBanks<'a> {
+    fn new(bytes: Cow<'a, [u8]>) -> Result<Self, BigBanksError> {
+        use BigBanksError as E;
+
+        let bytes_buf = &mut &bytes[..];
+
+        let count = take::<u32>(bytes_buf).map_err(|_| E::EntryCount)?.to_le();
+
+        Ok(Self { count, bytes })
+    }
+
+    fn into_owned(self) -> BigBanks<'static> {
+        BigBanks {
+            count: self.count,
+            bytes: Cow::Owned(self.bytes.into_owned()),
+        }
+    }
+
+    fn into_reader(self) -> BigBanksReader<'a> {
+        BigBanksReader::new(self)
+    }
 }
 
 #[derive(Error, Display, Clone, Debug)]
-pub enum BigIndexError {
+pub enum BigBanksError {
     EntryCount,
-    Entry(BigIndexEntryError),
 }
 
-impl BigIndex {
-    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigIndexError> {
-        use BigIndexError as E;
+pub struct BigBanksReader<'a> {
+    banks: BigBanks<'a>,
+    position: usize,
+}
 
-        let entry_count = take::<u32>(inp).map_err(|_| E::EntryCount)?.to_le();
-
-        let mut entries = Vec::with_capacity(entry_count as usize);
-
-        for _ in 0..entry_count {
-            entries.push(BigIndexEntry::parse(inp).map_err(E::Entry)?);
+impl<'a> BigBanksReader<'a> {
+    pub fn new(banks: BigBanks<'a>) -> Self {
+        Self {
+            position: 4,
+            banks,
         }
-
-        Ok(BigIndex { entries })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigIndexError> {
-        use BigIndexError as E;
-
-        let entry_count = u32::try_from(self.entries.len()).map_err(|_| E::EntryCount)?;
-
-        put(out, &entry_count.to_le()).map_err(|_| E::EntryCount)?;
-
-        for entry in &self.entries {
-            entry.serialize(out).map_err(E::Entry)?;
+    fn into_owned(self) -> BigBanksReader<'static> {
+        BigBanksReader {
+            position: self.position,
+            banks: self.banks.into_owned(),
         }
-
-        Ok(())
     }
 }
+
+// #[derive(Debug, PartialEq)]
+// pub struct BigIndex {
+//     pub entries: Vec<BigBankEntry>,
+// }
+
+// #[derive(Error, Display, Clone, Debug)]
+// pub enum BigIndexError {
+//     EntryCount,
+//     Entry(BigBankEntryError),
+// }
+
+// impl BigIndex {
+//     pub fn parse(inp: &mut &[u8]) -> Result<Self, BigIndexError> {
+//         use BigIndexError as E;
+
+//         let entry_count = take::<u32>(inp).map_err(|_| E::EntryCount)?.to_le();
+
+//         let mut entries = Vec::with_capacity(entry_count as usize);
+
+//         for _ in 0..entry_count {
+//             entries.push(BigBankEntry::parse(inp).map_err(E::Entry)?);
+//         }
+
+//         Ok(BigIndex { entries })
+//     }
+
+//     pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigIndexError> {
+//         use BigIndexError as E;
+
+//         let entry_count = u32::try_from(self.entries.len()).map_err(|_| E::EntryCount)?;
+
+//         put(out, &entry_count.to_le()).map_err(|_| E::EntryCount)?;
+
+//         for entry in &self.entries {
+//             entry.serialize(out).map_err(E::Entry)?;
+//         }
+
+//         Ok(())
+//     }
+// }
 
 #[derive(Debug, PartialEq)]
-pub struct BigIndexEntry {
+pub struct BigBankEntry {
     pub name: String,
     pub bank_id: u32,
     pub bank_entries_count: u32,
@@ -104,7 +160,7 @@ pub struct BigIndexEntry {
 }
 
 #[derive(Error, Display, Clone, Debug)]
-pub enum BigIndexEntryError {
+pub enum BigBankEntryError {
     NameBytes,
     Name,
     BankId,
@@ -114,9 +170,9 @@ pub enum BigIndexEntryError {
     BlockSize,
 }
 
-impl BigIndexEntry {
-    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigIndexEntryError> {
-        use BigIndexEntryError as E;
+impl BigBankEntry {
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigBankEntryError> {
+        use BigBankEntryError as E;
 
         let name_bytes = take_bytes_nul_terminated(inp).map_err(|_| E::NameBytes)?;
         let name = String::from_utf8(name_bytes.to_vec()).map_err(|_| E::Name)?;
@@ -127,7 +183,7 @@ impl BigIndexEntry {
         let index_length = take::<u32>(inp).map_err(|_| E::BankLength)?.to_le();
         let block_size = take::<u32>(inp).map_err(|_| E::BlockSize)?.to_le();
 
-        Ok(BigIndexEntry {
+        Ok(BigBankEntry {
             name,
             bank_id,
             bank_entries_count,
@@ -137,8 +193,8 @@ impl BigIndexEntry {
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigIndexEntryError> {
-        use BigIndexEntryError as E;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigBankEntryError> {
+        use BigBankEntryError as E;
 
         put_bytes(out, &self.name.as_bytes()).map_err(|_| E::NameBytes)?;
         put(out, b"\0").map_err(|_| E::NameBytes)?;
@@ -160,10 +216,11 @@ impl BigIndexEntry {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigBank {
+pub struct BigBankEntries<'a> {
     pub file_type: u32,
     pub types_map: BTreeMap<u32, u32>,
-    pub entries: Vec<BigBankEntry>,
+    pub entry_count: u32,
+    pub entry_bytes: Cow<'a, [u8]>,
 }
 
 #[derive(Error, Display, Debug)]
@@ -171,73 +228,80 @@ pub enum BigBankError {
     TypesCount,
     TypesCountInt,
     FileType,
-    EntriesCount,
+    EntryCount,
     EntriesCountInt,
     TypesMap,
-    Entry(BigBankEntryError),
+    Entry(BigEntryError),
 }
 
-impl BigBank {
-    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigBankError> {
+impl<'a> BigBankEntries<'a> {
+    pub fn parse(i: &mut &'a [u8]) -> Result<Self, BigBankError> {
         use BigBankError as E;
 
-        let types_count = take::<u32>(inp).map_err(|_| E::TypesCount)?.to_le();
-        let bank_file_type = take::<u32>(inp).map_err(|_| E::FileType)?.to_le();
-        let entries_count = take::<u32>(inp).map_err(|_| E::EntriesCount)?.to_le();
-        let types_map_count = types_count.saturating_sub(1);
+        let types_count = take::<u32>(i).map_err(|_| E::TypesCount)?.to_le();
+        let file_type = take::<u32>(i).map_err(|_| E::FileType)?.to_le();
+        let entry_count = take::<u32>(i).map_err(|_| E::EntryCount)?.to_le();
+
         let mut types_map = BTreeMap::new();
 
+        let types_map_count = types_count.saturating_sub(1);
+
         for _ in 0..types_map_count {
-            let v1 = take::<u32>(inp).map_err(|_| E::TypesMap)?.to_le();
-            let v2 = take::<u32>(inp).map_err(|_| E::TypesMap)?.to_le();
+            let v1 = take::<u32>(i).map_err(|_| E::TypesMap)?.to_le();
+            let v2 = take::<u32>(i).map_err(|_| E::TypesMap)?.to_le();
             types_map.insert(v1, v2);
         }
 
-        let mut entries = Vec::with_capacity(entries_count.try_into().unwrap());
+        let entry_bytes = Cow::from(*i);
 
-        for _ in 0..entries_count {
-            let entry = BigBankEntry::parse(inp).map_err(E::Entry)?;
-            entries.push(entry);
-        }
-
-        Ok(BigBank {
-            file_type: bank_file_type,
+        Ok(BigBankEntries {
+            file_type,
             types_map,
-            entries,
+            entry_count,
+            entry_bytes,
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigBankError> {
-        use BigBankError as E;
+    // pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigBankError> {
+    //     use BigBankError as E;
 
-        let types_count = u32::try_from(self.types_map.len()).map_err(|_| E::TypesCountInt)?;
-        let types_count = types_count + 1;
+    //     let types_count = u32::try_from(self.types_map.len()).map_err(|_| E::TypesCountInt)?;
+    //     let types_count = types_count + 1;
 
-        put(out, &types_count.to_le()).map_err(|_| E::TypesCount)?;
-        put(out, &self.file_type.to_le()).map_err(|_| E::FileType)?;
+    //     put(out, &types_count.to_le()).map_err(|_| E::TypesCount)?;
+    //     put(out, &self.file_type.to_le()).map_err(|_| E::FileType)?;
 
-        let entries_count = u32::try_from(self.entries.len()).map_err(|_| E::EntriesCountInt)?;
+    //     let entries_count = u32::try_from(self.entries.len()).map_err(|_| E::EntriesCountInt)?;
 
-        put(out, &entries_count.to_le()).map_err(|_| E::EntriesCount)?;
+    //     put(out, &entries_count.to_le()).map_err(|_| E::EntryCount)?;
 
-        for (&k, &v) in &self.types_map {
-            put(out, &[k, v]).map_err(|_| E::TypesMap)?;
+    //     for (&k, &v) in &self.types_map {
+    //         put(out, &[k, v]).map_err(|_| E::TypesMap)?;
+    //     }
+
+    //     for entries in &self.entries {
+    //         entries.serialize(out).map_err(E::Entry)?;
+    //     }
+
+    //     Ok(())
+    // }
+
+    // pub fn byte_size(&self) -> usize {
+    //     todo!()
+    // }
+
+    pub fn into_owned(self) -> BigBankEntries<'static> {
+        BigBankEntries {
+            file_type: self.file_type,
+            types_map: self.types_map,
+            entry_count: self.entry_count,
+            entry_bytes: Cow::Owned(self.entry_bytes.into_owned()),
         }
-
-        for entries in &self.entries {
-            entries.serialize(out).map_err(E::Entry)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn byte_size(&self) -> usize {
-        todo!()
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigBankEntry {
+pub struct BigEntry {
     pub magic: u32,
     pub id: u32,
     pub file_type: u32,
@@ -247,11 +311,11 @@ pub struct BigBankEntry {
     pub symbol_name: String,
     pub crc: u32,
     pub files: Vec<String>,
-    pub sub_header: BigSubHeader,
+    pub sub_header: BigSubheader,
 }
 
 #[derive(Debug, Display, Error)]
-pub enum BigBankEntryError {
+pub enum BigEntryError {
     Magic,
     Id,
     FileType,
@@ -270,12 +334,12 @@ pub enum BigBankEntryError {
     SubHeaderLen,
     SubHeaderLenInt,
     SubHeaderBytes,
-    SubHeader(BigSubHeaderError),
+    SubHeader(BigSubheaderError),
 }
 
-impl BigBankEntry {
-    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigBankEntryError> {
-        use BigBankEntryError as E;
+impl BigEntry {
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigEntryError> {
+        use BigEntryError as E;
 
         let magic = take::<u32>(inp).map_err(|_| E::Magic)?.to_le();
         let id = take::<u32>(inp).map_err(|_| E::Id)?.to_le();
@@ -309,12 +373,12 @@ impl BigBankEntry {
         let sub_header_len = usize::try_from(sub_header_len).map_err(|_| E::SubHeaderLenInt)?;
 
         let sub_header = if sub_header_len == 0 {
-            BigSubHeader::None
+            BigSubheader::None
         } else {
             let mut sub_header_bytes =
                 take_bytes(inp, sub_header_len).map_err(|_| E::SubHeaderBytes)?;
 
-            BigSubHeader::parse(&mut sub_header_bytes, sub_header_len).map_err(E::SubHeader)?
+            BigSubheader::parse(&mut sub_header_bytes, sub_header_len).map_err(E::SubHeader)?
         };
 
         Ok(Self {
@@ -331,8 +395,8 @@ impl BigBankEntry {
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigBankEntryError> {
-        use BigBankEntryError as E;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigEntryError> {
+        use BigEntryError as E;
 
         put(out, &self.magic.to_le()).map_err(|_| E::Magic)?;
         put(out, &self.id.to_le()).map_err(|_| E::Id)?;
@@ -365,31 +429,53 @@ impl BigBankEntry {
         Ok(())
     }
 
+    pub fn kind(&self) -> BigEntryKind {
+        // TODO: Find a better way. Some entries lack a sub-header but we can still figure out what
+        // kind of entry it is.
+        match &self.sub_header {
+            BigSubheader::None => BigEntryKind::Unknown,
+            BigSubheader::Texture(_) => BigEntryKind::Texture,
+            BigSubheader::Mesh(_) => BigEntryKind::Mesh,
+            BigSubheader::Animation(_) => BigEntryKind::Animation,
+            BigSubheader::Dialogue(_) => BigEntryKind::Dialogue,
+            BigSubheader::Unknown(_) => BigEntryKind::Unknown,
+        }
+    }
+
     pub fn byte_size(&self) -> usize {
         todo!()
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum BigEntryKind {
+    Texture,
+    Mesh,
+    Animation,
+    Dialogue,
+    Unknown,
+}
+
 #[derive(Debug, PartialEq)]
-pub enum BigSubHeader {
+pub enum BigSubheader {
     None,
-    Texture(BigSubHeaderTexture),
-    Mesh(BigSubHeaderMesh),
-    Animation(BigSubHeaderAnimation),
-    Dialogue(BigSubHeaderDialogue),
+    Texture(BigSubheaderTexture),
+    Mesh(BigSubheaderMesh),
+    Animation(BigSubheaderAnimation),
+    Dialogue(BigSubheaderDialogue),
     Unknown(Vec<u8>),
 }
 
 #[derive(Debug, Display, Error)]
-pub enum BigSubHeaderError {
-    Texture(BigSubHeaderTextureError),
-    Mesh(BigSubHeaderMeshError),
-    Animation(BigSubHeaderAnimationError),
-    Dialogue(BigSubHeaderDialogueError),
+pub enum BigSubheaderError {
+    Texture(BigSubheaderTextureError),
+    Mesh(BigSubheaderMeshError),
+    Animation(BigSubheaderAnimationError),
+    Dialogue(BigSubheaderDialogueError),
     Unknown,
 }
 
-impl BigSubHeader {
+impl BigSubheader {
     pub fn byte_size(&self) -> usize {
         match self {
             Self::None => 0,
@@ -401,20 +487,20 @@ impl BigSubHeader {
         }
     }
 
-    pub fn parse(inp: &mut &[u8], sub_header_len: usize) -> Result<Self, BigSubHeaderError> {
-        use BigSubHeaderError as E;
+    pub fn parse(inp: &mut &[u8], sub_header_len: usize) -> Result<Self, BigSubheaderError> {
+        use BigSubheaderError as E;
         Ok(match sub_header_len {
             0 => Self::None,
-            4 => Self::Dialogue(BigSubHeaderDialogue::parse(inp).map_err(E::Dialogue)?),
-            24 => Self::Animation(BigSubHeaderAnimation::parse(inp).map_err(E::Animation)?),
-            34 => Self::Texture(BigSubHeaderTexture::parse(inp).map_err(E::Texture)?),
-            x if x > 45 => Self::Mesh(BigSubHeaderMesh::parse(inp).map_err(E::Mesh)?),
+            4 => Self::Dialogue(BigSubheaderDialogue::parse(inp).map_err(E::Dialogue)?),
+            24 => Self::Animation(BigSubheaderAnimation::parse(inp).map_err(E::Animation)?),
+            34 => Self::Texture(BigSubheaderTexture::parse(inp).map_err(E::Texture)?),
+            x if x > 45 => Self::Mesh(BigSubheaderMesh::parse(inp).map_err(E::Mesh)?),
             _ => Self::Unknown(inp.to_vec()),
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderError> {
-        use BigSubHeaderError as E;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubheaderError> {
+        use BigSubheaderError as E;
 
         Ok(match self {
             Self::None => {}
@@ -438,7 +524,7 @@ impl BigSubHeader {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigSubHeaderTexture {
+pub struct BigSubheaderTexture {
     pub width: u16,
     pub height: u16,
     pub depth: u16,
@@ -457,7 +543,7 @@ pub struct BigSubHeaderTexture {
 }
 
 #[derive(Debug, Display, Error)]
-pub enum BigSubHeaderTextureError {
+pub enum BigSubheaderTextureError {
     Width,
     Height,
     Depth,
@@ -475,9 +561,9 @@ pub enum BigSubHeaderTextureError {
     Unknown4,
 }
 
-impl BigSubHeaderTexture {
-    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigSubHeaderTextureError> {
-        use BigSubHeaderTextureError as E;
+impl BigSubheaderTexture {
+    pub fn parse(inp: &mut &[u8]) -> Result<Self, BigSubheaderTextureError> {
+        use BigSubheaderTextureError as E;
 
         let width = take::<u16>(inp).map_err(|_| E::Width)?.to_le();
         let height = take::<u16>(inp).map_err(|_| E::Height)?.to_le();
@@ -516,7 +602,7 @@ impl BigSubHeaderTexture {
         })
     }
 
-    pub fn serialize(&self, _out: &mut &mut [u8]) -> Result<(), BigSubHeaderTextureError> {
+    pub fn serialize(&self, _out: &mut &mut [u8]) -> Result<(), BigSubheaderTextureError> {
         todo!()
     }
 
@@ -526,7 +612,7 @@ impl BigSubHeaderTexture {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigSubHeaderMesh {
+pub struct BigSubheaderMesh {
     pub physics_mesh: u32,
     pub unknown1: [f32; 10],
     pub size_compressed_lod: Vec<u32>,
@@ -536,7 +622,7 @@ pub struct BigSubHeaderMesh {
 }
 
 #[derive(Debug, Display, Error)]
-pub enum BigSubHeaderMeshError {
+pub enum BigSubheaderMeshError {
     PhysicsMesh,
     Unknown1,
     SizeCompressedLodCount,
@@ -549,9 +635,9 @@ pub enum BigSubHeaderMeshError {
     TextureIds,
 }
 
-impl BigSubHeaderMesh {
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderMeshError> {
-        use BigSubHeaderMeshError as E;
+impl BigSubheaderMesh {
+    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubheaderMeshError> {
+        use BigSubheaderMeshError as E;
 
         let physics_mesh = take::<u32>(i).map_err(|_| E::PhysicsMesh)?.to_le();
 
@@ -600,8 +686,8 @@ impl BigSubHeaderMesh {
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderMeshError> {
-        use BigSubHeaderMeshError as E;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubheaderMeshError> {
+        use BigSubheaderMeshError as E;
 
         put(out, &self.physics_mesh.to_le()).map_err(|_| E::PhysicsMesh)?;
         put(out, &self.unknown1).map_err(|_| E::Unknown1)?;
@@ -641,26 +727,26 @@ impl BigSubHeaderMesh {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigSubHeaderAnimation {
+pub struct BigSubheaderAnimation {
     pub unknown1: f32,
     pub unknown2: f32,
     pub unknown3: Vec<u8>,
 }
 
 #[derive(Debug, Display, Error)]
-pub enum BigSubHeaderAnimationError {
+pub enum BigSubheaderAnimationError {
     Unknown1,
     Unknown2,
     Unknown3,
 }
 
-impl BigSubHeaderAnimation {
+impl BigSubheaderAnimation {
     pub fn byte_size(&self) -> usize {
         todo!()
     }
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderAnimationError> {
-        use BigSubHeaderAnimationError as E;
+    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubheaderAnimationError> {
+        use BigSubheaderAnimationError as E;
 
         let unknown1 = take::<f32>(i).map_err(|_| E::Unknown1)?;
         let unknown2 = take::<f32>(i).map_err(|_| E::Unknown2)?;
@@ -673,8 +759,8 @@ impl BigSubHeaderAnimation {
         })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderAnimationError> {
-        use BigSubHeaderAnimationError as E;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubheaderAnimationError> {
+        use BigSubheaderAnimationError as E;
 
         put(out, &self.unknown1).map_err(|_| E::Unknown1)?;
         put(out, &self.unknown2).map_err(|_| E::Unknown2)?;
@@ -685,30 +771,30 @@ impl BigSubHeaderAnimation {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct BigSubHeaderDialogue {
+pub struct BigSubheaderDialogue {
     unknown1: u32,
 }
 
 #[derive(Debug, Display, Error)]
-pub enum BigSubHeaderDialogueError {
+pub enum BigSubheaderDialogueError {
     Unknown1,
 }
 
-impl BigSubHeaderDialogue {
+impl BigSubheaderDialogue {
     pub fn byte_size(&self) -> usize {
         todo!()
     }
 
-    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubHeaderDialogueError> {
-        use BigSubHeaderDialogueError as E;
+    pub fn parse(i: &mut &[u8]) -> Result<Self, BigSubheaderDialogueError> {
+        use BigSubheaderDialogueError as E;
 
         let unknown1 = take::<u32>(i).map_err(|_| E::Unknown1)?;
 
         Ok(Self { unknown1 })
     }
 
-    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubHeaderDialogueError> {
-        use BigSubHeaderDialogueError as E;
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BigSubheaderDialogueError> {
+        use BigSubheaderDialogueError as E;
 
         put(out, &self.unknown1.to_le()).map_err(|_| E::Unknown1)?;
 
@@ -764,15 +850,15 @@ impl<Source: Read + Seek> BigReader<Source> {
 
     pub fn read_index_entry(
         &mut self,
-        index_entry: &BigIndexEntry,
-    ) -> Result<BigBank, BigReaderError> {
+        index_entry: &BigBankEntry,
+    ) -> Result<BigBankEntries, BigReaderError> {
         use BigReaderError as E;
 
         let bank_position = u64::try_from(index_entry.bank_position)
-            .map_err(|_| E::ParseIndex(BigIndexError::Entry(BigIndexEntryError::BankPosition)))?;
+            .map_err(|_| E::ParseIndex(BigIndexError::Entry(BigBankEntryError::BankPosition)))?;
 
         let bank_length = usize::try_from(index_entry.bank_length)
-            .map_err(|_| E::ParseIndex(BigIndexError::Entry(BigIndexEntryError::BankLength)))?;
+            .map_err(|_| E::ParseIndex(BigIndexError::Entry(BigBankEntryError::BankLength)))?;
 
         let mut bank_bytes = vec![0; bank_length];
 
@@ -784,8 +870,10 @@ impl<Source: Read + Seek> BigReader<Source> {
             .read_exact(&mut bank_bytes)
             .map_err(E::ReadBank)?;
 
-        BigBank::parse(&mut &bank_bytes[..]).map_err(E::ParseBank)
+        BigBankEntries::parse(&mut &bank_bytes[..]).map_err(E::ParseBank)
     }
+
+    fn read_entries()
 }
 
 #[derive(Error, Display, Debug)]
@@ -799,4 +887,49 @@ pub enum BigReaderError {
     SeekBank(io::Error),
     ReadBank(io::Error),
     ParseBank(BigBankError),
+}
+
+pub struct BigEntryReader<'a> {
+    bytes: Cow<'a, [u8]>,
+    position: usize,
+    entries_left: usize,
+}
+
+impl<'a> BigEntryReader<'a> {
+    pub fn new(bytes: Cow<'a, [u8]>, entry_count: usize) -> Self {
+        Self {
+            bytes,
+            position: 0,
+            entries_left: entry_count,
+        }
+    }
+
+    pub fn into_owned(self) -> BigEntryReader<'static> {
+        BigEntryReader {
+            bytes: Cow::Owned(self.bytes.into_owned()),
+            position: self.position,
+            entries_left: self.entries_left,
+        }
+    }
+
+    pub fn into_iterator(self) -> fallible_iterator::Iterator<Self> {
+        self.iterator()
+    }
+}
+
+impl<'a> FallibleIterator for BigEntryReader<'a> {
+    type Item = BigEntry;
+    type Error = BigEntryError;
+
+    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
+        if self.entries_left > 0 {
+            let mut entry_bytes = &self.bytes[self.position..];
+            let entry = BigEntry::parse(&mut entry_bytes)?;
+            self.position += entry.byte_size();
+            self.entries_left -= 1;
+            Ok(Some(entry))
+        } else {
+            Ok(None)
+        }
+    }
 }

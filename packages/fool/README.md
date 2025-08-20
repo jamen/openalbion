@@ -1,3 +1,3 @@
 # fool
 
-Uility to extract, pack, or inspect Fable's files.
+A tool for modifying and inspecting Fable's files.

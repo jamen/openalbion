@@ -10,10 +10,10 @@ use std::{
 #[derive(Parser, Debug, Clone)]
 pub struct ExtractWadArgs {
     /// Input wad file to be extracted
-    wad_file_path: PathBuf,
+    wad_file: PathBuf,
 
     /// Output directory to extract into
-    output_path: Option<PathBuf>,
+    output: Option<PathBuf>,
 }
 
 pub fn handler(_fable_path: &Path, args: ExtractWadArgs) -> anyhow::Result<()> {
