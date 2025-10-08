@@ -1,11 +1,7 @@
 use super::bytes::{put, put_bytes, take, take_bytes, take_bytes_nul_terminated};
 use derive_more::derive::{Display, Error};
 use fallible_iterator::FallibleIterator;
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    io::{self, Read, Seek, SeekFrom},
-};
+use std::{borrow::Cow, collections::BTreeMap};
 
 #[derive(Debug, PartialEq)]
 pub struct BigHeader {
@@ -94,10 +90,7 @@ pub struct BigBanksReader<'a> {
 
 impl<'a> BigBanksReader<'a> {
     pub fn new(banks: BigBanks<'a>) -> Self {
-        Self {
-            position: 4,
-            banks,
-        }
+        Self { position: 4, banks }
     }
 
     fn into_owned(self) -> BigBanksReader<'static> {
@@ -800,93 +793,6 @@ impl BigSubheaderDialogue {
 
         Ok(())
     }
-}
-
-pub struct BigReader<Source: Read + Seek> {
-    source: Source,
-}
-
-impl<Source: Read + Seek> BigReader<Source> {
-    pub fn new(source: Source) -> Self {
-        Self { source }
-    }
-
-    pub fn read_header(&mut self) -> Result<BigHeader, BigReaderError> {
-        use BigReaderError as E;
-
-        let mut header_bytes = [0; BigHeader::BYTE_SIZE];
-
-        self.source
-            .seek(SeekFrom::Start(0))
-            .map_err(E::SeekHeader)?;
-
-        self.source
-            .read_exact(&mut header_bytes)
-            .map_err(E::ReadHeader)?;
-
-        BigHeader::parse(&mut &header_bytes[..]).map_err(E::ParseHeader)
-    }
-
-    pub fn read_index(&mut self) -> Result<BigIndex, BigReaderError> {
-        use BigReaderError as E;
-
-        let header = self.read_header()?;
-
-        let index_header_position = u64::try_from(header.index_header_position)
-            .map_err(|_| E::ParseHeader(BigHeaderError::IndexPosition))?;
-
-        let mut index_header_bytes = Vec::new();
-
-        self.source
-            .seek(SeekFrom::Start(index_header_position))
-            .map_err(E::SeekIndex)?;
-
-        self.source
-            .read_to_end(&mut index_header_bytes)
-            .map_err(E::ReadIndex)?;
-
-        BigIndex::parse(&mut &index_header_bytes[..]).map_err(E::ParseIndex)
-    }
-
-    pub fn read_index_entry(
-        &mut self,
-        index_entry: &BigBankEntry,
-    ) -> Result<BigBankEntries, BigReaderError> {
-        use BigReaderError as E;
-
-        let bank_position = u64::try_from(index_entry.bank_position)
-            .map_err(|_| E::ParseIndex(BigIndexError::Entry(BigBankEntryError::BankPosition)))?;
-
-        let bank_length = usize::try_from(index_entry.bank_length)
-            .map_err(|_| E::ParseIndex(BigIndexError::Entry(BigBankEntryError::BankLength)))?;
-
-        let mut bank_bytes = vec![0; bank_length];
-
-        self.source
-            .seek(SeekFrom::Start(bank_position))
-            .map_err(E::SeekBank)?;
-
-        self.source
-            .read_exact(&mut bank_bytes)
-            .map_err(E::ReadBank)?;
-
-        BigBankEntries::parse(&mut &bank_bytes[..]).map_err(E::ParseBank)
-    }
-
-    fn read_entries()
-}
-
-#[derive(Error, Display, Debug)]
-pub enum BigReaderError {
-    SeekHeader(io::Error),
-    ReadHeader(io::Error),
-    ParseHeader(BigHeaderError),
-    SeekIndex(io::Error),
-    ReadIndex(io::Error),
-    ParseIndex(BigIndexError),
-    SeekBank(io::Error),
-    ReadBank(io::Error),
-    ParseBank(BigBankError),
 }
 
 pub struct BigEntryReader<'a> {

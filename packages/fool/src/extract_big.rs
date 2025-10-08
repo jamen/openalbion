@@ -77,7 +77,7 @@ pub fn handler(_fable_data: &Path, args: ExtractBigArgs) -> anyhow::Result<()> {
 
         let dxt1_textures_output = bank_output.join("DXT1");
 
-        fs::create_dir(&bank_output)
+        fs::create_dir(&bank_output);
 
         // TODO: Extract any other possible assets
     }
