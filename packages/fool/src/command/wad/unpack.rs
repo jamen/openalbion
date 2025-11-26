@@ -1,46 +1,44 @@
 use anyhow::{Context, anyhow};
 use clap::Parser;
-use fable_data::wad::WadReader;
+use fable_data::WadReader;
 use std::{
     fs::{self, File},
     io::{self, BufReader},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 #[derive(Parser, Debug, Clone)]
-pub struct ExtractWadArgs {
+pub struct WadUnpackArgs {
     /// Input wad file to be extracted
-    wad_file: PathBuf,
+    input: PathBuf,
 
     /// Output directory to extract into
     output: Option<PathBuf>,
 }
 
-pub fn handler(_fable_path: &Path, args: ExtractWadArgs) -> anyhow::Result<()> {
-    let wad_file_path = args.wad_file_path;
+pub fn handler(args: WadUnpackArgs) -> anyhow::Result<()> {
+    let input_path = args.input;
 
     // Get the output path, defaulting to one based on the wad file path if none is provided
     let output_path = args
-        .output_path
+        .output
         .or_else(|| {
-            wad_file_path
+            input_path
                 .parent()
-                .and_then(|parent| wad_file_path.file_stem().map(|stem| parent.join(stem)))
+                .and_then(|parent| input_path.file_stem().map(|stem| parent.join(stem)))
         })
-        .context("No output directory provided and failed to decide a default path.")?;
+        .context("No output directory.")?;
 
     // Ensure the output directory and wad file don't have the same path, which can happen if the
     // wad file had no extension for some reason
-    if output_path == wad_file_path {
-        return Err(anyhow!(
-            "Wad file and output directory have the same path. Please give a different output path"
-        ));
+    if output_path == input_path {
+        return Err(anyhow!("Input and output paths are the same."));
     }
 
-    log::info!("Wad file path {:?}", wad_file_path);
+    log::info!("Wad file path {:?}", input_path);
     log::info!("Output path {:?}", output_path);
 
-    let wad_file = File::open(&wad_file_path).context("Could not open wad file")?;
+    let wad_file = File::open(&input_path).context("Could not open wad file")?;
     let wad_file = BufReader::new(wad_file);
 
     let mut wad_reader = WadReader::new(wad_file);

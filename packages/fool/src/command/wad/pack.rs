@@ -1,14 +1,15 @@
 use anyhow::Context;
 use clap::Parser;
-use fable_data::wad::{WadEntry, WadWriter};
+use fable_data::{WadAssetInfo, WadWriter};
 use std::{
+    borrow::Cow,
     fs::{self, OpenOptions},
     io::{BufWriter, Seek, SeekFrom},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 #[derive(Parser, Debug, Clone)]
-pub struct PackWadArgs {
+pub struct WadPackArgs {
     /// Input directory whose files will be packed into a wad file
     input: PathBuf,
 
@@ -20,13 +21,13 @@ pub struct PackWadArgs {
     entry_prefix: String,
 }
 
-pub fn handler(_fable_path: &Path, args: PackWadArgs) -> anyhow::Result<()> {
-    let input_directory_path = args.input_directory_path;
+pub fn handler(args: WadPackArgs) -> anyhow::Result<()> {
+    let input_directory_path = args.input;
     let entry_prefix = args.entry_prefix;
 
     // Get the output path, defaulting to one based on the input directory if none is provided.
     let output_path = args
-        .output_file_path
+        .output
         .or_else(|| Some(input_directory_path.with_extension("wad")))
         .context("No output directory provided and failed to decide a default path.")?;
 
@@ -73,9 +74,9 @@ pub fn handler(_fable_path: &Path, args: PackWadArgs) -> anyhow::Result<()> {
 
         let content_position = next_entry_position;
         let content_length = entry_content.len();
-        let path = format!("{}{}", entry_prefix, entry_file_name);
+        let path = Cow::from(format!("{}{}", entry_prefix, entry_file_name));
 
-        let entry = WadEntry {
+        let entry = WadAssetInfo {
             id: entry_id as u32,
             content_length: content_length as u32,
             content_position: content_position as u32,

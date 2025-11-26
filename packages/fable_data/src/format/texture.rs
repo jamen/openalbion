@@ -1,4 +1,4 @@
-use crate::bytes::{take, take_bytes};
+use crate::format::bytes::{take, take_bytes};
 use bcndecode::BcnDecoderFormat;
 use derive_more::derive::{Display, Error};
 

@@ -9,7 +9,7 @@ bcndecode = "0.2.0"
 derive_more = { version = "1.0.0", features = ["from", "display", "error"] }
 fallible-iterator = "0.3.0"
 serde = { version = "1.0.210", features = ["derive"] }
-minilzo = { path = "../rust_minilzo" }
+minilzo = { path = "../minilzo_rust" }
 
 [dependencies.bytemuck]
 features = ["derive", "extern_crate_std"]

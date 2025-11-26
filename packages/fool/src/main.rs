@@ -1,17 +1,9 @@
-mod extract_big;
-mod extract_wad;
-mod insert_texture_big;
+mod command;
 mod logger;
-mod pack_wad;
 
-use crate::{
-    extract_big::ExtractBigArgs, extract_wad::ExtractWadArgs,
-    insert_texture_big::InsertTextureBigArgs, pack_wad::PackWadArgs,
-};
-use anyhow::Context;
-use clap::{Parser, Subcommand};
+use clap::Parser;
+use command::Command;
 use log::LevelFilter;
-use std::{env, path::PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -22,25 +14,7 @@ use std::{env, path::PathBuf};
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
-
-    #[arg(short = 'F', long)]
-    fable_path: Option<PathBuf>,
-}
-
-#[derive(Subcommand, Debug, Clone)]
-enum Commands {
-    #[command(arg_required_else_help = true)]
-    ExtractWad(ExtractWadArgs),
-
-    #[command(arg_required_else_help = true)]
-    PackWad(PackWadArgs),
-
-    #[command(arg_required_else_help = true)]
-    ExtractBig(ExtractBigArgs),
-
-    #[command(arg_required_else_help = true)]
-    InsertTextureBig(InsertTextureBigArgs),
+    command: Option<Command>,
 }
 
 fn main() {
@@ -55,20 +29,10 @@ fn try_main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let fable_path = cli
-        .fable_path
-        .or_else(|| env::current_dir().ok())
-        .context("Fable's directory not found. Try using the --fable-path flag")?;
-
     let command = match cli.command {
         None => return Ok(()),
         Some(command) => command,
     };
 
-    match command {
-        Commands::ExtractWad(args) => extract_wad::handler(fable_path.as_path(), args),
-        Commands::PackWad(args) => pack_wad::handler(fable_path.as_path(), args),
-        Commands::ExtractBig(args) => extract_big::handler(fable_path.as_path(), args),
-        Commands::InsertTextureBig(args) => insert_texture_big::handler(fable_path.as_path(), args),
-    }
+    command::handler(command)
 }
