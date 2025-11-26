@@ -1,40 +1,59 @@
+mod files;
 mod renderer;
 
-use self::renderer::{NewRendererError, Renderer};
-use derive_more::{Display, Error};
-use std::sync::Arc;
+use crate::files::NewFilesError;
+
+use self::{
+    files::Files,
+    renderer::{NewRendererError, Renderer},
+};
+use derive_more::Display;
+use std::{
+    env,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tracing_subscriber::layer::SubscriberExt;
 use wgpu::SurfaceError;
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalSize,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
 
 struct State {
+    files: Files,
     window: Arc<Window>,
     renderer: Renderer<'static>,
 }
 
-#[derive(Error, Display, Debug)]
+#[derive(Display, Debug)]
 enum StateError {
     NewRenderer(NewRendererError),
+    NewFiles(NewFilesError),
 }
 
 impl State {
-    async fn new(window: Arc<Window>) -> Result<State, StateError> {
+    async fn new(window: Arc<Window>, fable_directory: &Path) -> Result<State, StateError> {
         use StateError as E;
+
+        let files = Files::new(fable_directory).map_err(E::NewFiles)?;
 
         let renderer = Renderer::new(window.clone())
             .await
             .map_err(E::NewRenderer)?;
 
-        let inner_size = window.inner_size();
+        let PhysicalSize { width, height } = window.inner_size();
 
-        renderer.resize_surface(inner_size.width, inner_size.height);
+        renderer.resize_surface(width, height);
 
-        Ok(Self { window, renderer })
+        Ok(Self {
+            files,
+            window,
+            renderer,
+        })
     }
 
     fn render(&mut self) -> Result<(), SurfaceError> {
@@ -52,6 +71,14 @@ struct App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let mut args = env::args().skip(1);
+
+        let fable_directory = args
+            .next()
+            .map(PathBuf::from)
+            .or_else(|| env::current_dir().ok())
+            .expect("No fable directory");
+
         // TODO: Something better than an unwrap
         let window = Arc::new(
             event_loop
@@ -60,7 +87,8 @@ impl ApplicationHandler for App {
         );
 
         // TODO: Something better than an unwrap
-        let state = pollster::block_on(State::new(window.clone())).unwrap();
+        let state = State::new(window.clone(), &fable_directory);
+        let state = pollster::block_on(state).unwrap();
 
         self.state = Some(state);
 
@@ -78,10 +106,8 @@ impl ApplicationHandler for App {
                 state.render().unwrap();
                 state.window.request_redraw();
             }
-            WindowEvent::Resized(inner_size) => {
-                state
-                    .renderer
-                    .resize_surface(inner_size.width, inner_size.height);
+            WindowEvent::Resized(PhysicalSize { width, height }) => {
+                state.renderer.resize_surface(width, height);
             }
             _ => {}
         }

@@ -3,6 +3,7 @@ use crate::{
     BigAssetInfoSection, BigBankInfo, BigBankInfoCount, BigBankInfoOwned, BigBankInfoSection,
     BigHeader, BigHeaderSection, TakeError,
 };
+use derive_more::{Display, Error};
 use std::{
     fs::File,
     io::{self, BufReader, Read, Seek, SeekFrom},
@@ -115,7 +116,7 @@ impl BigFile {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum BigFileError {
     SeekHeader(io::Error),
     ReadHeader(io::Error),
@@ -124,10 +125,12 @@ pub enum BigFileError {
     SeekBankInfoCount(io::Error),
     ReadBankInfoCount(io::Error),
     ParseBankInfoCount(TakeError),
+    #[display("ParseBankInfo(${_0}, ${_1})")]
     ParseBankInfo(u32, BigBankInfoSection),
     SeekAssetInfoBytes(io::Error),
     ReadAssetInfoBytes(io::Error),
     ParseAssetInfoHeader(BigAssetInfoHeaderSection),
+    #[display("ParseAssetInfo(${_0}, ${_1})")]
     ParseAssetInfo(u32, BigAssetInfoSection),
     SeekAssetBytes(io::Error),
     ReadAssetBytes(io::Error),
