@@ -5,8 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-wgpu = "26.0.1"
-winit = "0.30.11"
+winit = "0.30.12"
 fable_data = { path = "../fable_data" }
 tracing = "0.1.41"
 tracing-log = "0.2.0"
@@ -14,3 +13,8 @@ tracing-tracy = "0.11.4"
 tracing-subscriber = "0.3.19"
 pollster = "0.4.0"
 derive_more = { version = "2.0.1", features = ["error", "display"] }
+
+[dependencies.wgpu]
+version = "27.0.1"
+default-features = false
+features = [ "std", "parking_lot", "gles", "wgsl" ]
