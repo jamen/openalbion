@@ -3,10 +3,10 @@ mod sky;
 use self::sky::SkyPass;
 use derive_more::{Display, Error};
 use wgpu::{
-    CommandEncoder, CompositeAlphaMode, CreateSurfaceError, Device, DeviceDescriptor, Instance,
-    InstanceDescriptor, PresentMode, Queue, RequestAdapterError, RequestAdapterOptions,
-    RequestDeviceError, Surface, SurfaceConfiguration, SurfaceError, SurfaceTarget, SurfaceTexture,
-    TextureFormat, TextureUsages, TextureView,
+    Backends, CommandEncoder, CompositeAlphaMode, CreateSurfaceError, Device, DeviceDescriptor,
+    Instance, InstanceDescriptor, InstanceFlags, PresentMode, Queue, RequestAdapterError,
+    RequestAdapterOptions, RequestDeviceError, Surface, SurfaceConfiguration, SurfaceError,
+    SurfaceTarget, SurfaceTexture, TextureFormat, TextureUsages, TextureView,
 };
 
 pub struct Renderer<'target> {

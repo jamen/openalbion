@@ -13,8 +13,7 @@ tracing-tracy = "0.11.4"
 tracing-subscriber = "0.3.19"
 pollster = "0.4.0"
 derive_more = { version = "2.0.1", features = ["error", "display"] }
+env_logger = "0.11.8"
 
 [dependencies.wgpu]
 version = "27.0.1"
-default-features = false
-features = [ "std", "parking_lot", "gles", "wgsl" ]

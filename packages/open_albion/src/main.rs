@@ -1,10 +1,8 @@
 mod files;
 mod renderer;
 
-use crate::files::NewFilesError;
-
 use self::{
-    files::Files,
+    files::{Files, NewFilesError},
     renderer::{NewRendererError, Renderer},
 };
 use derive_more::Display;
@@ -115,12 +113,14 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
-    tracing_log::LogTracer::init().expect("setup tracing-log");
+    env_logger::init();
 
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::registry().with(tracing_tracy::TracyLayer::default()),
-    )
-    .expect("setup tracing-tracy");
+    // tracing_log::LogTracer::init().expect("setup tracing-log");
+
+    // tracing::subscriber::set_global_default(
+    //     tracing_subscriber::registry().with(tracing_tracy::TracyLayer::default()),
+    // )
+    // .expect("setup tracing-tracy");
 
     let event_loop = EventLoop::new().unwrap();
 
