@@ -53,7 +53,7 @@ impl<'target> Renderer<'target> {
         })
     }
 
-    pub fn resize_surface(&self, width: u32, height: u32) {
+    pub fn resize_surface(&self, size: [u32; 2]) {
         self.surface.configure(
             &self.device,
             &SurfaceConfiguration {
@@ -61,8 +61,8 @@ impl<'target> Renderer<'target> {
                 format: self.surface_format,
                 view_formats: vec![self.surface_format.add_srgb_suffix()],
                 alpha_mode: CompositeAlphaMode::Auto,
-                width,
-                height,
+                width: size[0],
+                height: size[1],
                 desired_maximum_frame_latency: 2,
                 present_mode: PresentMode::AutoVsync,
             },
