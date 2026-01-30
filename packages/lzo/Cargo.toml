@@ -1,0 +1,15 @@
+[package]
+name = "lzo"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+default = ["std"]
+std = []
+
+[build-dependencies]
+cc = "1.2.54"
+
+[dependencies]
+libc = "0.2.180"

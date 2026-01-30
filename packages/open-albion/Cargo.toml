@@ -1,0 +1,17 @@
+[package]
+name = "open-albion"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+argh = "0.1.13"
+bytemuck = { version = "1.24", features = ["derive"] }
+derive_more = { version = "2.1.1", features = ["error", "display"] }
+fable-data = { path = "../fable-data" }
+glam = "0.31.0"
+pollster = "0.4.0"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = [ "env-filter", "std" ] }
+wgpu = "28.0.0"
+winit = "0.30.12"
