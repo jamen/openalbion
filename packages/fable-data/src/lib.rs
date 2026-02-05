@@ -1,13 +1,15 @@
 pub mod big;
 pub mod bytes;
 pub mod crc32;
+pub mod def;
+pub mod environment;
 pub mod texture;
+pub mod tga;
 pub mod wad;
 // mod bba;
 // mod bbm;
 // mod bncfg;
 // mod bwd;
-// mod def;
 // mod gtg;
 // mod ini;
 // mod lug;

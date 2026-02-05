@@ -1,7 +1,7 @@
 mod sky;
 
 use self::sky::SkyPass;
-pub use self::sky::SkyTextureError;
+pub use self::sky::{LightingColoursError, SkyTextureError};
 use derive_more::{Display, Error};
 use fable_data::big::AssetMetadata;
 use wgpu::{
@@ -25,7 +25,6 @@ impl<'target> Renderer<'target> {
 
         let instance = Instance::new(&InstanceDescriptor::default());
 
-        // Create surface first so we can request a compatible adapter
         let surface = instance.create_surface(target).map_err(E::CreateSurface)?;
 
         let adapter = instance
@@ -78,18 +77,36 @@ impl<'target> Renderer<'target> {
         );
     }
 
-    pub fn set_sky_texture(
+    pub fn set_sky_texture0(
         &mut self,
         asset_info: &AssetMetadata,
         asset_data: &[u8],
     ) -> Result<(), SkyTextureError> {
         self.passes
             .sky
-            .set_texture(&self.device, &self.queue, asset_info, asset_data)
+            .set_texture0(&self.device, &self.queue, asset_info, asset_data)
     }
 
-    pub fn update_sky_camera(&self, view_proj: [[f32; 4]; 4]) {
-        self.passes.sky.update_camera(&self.queue, view_proj);
+    pub fn set_sky_texture1(
+        &mut self,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), SkyTextureError> {
+        self.passes
+            .sky
+            .set_texture1(&self.device, &self.queue, asset_info, asset_data)
+    }
+
+    pub fn set_lighting_lut(&mut self, tga_bytes: &[u8]) -> Result<(), LightingColoursError> {
+        self.passes
+            .sky
+            .set_lighting_lut(&self.device, &self.queue, tga_bytes)
+    }
+
+    pub fn update_sky_uniforms(&self, view_proj: [[f32; 4]; 4], time_of_day: f32, sky_blend: f32) {
+        self.passes
+            .sky
+            .update_uniforms(&self.queue, view_proj, time_of_day, sky_blend);
     }
 
     pub fn render(&mut self) -> Result<PrePresent, SurfaceError> {

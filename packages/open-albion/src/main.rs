@@ -5,12 +5,11 @@ mod renderer;
 use self::{
     camera::AnimatedCamera,
     files::{Files, NewFilesError},
-    renderer::{NewRendererError, Renderer, SkyTextureError},
+    renderer::{LightingColoursError, NewRendererError, Renderer, SkyTextureError},
 };
 use argh::FromArgs;
 use derive_more::{Display, Error};
-use std::time::Instant;
-use std::{borrow::Cow, path::Path, sync::Arc};
+use std::{borrow::Cow, path::Path, sync::Arc, time::Instant};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use wgpu::SurfaceError;
@@ -79,6 +78,7 @@ struct App {
     window: Option<Arc<Window>>,
     camera: AnimatedCamera,
     last_frame_time: Option<Instant>,
+    time_of_day: f32,
 }
 
 #[derive(Debug, Display)]
@@ -118,6 +118,7 @@ impl App {
             window: None,
             camera: AnimatedCamera::new(),
             last_frame_time: None,
+            time_of_day: 18.0,
         })
     }
 }
@@ -130,31 +131,66 @@ enum TryResumedError {
     NewRenderer(NewRendererError),
     ReadAssetData(ReadAssetDataError),
     UploadSkyTexture(SkyTextureError),
+    UploadLightingLut(LightingColoursError),
 }
 
 impl App {
     fn try_resumed(&mut self, event_loop: &ActiveEventLoop) -> Result<(), TryResumedError> {
         use TryResumedError as E;
 
-        let window = event_loop
-            .create_window(Window::default_attributes())
-            .map_err(E::CreateWindow)?;
-        let window = Arc::new(window);
+        let window = Arc::new(
+            event_loop
+                .create_window(Window::default_attributes())
+                .map_err(E::CreateWindow)?,
+        );
 
-        let renderer = Renderer::new(window.clone());
-        let mut renderer = pollster::block_on(renderer).map_err(E::NewRenderer)?;
-
-        let (sky_metadata, sky_bytes) = self
-            .files
-            .textures
-            .read_asset("GBANK_MAIN_PC", "GRAPHIC_ATMOSPHERIC_SKY_EVENING")
-            .map_err(E::ReadAssetData)?;
+        let mut renderer =
+            pollster::block_on(Renderer::new(window.clone())).map_err(E::NewRenderer)?;
 
         renderer
-            .set_sky_texture(&sky_metadata, &sky_bytes)
-            .map_err(E::UploadSkyTexture)?;
+            .set_lighting_lut(&self.files.lighting_lut_bytes)
+            .map_err(E::UploadLightingLut)?;
 
-        tracing::info!("Uploaded sky texture to GPU");
+        tracing::info!("Uploaded lighting LUT to GPU");
+
+        let (tex0_name, tex1_name) = {
+            let theme = self
+                .files
+                .environment_theme("ENVIRONMENT_THEME1")
+                .expect("No environment theme found");
+
+            let (tex0, tex1, _) = theme.sky_textures_at_time(self.time_of_day);
+
+            (tex0.map(String::from), tex1.map(String::from))
+        };
+
+        if let Some(ref name) = tex0_name {
+            let (metadata, bytes) = self
+                .files
+                .read_sky_texture(name)
+                .map_err(E::ReadAssetData)?;
+
+            renderer
+                .set_sky_texture0(&metadata, &bytes)
+                .map_err(E::UploadSkyTexture)?;
+
+            tracing::info!("Uploaded sky texture 0: {}", name);
+        }
+
+        if let Some(ref name) = tex1_name {
+            if tex1_name != tex0_name {
+                let (metadata, bytes) = self
+                    .files
+                    .read_sky_texture(name)
+                    .map_err(E::ReadAssetData)?;
+
+                renderer
+                    .set_sky_texture1(&metadata, &bytes)
+                    .map_err(E::UploadSkyTexture)?;
+
+                tracing::info!("Uploaded sky texture 1: {}", name);
+            }
+        }
 
         let size = window.inner_size();
 
@@ -178,19 +214,21 @@ enum WindowEventError {
 }
 
 impl App {
-    fn window_event(
+    fn try_window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
         _id: WindowId,
         event: WindowEvent,
     ) -> Result<(), WindowEventError> {
         use WindowEventError as E;
+
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => self.redraw_requested().map_err(E::RedrawRequested)?,
             WindowEvent::Resized(size) => self.resize(size).map_err(E::Resize)?,
             _ => {}
         }
+
         Ok(())
     }
 }
@@ -210,15 +248,29 @@ impl App {
         let renderer = self.renderer.as_mut().ok_or(E::NoRenderer)?;
 
         let now = Instant::now();
+
         let delta_time = self
             .last_frame_time
             .map(|last| now.duration_since(last).as_secs_f32())
             .unwrap_or(0.0);
+
         self.last_frame_time = Some(now);
 
         self.camera.update(delta_time);
 
-        renderer.update_sky_camera(self.camera.sky_view_projection());
+        self.time_of_day += delta_time;
+
+        if self.time_of_day >= 24.0 {
+            self.time_of_day -= 24.0;
+        }
+
+        let sky_blend = 0.0;
+
+        renderer.update_sky_uniforms(
+            self.camera.sky_view_projection(),
+            self.time_of_day,
+            sky_blend,
+        );
 
         let pre_present = renderer.render().map_err(E::Render)?;
 
@@ -259,7 +311,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        if let Err(error) = self.window_event(event_loop, id, event) {
+        if let Err(error) = self.try_window_event(event_loop, id, event) {
             tracing::error!("{}", error);
         }
     }
