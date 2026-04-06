@@ -1,6 +1,6 @@
 mod sky;
 
-use self::sky::SkyPass;
+use self::sky::OuterSkyPass;
 pub use self::sky::{LightingColoursError, SkyTextureError};
 use derive_more::{Display, Error};
 use fable_data::big::AssetMetadata;
@@ -148,14 +148,14 @@ pub enum NewRendererError {
 
 pub struct RenderPasses {
     clear: ClearPass,
-    sky: SkyPass,
+    sky: OuterSkyPass,
 }
 
 impl RenderPasses {
     pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
         Self {
             clear: ClearPass,
-            sky: SkyPass::new(device, surface_format),
+            sky: OuterSkyPass::new(device, surface_format),
         }
     }
 }

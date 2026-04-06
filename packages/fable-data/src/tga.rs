@@ -24,7 +24,8 @@ impl Tga {
 
         // Skip image ID if present
         if header.id_length > 0 {
-            let _ = take_bytes(&mut inp, header.id_length as usize).map_err(|_| TgaError::ImageId)?;
+            let _ =
+                take_bytes(&mut inp, header.id_length as usize).map_err(|_| TgaError::ImageId)?;
         }
 
         // Skip color map if present
@@ -71,8 +72,7 @@ impl Tga {
 
             if packet_header & 0x80 != 0 {
                 // RLE packet: single pixel repeated
-                let pixel =
-                    take_bytes(inp, bytes_per_pixel).map_err(|_| TgaError::PixelData)?;
+                let pixel = take_bytes(inp, bytes_per_pixel).map_err(|_| TgaError::PixelData)?;
                 for _ in 0..count {
                     pixels.extend_from_slice(pixel);
                 }

@@ -473,7 +473,8 @@ impl<'a> DefParser<'a> {
         }
 
         // Number (possibly negative)
-        if self.peek_char() == Some('-') || self.peek_char().map(|c| c.is_ascii_digit()) == Some(true)
+        if self.peek_char() == Some('-')
+            || self.peek_char().map(|c| c.is_ascii_digit()) == Some(true)
         {
             return self.parse_number();
         }

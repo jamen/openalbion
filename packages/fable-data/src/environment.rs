@@ -5,7 +5,7 @@
 //! - Lighting lookup table rows
 //! - Fog, clouds, water, and other atmospheric effects
 
-use crate::def::{parse_def_file, Definition, ParseError, PathSegment, Statement, Value};
+use crate::def::{Definition, ParseError, PathSegment, Statement, Value, parse_def_file};
 use derive_more::{Display, Error};
 use std::collections::HashMap;
 
@@ -170,7 +170,10 @@ impl EnvironmentConfig {
         Ok(Self { themes })
     }
 
-    fn parse_theme(name: &str, def: &Definition) -> Result<EnvironmentTheme, EnvironmentParseError> {
+    fn parse_theme(
+        name: &str,
+        def: &Definition,
+    ) -> Result<EnvironmentTheme, EnvironmentParseError> {
         let mut keyframes_map: HashMap<i32, TimeKeyframe> = HashMap::new();
 
         for stmt in &def.body {
@@ -186,11 +189,7 @@ impl EnvironmentConfig {
 
                             if segments.len() >= 3 {
                                 if let PathSegment::Field(prop) = &segments[2] {
-                                    Self::set_keyframe_property(
-                                        keyframe,
-                                        prop,
-                                        &assignment.value,
-                                    );
+                                    Self::set_keyframe_property(keyframe, prop, &assignment.value);
                                 }
                             }
                         }

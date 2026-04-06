@@ -436,17 +436,17 @@ impl LightingLutBindGroupLayout {
     }
 }
 
-pub struct SkyShader(ShaderModule);
+pub struct OuterSkyShader(ShaderModule);
 
-impl SkyShader {
+impl OuterSkyShader {
     pub fn new(device: &Device) -> Self {
-        Self(device.create_shader_module(include_wgsl!("sky.wgsl")))
+        Self(device.create_shader_module(include_wgsl!("sky/outer_sky.wgsl")))
     }
 }
 
-pub struct SkyPipelineLayout(PipelineLayout);
+pub struct OuterSkyPipelineLayout(PipelineLayout);
 
-impl SkyPipelineLayout {
+impl OuterSkyPipelineLayout {
     pub fn new(
         device: &Device,
         uniform_layout: &SkyUniformBindGroupLayout,
@@ -461,13 +461,13 @@ impl SkyPipelineLayout {
     }
 }
 
-pub struct SkyPipeline(RenderPipeline);
+pub struct OuterSkyPipeline(RenderPipeline);
 
-impl SkyPipeline {
+impl OuterSkyPipeline {
     pub fn new(
         device: &Device,
-        layout: &SkyPipelineLayout,
-        shader: &SkyShader,
+        layout: &OuterSkyPipelineLayout,
+        shader: &OuterSkyShader,
         target_format: TextureFormat,
     ) -> Self {
         Self(device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -598,10 +598,10 @@ impl LoadedSkyTexture {
     }
 }
 
-pub struct SkyPass {
+pub struct OuterSkyPass {
     texture_layout: SkyTextureBindGroupLayout,
     lut_layout: LightingLutBindGroupLayout,
-    pipeline: SkyPipeline,
+    pipeline: OuterSkyPipeline,
     dome: SkyDome,
     sky_sampler: wgpu::Sampler,
     texture0: Option<LoadedSkyTexture>,
@@ -610,14 +610,15 @@ pub struct SkyPass {
     lighting_lut: Option<BoundLightingLut>,
 }
 
-impl SkyPass {
+impl OuterSkyPass {
     pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
-        let shader = SkyShader::new(device);
+        let shader = OuterSkyShader::new(device);
         let uniform_layout = SkyUniformBindGroupLayout::new(device);
         let texture_layout = SkyTextureBindGroupLayout::new(device);
         let lut_layout = LightingLutBindGroupLayout::new(device);
-        let layout = SkyPipelineLayout::new(device, &uniform_layout, &texture_layout, &lut_layout);
-        let pipeline = SkyPipeline::new(device, &layout, &shader, surface_format);
+        let layout =
+            OuterSkyPipelineLayout::new(device, &uniform_layout, &texture_layout, &lut_layout);
+        let pipeline = OuterSkyPipeline::new(device, &layout, &shader, surface_format);
         let dome = SkyDome::new(device, &uniform_layout);
 
         let sky_sampler = device.create_sampler(&SamplerDescriptor {
