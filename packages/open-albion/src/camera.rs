@@ -57,7 +57,28 @@ impl Camera {
     }
 
     pub fn sky_view_projection_matrix(&self) -> Mat4 {
-        self.projection_matrix() * self.view_matrix_rotation_only()
+        // Fable's dome is built with Z=zenith, X/Y=horizon ring. Our dome uses
+        // Y=zenith, X/Z=horizon ring. Both need the dome zenith locked to screen-top.
+        //
+        // Use only the camera's horizontal direction (yaw) so the zenith always
+        // points to the top of the screen. Ignore pitch to avoid the degenerate
+        // case where the camera looks nearly straight down.
+        let forward = self.forward();
+        let horiz = glam::Vec3::new(forward.x, 0.0, forward.z);
+        let len = horiz.length();
+        if len < 0.0001 {
+            // Looking straight up or down — identity rotation so dome covers the view.
+            return self.projection_matrix();
+        }
+        let horiz = horiz / len;
+        let right = glam::Vec3::new(-horiz.z, 0.0, horiz.x);
+        let rotation = Mat4::from_cols(
+            right.extend(0.0),
+            glam::Vec3::Y.extend(0.0),
+            (-horiz).extend(0.0),
+            glam::Vec3::ZERO.extend(1.0),
+        );
+        self.projection_matrix() * rotation
     }
 
     pub fn look_at(&mut self, target: Vec3, up: Vec3) {

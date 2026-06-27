@@ -1,8 +1,10 @@
 use derive_more::{Display, Error};
 use fable_data::{
-    big::{BigReader, BigReaderError, ReadAssetDataError},
+    big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
+    def::binary::{def_binary::DefBinary, names::Names},
     environment::{EnvironmentConfig, EnvironmentParseError, EnvironmentTheme},
     lev::{Lev, LevError},
+    mesh::{Mesh, MeshError},
     tga::{Tga, TgaError},
     wad::{ReadContentError, WadReader, WadReaderError},
 };
@@ -15,6 +17,7 @@ use std::{
 pub struct Files {
     pub fable_directory: PathBuf,
     pub textures: BigReader<File>,
+    pub graphics: BigReader<File>,
     pub lighting_lut_bytes: Vec<u8>,
     pub environment: Option<EnvironmentConfig>,
 }
@@ -33,10 +36,24 @@ pub enum LoadLevelError {
 pub enum NewFilesError {
     OpenTextures(io::Error),
     LoadTextures(BigReaderError),
+    OpenGraphics(io::Error),
+    LoadGraphics(BigReaderError),
     ReadLightingLut(io::Error),
     ParseLightingLut(TgaError),
     ReadEnvironmentDef(io::Error),
     ParseEnvironmentDef(EnvironmentParseError),
+    #[display("failed to load binary defs: {_0}")]
+    LoadBinaryDefs(#[error(not(source))] String),
+}
+
+#[derive(Debug, Display, Error)]
+pub enum ReadMeshError {
+    #[display("Mesh not found")]
+    NotFound,
+    #[display("Decode mesh: {_0}")]
+    Decode(MeshError),
+    #[display("Read asset data: {_0}")]
+    ReadAssetData(ReadAssetDataError),
 }
 
 impl Files {
@@ -47,6 +64,11 @@ impl Files {
         let textures_path = fable_directory.join("data/graphics/pc/textures.big");
         let textures_file = File::open(&textures_path).map_err(E::OpenTextures)?;
         let textures = BigReader::new(textures_file).map_err(E::LoadTextures)?;
+
+        // Load graphics.big
+        let graphics_path = fable_directory.join("data/graphics/graphics.big");
+        let graphics_file = File::open(&graphics_path).map_err(E::OpenGraphics)?;
+        let graphics = BigReader::new(graphics_file).map_err(E::LoadGraphics)?;
 
         // Load lighting colours LUT
         // Try multiple possible paths
@@ -64,36 +86,75 @@ impl Files {
             lighting_lut_bytes.len()
         );
 
-        // Load environment.def (optional — the sky is incomplete and the file isn't always
-        // present; the terrain renders without it).
-        let environment = match Self::try_read_paths(&[
-            fable_directory.join("data/Defs/environment.def"),
-        ]) {
-            Ok(env_bytes) => {
-                let env_str = String::from_utf8_lossy(&env_bytes);
-                match EnvironmentConfig::parse(&env_str) {
-                    Ok(environment) => {
-                        tracing::info!(
-                            "Loaded environment.def ({} themes)",
-                            environment.themes.len()
-                        );
-                        Some(environment)
-                    }
-                    Err(error) => {
-                        tracing::warn!("Failed to parse environment.def, sky disabled: {error}");
-                        None
+        // Load sky environment themes — prefer CompiledDefs/game.bin (retail binary format),
+        // fall back to the debug-only text environment.def.
+        let environment = {
+            let names_path = fable_directory.join("data/CompiledDefs/names.bin");
+            let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
+
+            let from_binary = (|| -> Result<EnvironmentConfig, String> {
+                let names =
+                    Names::load(&names_path).map_err(|e| format!("names.bin: {e:?}"))?;
+                let def_binary = DefBinary::load_with_names(&game_bin_path, &names)
+                    .map_err(|e| format!("game.bin: {e:?}"))?;
+
+                Ok(EnvironmentConfig::from_binary_defs(
+                    &def_binary,
+                    &names,
+                    |id| {
+                        textures
+                            .bank("GBANK_MAIN_PC")
+                            .and_then(|b| b.asset_by_id(id as u32))
+                            .map(|a| a.symbol_name.to_string())
+                    },
+                ))
+            })();
+
+            match from_binary {
+                Ok(environment) => {
+                    tracing::info!(
+                        "Loaded environment themes from game.bin ({} themes)",
+                        environment.themes.len()
+                    );
+                    Some(environment)
+                }
+                Err(bin_error) => {
+                    tracing::warn!("Failed to load binary defs, falling back to environment.def: {bin_error}");
+
+                    match Self::try_read_paths(&[
+                        fable_directory.join("data/Defs/environment.def"),
+                    ]) {
+                        Ok(env_bytes) => {
+                            let env_str = String::from_utf8_lossy(&env_bytes);
+                            match EnvironmentConfig::parse(&env_str) {
+                                Ok(environment) => {
+                                    tracing::info!(
+                                        "Loaded environment.def ({} themes)",
+                                        environment.themes.len()
+                                    );
+                                    Some(environment)
+                                }
+                                Err(error) => {
+                                    tracing::warn!(
+                                        "Failed to parse environment.def, sky disabled: {error}"
+                                    );
+                                    None
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            tracing::warn!("environment.def not found, sky disabled");
+                            None
+                        }
                     }
                 }
-            }
-            Err(_) => {
-                tracing::warn!("environment.def not found, sky disabled");
-                None
             }
         };
 
         Ok(Self {
             fable_directory: fable_directory.to_path_buf(),
             textures,
+            graphics,
             lighting_lut_bytes,
             environment,
         })
@@ -154,5 +215,103 @@ impl Files {
     ) -> Result<(fable_data::big::AssetMetadata, Vec<u8>), ReadAssetDataError> {
         // Sky textures are in the GBANK_MAIN_PC bank
         self.textures.read_asset("GBANK_MAIN_PC", texture_name)
+    }
+
+    /// Read a mesh and its material textures from graphics.big.
+    pub fn read_mesh(
+        &mut self,
+        mesh_name: &str,
+    ) -> Result<(Mesh, Vec<(AssetMetadata, Vec<u8>)>), ReadMeshError> {
+        use ReadMeshError as E;
+
+        let asset = self
+            .graphics
+            .bank_iter()
+            .find_map(|bank| {
+                bank.asset_iter()
+                    .find(|a| a.symbol_name == mesh_name)
+                    .cloned()
+            })
+            .ok_or(E::NotFound)?;
+
+        let mesh_data = self
+            .graphics
+            .read_asset_from_metadata(&asset)
+            .map_err(E::ReadAssetData)?;
+        let mesh = Mesh::decode(&mesh_data).map_err(E::Decode)?;
+
+        let mesh_extras = match &asset.extras {
+            Some(ExtraMetadata::Mesh(extras)) => extras,
+            _ => return Err(E::NotFound),
+        };
+
+        tracing::debug!(
+            "Mesh {}: {} materials, texture_ids={:?}, base_texture_ids={:?}",
+            mesh_name,
+            mesh.materials.len(),
+            mesh_extras.texture_ids,
+            mesh.materials.iter().map(|m| m.base_texture_id).collect::<Vec<_>>(),
+        );
+
+        let texture_ids_to_resolve: Vec<u32> = mesh
+            .materials
+            .iter()
+            .map(|m| m.base_texture_id)
+            .collect();
+        tracing::debug!("  resolved texture ids (via lookup)={:?}", texture_ids_to_resolve);
+        let mut textures = Vec::with_capacity(mesh.materials.len());
+        for tex_id in texture_ids_to_resolve {
+            if tex_id == 0 {
+                continue;
+            }
+            // Mesh material texture IDs live in textures.big, not graphics.big.
+            // Search both files, preferring the first texture-typed asset found.
+            let found_in_graphics = self
+                .graphics
+                .bank_iter()
+                .find_map(|b| b.asset_by_id(tex_id).cloned());
+            let found_in_textures = self
+                .textures
+                .bank_iter()
+                .find_map(|b| b.asset_by_id(tex_id).cloned());
+            // Prefer textures.big; fall back to graphics.big only if it's a texture
+            let tex_asset = match (
+                &found_in_textures,
+                &found_in_graphics,
+            ) {
+                (Some(t), _) if matches!(&t.extras, Some(ExtraMetadata::Texture(_))) => {
+                    t.clone()
+                }
+                (_, Some(g)) if matches!(&g.extras, Some(ExtraMetadata::Texture(_))) => {
+                    g.clone()
+                }
+                (Some(t), _) => {
+                    tracing::debug!(
+                        "Mesh {}: tex_id={} found in textures.big as {} (extras={:?}) — not a texture",
+                        mesh_name, tex_id, t.symbol_name, t.extras,
+                    );
+                    continue;
+                }
+                (None, Some(g)) => {
+                    tracing::debug!(
+                        "Mesh {}: tex_id={} found in graphics.big as {} (extras={:?}) — not a texture",
+                        mesh_name, tex_id, g.symbol_name, g.extras,
+                    );
+                    continue;
+                }
+                (None, None) => {
+                    tracing::debug!("Mesh {}: tex_id={} not found in any bank", mesh_name, tex_id);
+                    continue;
+                }
+            };
+            let tex_data = self
+                .textures
+                .read_asset_from_metadata(&tex_asset)
+                .or_else(|_| self.graphics.read_asset_from_metadata(&tex_asset))
+                .map_err(E::ReadAssetData)?;
+            textures.push((tex_asset, tex_data));
+        }
+
+        Ok((mesh, textures))
     }
 }

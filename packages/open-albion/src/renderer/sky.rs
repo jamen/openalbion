@@ -55,13 +55,18 @@ fn generate_skydome_mesh(segments: u32, rings: u32) -> (Vec<SkyVertex>, Vec<u16>
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
+    // Fable's dome spans z=-500 to z=+7000 with radius ~6500.
+    // Scale our unit hemisphere up so it always covers the frustum regardless
+    // of camera near-plane distance.
+    let dome_scale: f32 = 2000.0;
+
     let horizon_color = [1.0, 0.7, 0.5, 0.3];
     let zenith_color = [0.8, 0.85, 1.0, 0.0];
 
     for ring in 0..=rings {
         let elevation = (ring as f32 / rings as f32) * std::f32::consts::FRAC_PI_2;
-        let y = elevation.sin();
-        let xz_radius = elevation.cos();
+        let y = elevation.sin() * dome_scale;
+        let xz_radius = elevation.cos() * dome_scale;
         let v = ring as f32 / rings as f32;
         let t = (v * 2.0).min(1.0);
         let t = t * t;
@@ -254,6 +259,15 @@ impl LightingColoursTexture {
         let width = tga.width();
         let height = tga.height();
         let rgba_data = tga.to_rgba();
+        // Pad to 256-aligned rows (required by wgpu write_texture)
+        let row_bytes = (width as u32 * 4).max(1);
+        let padded_row_bytes = row_bytes.div_ceil(256) * 256;
+        let mut padded = vec![0u8; padded_row_bytes as usize * height as usize];
+        for y in 0..height as usize {
+            let src = y * row_bytes as usize;
+            let dst = y * padded_row_bytes as usize;
+            padded[dst..dst + row_bytes as usize].copy_from_slice(&rgba_data[src..src + row_bytes as usize]);
+        }
 
         tracing::info!(
             "Lighting colours LUT loaded: {}x{} (time samples × color rows)",
@@ -278,10 +292,10 @@ impl LightingColoursTexture {
 
         queue.write_texture(
             texture.as_image_copy(),
-            &rgba_data,
+            &padded,
             TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(width * 4),
+                bytes_per_row: Some(padded_row_bytes),
                 rows_per_image: None,
             },
             Extent3d {
@@ -328,8 +342,8 @@ pub enum LightingColoursError {
 
 fn dxt_to_bcn_encoding(dxt: u16) -> BcnEncoding {
     match dxt {
-        1 | 33 => BcnEncoding::Bc1,
-        3 | 34 => BcnEncoding::Bc2,
+        1 | 31 | 33 => BcnEncoding::Bc1,
+        3 | 32 | 34 => BcnEncoding::Bc2,
         5 | 35 => BcnEncoding::Bc3,
         _ => BcnEncoding::Bc1,
     }
@@ -527,8 +541,8 @@ impl LoadedSkyTexture {
         let height = texture_extras.height as u32;
 
         let format = match texture_extras.dxt_compression {
-            1 | 33 => TextureFormat::Bc1RgbaUnorm,
-            3 | 34 => TextureFormat::Bc2RgbaUnorm,
+            1 | 31 | 33 => TextureFormat::Bc1RgbaUnorm,
+            3 | 32 | 34 => TextureFormat::Bc2RgbaUnorm,
             5 | 35 => TextureFormat::Bc3RgbaUnorm,
             other => return Err(E::UnsupportedDxtFormat(other)),
         };
@@ -746,6 +760,11 @@ impl OuterSkyPass {
 
     pub fn pass(&self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
         let Some(sky_bind_group) = &self.sky_textures_bind_group else {
+            tracing::warn!("Sky pass: no textures bind group — sky skipped");
+            return;
+        };
+        let Some(lut) = &self.lighting_lut else {
+            tracing::warn!("Sky pass: no lighting LUT — sky skipped");
             return;
         };
 

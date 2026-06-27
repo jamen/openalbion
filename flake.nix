@@ -28,10 +28,25 @@
           libxkbcommon
           vulkan-loader
           mesa
+          libx11
+          libxcursor
+          libxrandr
+          libxi
+          libxcb
         ];
         shellHook = ''
           export LD_LIBRARY_PATH=${
-            pkgs.lib.makeLibraryPath [ pkgs.wayland pkgs.libxkbcommon pkgs.vulkan-loader pkgs.mesa ]
+            pkgs.lib.makeLibraryPath [
+              pkgs.wayland
+              pkgs.libxkbcommon
+              pkgs.vulkan-loader
+              pkgs.mesa
+              pkgs.libx11
+              pkgs.libxcursor
+              pkgs.libxrandr
+              pkgs.libxi
+              pkgs.libxcb
+            ]
           }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
         '';
       };

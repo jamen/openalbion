@@ -1,10 +1,13 @@
 mod depth;
+mod model;
 mod sky;
 pub mod terrain;
 
 use self::depth::DepthTexture;
+use self::model::ModelPass;
 use self::sky::OuterSkyPass;
 use self::terrain::TerrainPass;
+pub use self::model::ModelTextureError;
 pub use self::sky::{LightingColoursError, SkyTextureError};
 use derive_more::{Display, Error};
 use fable_data::big::AssetMetadata;
@@ -91,8 +94,23 @@ impl<'target> Renderer<'target> {
         self.passes.terrain.set_terrain(&self.device, lev);
     }
 
+    pub fn set_model(
+        &mut self,
+        mesh: &fable_data::mesh::Mesh,
+        texture_asset: &AssetMetadata,
+        texture_data: &[u8],
+    ) -> Result<(), ModelTextureError> {
+        self.passes
+            .model
+            .set_model(&self.device, &self.queue, mesh, texture_data, texture_asset)
+    }
+
     pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4]) {
         self.passes.terrain.update_uniforms(&self.queue, view_proj);
+    }
+
+    pub fn update_model_uniforms(&self, view_proj: [[f32; 4]; 4]) {
+        self.passes.model.update_uniforms(&self.queue, view_proj);
     }
 
     pub fn set_sky_texture0(
@@ -145,6 +163,9 @@ impl<'target> Renderer<'target> {
         self.passes
             .terrain
             .pass(&mut cmd, &surface_texture_view, self.depth_texture.view());
+        self.passes
+            .model
+            .pass(&mut cmd, &surface_texture_view, self.depth_texture.view());
 
         self.queue.submit([cmd.finish()]);
 
@@ -171,6 +192,7 @@ pub struct RenderPasses {
     clear: ClearPass,
     sky: OuterSkyPass,
     terrain: TerrainPass,
+    model: ModelPass,
 }
 
 impl RenderPasses {
@@ -179,6 +201,7 @@ impl RenderPasses {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, surface_format),
             terrain: TerrainPass::new(device, surface_format, depth_format),
+            model: ModelPass::new(device, surface_format, depth_format),
         }
     }
 }

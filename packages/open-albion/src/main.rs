@@ -4,8 +4,8 @@ mod renderer;
 
 use self::{
     camera::AnimatedCamera,
-    files::{Files, NewFilesError},
-    renderer::{LightingColoursError, NewRendererError, Renderer, SkyTextureError},
+    files::{Files, NewFilesError, ReadMeshError},
+    renderer::{LightingColoursError, ModelTextureError, NewRendererError, Renderer, SkyTextureError},
 };
 use argh::FromArgs;
 use derive_more::{Display, Error};
@@ -145,6 +145,8 @@ enum TryResumedError {
     UploadSkyTexture(SkyTextureError),
     UploadLightingLut(LightingColoursError),
     LoadLevel(files::LoadLevelError),
+    ReadMesh(ReadMeshError),
+    UploadModelTexture(ModelTextureError),
 }
 
 impl App {
@@ -169,6 +171,13 @@ impl App {
         // Upload sky textures if environment data is available (sky is optional).
         let sky_textures = self.files.environment_theme("ENVIRONMENT_THEME1").map(|theme| {
             let (tex0, tex1, _) = theme.sky_textures_at_time(self.time_of_day);
+            tracing::info!(
+                "Sky at time {:.1}: tex0={:?} tex1={:?} ({} keyframes)",
+                self.time_of_day,
+                tex0,
+                tex1,
+                theme.keyframes.len(),
+            );
             (tex0.map(String::from), tex1.map(String::from))
         });
 
@@ -225,6 +234,44 @@ impl App {
             self.terrain_center.x, self.terrain_center.y, self.terrain_center.z,
             self.terrain_radius,
         );
+
+        // Load and upload a test mesh (optional — continues without if mesh loading fails).
+        let mesh_names: Vec<_> = {
+            let mut meshes: Vec<_> = self
+                .files
+                .graphics
+                .bank_iter()
+                .flat_map(|bank| bank.asset_iter())
+                .filter(|a| matches!(&a.extras, Some(fable_data::big::ExtraMetadata::Mesh(_))))
+                .map(|a| a.symbol_name.to_string())
+                .collect();
+            meshes.sort();
+            meshes
+        };
+        // Find a mesh with raw (non-packed) vertex format to avoid packed-vertex bugs
+        for name in &mesh_names {
+            match self.files.read_mesh(name) {
+                Ok((mesh, textures)) if !textures.is_empty() => {
+                    let prim = mesh.primitives.first();
+                    let vsize = prim.map(|p| p.vertex_size).unwrap_or(0);
+                    // Skip meshes with packed vertices (vertex_size < 24 = packed 12 or similar)
+                    if vsize < 24 {
+                        tracing::debug!("Skipping mesh {} (vertex_size={}, likely packed format)", name, vsize);
+                        continue;
+                    }
+                    if let Some((tex_meta, tex_data)) = textures.first() {
+                        tracing::info!("Loading mesh: {} (vertex_size={}, {} materials, {} textures)", name, vsize, mesh.materials.len(), textures.len());
+                        renderer
+                            .set_model(&mesh, tex_meta, tex_data)
+                            .map_err(E::UploadModelTexture)?;
+                        tracing::info!("Uploaded model to GPU");
+                        break;
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => { tracing::warn!("Failed to load mesh {}: {}", name, e); }
+            }
+        }
 
         let size = window.inner_size();
 
@@ -301,7 +348,7 @@ impl App {
             .camera
             .look_at(self.terrain_center, glam::Vec3::Y);
 
-        self.time_of_day += delta_time;
+        self.time_of_day += delta_time * 0.1;  // ~4 real minutes per game hour
 
         if self.time_of_day >= 24.0 {
             self.time_of_day -= 24.0;
@@ -315,9 +362,10 @@ impl App {
             sky_blend,
         );
 
-        renderer.update_terrain_uniforms(
-            self.camera.camera.view_projection_matrix().to_cols_array_2d(),
-        );
+        let view_proj = self.camera.camera.view_projection_matrix().to_cols_array_2d();
+
+        renderer.update_terrain_uniforms(view_proj);
+        renderer.update_model_uniforms(view_proj);
 
         let pre_present = renderer.render().map_err(E::Render)?;
 

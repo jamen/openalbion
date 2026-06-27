@@ -5,6 +5,8 @@
 //! - Lighting lookup table rows
 //! - Fog, clouds, water, and other atmospheric effects
 
+use crate::def::binary::def_binary::{DefBinary, DefBody};
+use crate::def::binary::names::Names;
 use crate::def::{EnvironmentDef, EnvironmentThemeDef};
 use crate::def::text::{
     Definition, DefParseError, Expr, PathSegment, Statement, parse_def_file,
@@ -103,6 +105,47 @@ impl EnvironmentConfig {
         Self {
             themes: HashMap::new(),
             environment_def: Some(env_def),
+        }
+    }
+
+    pub fn from_binary_defs(
+        def_binary: &DefBinary,
+        names: &Names,
+        resolve_sky_texture: impl Fn(i32) -> Option<String>,
+    ) -> Self {
+        let mut themes = HashMap::new();
+        for entry in def_binary.entries(names) {
+            if let DefBody::EnvironmentThemeDaySet(ref theme_set) = entry.record.body {
+                let key = entry
+                    .file_name
+                    .or(entry.def_name)
+                    .unwrap_or("unknown")
+                    .to_string();
+                let keyframes: Vec<TimeKeyframe> = theme_set
+                    .time
+                    .iter()
+                    .map(|def| TimeKeyframe {
+                        time_of_day: def.time_of_day,
+                        moon_lit: def.moon_lit,
+                        fog_start_z: def.fog_start_z,
+                        fog_end_z: def.fog_end_z,
+                        sky_texture_0: resolve_sky_texture(def.sky_texture_0),
+                        sky_texture_1: resolve_sky_texture(def.sky_texture_1),
+                        sky_texture_1_blend: def.sky_texture_1_blend,
+                    })
+                    .collect();
+                themes.insert(
+                    key.clone(),
+                    EnvironmentTheme {
+                        name: key,
+                        keyframes,
+                    },
+                );
+            }
+        }
+        Self {
+            themes,
+            environment_def: None,
         }
     }
 
@@ -213,5 +256,46 @@ mod tests {
         assert!((blend - 0.5).abs() < 0.01);
         let (prev, next, blend) = theme.keyframes_at_time(12.0);
         assert_eq!(prev.time_of_day, 12.0);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_from_binary_defs() {
+        use std::path::Path;
+
+        let names_path = Path::new("/home/jamen/Fable/data/CompiledDefs/names.bin");
+        let game_bin_path = Path::new("/home/jamen/Fable/data/CompiledDefs/game.bin");
+
+        let names = Names::load(names_path).expect("Failed to load names.bin");
+        let def_binary =
+            DefBinary::load_with_names(game_bin_path, &names).expect("Failed to load game.bin");
+
+        let config =
+            EnvironmentConfig::from_binary_defs(&def_binary, &names, |id| {
+                Some(format!("TEXTURE_{id}"))
+            });
+
+        let theme1 = config
+            .themes
+            .get("ENVIRONMENT_THEME1")
+            .expect("ENVIRONMENT_THEME1 should exist");
+        assert!(
+            theme1.keyframes.len() > 0,
+            "Theme should have at least one keyframe"
+        );
+
+        eprintln!("ENVIRONMENT_THEME1 keyframes ({}):", theme1.keyframes.len());
+        for kf in &theme1.keyframes {
+            eprintln!(
+                "  time={:.1}, moon_lit={}, fog_start={:.1}, fog_end={:.1}, sky0={:?}, sky1={:?}, blend={:.2}",
+                kf.time_of_day,
+                kf.moon_lit,
+                kf.fog_start_z,
+                kf.fog_end_z,
+                kf.sky_texture_0,
+                kf.sky_texture_1,
+                kf.sky_texture_1_blend,
+            );
+        }
     }
 }
