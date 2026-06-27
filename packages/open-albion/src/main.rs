@@ -22,7 +22,7 @@ use winit::{
     window::{Window, WindowId},
 };
 
-/// music-streamer web server
+/// OpenAlbion renderer
 #[derive(FromArgs)]
 struct Cli {
     /// log filter directive
@@ -32,6 +32,10 @@ struct Cli {
     /// fable's directory
     #[argh(option)]
     fable_directory: Option<String>,
+
+    /// level to load from FinalAlbion.wad (default: Witchwood)
+    #[argh(option)]
+    level: Option<String>,
 }
 
 fn main() {
@@ -79,6 +83,10 @@ struct App {
     camera: AnimatedCamera,
     last_frame_time: Option<Instant>,
     time_of_day: f32,
+    level_name: String,
+    scene_time: f32,
+    terrain_center: glam::Vec3,
+    terrain_radius: f32,
 }
 
 #[derive(Debug, Display)]
@@ -119,6 +127,10 @@ impl App {
             camera: AnimatedCamera::new(),
             last_frame_time: None,
             time_of_day: 18.0,
+            level_name: cli.level.clone().unwrap_or_else(|| "Witchwood".to_string()),
+            scene_time: 0.0,
+            terrain_center: glam::Vec3::ZERO,
+            terrain_radius: 1.0,
         })
     }
 }
@@ -132,6 +144,7 @@ enum TryResumedError {
     ReadAssetData(ReadAssetDataError),
     UploadSkyTexture(SkyTextureError),
     UploadLightingLut(LightingColoursError),
+    LoadLevel(files::LoadLevelError),
 }
 
 impl App {
@@ -153,44 +166,65 @@ impl App {
 
         tracing::info!("Uploaded lighting LUT to GPU");
 
-        let (tex0_name, tex1_name) = {
-            let theme = self
-                .files
-                .environment_theme("ENVIRONMENT_THEME1")
-                .expect("No environment theme found");
-
+        // Upload sky textures if environment data is available (sky is optional).
+        let sky_textures = self.files.environment_theme("ENVIRONMENT_THEME1").map(|theme| {
             let (tex0, tex1, _) = theme.sky_textures_at_time(self.time_of_day);
-
             (tex0.map(String::from), tex1.map(String::from))
-        };
+        });
 
-        if let Some(ref name) = tex0_name {
-            let (metadata, bytes) = self
-                .files
-                .read_sky_texture(name)
-                .map_err(E::ReadAssetData)?;
-
-            renderer
-                .set_sky_texture0(&metadata, &bytes)
-                .map_err(E::UploadSkyTexture)?;
-
-            tracing::info!("Uploaded sky texture 0: {}", name);
-        }
-
-        if let Some(ref name) = tex1_name {
-            if tex1_name != tex0_name {
+        if let Some((tex0_name, tex1_name)) = sky_textures {
+            if let Some(ref name) = tex0_name {
                 let (metadata, bytes) = self
                     .files
                     .read_sky_texture(name)
                     .map_err(E::ReadAssetData)?;
 
                 renderer
-                    .set_sky_texture1(&metadata, &bytes)
+                    .set_sky_texture0(&metadata, &bytes)
                     .map_err(E::UploadSkyTexture)?;
 
-                tracing::info!("Uploaded sky texture 1: {}", name);
+                tracing::info!("Uploaded sky texture 0: {}", name);
+            }
+
+            if let Some(ref name) = tex1_name {
+                if tex1_name != tex0_name {
+                    let (metadata, bytes) = self
+                        .files
+                        .read_sky_texture(name)
+                        .map_err(E::ReadAssetData)?;
+
+                    renderer
+                        .set_sky_texture1(&metadata, &bytes)
+                        .map_err(E::UploadSkyTexture)?;
+
+                    tracing::info!("Uploaded sky texture 1: {}", name);
+                }
             }
         }
+
+        // Load and upload the terrain.
+        let lev = self.files.load_level(&self.level_name).map_err(E::LoadLevel)?;
+        let span_x = lev.header.width as f32 + 1.0;
+        let span_z = lev.header.height as f32 + 1.0;
+
+        let raw_min = lev.heightmap_cells.iter().map(|c| c.height).fold(f32::INFINITY, f32::min);
+        let raw_max = lev.heightmap_cells.iter().map(|c| c.height).fold(f32::NEG_INFINITY, f32::max);
+        let scale = renderer::terrain::HEIGHT_SCALE;
+        let mid_y = (raw_min + raw_max) * 0.5 * scale;
+
+        self.terrain_center = glam::Vec3::new(span_x * 0.5, mid_y, span_z * 0.5);
+        self.terrain_radius = span_x.max(span_z) * 0.5;
+        self.camera.camera.near = 1.0;
+        self.camera.camera.far = self.terrain_radius * 8.0;
+        renderer.set_terrain(&lev);
+        tracing::info!(
+            "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1})",
+            lev.header.width, lev.header.height,
+            raw_min, raw_max,
+            raw_min * scale, raw_max * scale,
+            self.terrain_center.x, self.terrain_center.y, self.terrain_center.z,
+            self.terrain_radius,
+        );
 
         let size = window.inner_size();
 
@@ -256,7 +290,16 @@ impl App {
 
         self.last_frame_time = Some(now);
 
-        self.camera.update(delta_time);
+        // Orbit the camera around the terrain so the landscape is visible.
+        self.scene_time += delta_time;
+        let angle = self.scene_time * 0.15;
+        let distance = self.terrain_radius * 2.2;
+        let height = self.terrain_radius * 1.1;
+        self.camera.camera.position = self.terrain_center
+            + glam::Vec3::new(distance * angle.cos(), height, distance * angle.sin());
+        self.camera
+            .camera
+            .look_at(self.terrain_center, glam::Vec3::Y);
 
         self.time_of_day += delta_time;
 
@@ -270,6 +313,10 @@ impl App {
             self.camera.sky_view_projection(),
             self.time_of_day,
             sky_blend,
+        );
+
+        renderer.update_terrain_uniforms(
+            self.camera.camera.view_projection_matrix().to_cols_array_2d(),
         );
 
         let pre_present = renderer.render().map_err(E::Render)?;
@@ -293,7 +340,7 @@ impl App {
     fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), ResizeError> {
         use ResizeError as E;
 
-        let renderer = self.renderer.as_ref().ok_or(E::NoRenderer)?;
+        let renderer = self.renderer.as_mut().ok_or(E::NoRenderer)?;
 
         renderer.resize_surface(size.into());
 

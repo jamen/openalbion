@@ -1,5 +1,5 @@
 use crate::bytes::{
-    TakeError, UnexpectedEnd, put, put_bytes, take, take_bytes, take_bytes_nul_terminated,
+    TakeError, UnexpectedEnd, put, put_bytes, take, take_bytes, take_null_terminated_bytes,
 };
 use derive_more::{Display, Error};
 use std::{
@@ -174,6 +174,13 @@ impl Bank {
         self.assets.get(symbol_name)
     }
 
+    /// Look up an asset by its numeric id. Def files reference graphics by this
+    /// id (e.g. `EnvironmentThemeDef::sky_texture_0`); this resolves it back to
+    /// the asset (and thus its `symbol_name`).
+    pub fn asset_by_id(&self, id: u32) -> Option<&AssetMetadata> {
+        self.assets.values().find(|a| a.id == id)
+    }
+
     pub fn asset_count(&self) -> usize {
         self.assets.len()
     }
@@ -317,7 +324,7 @@ impl<'a> BankMetadataRef<'a> {
     pub fn parse(input: &mut &'a [u8]) -> Result<Self, BankMetadataError> {
         use BankMetadataError as E;
 
-        let name_bytes = take_bytes_nul_terminated(input).map_err(|_| E::NameBytes)?;
+        let name_bytes = take_null_terminated_bytes(input).map_err(|_| E::NameBytes)?;
         let name_string = str::from_utf8(name_bytes).map_err(|_| E::NameUtf8String)?;
         let name = Cow::from(name_string);
         let id = take::<u32>(input).map_err(|_| E::Id)?.to_le();

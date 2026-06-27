@@ -1,9 +1,14 @@
+mod depth;
 mod sky;
+pub mod terrain;
 
+use self::depth::DepthTexture;
 use self::sky::OuterSkyPass;
+use self::terrain::TerrainPass;
 pub use self::sky::{LightingColoursError, SkyTextureError};
 use derive_more::{Display, Error};
 use fable_data::big::AssetMetadata;
+use fable_data::lev::Lev;
 use wgpu::{
     CommandEncoder, CompositeAlphaMode, CreateSurfaceError, Device, DeviceDescriptor, Features,
     Instance, InstanceDescriptor, PresentMode, Queue, RequestAdapterError, RequestAdapterOptions,
@@ -16,6 +21,7 @@ pub struct Renderer<'target> {
     queue: Queue,
     surface: Surface<'target>,
     surface_format: TextureFormat,
+    depth_texture: DepthTexture,
     passes: RenderPasses,
 }
 
@@ -50,18 +56,20 @@ impl<'target> Renderer<'target> {
             .get(0)
             .unwrap_or(&TextureFormat::Rgba8UnormSrgb);
 
-        let passes = RenderPasses::new(&device, surface_format);
+        let passes = RenderPasses::new(&device, surface_format, DepthTexture::FORMAT);
+        let depth_texture = DepthTexture::new(&device, [1, 1]);
 
         Ok(Self {
             surface,
             surface_format,
+            depth_texture,
             device,
             queue,
             passes,
         })
     }
 
-    pub fn resize_surface(&self, size: [u32; 2]) {
+    pub fn resize_surface(&mut self, size: [u32; 2]) {
         self.surface.configure(
             &self.device,
             &SurfaceConfiguration {
@@ -75,6 +83,16 @@ impl<'target> Renderer<'target> {
                 present_mode: PresentMode::AutoVsync,
             },
         );
+
+        self.depth_texture = DepthTexture::new(&self.device, size);
+    }
+
+    pub fn set_terrain(&mut self, lev: &Lev) {
+        self.passes.terrain.set_terrain(&self.device, lev);
+    }
+
+    pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4]) {
+        self.passes.terrain.update_uniforms(&self.queue, view_proj);
     }
 
     pub fn set_sky_texture0(
@@ -124,6 +142,9 @@ impl<'target> Renderer<'target> {
 
         self.passes.clear.pass(&mut cmd, &surface_texture_view);
         self.passes.sky.pass(&mut cmd, &surface_texture_view);
+        self.passes
+            .terrain
+            .pass(&mut cmd, &surface_texture_view, self.depth_texture.view());
 
         self.queue.submit([cmd.finish()]);
 
@@ -149,13 +170,15 @@ pub enum NewRendererError {
 pub struct RenderPasses {
     clear: ClearPass,
     sky: OuterSkyPass,
+    terrain: TerrainPass,
 }
 
 impl RenderPasses {
-    pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
+    pub fn new(device: &Device, surface_format: TextureFormat, depth_format: TextureFormat) -> Self {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, surface_format),
+            terrain: TerrainPass::new(device, surface_format, depth_format),
         }
     }
 }

@@ -2,14 +2,31 @@ use derive_more::{Display, Error};
 use fable_data::{
     big::{BigReader, BigReaderError, ReadAssetDataError},
     environment::{EnvironmentConfig, EnvironmentParseError, EnvironmentTheme},
+    lev::{Lev, LevError},
     tga::{Tga, TgaError},
+    wad::{ReadContentError, WadReader, WadReaderError},
 };
-use std::{fs::File, io, path::Path};
+use std::{
+    fs::File,
+    io::{self, BufReader},
+    path::{Path, PathBuf},
+};
 
 pub struct Files {
+    pub fable_directory: PathBuf,
     pub textures: BigReader<File>,
     pub lighting_lut_bytes: Vec<u8>,
-    pub environment: EnvironmentConfig,
+    pub environment: Option<EnvironmentConfig>,
+}
+
+#[derive(Debug, Display, Error)]
+pub enum LoadLevelError {
+    OpenWad(io::Error),
+    ReadWad(WadReaderError),
+    #[display("level {_0:?} not found in FinalAlbion.wad")]
+    NotFound(#[error(not(source))] String),
+    ReadContent(ReadContentError),
+    Parse(LevError),
 }
 
 #[derive(Debug, Display, Error)]
@@ -47,30 +64,68 @@ impl Files {
             lighting_lut_bytes.len()
         );
 
-        // Load environment.def
-        let env_bytes = Self::try_read_paths(&[fable_directory.join("data/Defs/environment.def")])
-            .map_err(E::ReadEnvironmentDef)?;
-        let env_str = String::from_utf8_lossy(&env_bytes);
-        let environment = EnvironmentConfig::parse(&env_str).map_err(E::ParseEnvironmentDef)?;
-
-        tracing::info!(
-            "Loaded environment.def ({} themes)",
-            environment.themes.len()
-        );
-        for (name, theme) in &environment.themes {
-            tracing::debug!(
-                "  Theme '{}': {} keyframes, textures: {:?}",
-                name,
-                theme.keyframes.len(),
-                theme.sky_texture_names()
-            );
-        }
+        // Load environment.def (optional — the sky is incomplete and the file isn't always
+        // present; the terrain renders without it).
+        let environment = match Self::try_read_paths(&[
+            fable_directory.join("data/Defs/environment.def"),
+        ]) {
+            Ok(env_bytes) => {
+                let env_str = String::from_utf8_lossy(&env_bytes);
+                match EnvironmentConfig::parse(&env_str) {
+                    Ok(environment) => {
+                        tracing::info!(
+                            "Loaded environment.def ({} themes)",
+                            environment.themes.len()
+                        );
+                        Some(environment)
+                    }
+                    Err(error) => {
+                        tracing::warn!("Failed to parse environment.def, sky disabled: {error}");
+                        None
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::warn!("environment.def not found, sky disabled");
+                None
+            }
+        };
 
         Ok(Self {
+            fable_directory: fable_directory.to_path_buf(),
             textures,
             lighting_lut_bytes,
             environment,
         })
+    }
+
+    /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.
+    pub fn load_level(&self, name: &str) -> Result<Lev, LoadLevelError> {
+        use LoadLevelError as E;
+
+        let wad_path = self.fable_directory.join("data/Levels/FinalAlbion.wad");
+        let wad_file = BufReader::new(File::open(&wad_path).map_err(E::OpenWad)?);
+        let mut wad = WadReader::new(wad_file).map_err(E::ReadWad)?;
+
+        let suffix = format!("{name}.lev").to_lowercase();
+        let asset = wad
+            .asset_iter()
+            .find(|a| a.path.to_lowercase().ends_with(&suffix))
+            .cloned()
+            .ok_or_else(|| E::NotFound(name.to_string()))?;
+
+        let bytes = wad.read_content(&asset).map_err(E::ReadContent)?;
+        let lev = Lev::from_bytes(&bytes).map_err(E::Parse)?;
+
+        tracing::info!(
+            "Loaded level {} ({}x{}, {} heightmap cells)",
+            name,
+            lev.header.width,
+            lev.header.height,
+            lev.heightmap_cells.len(),
+        );
+
+        Ok(lev)
     }
 
     fn try_read_paths(paths: &[std::path::PathBuf]) -> Result<Vec<u8>, io::Error> {
@@ -87,9 +142,9 @@ impl Files {
         ))
     }
 
-    /// Get an environment theme by name.
+    /// Get an environment theme by name, if environment data was loaded.
     pub fn environment_theme(&self, name: &str) -> Option<&EnvironmentTheme> {
-        self.environment.themes.get(name)
+        self.environment.as_ref()?.themes.get(name)
     }
 
     /// Read a sky texture by its symbol name (e.g., "GRAPHIC_ATMOSPHERIC_SKY_MIDNIGHT").

@@ -1,0 +1,13 @@
+[package]
+name = "fool"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.13", features = ["derive", "error-context", "color"] }
+derive_more = { version = "2.1.1", features = ["error", "display"] }
+fable-data = { path = "../fable-data" }
+log = "0.4.27"
+nu-ansi-term = "0.50.1"

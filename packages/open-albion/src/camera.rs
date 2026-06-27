@@ -41,8 +41,7 @@ impl Camera {
 
     pub fn view_matrix(&self) -> Mat4 {
         let inv_orientation = self.orientation.conjugate();
-        let rotated_position = inv_orientation * -self.position;
-        Mat4::from_quat(inv_orientation) * Mat4::from_translation(rotated_position)
+        Mat4::from_quat(inv_orientation) * Mat4::from_translation(-self.position)
     }
 
     pub fn view_matrix_rotation_only(&self) -> Mat4 {

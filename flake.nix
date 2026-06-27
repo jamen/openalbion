@@ -24,7 +24,16 @@
               "rust-analyzer"
             ];
           })
+          wayland
+          libxkbcommon
+          vulkan-loader
+          mesa
         ];
+        shellHook = ''
+          export LD_LIBRARY_PATH=${
+            pkgs.lib.makeLibraryPath [ pkgs.wayland pkgs.libxkbcommon pkgs.vulkan-loader pkgs.mesa ]
+          }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+        '';
       };
     };
 }
