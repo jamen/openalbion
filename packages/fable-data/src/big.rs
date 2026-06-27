@@ -10,6 +10,8 @@ use std::{
 
 pub struct BigReader<T: Read + Seek> {
     source: T,
+    /// Parsed file header, retained for completeness though not yet read back.
+    #[allow(dead_code)]
     header: Header,
     banks: HashMap<String, Bank>,
 }
@@ -157,6 +159,8 @@ impl<T: Read + Seek> BigReader<T> {
 
 pub struct Bank {
     metadata: BankMetadata,
+    /// Type-id → type-name map parsed from the bank, retained for completeness though not yet used.
+    #[allow(dead_code)]
     type_map: TypeMap,
     assets: HashMap<String, AssetMetadata>,
 }
@@ -346,7 +350,7 @@ impl<'a> BankMetadataRef<'a> {
     pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), BankMetadataError> {
         use BankMetadataError as E;
 
-        put_bytes(out, &self.name.as_bytes()).map_err(|_| E::NameBytes)?;
+        put_bytes(out, self.name.as_bytes()).map_err(|_| E::NameBytes)?;
         put(out, b"\0").map_err(|_| E::NameBytes)?;
         put(out, &self.id.to_le()).map_err(|_| E::Id)?;
         put(out, &self.asset_count.to_le()).map_err(|_| E::AssetCount)?;

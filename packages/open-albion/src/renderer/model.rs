@@ -1,21 +1,16 @@
+use super::texture::{TextureUploadError, linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
-use fable_data::{
-    big::{AssetMetadata, ExtraMetadata},
-    mesh::Mesh,
-    texture::{BcnEncoding, Texture, TextureError},
-};
+use fable_data::{big::AssetMetadata, mesh::Mesh};
 use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
-    CommandEncoder, CompareFunction, DepthBiasState, DepthStencilState, Device, Extent3d,
-    FragmentState, IndexFormat, MultisampleState, PipelineLayout, PipelineLayoutDescriptor,
-    PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType,
-    SamplerDescriptor, ShaderModule, ShaderStages, StencilState, TexelCopyBufferLayout,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages,
-    TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout,
-    VertexState, VertexStepMode, include_wgsl,
+    CommandEncoder, CompareFunction, DepthBiasState, DepthStencilState, Device, FragmentState,
+    IndexFormat, MultisampleState, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue,
+    RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages,
+    StencilState, TextureFormat, TextureSampleType, TextureView, TextureViewDimension,
+    VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -174,30 +169,9 @@ struct ModelMesh {
     index_count: u32,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: BindGroup,
-    texture: wgpu::Texture,
-    texture_view: TextureView,
-    sampler: wgpu::Sampler,
     texture_bind_group: BindGroup,
     model_scale: f32,
     model_pos: [f32; 3],
-}
-
-fn dxt_to_bcn_encoding(dxt: u16) -> BcnEncoding {
-    match dxt {
-        1 | 31 | 33 => BcnEncoding::Bc1,
-        3 | 32 | 34 => BcnEncoding::Bc2,
-        5 | 35 => BcnEncoding::Bc3,
-        _ => BcnEncoding::Bc1,
-    }
-}
-
-fn dxt_to_texture_format(dxt: u16) -> Option<TextureFormat> {
-    match dxt {
-        1 | 31 | 33 => Some(TextureFormat::Bc1RgbaUnorm),
-        3 | 32 | 34 => Some(TextureFormat::Bc2RgbaUnorm),
-        5 | 35 => Some(TextureFormat::Bc3RgbaUnorm),
-        _ => None,
-    }
 }
 
 impl ModelMesh {
@@ -289,77 +263,10 @@ impl ModelMesh {
             }],
         });
 
-        let texture_extras = match &texture_asset.extras {
-            Some(ExtraMetadata::Texture(extras)) => extras,
-            _ => return Err(E::NotATexture),
-        };
+        let texture_view =
+            upload_texture(device, queue, texture_asset, texture_data).map_err(E::Texture)?;
 
-        let width = texture_extras.width as u32;
-        let height = texture_extras.height as u32;
-        let dxt = texture_extras.dxt_compression;
-
-        let mut input = texture_data;
-        let parsed = Texture::parse(
-            &mut input,
-            width as usize,
-            height as usize,
-            texture_extras.depth as usize,
-            texture_extras.top_mip_map_size as usize,
-            dxt_to_bcn_encoding(dxt),
-        )
-        .map_err(E::Parse)?;
-
-        let Some(format) = dxt_to_texture_format(dxt) else {
-            return Err(E::UnsupportedDxtFormat(dxt));
-        };
-        let bcn_data = parsed.get_top_mip_bcn_image().map_err(E::Parse)?.to_vec();
-        let block_size = match format {
-            TextureFormat::Bc1RgbaUnorm => 8,
-            TextureFormat::Bc2RgbaUnorm | TextureFormat::Bc3RgbaUnorm => 16,
-            _ => unreachable!(),
-        };
-        let bytes_per_row = width.div_ceil(4) * block_size;
-
-        let texture = device.create_texture(&TextureDescriptor {
-            label: Some(&texture_asset.symbol_name),
-            size: Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        queue.write_texture(
-            texture.as_image_copy(),
-            &bcn_data,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(bytes_per_row),
-                rows_per_image: None,
-            },
-            Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        let texture_view = texture.create_view(&TextureViewDescriptor::default());
-
-        let sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("model_sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
-        });
+        let sampler = linear_clamp_sampler(device, "model_sampler");
 
         let texture_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("model_texture_bind_group"),
@@ -382,9 +289,6 @@ impl ModelMesh {
             index_count: primitive.indices.len() as u32,
             uniform_buffer,
             uniform_bind_group,
-            texture,
-            texture_view,
-            sampler,
             texture_bind_group,
             model_scale: scale,
             model_pos: pos,
@@ -409,12 +313,8 @@ impl ModelMesh {
 pub enum ModelTextureError {
     #[display("No primitives in mesh")]
     NoPrimitives,
-    #[display("Asset is not a texture")]
-    NotATexture,
-    #[display("Unsupported DXT format {_0}")]
-    UnsupportedDxtFormat(#[error(not(source))] u16),
-    #[display("Texture parse error: {_0}")]
-    Parse(TextureError),
+    #[display("{_0}")]
+    Texture(TextureUploadError),
 }
 
 pub struct ModelPass {

@@ -3,9 +3,9 @@ mod files;
 mod renderer;
 
 use self::{
-    camera::AnimatedCamera,
-    files::{Files, NewFilesError, ReadMeshError},
-    renderer::{LightingColoursError, ModelTextureError, NewRendererError, Renderer, SkyTextureError},
+    camera::Camera,
+    files::{Files, NewFilesError},
+    renderer::{LightingColoursError, ModelTextureError, NewRendererError, Renderer},
 };
 use argh::FromArgs;
 use derive_more::{Display, Error};
@@ -36,6 +36,10 @@ struct Cli {
     /// level to load from FinalAlbion.wad (default: Witchwood)
     #[argh(option)]
     level: Option<String>,
+
+    /// mesh to load from graphics.big by symbol name (default: first renderable mesh found)
+    #[argh(option)]
+    mesh: Option<String>,
 }
 
 fn main() {
@@ -80,13 +84,16 @@ struct App {
     files: Files,
     renderer: Option<Renderer<'static>>,
     window: Option<Arc<Window>>,
-    camera: AnimatedCamera,
+    camera: Camera,
     last_frame_time: Option<Instant>,
     time_of_day: f32,
     level_name: String,
+    mesh_name: Option<String>,
     scene_time: f32,
     terrain_center: glam::Vec3,
     terrain_radius: f32,
+    /// The sky texture name pair currently uploaded to the GPU, so we only re-upload on change.
+    sky_textures: Option<(Option<String>, Option<String>)>,
 }
 
 #[derive(Debug, Display)]
@@ -124,28 +131,25 @@ impl App {
             files,
             renderer: None,
             window: None,
-            camera: AnimatedCamera::new(),
+            camera: Camera::new(),
             last_frame_time: None,
             time_of_day: 18.0,
             level_name: cli.level.clone().unwrap_or_else(|| "Witchwood".to_string()),
+            mesh_name: cli.mesh.clone(),
             scene_time: 0.0,
             terrain_center: glam::Vec3::ZERO,
             terrain_radius: 1.0,
+            sky_textures: None,
         })
     }
 }
-
-use fable_data::big::ReadAssetDataError;
 
 #[derive(Debug, Display, Error)]
 enum TryResumedError {
     CreateWindow(OsError),
     NewRenderer(NewRendererError),
-    ReadAssetData(ReadAssetDataError),
-    UploadSkyTexture(SkyTextureError),
     UploadLightingLut(LightingColoursError),
     LoadLevel(files::LoadLevelError),
-    ReadMesh(ReadMeshError),
     UploadModelTexture(ModelTextureError),
 }
 
@@ -168,49 +172,6 @@ impl App {
 
         tracing::info!("Uploaded lighting LUT to GPU");
 
-        // Upload sky textures if environment data is available (sky is optional).
-        let sky_textures = self.files.environment_theme("ENVIRONMENT_THEME1").map(|theme| {
-            let (tex0, tex1, _) = theme.sky_textures_at_time(self.time_of_day);
-            tracing::info!(
-                "Sky at time {:.1}: tex0={:?} tex1={:?} ({} keyframes)",
-                self.time_of_day,
-                tex0,
-                tex1,
-                theme.keyframes.len(),
-            );
-            (tex0.map(String::from), tex1.map(String::from))
-        });
-
-        if let Some((tex0_name, tex1_name)) = sky_textures {
-            if let Some(ref name) = tex0_name {
-                let (metadata, bytes) = self
-                    .files
-                    .read_sky_texture(name)
-                    .map_err(E::ReadAssetData)?;
-
-                renderer
-                    .set_sky_texture0(&metadata, &bytes)
-                    .map_err(E::UploadSkyTexture)?;
-
-                tracing::info!("Uploaded sky texture 0: {}", name);
-            }
-
-            if let Some(ref name) = tex1_name {
-                if tex1_name != tex0_name {
-                    let (metadata, bytes) = self
-                        .files
-                        .read_sky_texture(name)
-                        .map_err(E::ReadAssetData)?;
-
-                    renderer
-                        .set_sky_texture1(&metadata, &bytes)
-                        .map_err(E::UploadSkyTexture)?;
-
-                    tracing::info!("Uploaded sky texture 1: {}", name);
-                }
-            }
-        }
-
         // Load and upload the terrain.
         let lev = self.files.load_level(&self.level_name).map_err(E::LoadLevel)?;
         let span_x = lev.header.width as f32 + 1.0;
@@ -223,8 +184,8 @@ impl App {
 
         self.terrain_center = glam::Vec3::new(span_x * 0.5, mid_y, span_z * 0.5);
         self.terrain_radius = span_x.max(span_z) * 0.5;
-        self.camera.camera.near = 1.0;
-        self.camera.camera.far = self.terrain_radius * 8.0;
+        self.camera.near = 1.0;
+        self.camera.far = self.terrain_radius * 8.0;
         renderer.set_terrain(&lev);
         tracing::info!(
             "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1})",
@@ -235,56 +196,142 @@ impl App {
             self.terrain_radius,
         );
 
-        // Load and upload a test mesh (optional — continues without if mesh loading fails).
-        let mesh_names: Vec<_> = {
-            let mut meshes: Vec<_> = self
-                .files
-                .graphics
-                .bank_iter()
-                .flat_map(|bank| bank.asset_iter())
-                .filter(|a| matches!(&a.extras, Some(fable_data::big::ExtraMetadata::Mesh(_))))
-                .map(|a| a.symbol_name.to_string())
-                .collect();
-            meshes.sort();
-            meshes
-        };
-        // Find a mesh with raw (non-packed) vertex format to avoid packed-vertex bugs
-        for name in &mesh_names {
-            match self.files.read_mesh(name) {
-                Ok((mesh, textures)) if !textures.is_empty() => {
-                    let prim = mesh.primitives.first();
-                    let vsize = prim.map(|p| p.vertex_size).unwrap_or(0);
-                    // Skip meshes with packed vertices (vertex_size < 24 = packed 12 or similar)
-                    if vsize < 24 {
-                        tracing::debug!("Skipping mesh {} (vertex_size={}, likely packed format)", name, vsize);
-                        continue;
-                    }
-                    if let Some((tex_meta, tex_data)) = textures.first() {
-                        tracing::info!("Loading mesh: {} (vertex_size={}, {} materials, {} textures)", name, vsize, mesh.materials.len(), textures.len());
-                        renderer
-                            .set_model(&mesh, tex_meta, tex_data)
-                            .map_err(E::UploadModelTexture)?;
-                        tracing::info!("Uploaded model to GPU");
-                        break;
-                    }
-                }
-                Ok(_) => {}
-                Err(e) => { tracing::warn!("Failed to load mesh {}: {}", name, e); }
-            }
-        }
+        // Load and upload a test model (optional — continues without if mesh loading fails).
+        self.load_model(&mut renderer)?;
 
         let size = window.inner_size();
 
         renderer.resize_surface(size.into());
 
-        self.camera.camera.set_aspect(size.width, size.height);
+        self.camera.set_aspect(size.width, size.height);
 
         window.request_redraw();
 
         self.window = Some(window.clone());
         self.renderer = Some(renderer);
 
+        // Upload the initial sky now that the renderer is in place (sky is optional).
+        self.refresh_sky();
+
         Ok(())
+    }
+
+    /// Resolve the sky textures and blend factor for the current time-of-day, re-uploading the
+    /// textures to the GPU only when the active pair changes. Returns the blend factor (0..1)
+    /// between sky texture 0 and 1. A missing environment theme or failed read leaves the sky
+    /// unchanged and returns 0.0 — the sky is optional.
+    fn refresh_sky(&mut self) -> f32 {
+        let Some(renderer) = self.renderer.as_mut() else {
+            return 0.0;
+        };
+
+        let Some((tex0_name, tex1_name, blend)) = self
+            .files
+            .environment_theme("ENVIRONMENT_THEME1")
+            .map(|theme| {
+                let (tex0, tex1, blend) = theme.sky_textures_at_time(self.time_of_day);
+                (tex0.map(String::from), tex1.map(String::from), blend)
+            })
+        else {
+            return 0.0;
+        };
+
+        let names = (tex0_name, tex1_name);
+        if self.sky_textures.as_ref() != Some(&names) {
+            let (tex0_name, tex1_name) = &names;
+            if let Some(name) = tex0_name {
+                upload_sky_texture(&mut self.files, renderer, name, false);
+            }
+            // Only upload texture1 when it differs from texture0 (the pass reuses 0 otherwise).
+            if let Some(name) = tex1_name.as_ref().filter(|n| Some(*n) != tex0_name.as_ref()) {
+                upload_sky_texture(&mut self.files, renderer, name, true);
+            }
+            tracing::debug!("Sky textures at {:.1}h: {:?}", self.time_of_day, names);
+            self.sky_textures = Some(names);
+        }
+
+        blend
+    }
+
+    /// Load a model and upload it to the renderer. Uses `--mesh` if given, otherwise scans
+    /// graphics.big for the first renderable mesh (one with an unpacked vertex format and a
+    /// resolvable texture). The model is optional — failures are logged, not fatal.
+    fn load_model(&mut self, renderer: &mut Renderer<'static>) -> Result<(), TryResumedError> {
+        use TryResumedError as E;
+
+        let explicit = self.mesh_name.is_some();
+        let candidates: Vec<String> = match &self.mesh_name {
+            Some(name) => vec![name.clone()],
+            None => {
+                let mut meshes: Vec<String> = self
+                    .files
+                    .graphics
+                    .bank_iter()
+                    .flat_map(|bank| bank.asset_iter())
+                    .filter(|a| matches!(&a.extras, Some(fable_data::big::ExtraMetadata::Mesh(_))))
+                    .map(|a| a.symbol_name.to_string())
+                    .collect();
+                meshes.sort();
+                meshes
+            }
+        };
+
+        for name in &candidates {
+            let (mesh, textures) = match self.files.read_mesh(name) {
+                Ok(loaded) => loaded,
+                Err(error) => {
+                    tracing::warn!("Failed to load mesh {name}: {error}");
+                    continue;
+                }
+            };
+            let Some((tex_meta, tex_data)) = textures.first() else {
+                continue;
+            };
+            let vertex_size = mesh.primitives.first().map(|p| p.vertex_size).unwrap_or(0);
+            // Packed-vertex meshes (vertex_size < 24) still decode unreliably, so skip them when
+            // auto-scanning; honour them only when the mesh was explicitly requested.
+            if !explicit && vertex_size < 24 {
+                tracing::debug!("Skipping mesh {name} (vertex_size={vertex_size}, likely packed)");
+                continue;
+            }
+            tracing::info!(
+                "Loading mesh {name} (vertex_size={vertex_size}, {} materials, {} textures)",
+                mesh.materials.len(),
+                textures.len(),
+            );
+            renderer
+                .set_model(&mesh, tex_meta, tex_data)
+                .map_err(E::UploadModelTexture)?;
+            tracing::info!("Uploaded model to GPU");
+            return Ok(());
+        }
+
+        if explicit {
+            tracing::warn!("Requested mesh {:?} could not be loaded", self.mesh_name);
+        }
+        Ok(())
+    }
+}
+
+/// Read a sky texture from the textures archive and upload it to the renderer's primary
+/// (`secondary == false`) or blend (`secondary == true`) slot. Failures are logged, not fatal.
+fn upload_sky_texture(files: &mut Files, renderer: &mut Renderer<'static>, name: &str, secondary: bool) {
+    let (metadata, bytes) = match files.read_sky_texture(name) {
+        Ok(asset) => asset,
+        Err(error) => {
+            tracing::warn!("Failed to read sky texture {name}: {error}");
+            return;
+        }
+    };
+
+    let result = if secondary {
+        renderer.set_sky_texture1(&metadata, &bytes)
+    } else {
+        renderer.set_sky_texture0(&metadata, &bytes)
+    };
+
+    if let Err(error) = result {
+        tracing::warn!("Failed to upload sky texture {name}: {error}");
     }
 }
 
@@ -325,9 +372,6 @@ impl App {
     fn redraw_requested(&mut self) -> Result<(), RedrawRequestedError> {
         use RedrawRequestedError as E;
 
-        let window = self.window.as_ref().ok_or(E::NoWindow)?;
-        let renderer = self.renderer.as_mut().ok_or(E::NoRenderer)?;
-
         let now = Instant::now();
 
         let delta_time = self
@@ -342,28 +386,24 @@ impl App {
         let angle = self.scene_time * 0.15;
         let distance = self.terrain_radius * 2.2;
         let height = self.terrain_radius * 1.1;
-        self.camera.camera.position = self.terrain_center
+        self.camera.position = self.terrain_center
             + glam::Vec3::new(distance * angle.cos(), height, distance * angle.sin());
-        self.camera
-            .camera
-            .look_at(self.terrain_center, glam::Vec3::Y);
+        self.camera.look_at(self.terrain_center, glam::Vec3::Y);
 
-        self.time_of_day += delta_time * 0.1;  // ~4 real minutes per game hour
-
+        self.time_of_day += delta_time * 0.1; // ~4 real minutes per game hour
         if self.time_of_day >= 24.0 {
             self.time_of_day -= 24.0;
         }
 
-        let sky_blend = 0.0;
+        // Re-select the sky textures for the new time-of-day before borrowing the renderer.
+        let sky_blend = self.refresh_sky();
+        let sky_view_proj = self.camera.sky_view_projection_matrix().to_cols_array_2d();
+        let view_proj = self.camera.view_projection_matrix().to_cols_array_2d();
 
-        renderer.update_sky_uniforms(
-            self.camera.sky_view_projection(),
-            self.time_of_day,
-            sky_blend,
-        );
+        let window = self.window.as_ref().ok_or(E::NoWindow)?;
+        let renderer = self.renderer.as_mut().ok_or(E::NoRenderer)?;
 
-        let view_proj = self.camera.camera.view_projection_matrix().to_cols_array_2d();
-
+        renderer.update_sky_uniforms(sky_view_proj, self.time_of_day, sky_blend);
         renderer.update_terrain_uniforms(view_proj);
         renderer.update_model_uniforms(view_proj);
 
@@ -392,7 +432,7 @@ impl App {
 
         renderer.resize_surface(size.into());
 
-        self.camera.camera.set_aspect(size.width, size.height);
+        self.camera.set_aspect(size.width, size.height);
 
         Ok(())
     }

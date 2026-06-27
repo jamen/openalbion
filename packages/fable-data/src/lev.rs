@@ -1,8 +1,8 @@
 //! Parser for Fable's `.lev` level files.
 //!
 //! A `.lev` file describes a level's landscape: a header (with map dimensions and sound themes),
-//! a grid of heightmap cells (the terrain elevation + ground/sound theme blending), a fixed
-//! 32x32 grid of soundmap cells, and finally a navigation graph.
+//! a grid of heightmap cells (the terrain elevation + ground/sound theme blending), a run of
+//! soundmap cells filling the space up to the navigation graph, and finally the navigation graph.
 //!
 //! This parser currently covers the header, heightmap, and soundmap — everything needed to build
 //! a terrain mesh. The navigation graph (after `header.navigation_offset`) is not parsed yet.
@@ -25,6 +25,9 @@ pub enum LevError {
     #[from(skip)]
     #[display("invalid UTF-8 in navigation section name")]
     NavSectionNameUtf8,
+    #[from(skip)]
+    #[display("cell reported size ({size}) smaller than its {consumed} parsed bytes")]
+    CellSizeUnderflow { size: u32, consumed: usize },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -174,9 +177,10 @@ impl LevHeightCell {
         let _unknown = take::<u8>(i)?;
 
         let consumed = start_len - i.len();
-        if let Some(remaining) = (size as usize).checked_sub(consumed) {
-            take_bytes(i, remaining)?;
-        }
+        let remaining = (size as usize)
+            .checked_sub(consumed)
+            .ok_or(LevError::CellSizeUnderflow { size, consumed })?;
+        take_bytes(i, remaining)?;
 
         Ok(LevHeightCell {
             size,
@@ -192,7 +196,8 @@ impl LevHeightCell {
     }
 }
 
-/// A single soundmap cell from the fixed 32x32 grid.
+/// A single soundmap cell. Cells run consecutively from the end of the heightmap up to the
+/// navigation graph at `header.navigation_offset`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LevSoundCell {
     pub size: u32,
@@ -212,9 +217,10 @@ impl LevSoundCell {
         let sound_index = take::<u8>(i)?;
 
         let consumed = start_len - i.len();
-        if let Some(remaining) = (size as usize).checked_sub(consumed) {
-            take_bytes(i, remaining)?;
-        }
+        let remaining = (size as usize)
+            .checked_sub(consumed)
+            .ok_or(LevError::CellSizeUnderflow { size, consumed })?;
+        take_bytes(i, remaining)?;
 
         Ok(LevSoundCell {
             size,

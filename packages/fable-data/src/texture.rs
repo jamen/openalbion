@@ -14,6 +14,27 @@ pub struct Texture {
     pub raw_image_data: Vec<u8>,
 }
 
+/// Map Fable's `dxt_compression` tag (from a texture asset's metadata) to a BCN encoding.
+///
+/// The tag is the D3D `D3DFORMAT` family with Fable-specific aliases: `1/31/33` are DXT1 (BC1),
+/// `3/32/34` DXT3 (BC2), and `5/35` DXT5 (BC3). Returns `None` for tags we don't decode.
+pub fn bcn_encoding_from_dxt(dxt: u16) -> Option<BcnEncoding> {
+    match dxt {
+        1 | 31 | 33 => Some(BcnEncoding::Bc1),
+        3 | 32 | 34 => Some(BcnEncoding::Bc2),
+        5 | 35 => Some(BcnEncoding::Bc3),
+        _ => None,
+    }
+}
+
+/// Number of bytes one 4x4 block occupies in a BCN encoding (8 for BC1, 16 otherwise).
+pub fn bcn_block_bytes(encoding: BcnEncoding) -> u32 {
+    match encoding {
+        BcnEncoding::Bc1 => 8,
+        _ => 16,
+    }
+}
+
 impl Texture {
     pub fn parse(
         input: &mut &[u8],
@@ -65,7 +86,7 @@ impl Texture {
     pub fn get_top_mip_bcn_image(&self) -> Result<&[u8], TextureError> {
         self.raw_image_data
             .get(..self.top_mip_length)
-            .ok_or_else(|| TextureError::TopMipCompressed)
+            .ok_or(TextureError::TopMipCompressed)
     }
 
     pub fn get_top_mip_pixel_image(
@@ -103,19 +124,14 @@ pub enum TextureError {
     TopMipBcnDecompress(BcnError),
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum TextureImageFormat {
+    #[default]
     RGBA,
     BGRA,
     ARGB,
     ABGR,
     LUM,
-}
-
-impl Default for TextureImageFormat {
-    fn default() -> Self {
-        Self::RGBA
-    }
 }
 
 impl From<BcnDecoderFormat> for TextureImageFormat {
@@ -131,15 +147,15 @@ impl From<BcnDecoderFormat> for TextureImageFormat {
     }
 }
 
-impl Into<BcnDecoderFormat> for TextureImageFormat {
-    fn into(self) -> BcnDecoderFormat {
+impl From<TextureImageFormat> for BcnDecoderFormat {
+    fn from(val: TextureImageFormat) -> Self {
         use BcnDecoderFormat as F;
-        match self {
-            Self::RGBA => F::RGBA,
-            Self::BGRA => F::BGRA,
-            Self::ARGB => F::ARGB,
-            Self::ABGR => F::ABGR,
-            Self::LUM => F::LUM,
+        match val {
+            TextureImageFormat::RGBA => F::RGBA,
+            TextureImageFormat::BGRA => F::BGRA,
+            TextureImageFormat::ARGB => F::ARGB,
+            TextureImageFormat::ABGR => F::ABGR,
+            TextureImageFormat::LUM => F::LUM,
         }
     }
 }

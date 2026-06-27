@@ -31,21 +31,9 @@ impl Camera {
         self.orientation * -Vec3::Z
     }
 
-    pub fn right(&self) -> Vec3 {
-        self.orientation * Vec3::X
-    }
-
-    pub fn up(&self) -> Vec3 {
-        self.orientation * Vec3::Y
-    }
-
     pub fn view_matrix(&self) -> Mat4 {
         let inv_orientation = self.orientation.conjugate();
         Mat4::from_quat(inv_orientation) * Mat4::from_translation(-self.position)
-    }
-
-    pub fn view_matrix_rotation_only(&self) -> Mat4 {
-        Mat4::from_quat(self.orientation.conjugate())
     }
 
     pub fn projection_matrix(&self) -> Mat4 {
@@ -98,51 +86,6 @@ impl Camera {
 }
 
 impl Default for Camera {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub struct AnimatedCamera {
-    pub camera: Camera,
-    pub time: f32,
-}
-
-impl AnimatedCamera {
-    pub fn new() -> Self {
-        Self {
-            camera: Camera::new(),
-            time: 0.0,
-        }
-    }
-
-    pub fn update(&mut self, delta_time: f32) {
-        self.time += delta_time;
-
-        let t = self.time * 0.3;
-
-        let radius = 0.5;
-        let x = radius * t.sin();
-        let z = radius * (t * 2.0).sin() * 0.5;
-        let y = 0.0;
-
-        self.camera.position = Vec3::new(x, y, z);
-
-        let yaw = t * 0.5;
-        let pitch = (t * 0.7).sin() * 0.3;
-
-        let yaw_quat = Quat::from_rotation_y(yaw);
-        let pitch_quat = Quat::from_rotation_x(pitch);
-
-        self.camera.orientation = yaw_quat * pitch_quat;
-    }
-
-    pub fn sky_view_projection(&self) -> [[f32; 4]; 4] {
-        self.camera.sky_view_projection_matrix().to_cols_array_2d()
-    }
-}
-
-impl Default for AnimatedCamera {
     fn default() -> Self {
         Self::new()
     }

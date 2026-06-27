@@ -2,7 +2,7 @@ use derive_more::{Display, Error};
 use fable_data::{
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
     def::binary::{def_binary::DefBinary, names::Names},
-    environment::{EnvironmentConfig, EnvironmentParseError, EnvironmentTheme},
+    environment::{EnvironmentConfig, EnvironmentTheme},
     lev::{Lev, LevError},
     mesh::{Mesh, MeshError},
     tga::{Tga, TgaError},
@@ -40,10 +40,6 @@ pub enum NewFilesError {
     LoadGraphics(BigReaderError),
     ReadLightingLut(io::Error),
     ParseLightingLut(TgaError),
-    ReadEnvironmentDef(io::Error),
-    ParseEnvironmentDef(EnvironmentParseError),
-    #[display("failed to load binary defs: {_0}")]
-    LoadBinaryDefs(#[error(not(source))] String),
 }
 
 #[derive(Debug, Display, Error)]
@@ -217,11 +213,21 @@ impl Files {
         self.textures.read_asset("GBANK_MAIN_PC", texture_name)
     }
 
+    /// Find a texture-typed asset by id, preferring textures.big over graphics.big.
+    fn find_texture_asset(&self, tex_id: u32) -> Option<AssetMetadata> {
+        let is_texture = |a: &AssetMetadata| matches!(&a.extras, Some(ExtraMetadata::Texture(_)));
+        let from = |reader: &BigReader<File>| {
+            reader
+                .bank_iter()
+                .find_map(|b| b.asset_by_id(tex_id))
+                .filter(|a| is_texture(a))
+                .cloned()
+        };
+        from(&self.textures).or_else(|| from(&self.graphics))
+    }
+
     /// Read a mesh and its material textures from graphics.big.
-    pub fn read_mesh(
-        &mut self,
-        mesh_name: &str,
-    ) -> Result<(Mesh, Vec<(AssetMetadata, Vec<u8>)>), ReadMeshError> {
+    pub fn read_mesh(&mut self, mesh_name: &str) -> Result<(Mesh, MeshTextures), ReadMeshError> {
         use ReadMeshError as E;
 
         let asset = self
@@ -253,56 +259,16 @@ impl Files {
             mesh.materials.iter().map(|m| m.base_texture_id).collect::<Vec<_>>(),
         );
 
-        let texture_ids_to_resolve: Vec<u32> = mesh
-            .materials
-            .iter()
-            .map(|m| m.base_texture_id)
-            .collect();
-        tracing::debug!("  resolved texture ids (via lookup)={:?}", texture_ids_to_resolve);
+        // Mesh material texture ids generally resolve in textures.big, falling back to graphics.big.
         let mut textures = Vec::with_capacity(mesh.materials.len());
-        for tex_id in texture_ids_to_resolve {
+        for material in &mesh.materials {
+            let tex_id = material.base_texture_id;
             if tex_id == 0 {
                 continue;
             }
-            // Mesh material texture IDs live in textures.big, not graphics.big.
-            // Search both files, preferring the first texture-typed asset found.
-            let found_in_graphics = self
-                .graphics
-                .bank_iter()
-                .find_map(|b| b.asset_by_id(tex_id).cloned());
-            let found_in_textures = self
-                .textures
-                .bank_iter()
-                .find_map(|b| b.asset_by_id(tex_id).cloned());
-            // Prefer textures.big; fall back to graphics.big only if it's a texture
-            let tex_asset = match (
-                &found_in_textures,
-                &found_in_graphics,
-            ) {
-                (Some(t), _) if matches!(&t.extras, Some(ExtraMetadata::Texture(_))) => {
-                    t.clone()
-                }
-                (_, Some(g)) if matches!(&g.extras, Some(ExtraMetadata::Texture(_))) => {
-                    g.clone()
-                }
-                (Some(t), _) => {
-                    tracing::debug!(
-                        "Mesh {}: tex_id={} found in textures.big as {} (extras={:?}) — not a texture",
-                        mesh_name, tex_id, t.symbol_name, t.extras,
-                    );
-                    continue;
-                }
-                (None, Some(g)) => {
-                    tracing::debug!(
-                        "Mesh {}: tex_id={} found in graphics.big as {} (extras={:?}) — not a texture",
-                        mesh_name, tex_id, g.symbol_name, g.extras,
-                    );
-                    continue;
-                }
-                (None, None) => {
-                    tracing::debug!("Mesh {}: tex_id={} not found in any bank", mesh_name, tex_id);
-                    continue;
-                }
+            let Some(tex_asset) = self.find_texture_asset(tex_id) else {
+                tracing::debug!("Mesh {mesh_name}: tex_id={tex_id} has no texture asset");
+                continue;
             };
             let tex_data = self
                 .textures
@@ -315,3 +281,6 @@ impl Files {
         Ok((mesh, textures))
     }
 }
+
+/// A mesh's resolved material textures: each asset's metadata paired with its raw bytes.
+type MeshTextures = Vec<(AssetMetadata, Vec<u8>)>;

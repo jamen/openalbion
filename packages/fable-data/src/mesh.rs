@@ -10,7 +10,7 @@
 //!
 //! Ported from the historical `model.rs` (2021), which fed the first textured model renderer.
 
-use crate::bytes::{TakeError, UnexpectedEnd, take, take_bytes, take_null_terminated_bytes};
+use crate::bytes::{TakeError, UnexpectedEnd, take_bytes, take_le, take_null_terminated_bytes};
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error, From};
 use lzo::LzoError;
@@ -764,19 +764,19 @@ impl Particles {
 // --- byte helpers ---------------------------------------------------------------------------
 
 fn read_u8(i: &mut &[u8]) -> Result<u8, MeshError> {
-    Ok(take::<u8>(i)?)
+    Ok(take_le::<u8>(i)?)
 }
 fn read_u16(i: &mut &[u8]) -> Result<u16, MeshError> {
-    Ok(take::<u16>(i)?.to_le())
+    Ok(take_le::<u16>(i)?)
 }
 fn read_u32(i: &mut &[u8]) -> Result<u32, MeshError> {
-    Ok(take::<u32>(i)?.to_le())
+    Ok(take_le::<u32>(i)?)
 }
 fn read_i32(i: &mut &[u8]) -> Result<i32, MeshError> {
-    Ok(take::<i32>(i)?.to_le())
+    Ok(take_le::<i32>(i)?)
 }
 fn read_f32(i: &mut &[u8]) -> Result<f32, MeshError> {
-    Ok(f32::from_bits(take::<u32>(i)?.to_le()))
+    Ok(take_le::<f32>(i)?)
 }
 fn read_vec3(i: &mut &[u8]) -> Result<[f32; 3], MeshError> {
     Ok([read_f32(i)?, read_f32(i)?, read_f32(i)?])

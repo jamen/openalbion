@@ -20,7 +20,7 @@ struct Cli {
 fn main() {
     if let Err(err) = try_main() {
         err.chain()
-            .for_each(|err| log::error!("{}", err.to_string()))
+            .for_each(|err| log::error!("{}", err))
     }
 }
 

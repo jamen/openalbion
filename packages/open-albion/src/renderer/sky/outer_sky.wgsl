@@ -16,6 +16,10 @@ struct Uniforms {
 @group(1) @binding(1) var sky_texture_1: texture_2d<f32>;
 @group(1) @binding(2) var sky_sampler: sampler;
 
+// TODO: the lighting-colours LUT (time-of-day palette) is uploaded and bound as group 2 by the
+// renderer but is not yet sampled here. Once the dome lighting model is settled, sample the sky
+// gradient rows (see `lighting_row` in sky.rs) to tint the dome by time of day.
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,

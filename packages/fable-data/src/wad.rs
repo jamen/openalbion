@@ -280,7 +280,7 @@ impl<'a> AssetMetadataRef<'a> {
 
         put(out, &path_len.to_le()).map_err(|_| E::PathLen)?;
 
-        put_bytes(out, &self.path.as_bytes()).map_err(|_| E::Path)?;
+        put_bytes(out, self.path.as_bytes()).map_err(|_| E::Path)?;
 
         put(out, &self.unknown_4).map_err(|_| E::Unknown4)?;
         put(out, &self.created.map(u32::to_le)).map_err(|_| E::Created)?;

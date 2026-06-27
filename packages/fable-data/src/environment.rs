@@ -35,17 +35,21 @@ impl EnvironmentTheme {
     pub fn sky_texture_names(&self) -> Vec<&str> {
         let mut names = Vec::new();
         for kf in &self.keyframes {
-            if let Some(ref name) = kf.sky_texture_0 {
-                if !names.contains(&name.as_str()) { names.push(name.as_str()); }
-            }
-            if let Some(ref name) = kf.sky_texture_1 {
-                if !names.contains(&name.as_str()) { names.push(name.as_str()); }
-            }
+            if let Some(ref name) = kf.sky_texture_0
+                && !names.contains(&name.as_str()) { names.push(name.as_str()); }
+            if let Some(ref name) = kf.sky_texture_1
+                && !names.contains(&name.as_str()) { names.push(name.as_str()); }
         }
         names
     }
 
-    pub fn keyframes_at_time(&self, time: f32) -> (&TimeKeyframe, &TimeKeyframe, f32) {
+    /// Find the keyframes bracketing `time` and the blend factor between them.
+    ///
+    /// Returns `None` when the theme has no keyframes (nothing to interpolate).
+    pub fn keyframes_at_time(&self, time: f32) -> Option<(&TimeKeyframe, &TimeKeyframe, f32)> {
+        if self.keyframes.is_empty() {
+            return None;
+        }
         let time = time.rem_euclid(24.0);
         let mut prev_idx = 0;
         for (i, kf) in self.keyframes.iter().enumerate() {
@@ -61,23 +65,23 @@ impl EnvironmentTheme {
         if adjusted_time < prev_time { adjusted_time += 24.0; }
         let duration = next_time - prev_time;
         let blend = if duration > 0.0 { ((adjusted_time - prev_time) / duration).clamp(0.0, 1.0) } else { 0.0 };
-        (prev, next, blend)
+        Some((prev, next, blend))
     }
 
     pub fn sky_textures_at_time(&self, time: f32) -> (Option<&str>, Option<&str>, f32) {
-        let (prev, next, keyframe_blend) = self.keyframes_at_time(time);
+        let Some((prev, next, keyframe_blend)) = self.keyframes_at_time(time) else {
+            return (None, None, 0.0);
+        };
         if keyframe_blend < 0.5 {
             if prev.sky_texture_1.is_some() {
                 (prev.sky_texture_0.as_deref(), prev.sky_texture_1.as_deref(), prev.sky_texture_1_blend)
             } else {
                 (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), keyframe_blend * 2.0)
             }
+        } else if next.sky_texture_1.is_some() {
+            (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), (keyframe_blend - 0.5) * 2.0)
         } else {
-            if next.sky_texture_1.is_some() {
-                (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), (keyframe_blend - 0.5) * 2.0)
-            } else {
-                (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), keyframe_blend)
-            }
+            (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), keyframe_blend)
         }
     }
 }
@@ -171,23 +175,19 @@ impl EnvironmentConfig {
     fn parse_theme(name: &str, def: &Definition) -> Result<EnvironmentTheme, EnvironmentParseError> {
         let mut keyframes_map: HashMap<i32, TimeKeyframe> = HashMap::new();
         for stmt in &def.body {
-            if let Statement::Field(field) = stmt {
-                let segments = &field.path.segments;
-                if segments.len() >= 2 {
-                    if let (PathSegment::Field(field_name), PathSegment::Index(idx_expr)) = (&segments[0], &segments[1]) {
-                        if field_name == "Time" {
-                            if let Expr::Integer(idx) = idx_expr {
-                                let idx = *idx as i32;
-                                let keyframe = keyframes_map.entry(idx).or_default();
-                                if segments.len() >= 3 {
-                                    if let PathSegment::Field(prop) = &segments[2] {
-                                        Self::set_keyframe_property(keyframe, prop, &field.expr);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            let Statement::Field(field) = stmt else { continue };
+            let segments = &field.path.segments;
+            // We only care about `Time[idx].Property = ...` fields.
+            if let [
+                PathSegment::Field(field_name),
+                PathSegment::Index(Expr::Integer(idx)),
+                PathSegment::Field(prop),
+                ..,
+            ] = segments.as_slice()
+                && field_name == "Time"
+            {
+                let keyframe = keyframes_map.entry(*idx as i32).or_default();
+                Self::set_keyframe_property(keyframe, prop, &field.expr);
             }
         }
         let mut keyframes: Vec<_> = keyframes_map.into_iter().collect();
@@ -247,15 +247,22 @@ mod tests {
                 TimeKeyframe { time_of_day: 18.0, sky_texture_0: Some("EVENING".to_string()), ..Default::default() },
             ],
         };
-        let (prev, next, blend) = theme.keyframes_at_time(0.0);
+        let (prev, _next, blend) = theme.keyframes_at_time(0.0).unwrap();
         assert_eq!(prev.time_of_day, 0.0);
         assert_eq!(blend, 0.0);
-        let (prev, next, blend) = theme.keyframes_at_time(3.0);
+        let (prev, next, blend) = theme.keyframes_at_time(3.0).unwrap();
         assert_eq!(prev.time_of_day, 0.0);
         assert_eq!(next.time_of_day, 6.0);
         assert!((blend - 0.5).abs() < 0.01);
-        let (prev, next, blend) = theme.keyframes_at_time(12.0);
+        let (prev, _next, _blend) = theme.keyframes_at_time(12.0).unwrap();
         assert_eq!(prev.time_of_day, 12.0);
+    }
+
+    #[test]
+    fn empty_theme_does_not_panic() {
+        let theme = EnvironmentTheme { name: "empty".to_string(), keyframes: Vec::new() };
+        assert!(theme.keyframes_at_time(6.0).is_none());
+        assert_eq!(theme.sky_textures_at_time(6.0), (None, None, 0.0));
     }
 
     #[test]

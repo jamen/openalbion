@@ -1,7 +1,7 @@
+use super::texture::{TextureUploadError, linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use fable_data::{
-    big::{AssetMetadata, ExtraMetadata},
-    texture::{BcnEncoding, Texture, TextureError},
+    big::AssetMetadata,
     tga::{Tga, TgaError},
 };
 use std::any::type_name;
@@ -10,7 +10,7 @@ use wgpu::{
     BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
     CommandEncoder, Device, Extent3d, FragmentState, IndexFormat, MultisampleState, PipelineLayout,
     PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPassDescriptor, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderStages,
+    RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages,
     TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
     TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
     VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
@@ -216,7 +216,6 @@ impl SkyDome {
 /// - 15: Sky gradient bottom color
 /// - 16: Sky gradient bottom alpha
 pub struct LightingColoursTexture {
-    texture: wgpu::Texture,
     view: TextureView,
     sampler: wgpu::Sampler,
 }
@@ -260,7 +259,7 @@ impl LightingColoursTexture {
         let height = tga.height();
         let rgba_data = tga.to_rgba();
         // Pad to 256-aligned rows (required by wgpu write_texture)
-        let row_bytes = (width as u32 * 4).max(1);
+        let row_bytes = (width * 4).max(1);
         let padded_row_bytes = row_bytes.div_ceil(256) * 256;
         let mut padded = vec![0u8; padded_row_bytes as usize * height as usize];
         for y in 0..height as usize {
@@ -307,22 +306,10 @@ impl LightingColoursTexture {
 
         let view = texture.create_view(&TextureViewDescriptor::default());
 
-        // Linear filtering for smooth time interpolation.
-        // Clamp to edge so times outside 0-24 don't wrap weirdly.
-        let sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("lighting_colours_sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
-        });
+        // Linear filtering for smooth time interpolation; clamp so times outside 0-24 don't wrap.
+        let sampler = linear_clamp_sampler(device, "lighting_colours_sampler");
 
-        Ok(Self {
-            texture,
-            view,
-            sampler,
-        })
+        Ok(Self { view, sampler })
     }
 
     pub fn view(&self) -> &TextureView {
@@ -340,24 +327,7 @@ pub enum LightingColoursError {
     Tga(TgaError),
 }
 
-fn dxt_to_bcn_encoding(dxt: u16) -> BcnEncoding {
-    match dxt {
-        1 | 31 | 33 => BcnEncoding::Bc1,
-        3 | 32 | 34 => BcnEncoding::Bc2,
-        5 | 35 => BcnEncoding::Bc3,
-        _ => BcnEncoding::Bc1,
-    }
-}
-
 use derive_more::{Display, Error};
-
-#[derive(Debug, Display, Error)]
-pub enum SkyTextureError {
-    NotATexture,
-    #[display("UnsupportedDxtFormat({_0})")]
-    UnsupportedDxtFormat(#[error(not(source))] u16),
-    Parse(TextureError),
-}
 
 pub struct SkyUniformBindGroupLayout(BindGroupLayout);
 
@@ -511,117 +481,16 @@ impl OuterSkyPipeline {
     }
 }
 
-/// Bound lighting LUT with its bind group.
-pub struct BoundLightingLut {
-    pub lut: LightingColoursTexture,
-    pub bind_group: BindGroup,
-}
-
-/// A loaded sky texture (without its own bind group - bind groups are created in SkyPass).
-pub struct LoadedSkyTexture {
-    pub texture: wgpu::Texture,
-    pub view: TextureView,
-}
-
-impl LoadedSkyTexture {
-    pub fn load(
-        device: &Device,
-        queue: &Queue,
-        asset_info: &AssetMetadata,
-        asset_data: &[u8],
-    ) -> Result<Self, SkyTextureError> {
-        use SkyTextureError as E;
-
-        let texture_extras = match &asset_info.extras {
-            Some(ExtraMetadata::Texture(extras)) => extras,
-            _ => return Err(E::NotATexture),
-        };
-
-        let width = texture_extras.width as u32;
-        let height = texture_extras.height as u32;
-
-        let format = match texture_extras.dxt_compression {
-            1 | 31 | 33 => TextureFormat::Bc1RgbaUnorm,
-            3 | 32 | 34 => TextureFormat::Bc2RgbaUnorm,
-            5 | 35 => TextureFormat::Bc3RgbaUnorm,
-            other => return Err(E::UnsupportedDxtFormat(other)),
-        };
-
-        let mut input = asset_data;
-        let texture_data = Texture::parse(
-            &mut input,
-            width as usize,
-            height as usize,
-            texture_extras.depth as usize,
-            texture_extras.top_mip_map_size as usize,
-            dxt_to_bcn_encoding(texture_extras.dxt_compression),
-        )
-        .map_err(E::Parse)?;
-
-        let bcn_data = texture_data.get_top_mip_bcn_image().map_err(E::Parse)?;
-
-        tracing::info!(
-            "Sky texture loaded: {} ({}x{}, {:?})",
-            asset_info.symbol_name,
-            width,
-            height,
-            format,
-        );
-
-        let texture = device.create_texture(&TextureDescriptor {
-            label: Some(&asset_info.symbol_name),
-            size: Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        let block_size = match format {
-            TextureFormat::Bc1RgbaUnorm => 8,
-            TextureFormat::Bc2RgbaUnorm | TextureFormat::Bc3RgbaUnorm => 16,
-            _ => unreachable!(),
-        };
-        let blocks_wide = (width + 3) / 4;
-        let bytes_per_row = blocks_wide * block_size;
-
-        queue.write_texture(
-            texture.as_image_copy(),
-            bcn_data,
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(bytes_per_row),
-                rows_per_image: None,
-            },
-            Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        let view = texture.create_view(&TextureViewDescriptor::default());
-
-        Ok(Self { texture, view })
-    }
-}
-
 pub struct OuterSkyPass {
     texture_layout: SkyTextureBindGroupLayout,
     lut_layout: LightingLutBindGroupLayout,
     pipeline: OuterSkyPipeline,
     dome: SkyDome,
     sky_sampler: wgpu::Sampler,
-    texture0: Option<LoadedSkyTexture>,
-    texture1: Option<LoadedSkyTexture>,
+    texture0: Option<TextureView>,
+    texture1: Option<TextureView>,
     sky_textures_bind_group: Option<BindGroup>,
-    lighting_lut: Option<BoundLightingLut>,
+    lighting_lut: Option<BindGroup>,
 }
 
 impl OuterSkyPass {
@@ -635,14 +504,7 @@ impl OuterSkyPass {
         let pipeline = OuterSkyPipeline::new(device, &layout, &shader, surface_format);
         let dome = SkyDome::new(device, &uniform_layout);
 
-        let sky_sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("sky_sampler"),
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            ..Default::default()
-        });
+        let sky_sampler = linear_clamp_sampler(device, "sky_sampler");
 
         Self {
             texture_layout,
@@ -664,9 +526,8 @@ impl OuterSkyPass {
         queue: &Queue,
         asset_info: &AssetMetadata,
         asset_data: &[u8],
-    ) -> Result<(), SkyTextureError> {
-        let texture = LoadedSkyTexture::load(device, queue, asset_info, asset_data)?;
-        self.texture0 = Some(texture);
+    ) -> Result<(), TextureUploadError> {
+        self.texture0 = Some(upload_texture(device, queue, asset_info, asset_data)?);
         self.rebuild_sky_bind_group(device);
         Ok(())
     }
@@ -678,9 +539,8 @@ impl OuterSkyPass {
         queue: &Queue,
         asset_info: &AssetMetadata,
         asset_data: &[u8],
-    ) -> Result<(), SkyTextureError> {
-        let texture = LoadedSkyTexture::load(device, queue, asset_info, asset_data)?;
-        self.texture1 = Some(texture);
+    ) -> Result<(), TextureUploadError> {
+        self.texture1 = Some(upload_texture(device, queue, asset_info, asset_data)?);
         self.rebuild_sky_bind_group(device);
         Ok(())
     }
@@ -691,11 +551,8 @@ impl OuterSkyPass {
             return;
         };
 
-        let tex1_view = self
-            .texture1
-            .as_ref()
-            .map(|t| &t.view)
-            .unwrap_or(&tex0.view);
+        // Fall back to texture0 for the blend slot until a second texture is set.
+        let tex1_view = self.texture1.as_ref().unwrap_or(tex0);
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("sky_textures_bind_group"),
@@ -703,7 +560,7 @@ impl OuterSkyPass {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&tex0.view),
+                    resource: BindingResource::TextureView(tex0),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -742,7 +599,8 @@ impl OuterSkyPass {
             ],
         });
 
-        self.lighting_lut = Some(BoundLightingLut { lut, bind_group });
+        // The bind group keeps `lut`'s view and sampler alive, so we don't store the LUT itself.
+        self.lighting_lut = Some(bind_group);
 
         Ok(())
     }
@@ -763,12 +621,8 @@ impl OuterSkyPass {
             tracing::warn!("Sky pass: no textures bind group — sky skipped");
             return;
         };
-        let Some(lut) = &self.lighting_lut else {
+        let Some(lut_bind_group) = &self.lighting_lut else {
             tracing::warn!("Sky pass: no lighting LUT — sky skipped");
-            return;
-        };
-
-        let Some(lut) = &self.lighting_lut else {
             return;
         };
 
@@ -792,7 +646,7 @@ impl OuterSkyPass {
         rpass.set_pipeline(&self.pipeline.0);
         rpass.set_bind_group(0, &self.dome.uniform_bind_group, &[]);
         rpass.set_bind_group(1, sky_bind_group, &[]);
-        rpass.set_bind_group(2, &lut.bind_group, &[]);
+        rpass.set_bind_group(2, lut_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.dome.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.dome.index_buffer.slice(..), IndexFormat::Uint16);
         rpass.draw_indexed(0..self.dome.index_count, 0, 0..1);

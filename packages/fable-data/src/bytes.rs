@@ -97,7 +97,7 @@ pub fn take_null_terminated_bytes<'a>(bytes: &mut &'a [u8]) -> Result<&'a [u8], 
     let size = bytes
         .iter()
         .position(|&x| x == 0)
-        .ok_or_else(|| UnexpectedEnd)?;
+        .ok_or(UnexpectedEnd)?;
     let contents = take_bytes(bytes, size + 1)?;
     Ok(&contents[..contents.len() - 1])
 }
@@ -149,7 +149,7 @@ pub fn take_null_terminated_utf16(bytes: &mut &[u8]) -> Result<String, TakeNullT
     let size = chunks
         .iter()
         .position(|&x| x == [0, 0])
-        .ok_or_else(|| E::NullTerminatorPair)?;
+        .ok_or(E::NullTerminatorPair)?;
 
     let byte_len = size * 2;
     let contents = take_bytes(bytes, byte_len + 2).map_err(E::Bytes)?;

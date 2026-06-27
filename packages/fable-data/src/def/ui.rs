@@ -781,9 +781,7 @@ impl ActionMap {
         ID_BYTE_SIZE
             + size_of::<u32>()
             + self
-                .map
-                .iter()
-                .map(|(_, v)| size_of::<u32>() + v.len() + size_of::<u8>())
+                .map.values().map(|v| size_of::<u32>() + v.len() + size_of::<u8>())
                 .sum::<usize>()
     }
 }

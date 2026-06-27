@@ -116,14 +116,14 @@ impl<'a> HeaderParser<'a> {
         let Some(after) = self.rest().strip_prefix(name) else {
             return false;
         };
-        after.chars().next().map_or(true, |c| c.is_whitespace() || c == '{')
+        after.chars().next().is_none_or(|c| c.is_whitespace() || c == '{')
     }
 
     fn at_pp_directive(&self, name: &str) -> bool {
         let Some(after) = self.rest().strip_prefix(name) else {
             return false;
         };
-        after.chars().next().map_or(true, |c| c.is_whitespace())
+        after.chars().next().is_none_or(|c| c.is_whitespace())
     }
 
     fn try_consume_keyword(&mut self, name: &str) -> bool {

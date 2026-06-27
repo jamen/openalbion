@@ -22,7 +22,7 @@ pub fn wstr_control_byte_size(string: &str) -> usize {
 }
 
 pub const fn list_control_byte_size<T>(list: &[T]) -> usize {
-    ID_BYTE_SIZE + size_of::<u32>() + (list.len() * size_of::<T>())
+    ID_BYTE_SIZE + size_of::<u32>() + std::mem::size_of_val(list)
 }
 
 // Control ids
@@ -158,7 +158,7 @@ pub struct SerializeControlError {
 
 pub fn serialize_id(out: &mut &mut [u8], name: &'static str) -> Result<(), SerializeControlError> {
     put_le(out, &crc(name.as_bytes())).map_err(|inner| SerializeControlError {
-        name: name,
+        name,
         reason: SerializeControlErrorReason::MalformedId(inner),
     })
 }

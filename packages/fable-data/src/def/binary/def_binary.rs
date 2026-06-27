@@ -52,7 +52,7 @@ impl DefBinary {
         use FromReaderError as E;
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf).map_err(E::Read)?;
-        Self::from_bytes_with_names(&buf, &names).map_err(E::FromBytes)
+        Self::from_bytes_with_names(&buf, names).map_err(E::FromBytes)
     }
 }
 
@@ -80,7 +80,7 @@ impl DefBinary {
 
         let chunk_index = ChunkIndex::parse(bytes_cursor).map_err(E::ParseChunkIndex)?;
 
-        let chunks = Chunk::parse_list(bytes_cursor, &chunk_index, &name_refs, &names)
+        let chunks = Chunk::parse_list(bytes_cursor, &chunk_index, &name_refs, names)
             .map_err(E::ParseChunks)?;
 
         Ok(Self {
@@ -381,8 +381,8 @@ impl Chunk {
                 compressed_data_cursor,
                 chunk_entry_base,
                 chunk_entry_count,
-                &name_refs,
-                &names,
+                name_refs,
+                names,
             )
             .map_err(E::ParseChunk)?;
 
@@ -426,7 +426,7 @@ impl Chunk {
         use ParseChunkError as E;
 
         let decompressed_bytes = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(
-            *cur,
+            cur,
             MAX_CHUNK_DECOMPRESS_SIZE,
         )
         .map_err(E::MinizOxideDecompress)?;
@@ -548,7 +548,7 @@ impl EntryRecord {
                     let entry_bytes_cursor = &mut entry_bytes;
 
                     let entry_record =
-                        EntryRecord::parse(entry_bytes_cursor, &entry_name, chunk_start, chunk_end)
+                        EntryRecord::parse(entry_bytes_cursor, entry_name, chunk_start, chunk_end)
                             .map_err(|error| E::EntryRecord(entry_position, error))?;
 
                     if !entry_bytes_cursor.is_empty() {
@@ -686,9 +686,10 @@ pub enum DefBody {
     Engine(EngineDef),
     Controls(ControlsDef),
     FrontEnd(FrontEndDef),
-    Ui(UiDef),
+    // `UiDef`/`UiMiscThingsDef` are large; box them so `DefBody` stays small.
+    Ui(Box<UiDef>),
     UiIcons(UiIconsDef),
-    UiMiscThings(UiMiscThingsDef),
+    UiMiscThings(Box<UiMiscThingsDef>),
     EngineVideoOptions(EngineVideoOptionsDef),
     ConfigOptionsDefaults(ConfigOptionsDefaultsDef),
     Environment(EnvironmentDef),
@@ -705,10 +706,10 @@ impl DefBody {
             "ENGINE" => DefBody::Engine(EngineDef::parse(cur).map_err(|e| (name, e))?),
             "CONTROL_SCHEME" => DefBody::Controls(ControlsDef::parse(cur).map_err(|e| (name, e))?),
             "FRONT_END" => DefBody::FrontEnd(FrontEndDef::parse(cur).map_err(|e| (name, e))?),
-            "UI" => DefBody::Ui(UiDef::parse(cur).map_err(|e| (name, e))?),
+            "UI" => DefBody::Ui(Box::new(UiDef::parse(cur).map_err(|e| (name, e))?)),
             "UI_ICONS_DEF" => DefBody::UiIcons(UiIconsDef::parse(cur).map_err(|e| (name, e))?),
             "UI_MISC_THINGS_DEF" => {
-                DefBody::UiMiscThings(UiMiscThingsDef::parse(cur).map_err(|e| (name, e))?)
+                DefBody::UiMiscThings(Box::new(UiMiscThingsDef::parse(cur).map_err(|e| (name, e))?))
             }
             "ENGINE_VIDEO_OPTIONS" => DefBody::EngineVideoOptions(
                 EngineVideoOptionsDef::parse(cur).map_err(|e| (name, e))?,

@@ -5,6 +5,12 @@ pub struct SymbolTable {
     map: HashMap<String, i64>,
 }
 
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolTable {
     pub fn new() -> Self {
         Self { map: HashMap::new() }
@@ -14,6 +20,9 @@ impl SymbolTable {
     }
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
     pub fn iter(&self) -> impl Iterator<Item = (&str, i64)> {
         self.map.iter().map(|(k, v)| (k.as_str(), *v))
@@ -79,7 +88,7 @@ impl SymbolTable {
                 let first = self.evaluate_enum_expr(iter.next().unwrap())?;
                 iter.try_fold(first, |acc, term| {
                     let n = self.evaluate_enum_expr(term)?;
-                    if n >= 64 || n < 0 { return Err(SymbolEvalError::InvalidShift(n)); }
+                    if !(0..64).contains(&n) { return Err(SymbolEvalError::InvalidShift(n)); }
                     Ok(acc << n)
                 })
             }

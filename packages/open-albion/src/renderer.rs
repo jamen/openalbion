@@ -2,13 +2,15 @@ mod depth;
 mod model;
 mod sky;
 pub mod terrain;
+mod texture;
 
 use self::depth::DepthTexture;
 use self::model::ModelPass;
 use self::sky::OuterSkyPass;
 use self::terrain::TerrainPass;
 pub use self::model::ModelTextureError;
-pub use self::sky::{LightingColoursError, SkyTextureError};
+pub use self::sky::LightingColoursError;
+pub use self::texture::TextureUploadError;
 use derive_more::{Display, Error};
 use fable_data::big::AssetMetadata;
 use fable_data::lev::Lev;
@@ -56,7 +58,7 @@ impl<'target> Renderer<'target> {
 
         let &surface_format = surface_capabilities
             .formats
-            .get(0)
+            .first()
             .unwrap_or(&TextureFormat::Rgba8UnormSrgb);
 
         let passes = RenderPasses::new(&device, surface_format, DepthTexture::FORMAT);
@@ -117,7 +119,7 @@ impl<'target> Renderer<'target> {
         &mut self,
         asset_info: &AssetMetadata,
         asset_data: &[u8],
-    ) -> Result<(), SkyTextureError> {
+    ) -> Result<(), TextureUploadError> {
         self.passes
             .sky
             .set_texture0(&self.device, &self.queue, asset_info, asset_data)
@@ -127,7 +129,7 @@ impl<'target> Renderer<'target> {
         &mut self,
         asset_info: &AssetMetadata,
         asset_data: &[u8],
-    ) -> Result<(), SkyTextureError> {
+    ) -> Result<(), TextureUploadError> {
         self.passes
             .sky
             .set_texture1(&self.device, &self.queue, asset_info, asset_data)

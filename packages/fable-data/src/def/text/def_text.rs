@@ -201,7 +201,7 @@ impl<'a> DefParser<'a> {
         let rest = self.rest();
         let after = rest.strip_prefix("#definition_template")
             .or_else(|| rest.strip_prefix("#definition"));
-        after.is_some_and(|s| s.chars().next().map_or(false, |c| c.is_whitespace()))
+        after.is_some_and(|s| s.chars().next().is_some_and(|c| c.is_whitespace()))
     }
 
     fn parse_definition(&mut self) -> Result<Definition, DefParseError> {
