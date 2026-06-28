@@ -9,7 +9,7 @@ use self::{
 };
 use argh::FromArgs;
 use derive_more::{Display, Error};
-use std::{borrow::Cow, path::Path, sync::Arc, time::Instant};
+use std::{borrow::Cow, collections::HashSet, path::Path, sync::Arc, time::Instant};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use wgpu::SurfaceError;
@@ -17,8 +17,9 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
     error::{EventLoopError, OsError},
-    event::WindowEvent,
+    event::{DeviceEvent, DeviceId, ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
+    keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
 };
 
@@ -89,11 +90,16 @@ struct App {
     time_of_day: f32,
     level_name: String,
     mesh_name: Option<String>,
-    scene_time: f32,
     terrain_center: glam::Vec3,
     terrain_radius: f32,
     /// The sky texture name pair currently uploaded to the GPU, so we only re-upload on change.
     sky_textures: Option<(Option<String>, Option<String>)>,
+    /// Currently pressed keys.
+    keys: HashSet<KeyCode>,
+    /// Whether the cursor is locked (mouse look active).
+    cursor_locked: bool,
+    /// Frame counter to detect first load.
+    first_frame: bool,
 }
 
 #[derive(Debug, Display)]
@@ -136,10 +142,12 @@ impl App {
             time_of_day: 18.0,
             level_name: cli.level.clone().unwrap_or_else(|| "Witchwood".to_string()),
             mesh_name: cli.mesh.clone(),
-            scene_time: 0.0,
             terrain_center: glam::Vec3::ZERO,
             terrain_radius: 1.0,
             sky_textures: None,
+            keys: HashSet::new(),
+            cursor_locked: false,
+            first_frame: true,
         })
     }
 }
@@ -184,11 +192,16 @@ impl App {
 
         self.terrain_center = glam::Vec3::new(span_x * 0.5, mid_y, span_z * 0.5);
         self.terrain_radius = span_x.max(span_z) * 0.5;
-        self.camera.near = 1.0;
-        self.camera.far = self.terrain_radius * 8.0;
+        let world_span = span_x.max(span_z).max((raw_max - raw_min).abs() * scale);
+        self.camera.set_world_extents(world_span);
+        // Position camera above and back from the terrain centre for a good initial view.
+        self.camera.position =
+            self.terrain_center + glam::Vec3::new(world_span * 0.3, world_span * 0.4, world_span * 0.5);
+        self.camera.look_at(self.terrain_center, glam::Vec3::Y);
+        self.camera.fly_speed = world_span * 0.1;
         renderer.set_terrain(&lev);
         tracing::info!(
-            "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1})",
+            "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1}, world_span={world_span:.1})",
             lev.header.width, lev.header.height,
             raw_min, raw_max,
             raw_min * scale, raw_max * scale,
@@ -350,10 +363,70 @@ impl App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => self.redraw_requested().map_err(E::RedrawRequested)?,
             WindowEvent::Resized(size) => self.resize(size).map_err(E::Resize)?,
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(keycode),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                if state == ElementState::Pressed {
+                    // Escape unlocks the cursor.
+                    if keycode == KeyCode::Escape {
+                        if let Some(window) = &self.window {
+                            window.set_cursor_visible(true);
+                            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+                            self.cursor_locked = false;
+                        }
+                        return Ok(());
+                    }
+                    // Click locks the cursor again.
+                    if keycode == KeyCode::Enter && !self.cursor_locked {
+                        if let Some(window) = &self.window {
+                            window.set_cursor_visible(false);
+                            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
+                            self.cursor_locked = true;
+                        }
+                        return Ok(());
+                    }
+                    self.keys.insert(keycode);
+                } else {
+                    self.keys.remove(&keycode);
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                // When cursor is unlocked, we use absolute position delta
+                // (handled via raw device events for locked mode).
+                let _ = position;
+            }
             _ => {}
         }
 
         Ok(())
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        if !self.cursor_locked {
+            return;
+        }
+        if let DeviceEvent::MouseMotion { delta } = event {
+            self.camera.process_mouse(delta.0 as f32, delta.1 as f32);
+        }
+        if let DeviceEvent::MouseWheel { delta } = &event {
+            let dy = match delta {
+                winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
+                winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.01,
+            };
+            self.camera.fly_speed = (self.camera.fly_speed * 1.1_f32.powf(dy))
+                .clamp(0.1, self.terrain_radius * 20.0);
+        }
     }
 }
 
@@ -377,14 +450,38 @@ impl App {
 
         self.last_frame_time = Some(now);
 
-        // Orbit the camera around the terrain so the landscape is visible.
-        self.scene_time += delta_time;
-        let angle = self.scene_time * 0.15;
-        let distance = self.terrain_radius * 2.2;
-        let height = self.terrain_radius * 1.1;
-        self.camera.position = self.terrain_center
-            + glam::Vec3::new(distance * angle.cos(), height, distance * angle.sin());
-        self.camera.look_at(self.terrain_center, glam::Vec3::Y);
+        // On first frame, lock cursor for fly camera.
+        if self.first_frame {
+            self.first_frame = false;
+            if let Some(window) = &self.window {
+                window.set_cursor_visible(false);
+                let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
+                self.cursor_locked = true;
+            }
+        }
+
+        // Fly camera: process input.
+        let speed_mult = if self.keys.contains(&KeyCode::ShiftLeft)
+            || self.keys.contains(&KeyCode::ShiftRight)
+        {
+            3.0
+        } else {
+            1.0
+        };
+
+        self.camera.fly(
+            delta_time,
+            (
+                self.keys.contains(&KeyCode::KeyW),
+                self.keys.contains(&KeyCode::KeyS),
+                self.keys.contains(&KeyCode::KeyA),
+                self.keys.contains(&KeyCode::KeyD),
+                self.keys.contains(&KeyCode::Space),
+                self.keys.contains(&KeyCode::ControlLeft)
+                    || self.keys.contains(&KeyCode::ControlRight),
+            ),
+            speed_mult,
+        );
 
         self.time_of_day += delta_time * 0.1; // ~4 real minutes per game hour
         if self.time_of_day >= 24.0 {
@@ -445,5 +542,14 @@ impl ApplicationHandler for App {
         if let Err(error) = self.try_window_event(event_loop, id, event) {
             tracing::error!("{}", error);
         }
+    }
+
+    fn device_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        self.device_event(event_loop, device_id, event);
     }
 }

@@ -7,6 +7,16 @@ pub struct Camera {
     pub aspect: f32,
     pub near: f32,
     pub far: f32,
+    /// Current fly speed (world units per second).
+    pub fly_speed: f32,
+    /// Accumulated mouse delta for look input.
+    mouse_delta: (f32, f32),
+    /// Mouse sensitivity (radians per pixel).
+    mouse_sensitivity: f32,
+    /// Pitch (X-axis rotation) in radians.
+    pitch: f32,
+    /// Yaw (Y-axis rotation) in radians.
+    yaw: f32,
 }
 
 impl Camera {
@@ -14,10 +24,15 @@ impl Camera {
         Self {
             position: Vec3::ZERO,
             orientation: Quat::IDENTITY,
-            fov_y: std::f32::consts::FRAC_PI_4,
+            fov_y: 70.0_f32.to_radians(),
             aspect: 16.0 / 9.0,
             near: 0.1,
             far: 1000.0,
+            fly_speed: 10.0,
+            mouse_delta: (0.0, 0.0),
+            mouse_sensitivity: 0.003,
+            pitch: 0.0,
+            yaw: 0.0,
         }
     }
 
@@ -29,6 +44,10 @@ impl Camera {
 
     pub fn forward(&self) -> Vec3 {
         self.orientation * -Vec3::Z
+    }
+
+    pub fn right(&self) -> Vec3 {
+        self.orientation * Vec3::X
     }
 
     pub fn view_matrix(&self) -> Mat4 {
@@ -45,17 +64,10 @@ impl Camera {
     }
 
     pub fn sky_view_projection_matrix(&self) -> Mat4 {
-        // Fable's dome is built with Z=zenith, X/Y=horizon ring. Our dome uses
-        // Y=zenith, X/Z=horizon ring. Both need the dome zenith locked to screen-top.
-        //
-        // Use only the camera's horizontal direction (yaw) so the zenith always
-        // points to the top of the screen. Ignore pitch to avoid the degenerate
-        // case where the camera looks nearly straight down.
         let forward = self.forward();
         let horiz = glam::Vec3::new(forward.x, 0.0, forward.z);
         let len = horiz.length();
         if len < 0.0001 {
-            // Looking straight up or down — identity rotation so dome covers the view.
             return self.projection_matrix();
         }
         let horiz = horiz / len;
@@ -82,6 +94,60 @@ impl Camera {
         );
 
         self.orientation = Quat::from_mat4(&rotation_matrix);
+    }
+
+    /// Apply accumulated mouse delta as yaw/pitch rotation.
+    pub fn process_mouse(&mut self, dx: f32, dy: f32) {
+        self.mouse_delta.0 += dx;
+        self.mouse_delta.1 += dy;
+    }
+
+    /// Rebuild orientation from yaw + pitch.
+    fn update_orientation(&mut self) {
+        let pitch_clamped = self.pitch.clamp(
+            -85.0_f32.to_radians(),
+            85.0_f32.to_radians(),
+        );
+        let yaw_quat = Quat::from_rotation_y(self.yaw);
+        let pitch_quat = Quat::from_rotation_x(pitch_clamped);
+        self.orientation = yaw_quat * pitch_quat;
+    }
+
+    /// Apply fly movement. `keys` is (forward, backward, left, right, up, down).
+    pub fn fly(
+        &mut self,
+        dt: f32,
+        keys: (bool, bool, bool, bool, bool, bool),
+        speed_mult: f32,
+    ) {
+        self.yaw -= self.mouse_delta.0 * self.mouse_sensitivity;
+        self.pitch -= self.mouse_delta.1 * self.mouse_sensitivity;
+        self.mouse_delta = (0.0, 0.0);
+        self.update_orientation();
+
+        let speed = self.fly_speed * speed_mult;
+        let forward = self.forward();
+        let right = self.right();
+
+        let mut velocity = Vec3::ZERO;
+        if keys.0 { velocity += forward; }
+        if keys.1 { velocity -= forward; }
+        if keys.2 { velocity -= right; }
+        if keys.3 { velocity += right; }
+        if keys.4 { velocity += Vec3::Y; }
+        if keys.5 { velocity -= Vec3::Y; }
+
+        if velocity.length_squared() > 0.0 {
+            velocity = velocity.normalize() * speed;
+        }
+
+        self.position += velocity * dt;
+    }
+
+    /// Update near/far planes based on world extents.
+    pub fn set_world_extents(&mut self, world_span: f32) {
+        self.near = world_span * 0.0001; // ~0.01 for 100-unit spans
+        self.far = world_span * 10.0; // covers the full world plus sky
     }
 }
 

@@ -37,7 +37,12 @@ pub fn handler(args: LevInfoArgs) -> anyhow::Result<()> {
                 walkable += 1;
             }
         }
-        println!("  height range         {min:.3} .. {max:.3}");
+        // The real height scale (from decomp CMap::LoadFromFile: file float * 2048.0).
+        let world_scale: f32 = 2048.0;
+        let mid_raw = (min + max) * 0.5;
+        println!("  height range (raw)   {min:.6} .. {max:.6}");
+        println!("  height range (world) {:.2} .. {:.2} (scale ×{world_scale:.0})", min * world_scale, max * world_scale);
+        println!("  terrain Z mid        {:.2}", mid_raw * world_scale);
         println!(
             "  walkable cells       {} / {}",
             walkable,

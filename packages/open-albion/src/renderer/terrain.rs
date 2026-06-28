@@ -18,11 +18,21 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-/// Vertical scale applied to heightmap values. Fable stores heights as real-world floats;
-/// Witchwood has a very subtle height range (~0.01 world units of variation), so a
-/// moderate scale makes the terrain visually legible while keeping proportions sane.
-pub const HEIGHT_SCALE: f32 = 500.0;
+/// Conversion from stored heightmap float to world-space Z.
+///
+/// Derived from `CMap::LoadFromFile` in the decomp: the file cell's Height field is
+/// multiplied by 2048.0 (`___real_40a0000000000000`) to produce the runtime
+/// `CHeightMapCell::Height` in world units. The constant is the same one used as the
+/// clipping ceiling in `CHeightMap::SetSizeZAt` (max world height ≈ 2048).
+///
+/// The .lev file stores heights as normalised floats (roughly 0.0–1.0); multiplying by
+/// 2048 yields world-space Z, which matches Thing `PositionZ` values (e.g. LookoutPoint
+/// heights ~0.013–0.027 → world Z 27–55, Things at Z 27–42).
+pub const HEIGHT_SCALE: f32 = 2048.0;
 /// World-space spacing between adjacent heightmap grid points.
+///
+/// One heightmap cell = one world unit horizontally. Evidence: `.tng` Thing PositionX/Y
+/// are in [0, width] cell units (Blank.lev 128×128 cells, Things at X≈74.8, Y≈68.8).
 const CELL_SIZE: f32 = 1.0;
 
 #[repr(C)]
