@@ -67,6 +67,23 @@ pub fn handler(args: MeshInfoArgs) -> anyhow::Result<()> {
             prim.indices.len(),
             prim.repeating_mesh_reps,
         );
+        println!(
+            "        vertex_size={} init_flags={:#06b} pos_scale={:?} pos_bias={:?}",
+            prim.vertex_size, prim.init_flags, prim.pos_scale, prim.pos_bias,
+        );
+        // Decoded position range — should sit inside the bounding box if the decode is correct.
+        let mut min = [f32::INFINITY; 3];
+        let mut max = [f32::NEG_INFINITY; 3];
+        for v in &prim.vertices {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(v.pos[axis]);
+                max[axis] = max[axis].max(v.pos[axis]);
+            }
+        }
+        println!("        decoded pos  min {min:?} max {max:?}");
+        if let Some(v) = prim.vertices.first() {
+            println!("        vertex[0]    pos={:?} normal={:?} uv={:?}", v.pos, v.normal, v.uv);
+        }
     }
 
     Ok(())

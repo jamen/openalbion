@@ -61,7 +61,7 @@ impl<'target> Renderer<'target> {
             .first()
             .unwrap_or(&TextureFormat::Rgba8UnormSrgb);
 
-        let passes = RenderPasses::new(&device, surface_format, DepthTexture::FORMAT);
+        let passes = RenderPasses::new(&device, &queue, surface_format, DepthTexture::FORMAT);
         let depth_texture = DepthTexture::new(&device, [1, 1]);
 
         Ok(Self {
@@ -99,12 +99,11 @@ impl<'target> Renderer<'target> {
     pub fn set_model(
         &mut self,
         mesh: &fable_data::mesh::Mesh,
-        texture_asset: &AssetMetadata,
-        texture_data: &[u8],
+        material_textures: &[Option<(AssetMetadata, Vec<u8>)>],
     ) -> Result<(), ModelTextureError> {
         self.passes
             .model
-            .set_model(&self.device, &self.queue, mesh, texture_data, texture_asset)
+            .set_model(&self.device, &self.queue, mesh, material_textures)
     }
 
     pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4]) {
@@ -198,12 +197,17 @@ pub struct RenderPasses {
 }
 
 impl RenderPasses {
-    pub fn new(device: &Device, surface_format: TextureFormat, depth_format: TextureFormat) -> Self {
+    pub fn new(
+        device: &Device,
+        queue: &Queue,
+        surface_format: TextureFormat,
+        depth_format: TextureFormat,
+    ) -> Self {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, surface_format),
             terrain: TerrainPass::new(device, surface_format, depth_format),
-            model: ModelPass::new(device, surface_format, depth_format),
+            model: ModelPass::new(device, queue, surface_format, depth_format),
         }
     }
 }

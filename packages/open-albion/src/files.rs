@@ -259,28 +259,33 @@ impl Files {
             mesh.materials.iter().map(|m| m.base_texture_id).collect::<Vec<_>>(),
         );
 
-        // Mesh material texture ids generally resolve in textures.big, falling back to graphics.big.
-        let mut textures = Vec::with_capacity(mesh.materials.len());
+        // Resolve each material's diffuse texture, keeping the result aligned 1:1 with
+        // `mesh.materials` (None where the material has no/unresolvable texture) so the renderer
+        // can index it by a primitive's material index. Texture ids generally resolve in
+        // textures.big, falling back to graphics.big.
+        let mut textures: MeshTextures = Vec::with_capacity(mesh.materials.len());
         for material in &mesh.materials {
             let tex_id = material.base_texture_id;
-            if tex_id == 0 {
-                continue;
-            }
-            let Some(tex_asset) = self.find_texture_asset(tex_id) else {
+            let resolved = if tex_id == 0 {
+                None
+            } else if let Some(tex_asset) = self.find_texture_asset(tex_id) {
+                let tex_data = self
+                    .textures
+                    .read_asset_from_metadata(&tex_asset)
+                    .or_else(|_| self.graphics.read_asset_from_metadata(&tex_asset))
+                    .map_err(E::ReadAssetData)?;
+                Some((tex_asset, tex_data))
+            } else {
                 tracing::debug!("Mesh {mesh_name}: tex_id={tex_id} has no texture asset");
-                continue;
+                None
             };
-            let tex_data = self
-                .textures
-                .read_asset_from_metadata(&tex_asset)
-                .or_else(|_| self.graphics.read_asset_from_metadata(&tex_asset))
-                .map_err(E::ReadAssetData)?;
-            textures.push((tex_asset, tex_data));
+            textures.push(resolved);
         }
 
         Ok((mesh, textures))
     }
 }
 
-/// A mesh's resolved material textures: each asset's metadata paired with its raw bytes.
-type MeshTextures = Vec<(AssetMetadata, Vec<u8>)>;
+/// A mesh's resolved material textures, aligned 1:1 with `Mesh::materials`. Each entry is the
+/// material's diffuse texture (metadata + raw bytes), or `None` if it has none.
+type MeshTextures = Vec<Option<(AssetMetadata, Vec<u8>)>>;

@@ -284,23 +284,19 @@ impl App {
                     continue;
                 }
             };
-            let Some((tex_meta, tex_data)) = textures.first() else {
-                continue;
-            };
-            let vertex_size = mesh.primitives.first().map(|p| p.vertex_size).unwrap_or(0);
-            // Packed-vertex meshes (vertex_size < 24) still decode unreliably, so skip them when
-            // auto-scanning; honour them only when the mesh was explicitly requested.
-            if !explicit && vertex_size < 24 {
-                tracing::debug!("Skipping mesh {name} (vertex_size={vertex_size}, likely packed)");
+            let resolved_textures = textures.iter().filter(|t| t.is_some()).count();
+            // When auto-scanning, skip meshes with no resolvable texture; an explicit request is
+            // honoured regardless.
+            if !explicit && resolved_textures == 0 {
+                tracing::debug!("Skipping mesh {name} (no resolvable textures)");
                 continue;
             }
             tracing::info!(
-                "Loading mesh {name} (vertex_size={vertex_size}, {} materials, {} textures)",
+                "Loading mesh {name} ({} materials, {resolved_textures} textures)",
                 mesh.materials.len(),
-                textures.len(),
             );
             renderer
-                .set_model(&mesh, tex_meta, tex_data)
+                .set_model(&mesh, &textures)
                 .map_err(E::UploadModelTexture)?;
             tracing::info!("Uploaded model to GPU");
             return Ok(());

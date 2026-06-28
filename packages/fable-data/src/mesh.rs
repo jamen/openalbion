@@ -360,6 +360,21 @@ pub struct Vertex {
     pub uv: [f32; 2],
 }
 
+/// One draw range within a primitive's index buffer, paired with the material to draw it with.
+///
+/// A primitive is split into blocks (one per draw call), each with its own material. `expand_block`
+/// flattens every block's triangles into the primitive's single `indices` buffer; a `SubMesh`
+/// records where each block landed so the renderer can draw it with the right material/state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SubMesh {
+    /// Index into [`Mesh::materials`].
+    pub material_index: u32,
+    /// Offset of this block's first index within [`Primitive::indices`].
+    pub index_start: u32,
+    /// Number of indices (a multiple of 3) belonging to this block.
+    pub index_count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Primitive {
     pub material_index: u32,
@@ -377,6 +392,8 @@ pub struct Primitive {
     pub vertex_size: u32,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u16>,
+    /// Per-block draw ranges into `indices`, each with its material.
+    pub sub_meshes: Vec<SubMesh>,
     pub cloth_primitives: Vec<ClothPrimitive>,
 }
 
@@ -452,15 +469,30 @@ impl Primitive {
 
         let index_data = decompress_section(i, 2 * index_count as usize * reps)?;
 
-        // Expand the static and animated blocks' triangle lists / strips into a flat index list.
+        // Expand the static and animated blocks' triangle lists / strips into a flat index list,
+        // recording each block's range + material so the renderer can draw per-material.
         let mut indices = Vec::new();
+        let mut sub_meshes = Vec::with_capacity(static_blocks.len() + animated_blocks.len());
         for block in &static_blocks {
+            let start = indices.len() as u32;
             let mut view = &index_data[block.base.start_index as usize * 2..];
             expand_block(&mut view, &block.base, &mut indices)?;
+            sub_meshes.push(SubMesh {
+                material_index: block.material_index,
+                index_start: start,
+                index_count: indices.len() as u32 - start,
+            });
         }
         let mut animated_view = &index_data[..];
         for block in &animated_blocks {
+            let start = indices.len() as u32;
             expand_block(&mut animated_view, &block.base, &mut indices)?;
+            // Animated blocks carry no material of their own; use the primitive's.
+            sub_meshes.push(SubMesh {
+                material_index,
+                index_start: start,
+                index_count: indices.len() as u32 - start,
+            });
         }
 
         let cloth_count = read_u32(i)?;
@@ -485,6 +517,7 @@ impl Primitive {
             vertex_size,
             vertices,
             indices,
+            sub_meshes,
             cloth_primitives,
         })
     }
@@ -815,40 +848,26 @@ fn decode_uv(x: u16) -> f32 {
     x as f32 * 0.00048828 - 8.0
 }
 
-/// Unpack a 3D vector where X and Y are 11-bit minifloats and Z is a 10-bit minifloat.
+/// Unpack a packed position/normal: X and Y are 11-bit, Z is 10-bit, each a two's-complement
+/// signed integer normalized to roughly `[-1, 1]`. The result is mapped to world space by the
+/// primitive's `pos_scale`/`pos_bias` (for positions); normals are already unit-length.
 fn unpack_packed_vec3(v: u32) -> [f32; 3] {
-    let xe = (v >> 6) & 0x1f;
-    let xm = v & 0x3f;
-    let ye = (v >> 17) & 0x1f;
-    let ym = (v >> 11) & 0x3f;
-    let ze = (v >> 27) & 0x1f;
-    let zm = (v >> 22) & 0x1f;
+    let x = sign_extend(v & 0x7ff, 11);
+    let y = sign_extend((v >> 11) & 0x7ff, 11);
+    let z = sign_extend((v >> 22) & 0x3ff, 10);
+    // SNORM normalization: divide by the max positive value and clamp the low end to -1.0 (the
+    // most-negative code, e.g. -1024 for 11 bits, is one step beyond -1.0).
     [
-        unpack_component(xe, xm, 0x40, 17),
-        unpack_component(ye, ym, 0x40, 17),
-        unpack_component(ze, zm, 0x20, 18),
+        (x as f32 / 1023.0).max(-1.0),
+        (y as f32 / 1023.0).max(-1.0),
+        (z as f32 / 511.0).max(-1.0),
     ]
 }
 
-fn unpack_component(exp_bits: u32, mantissa_bits: u32, denorm_mask: u32, shift: u32) -> f32 {
-    let mut mantissa = mantissa_bits;
-    let exponent = if exp_bits == 0x1f {
-        0x7f80_0000 | (mantissa_bits << 17)
-    } else if mantissa_bits != 0 {
-        let mut e = 1u32;
-        loop {
-            e = e.wrapping_sub(1);
-            mantissa <<= 1;
-            if (mantissa & denorm_mask) == 0 {
-                break;
-            }
-        }
-        mantissa &= 0x1f;
-        e
-    } else {
-        112u32.wrapping_neg()
-    };
-    f32::from_bits((exponent.wrapping_add(112) << 23) | (mantissa << shift))
+/// Interpret the low `bits` of `value` as a two's-complement signed integer.
+fn sign_extend(value: u32, bits: u32) -> i32 {
+    let shift = 32 - bits;
+    ((value << shift) as i32) >> shift
 }
 
 /// Decompress a "semi-compressed" section: an optional LZO chunk followed by raw bytes, totalling

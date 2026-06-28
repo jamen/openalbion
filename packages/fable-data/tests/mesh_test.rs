@@ -87,6 +87,81 @@ fn decode_all_graphics_meshes() {
                         ));
                         break;
                     }
+                    // Sub-meshes must tile the index buffer exactly (contiguous, no gaps/overlap)
+                    // and reference valid materials — the renderer draws each as one call.
+                    let mut cursor = 0u32;
+                    for sub in &prim.sub_meshes {
+                        if sub.index_start != cursor
+                            || sub.index_start as usize + sub.index_count as usize
+                                > prim.indices.len()
+                        {
+                            failures.push(format!(
+                                "{bank}/{symbol}: sub-mesh range {}..+{} not contiguous in {} indices",
+                                sub.index_start,
+                                sub.index_count,
+                                prim.indices.len()
+                            ));
+                            break;
+                        }
+                        if !mesh.materials.is_empty()
+                            && sub.material_index as usize >= mesh.materials.len()
+                        {
+                            failures.push(format!(
+                                "{bank}/{symbol}: sub-mesh material {} >= {}",
+                                sub.material_index,
+                                mesh.materials.len()
+                            ));
+                            break;
+                        }
+                        cursor += sub.index_count;
+                    }
+                    if cursor as usize != prim.indices.len() {
+                        failures.push(format!(
+                            "{bank}/{symbol}: sub-meshes cover {cursor} of {} indices",
+                            prim.indices.len()
+                        ));
+                        break;
+                    }
+                }
+
+                // Vertex-decode sanity: decoded positions must sit inside the stored bounding box
+                // *and* actually fill it. A broken position decode either over-ranges (outside the
+                // box) or collapses every vertex to a point (inside the box but no extent), so we
+                // check both. Compared against the union of all primitives' vertices.
+                let (bmin, bmax) = (mesh.bounding_box.min, mesh.bounding_box.max);
+                let mut dmin = [f32::INFINITY; 3];
+                let mut dmax = [f32::NEG_INFINITY; 3];
+                for prim in &mesh.primitives {
+                    for v in &prim.vertices {
+                        for a in 0..3 {
+                            dmin[a] = dmin[a].min(v.pos[a]);
+                            dmax[a] = dmax[a].max(v.pos[a]);
+                        }
+                    }
+                }
+                if verts > 0 && idxs > 0 {
+                    for a in 0..3 {
+                        let extent = (bmax[a] - bmin[a]).max(0.0);
+                        // Loose bound: catches gross over-range corruption (positions far outside
+                        // the box) while tolerating quantization rounding, which scales with
+                        // pos_scale and so can be much larger than the box extent for tiny models.
+                        let tol = (extent * 0.25).max(1.0);
+                        if dmin[a] < bmin[a] - tol || dmax[a] > bmax[a] + tol {
+                            failures.push(format!(
+                                "{bank}/{symbol}: axis {a} decoded [{:.3}, {:.3}] far outside box [{:.3}, {:.3}]",
+                                dmin[a], dmax[a], bmin[a], bmax[a]
+                            ));
+                            break;
+                        }
+                        // Strict: catches the collapse bug (every vertex decoded to ~one point).
+                        if extent > 1.0 && (dmax[a] - dmin[a]) < extent * 0.5 {
+                            failures.push(format!(
+                                "{bank}/{symbol}: axis {a} decoded extent {:.3} << box extent {:.3} (collapsed?)",
+                                dmax[a] - dmin[a], extent
+                            ));
+                            break;
+                        }
+                    }
                 }
             }
             Err(e) => failures.push(format!("{bank}/{symbol}: {e}")),
