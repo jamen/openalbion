@@ -1,12 +1,15 @@
 use anyhow::Context;
 use clap::Parser;
 use fable_data::lev::Lev;
-use std::{fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 #[derive(Parser, Debug, Clone)]
 pub struct LevInfoArgs {
     /// Input .lev file to inspect
     input: PathBuf,
+    /// Show the heightmap theme palette entries
+    #[arg(long)]
+    themes: bool,
 }
 
 pub fn handler(args: LevInfoArgs) -> anyhow::Result<()> {
@@ -30,14 +33,17 @@ pub fn handler(args: LevInfoArgs) -> anyhow::Result<()> {
         let mut min = f32::INFINITY;
         let mut max = f32::NEG_INFINITY;
         let mut walkable = 0usize;
+        let mut theme_usage = HashMap::<u8, usize>::new();
         for cell in &lev.heightmap_cells {
             min = min.min(cell.height);
             max = max.max(cell.height);
             if cell.walkable {
                 walkable += 1;
             }
+            for &t in &[cell.ground_theme.0, cell.ground_theme.1, cell.ground_theme.2] {
+                *theme_usage.entry(t).or_default() += 1;
+            }
         }
-        // The real height scale (from decomp CMap::LoadFromFile: file float * 2048.0).
         let world_scale: f32 = 2048.0;
         let mid_raw = (min + max) * 0.5;
         println!("  height range (raw)   {min:.6} .. {max:.6}");
@@ -48,6 +54,22 @@ pub fn handler(args: LevInfoArgs) -> anyhow::Result<()> {
             walkable,
             lev.heightmap_cells.len()
         );
+
+        if args.themes {
+            println!("  palette entries (used by heightmap):");
+            let palette = &header.heightmap_palette.entries;
+            let mut used: Vec<u8> = theme_usage.keys().copied().collect();
+            used.sort();
+            for idx in used {
+                let e = palette.get(idx as usize);
+                let count = theme_usage.get(&idx).copied().unwrap_or(0);
+                println!(
+                    "    [{idx:3}] usage={count:6} def_index={:4} {}",
+                    e.map(|e| e.def_index).unwrap_or(-1),
+                    e.map(|e| e.name.as_str()).unwrap_or("??"),
+                );
+            }
+        }
     }
 
     let nav = &lev.navigation;

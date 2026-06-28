@@ -96,14 +96,20 @@ impl<'target> Renderer<'target> {
         self.passes.terrain.set_terrain(&self.device, lev);
     }
 
-    pub fn set_model(
+    pub fn clear_models(&mut self) {
+        self.passes.model.clear_models();
+    }
+
+    pub fn add_model(
         &mut self,
         mesh: &fable_data::mesh::Mesh,
         material_textures: &[Option<(AssetMetadata, Vec<u8>)>],
+        scale: f32,
+        pos: [f32; 3],
     ) -> Result<(), ModelTextureError> {
         self.passes
             .model
-            .set_model(&self.device, &self.queue, mesh, material_textures)
+            .add_model(&self.device, &self.queue, mesh, material_textures, scale, pos)
     }
 
     pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4]) {
@@ -112,6 +118,10 @@ impl<'target> Renderer<'target> {
 
     pub fn update_model_uniforms(&self, view_proj: [[f32; 4]; 4]) {
         self.passes.model.update_uniforms(&self.queue, view_proj);
+    }
+
+    pub fn set_model_camera_pos(&mut self, pos: glam::Vec3) {
+        self.passes.model.set_camera_pos(pos);
     }
 
     pub fn set_sky_texture0(

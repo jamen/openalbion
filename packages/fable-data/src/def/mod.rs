@@ -1,4 +1,5 @@
 pub mod binary;
+pub mod object;
 pub mod text;
 
 mod config_options_defaults;

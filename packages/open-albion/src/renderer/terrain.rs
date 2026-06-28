@@ -40,11 +40,20 @@ const CELL_SIZE: f32 = 1.0;
 struct TerrainVertex {
     position: [f32; 3],
     normal: [f32; 3],
+    /// Engine theme palette indices [t0, t1, t2] packed into bytes.
+    theme_indices: [u8; 4],
+    /// Blend weights [b0, b1] and cliff UV packed into bytes.
+    blend: [u8; 4],
 }
 
 impl TerrainVertex {
-    const ATTRIBS: [VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+    const ATTRIBS: [VertexAttribute; 4] =
+        wgpu::vertex_attr_array![
+            0 => Float32x3,
+            1 => Float32x3,
+            2 => Uint8x4,
+            3 => Uint8x4,
+        ];
 
     fn layout() -> VertexBufferLayout<'static> {
         VertexBufferLayout {
@@ -62,43 +71,56 @@ struct TerrainUniforms {
 }
 
 /// Build a triangulated, per-vertex-lit mesh from a level's heightmap grid.
+///
+/// Each vertex carries the three ground-theme palette indices and two blend weights from the
+/// nearest cell, plus cliff-lookup UV values derived from local slope.
 fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
-    let width = lev.header.width as usize + 1;
-    let height = lev.header.height as usize + 1;
+    let w = lev.header.width as usize + 1;
+    let h = lev.header.height as usize + 1;
     let cells = &lev.heightmap_cells;
 
     let height_at = |col: usize, row: usize| -> f32 {
         cells
-            .get(row * width + col)
+            .get(row * w + col)
             .map(|c| c.height * HEIGHT_SCALE)
             .unwrap_or(0.0)
     };
 
-    let mut vertices = Vec::with_capacity(width * height);
-    for row in 0..height {
-        for col in 0..width {
+    let mut vertices = Vec::with_capacity(w * h);
+    for row in 0..h {
+        for col in 0..w {
             let y = height_at(col, row);
 
-            // Central-difference normal from the surrounding heights.
             let left = height_at(col.saturating_sub(1), row);
-            let right = height_at((col + 1).min(width - 1), row);
+            let right = height_at((col + 1).min(w - 1), row);
             let down = height_at(col, row.saturating_sub(1));
-            let up = height_at(col, (row + 1).min(height - 1));
+            let up = height_at(col, (row + 1).min(h - 1));
             let normal = normalize([-(right - left), 2.0 * CELL_SIZE, -(up - down)]);
+
+            let cell = &cells[row * w + col];
+            let slope = {
+                let grad_x = (right - left) * 0.5 / CELL_SIZE;
+                let grad_z = (up - down) * 0.5 / CELL_SIZE;
+                (grad_x * grad_x + grad_z * grad_z).sqrt().atan()
+            };
+            let cliff_u = ((slope / 1.5).clamp(0.0, 1.0) * 255.0) as u8;
+            let cliff_v = 0u8;
 
             vertices.push(TerrainVertex {
                 position: [col as f32 * CELL_SIZE, y, row as f32 * CELL_SIZE],
                 normal,
+                theme_indices: [cell.ground_theme.0, cell.ground_theme.1, cell.ground_theme.2, 0],
+                blend: [cell.ground_theme_strength.0, cell.ground_theme_strength.1, cliff_u, cliff_v],
             });
         }
     }
 
-    let mut indices = Vec::with_capacity((width - 1) * (height - 1) * 6);
-    for row in 0..height.saturating_sub(1) {
-        for col in 0..width.saturating_sub(1) {
-            let a = (row * width + col) as u32;
+    let mut indices = Vec::with_capacity((w - 1) * (h - 1) * 6);
+    for row in 0..h.saturating_sub(1) {
+        for col in 0..w.saturating_sub(1) {
+            let a = (row * w + col) as u32;
             let b = a + 1;
-            let c = a + width as u32;
+            let c = a + w as u32;
             let d = c + 1;
             indices.extend_from_slice(&[a, c, b, b, c, d]);
         }

@@ -41,6 +41,11 @@ struct Cli {
     /// mesh to load from graphics.big by symbol name (default: first renderable mesh found)
     #[argh(option)]
     mesh: Option<String>,
+
+    /// path to a text objects.def for resolving .tng OBJECT things to meshes (temporary dev bridge;
+    /// the engine otherwise uses only retail assets). Without it, a single test mesh is shown.
+    #[argh(option)]
+    object_defs: Option<String>,
 }
 
 fn main() {
@@ -90,6 +95,8 @@ struct App {
     time_of_day: f32,
     level_name: String,
     mesh_name: Option<String>,
+    /// Optional text `objects.def` path for resolving .tng OBJECT things (temporary dev bridge).
+    object_defs: Option<std::path::PathBuf>,
     terrain_center: glam::Vec3,
     terrain_radius: f32,
     /// The sky texture name pair currently uploaded to the GPU, so we only re-upload on change.
@@ -142,6 +149,7 @@ impl App {
             time_of_day: 18.0,
             level_name: cli.level.clone().unwrap_or_else(|| "Witchwood".to_string()),
             mesh_name: cli.mesh.clone(),
+            object_defs: cli.object_defs.clone().map(Into::into),
             terrain_center: glam::Vec3::ZERO,
             terrain_radius: 1.0,
             sky_textures: None,
@@ -266,12 +274,122 @@ impl App {
         blend
     }
 
-    /// Load a model and upload it to the renderer. Uses `--mesh` if given, otherwise scans
-    /// graphics.big for the first renderable mesh (one with an unpacked vertex format and a
-    /// resolvable texture). The model is optional — failures are logged, not fatal.
+    /// Load models from the level's .tng file (if available) and place them at their world
+    /// positions. Falls back to a single test mesh if no .tng is found. The model pass is
+    /// optional — failures are logged, not fatal.
     fn load_model(&mut self, renderer: &mut Renderer<'static>) -> Result<(), TryResumedError> {
         use TryResumedError as E;
 
+        renderer.clear_models();
+
+        // Try to load things from .tng
+        let tng = match self.files.load_tng(&self.level_name) {
+            Ok(tng) => tng,
+            Err(e) => {
+                tracing::info!("No .tng for {}: {e} — loading fallback mesh", self.level_name);
+                self.load_fallback_model(renderer, E::UploadModelTexture)?;
+                return Ok(());
+            }
+        };
+
+        // OBJECT → mesh resolution currently needs a text objects.def (the binary OBJECT def type
+        // isn't implemented yet). Only do it when the user opted in via --object-defs; otherwise the
+        // engine stays retail-only and shows the test mesh.
+        let Some(object_defs_path) = self.object_defs.clone() else {
+            tracing::info!("No --object-defs given — showing test mesh instead of .tng objects");
+            self.load_fallback_model(renderer, E::UploadModelTexture)?;
+            return Ok(());
+        };
+        let defs = match self.files.load_object_defs(&object_defs_path) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!("Cannot load object defs: {e} — using fallback mesh");
+                self.load_fallback_model(renderer, E::UploadModelTexture)?;
+                return Ok(());
+            }
+        };
+
+        // Every OBJECT thing is placed at its own transform (no dedup — a level has many instances
+        // of the same object type at different positions).
+        let things: Vec<&fable_data::tng::TngThing> = tng
+            .sections
+            .iter()
+            .flat_map(|s| s.things.iter())
+            .filter(|t| t.definition_type.starts_with("OBJECT_"))
+            .collect();
+
+        let object_count = things.len();
+        let mut placed = 0usize;
+        // Cache decoded meshes by symbol so the same object type isn't re-decoded per instance.
+        // (GPU-side instancing is left to the binary-def WP-WORLD rebuild; this still uploads per
+        // instance.)
+        let mut mesh_cache = std::collections::HashMap::new();
+        for thing in things {
+            let resolved = match defs.resolve(&thing.definition_type) {
+                Some(r) => r,
+                None => {
+                    tracing::debug!("Unresolved def: {}", thing.definition_type);
+                    continue;
+                }
+            };
+            let mesh_name = match &resolved.mesh_symbol {
+                Some(n) => n.clone(),
+                None => continue,
+            };
+            if resolved.graphic_type != fable_data::def::object::ObjectGraphicType::StaticMesh {
+                continue;
+            }
+
+            if !mesh_cache.contains_key(&mesh_name) {
+                let loaded = match self.files.read_mesh(&mesh_name) {
+                    // Keep meshes that have at least one resolved texture (or no primitives at all).
+                    Ok((mesh, textures))
+                        if textures.iter().any(|t| t.is_some()) || mesh.primitives.is_empty() =>
+                    {
+                        Some((mesh, textures))
+                    }
+                    Ok(_) => None, // textureless — skip
+                    Err(e) => {
+                        tracing::warn!("Failed to load mesh {mesh_name}: {e}");
+                        None
+                    }
+                };
+                mesh_cache.insert(mesh_name.clone(), loaded);
+            }
+            let Some((mesh, textures)) = mesh_cache.get(&mesh_name).unwrap() else {
+                continue;
+            };
+
+            // Z-up → Y-up: Fable stores PositionZ as height; we use Y=up.
+            let scale = thing.object_scale.unwrap_or(1.0);
+            let pos = [
+                thing.position[0],
+                thing.position[2], // Fable Z → our Y (height)
+                thing.position[1], // Fable Y → our Z
+            ];
+
+            renderer
+                .add_model(mesh, textures, scale, pos)
+                .map_err(|e| {
+                    tracing::warn!("Failed to upload model {mesh_name}: {e}");
+                    E::UploadModelTexture(e)
+                })?;
+            placed += 1;
+        }
+
+        tracing::info!(
+            "Placed {placed} object instances from .tng ({object_count} OBJECT things, {} unique meshes)",
+            mesh_cache.values().filter(|v| v.is_some()).count(),
+        );
+
+        Ok(())
+    }
+
+    fn load_fallback_model(
+        &mut self,
+        renderer: &mut Renderer<'static>,
+        err_wrap: impl Fn(ModelTextureError) -> TryResumedError,
+    ) -> Result<(), TryResumedError> {
         let explicit = self.mesh_name.is_some();
         let candidates: Vec<String> = match &self.mesh_name {
             Some(name) => vec![name.clone()],
@@ -298,8 +416,6 @@ impl App {
                 }
             };
             let resolved_textures = textures.iter().filter(|t| t.is_some()).count();
-            // When auto-scanning, skip meshes with no resolvable texture; an explicit request is
-            // honoured regardless.
             if !explicit && resolved_textures == 0 {
                 tracing::debug!("Skipping mesh {name} (no resolvable textures)");
                 continue;
@@ -309,8 +425,8 @@ impl App {
                 mesh.materials.len(),
             );
             renderer
-                .set_model(&mesh, &textures)
-                .map_err(E::UploadModelTexture)?;
+                .add_model(&mesh, &textures, 0.05, [32.0, 16.0, 32.0])
+                .map_err(&err_wrap)?;
             tracing::info!("Uploaded model to GPU");
             return Ok(());
         }
@@ -499,6 +615,7 @@ impl App {
         renderer.update_sky_uniforms(sky_view_proj, self.time_of_day, sky_blend);
         renderer.update_terrain_uniforms(view_proj);
         renderer.update_model_uniforms(view_proj);
+        renderer.set_model_camera_pos(self.camera.position);
 
         let pre_present = renderer.render().map_err(E::Render)?;
 

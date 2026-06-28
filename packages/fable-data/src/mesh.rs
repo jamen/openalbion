@@ -525,17 +525,27 @@ impl Primitive {
 
 /// Read one triangle list / strip block out of an index buffer into `indices`.
 ///
-/// For a triangle strip, each step emits a triangle from a sliding window of three; for a list,
-/// each step consumes a fresh triple. (This mirrors the historical decoder; strip winding is not
-/// flipped per-triangle.)
+/// For a triangle strip, the standard convention after the first triangle is to emit `[v_{i+1},
+/// v_i, v_{i+2}]` on odd triangles so that every triangle in the strip shares consistent CCW
+/// winding.  Degenerate triangles (two equal indices, zero area) are dropped from the output.
 fn expand_block(view: &mut &[u8], block: &PrimitiveBlock, indices: &mut Vec<u16>) -> Result<(), MeshError> {
-    for _ in 0..block.primitive_count {
+    for strip_pos in 0..block.primitive_count {
         if block.is_strip {
             let v1 = read_u16(view)?;
             let mut peek = &view[..];
             let v2 = read_u16(&mut peek)?;
             let v3 = read_u16(&mut peek)?;
-            indices.extend_from_slice(&[v1, v2, v3]);
+            // A degenerate (zero-area) triangle is dropped, but it still occupies a position in
+            // the strip — so winding parity must follow `strip_pos`, not an emitted-triangle count
+            // (otherwise every triangle after a skipped one gets its winding flipped).
+            if block.degenerate_triangles && (v1 == v2 || v2 == v3 || v3 == v1) {
+                continue;
+            }
+            if strip_pos & 1 == 1 {
+                indices.extend_from_slice(&[v1, v3, v2]);
+            } else {
+                indices.extend_from_slice(&[v1, v2, v3]);
+            }
         } else {
             let v1 = read_u16(view)?;
             let v2 = read_u16(view)?;

@@ -1,8 +1,9 @@
 //! Renders a Fable mesh: every primitive, every per-material draw range, with the material's
 //! diffuse texture and alpha mode (opaque / alpha-test cutout / alpha-blended).
 //!
-//! Backface culling is intentionally left off: the historical decoder doesn't flip triangle-strip
-//! winding, so `two_sided` can't be honoured reliably until that's fixed (see `mesh::expand_block`).
+//! Backface culling is enabled per-material: `two_sided` materials use `cull_mode: None`, the rest
+//! use `cull_mode: Back`.  Triangle-strip winding was fixed in `mesh::expand_block` so strips
+//! produce consistent CCW triangles.
 
 use super::texture::{TextureUploadError, linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
@@ -13,7 +14,7 @@ use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType, BufferUsages,
     ColorTargetState, ColorWrites, CommandEncoder, CompareFunction, DepthBiasState,
-    DepthStencilState, Device, Extent3d, FragmentState, IndexFormat, MultisampleState,
+    DepthStencilState, Device, Extent3d, Face, FragmentState, IndexFormat, MultisampleState,
     PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline,
     RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages, StencilState,
     TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
@@ -151,11 +152,14 @@ impl ModelPipelineLayout {
     }
 }
 
-/// The opaque and alpha-blended pipeline variants. Cutout materials use the opaque pipeline and
-/// discard in the shader; blended materials use the blend pipeline (depth test on, depth write off).
+/// The opaque and alpha-blended pipeline variants, each with a culled and unculled version.
+/// Cutout materials use the opaque pipeline and discard in the shader; blended materials use the
+/// blend pipeline (depth test on, depth write off). `two_sided` materials use the unculled variant.
 struct ModelPipelines {
-    opaque: RenderPipeline,
-    blend: RenderPipeline,
+    opaque_culled: RenderPipeline,
+    opaque_unculled: RenderPipeline,
+    blend_culled: RenderPipeline,
+    blend_unculled: RenderPipeline,
 }
 
 impl ModelPipelines {
@@ -166,12 +170,10 @@ impl ModelPipelines {
         target_format: TextureFormat,
         depth_format: TextureFormat,
     ) -> Self {
-        let make = |blend: bool| {
+        let make = |blend: bool, cull: bool| {
             let color_target = ColorTargetState {
                 format: target_format,
                 blend: blend.then_some(BlendState::ALPHA_BLENDING),
-                // Opaque draws leave the surface alpha alone (so an opaque material with an alpha
-                // channel can't make the window see-through); blended draws need it.
                 write_mask: if blend { ColorWrites::ALL } else { ColorWrites::COLOR },
             };
             device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -190,13 +192,11 @@ impl ModelPipelines {
                     targets: &[Some(color_target)],
                 }),
                 primitive: PrimitiveState {
-                    cull_mode: None,
+                    cull_mode: cull.then_some(Face::Back),
                     ..Default::default()
                 },
                 depth_stencil: Some(DepthStencilState {
                     format: depth_format,
-                    // Transparent draws test against opaque depth but don't write, so they don't
-                    // occlude each other order-dependently.
                     depth_write_enabled: !blend,
                     depth_compare: CompareFunction::Less,
                     stencil: StencilState::default(),
@@ -209,8 +209,10 @@ impl ModelPipelines {
         };
 
         Self {
-            opaque: make(false),
-            blend: make(true),
+            opaque_culled: make(false, true),
+            opaque_unculled: make(false, false),
+            blend_culled: make(true, true),
+            blend_unculled: make(true, false),
         }
     }
 }
@@ -226,6 +228,10 @@ struct SubMeshDraw {
     material: usize,
     index_start: u32,
     index_count: u32,
+    /// Whether this sub-mesh should be backface-culled (false for `two_sided` materials).
+    cull: bool,
+    /// The model-space centre of this sub-mesh, used for depth-sorting transparent draws.
+    centre: [f32; 3],
 }
 
 /// One primitive's uploaded geometry plus its per-material sub-draws.
@@ -275,7 +281,9 @@ pub struct ModelPass {
     sampler: wgpu::Sampler,
     /// 1x1 white texture used for materials that have no diffuse map.
     white_view: TextureView,
-    mesh: Option<ModelMesh>,
+    meshes: Vec<ModelMesh>,
+    /// Camera world-space position, used for depth-sorting transparent draws.
+    camera_pos: [f32; 3],
 }
 
 impl ModelPass {
@@ -299,16 +307,23 @@ impl ModelPass {
             pipelines,
             sampler,
             white_view,
-            mesh: None,
+            meshes: Vec::new(),
+            camera_pos: [0.0; 3],
         }
     }
 
-    pub fn set_model(
+    pub fn clear_models(&mut self) {
+        self.meshes.clear();
+    }
+
+    pub fn add_model(
         &mut self,
         device: &Device,
         queue: &Queue,
         mesh: &Mesh,
         material_textures: &[Option<(AssetMetadata, Vec<u8>)>],
+        scale: f32,
+        pos: [f32; 3],
     ) -> Result<(), ModelTextureError> {
         use ModelTextureError as E;
 
@@ -316,17 +331,13 @@ impl ModelPass {
             return Err(E::NoPrimitives);
         }
 
-        // Place the model at the terrain centre with a small scale (provisional framing).
-        let model_scale = 0.05;
-        let model_pos = [32.0, 16.0, 32.0];
-
         let uniforms = ModelUniforms {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            model_scale,
+            model_scale: scale,
             _pad0: 0.0,
             _pad1: 0.0,
             _pad2: 0.0,
-            model_pos,
+            model_pos: pos,
             _pad3: 0.0,
         };
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -351,7 +362,7 @@ impl ModelPass {
             .flat_map(|p| &p.sub_meshes)
             .filter(|s| matches!(materials.get(s.material), Some(m) if !m.transparent))
             .count();
-        tracing::info!(
+        tracing::debug!(
             "Model: {} primitives, {} materials ({} opaque/cutout + {} transparent sub-draws)",
             primitives.len(),
             materials.len(),
@@ -359,13 +370,13 @@ impl ModelPass {
             primitives.iter().map(|p| p.sub_meshes.len()).sum::<usize>() - opaque,
         );
 
-        self.mesh = Some(ModelMesh {
+        self.meshes.push(ModelMesh {
             uniform_buffer,
             uniform_bind_group,
             materials,
             primitives,
-            model_scale,
-            model_pos,
+            model_scale: scale,
+            model_pos: pos,
         });
         Ok(())
     }
@@ -422,8 +433,6 @@ impl ModelPass {
 
             materials.push(ModelMaterial {
                 bind_group,
-                // A cutout (boolean-alpha) material draws in the opaque pass with shader discard;
-                // only fully translucent materials go through the blend pass.
                 transparent: material.transparent && !material.boolean_alpha,
             });
         }
@@ -431,9 +440,13 @@ impl ModelPass {
     }
 
     pub fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
-        if let Some(mesh) = &self.mesh {
+        for mesh in &self.meshes {
             mesh.update_uniforms(queue, view_proj);
         }
+    }
+
+    pub fn set_camera_pos(&mut self, pos: glam::Vec3) {
+        self.camera_pos = pos.to_array();
     }
 
     pub fn pass(
@@ -442,10 +455,9 @@ impl ModelPass {
         target_texture_view: &TextureView,
         depth_texture_view: &TextureView,
     ) {
-        let Some(mesh) = &self.mesh else {
-            tracing::debug!("ModelPass: no mesh set — model skipped");
+        if self.meshes.is_empty() {
             return;
-        };
+        }
 
         let mut rpass = cmd.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some(type_name::<Self>()),
@@ -471,26 +483,27 @@ impl ModelPass {
             multiview_mask: None,
         });
 
-        rpass.set_bind_group(0, &mesh.uniform_bind_group, &[]);
-
-        // Opaque + cutout first (they write depth), then transparent over the top.
-        rpass.set_pipeline(&self.pipelines.opaque);
-        mesh.draw(&mut rpass, false);
-        rpass.set_pipeline(&self.pipelines.blend);
-        mesh.draw(&mut rpass, true);
+        // Opaque + cutout first (they write depth), then transparent sorted back-to-front.
+        for mesh in &self.meshes {
+            rpass.set_bind_group(0, &mesh.uniform_bind_group, &[]);
+            mesh.draw_opaque(&mut rpass, &self.pipelines);
+        }
+        for mesh in &self.meshes {
+            rpass.set_bind_group(0, &mesh.uniform_bind_group, &[]);
+            mesh.draw_transparent(&mut rpass, &self.pipelines, self.camera_pos);
+        }
     }
 }
 
 impl ModelMesh {
-    /// Draw every sub-mesh whose material's `transparent` flag matches `transparent`.
-    fn draw(&self, rpass: &mut wgpu::RenderPass<'_>, transparent: bool) {
+    fn draw_opaque(&self, rpass: &mut wgpu::RenderPass<'_>, pipelines: &ModelPipelines) {
         for primitive in &self.primitives {
             let mut bound = false;
             for sub in &primitive.sub_meshes {
                 let Some(material) = self.materials.get(sub.material) else {
                     continue;
                 };
-                if material.transparent != transparent {
+                if material.transparent {
                     continue;
                 }
                 if !bound {
@@ -498,12 +511,72 @@ impl ModelMesh {
                     rpass.set_index_buffer(primitive.index_buffer.slice(..), IndexFormat::Uint16);
                     bound = true;
                 }
+                let pipeline = if sub.cull {
+                    &pipelines.opaque_culled
+                } else {
+                    &pipelines.opaque_unculled
+                };
+                rpass.set_pipeline(pipeline);
                 rpass.set_bind_group(1, &material.bind_group, &[]);
                 let end = sub.index_start + sub.index_count;
                 rpass.draw_indexed(sub.index_start..end, 0, 0..1);
             }
         }
     }
+
+    /// Draw transparent sub-meshes sorted back-to-front relative to `camera_pos`.
+    ///
+    /// Limitation: per-object sorting only — overlapping translucency between different models
+    /// is not handled.
+    fn draw_transparent(
+        &self,
+        rpass: &mut wgpu::RenderPass<'_>,
+        pipelines: &ModelPipelines,
+        camera_pos: [f32; 3],
+    ) {
+        let mut transparent_draws: Vec<(&ModelPrimitive, &SubMeshDraw, &ModelMaterial)> = Vec::new();
+        for primitive in &self.primitives {
+            for sub in &primitive.sub_meshes {
+                if let Some(material) = self.materials.get(sub.material)
+                    && material.transparent
+                {
+                    transparent_draws.push((primitive, sub, material));
+                }
+            }
+        }
+        // Sort back-to-front: larger distance draws first, closer draws on top.
+        transparent_draws.sort_by(|(_, a, _), (_, b, _)| {
+            let da = dist_sq(&a.centre, &camera_pos);
+            let db = dist_sq(&b.centre, &camera_pos);
+            db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut bound_prim: Option<*const ModelPrimitive> = None;
+        for (primitive, sub, material) in &transparent_draws {
+            let ptr = *primitive as *const ModelPrimitive;
+            if bound_prim != Some(ptr) {
+                rpass.set_vertex_buffer(0, primitive.vertex_buffer.slice(..));
+                rpass.set_index_buffer(primitive.index_buffer.slice(..), IndexFormat::Uint16);
+                bound_prim = Some(ptr);
+            }
+            let pipeline = if sub.cull {
+                &pipelines.blend_culled
+            } else {
+                &pipelines.blend_unculled
+            };
+            rpass.set_pipeline(pipeline);
+            rpass.set_bind_group(1, &material.bind_group, &[]);
+            let end = sub.index_start + sub.index_count;
+            rpass.draw_indexed(sub.index_start..end, 0, 0..1);
+        }
+    }
+}
+
+fn dist_sq(a: &[f32; 3], b: &[f32; 3]) -> f32 {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    let dz = a[2] - b[2];
+    dx * dx + dy * dy + dz * dz
 }
 
 /// Upload every primitive's geometry and resolve its sub-mesh draw ranges. Empty primitives
@@ -537,10 +610,36 @@ fn build_primitives(device: &Device, mesh: &Mesh) -> Vec<ModelPrimitive> {
             let sub_meshes = primitive
                 .sub_meshes
                 .iter()
-                .map(|s| SubMeshDraw {
-                    material: s.material_index as usize,
-                    index_start: s.index_start,
-                    index_count: s.index_count,
+                .map(|s| {
+                    let sub_indices = &primitive.indices
+                        [s.index_start as usize..(s.index_start + s.index_count) as usize];
+                    let mut centre = [0.0f32; 3];
+                    let mut count = 0usize;
+                    for &idx in sub_indices.iter().step_by(3).take(64) {
+                        if let Some(v) = vertices.get(idx as usize) {
+                            centre[0] += v.position[0];
+                            centre[1] += v.position[1];
+                            centre[2] += v.position[2];
+                            count += 1;
+                        }
+                    }
+                    if count > 0 {
+                        centre[0] /= count as f32;
+                        centre[1] /= count as f32;
+                        centre[2] /= count as f32;
+                    }
+                    let cull = mesh
+                        .materials
+                        .get(s.material_index as usize)
+                        .map(|m| !m.two_sided)
+                        .unwrap_or(true);
+                    SubMeshDraw {
+                        material: s.material_index as usize,
+                        index_start: s.index_start,
+                        index_count: s.index_count,
+                        cull,
+                        centre,
+                    }
                 })
                 .collect();
 

@@ -1,11 +1,15 @@
 use derive_more::{Display, Error};
 use fable_data::{
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
-    def::binary::{def_binary::DefBinary, names::Names},
+    def::{
+        binary::{def_binary::DefBinary, names::Names},
+        object::ObjectDefs,
+    },
     environment::{EnvironmentConfig, EnvironmentTheme},
     lev::{Lev, LevError},
     mesh::{Mesh, MeshError},
     tga::{Tga, TgaError},
+    tng::Tng,
     wad::{ReadContentError, WadReader, WadReaderError},
 };
 use std::{
@@ -224,6 +228,40 @@ impl Files {
                 .cloned()
         };
         from(&self.textures).or_else(|| from(&self.graphics))
+    }
+
+    /// Load the .tng (things) text file for a level by name.
+    ///
+    /// Prefers the debug build's loose .tng first; falls back to the wad.
+    pub fn load_tng(&self, level_name: &str) -> Result<Tng, String> {
+        // Read the level's .tng from the retail level archive.
+        let wad_path = self.fable_directory.join("data/Levels/FinalAlbion.wad");
+        let wad_file = std::io::BufReader::new(
+            std::fs::File::open(&wad_path).map_err(|e| format!("open wad: {e}"))?,
+        );
+        let mut wad = WadReader::new(wad_file).map_err(|e| format!("read wad: {e}"))?;
+        let suffix = format!("{level_name}.tng").to_lowercase();
+        let asset = wad
+            .asset_iter()
+            .find(|a| a.path.to_lowercase().ends_with(&suffix))
+            .cloned()
+            .ok_or_else(|| format!("{level_name}.tng not found in wad"))?;
+        let bytes = wad.read_content(&asset).map_err(|e| format!("read tng: {e}"))?;
+        let text = String::from_utf8_lossy(&bytes);
+        Tng::parse(&text).map_err(|e| format!("parse tng: {e}"))
+    }
+
+    /// Load OBJECT definitions from a text `objects.def` at `path`, returning a resolver that maps
+    /// OBJECT def names to mesh symbols.
+    ///
+    /// NOTE: this is a temporary text-def bridge (used only when the user explicitly points at an
+    /// `objects.def`, e.g. from the debug build). The engine's proper path is to resolve OBJECT
+    /// defs from retail `CompiledDefs/game.bin` once the binary `OBJECT` def type is implemented —
+    /// see the def-coverage work. The engine does not read text defs by default.
+    pub fn load_object_defs(&self, path: &Path) -> Result<ObjectDefs, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("read {path:?}: {e}"))?;
+        let text = String::from_utf8_lossy(&bytes);
+        ObjectDefs::parse(&text).map_err(|e| format!("parse {path:?}: {e}"))
     }
 
     /// Read a mesh and its material textures from graphics.big.

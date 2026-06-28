@@ -12,9 +12,6 @@
 use crate::bytes::{TakeError, UnexpectedEnd, take, take_bytes};
 use derive_more::{Display, Error, From};
 
-/// Size in bytes of the heightmap and sound palettes embedded in the header.
-const PALETTE_SIZE: usize = 33792;
-
 #[derive(Debug, Display, Error, From)]
 pub enum LevError {
     Take(TakeError),
@@ -93,6 +90,55 @@ pub struct LevHeader {
     pub ambient_sound_version: u32,
     pub checksum: u32,
     pub sound_themes: Vec<String>,
+    pub heightmap_palette: ThemePalette,
+    pub sound_palette: ThemePalette,
+}
+
+/// The level's theme palette, decoded from the 33,792-byte block in the header.
+///
+/// The palette maps a byte index (0..255) — the value stored in `LevHeightCell::ground_theme` —
+/// to a theme definition name and index. Entry 0 is the sentinel ("no theme").
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemePalette {
+    pub entries: Vec<ThemePaletteEntry>,
+}
+
+impl ThemePalette {
+    const BLOCK_SIZE: usize = 33792;
+    const ENTRY_SIZE: usize = 132;
+    const NAME_LEN: usize = 128;
+
+    fn parse(i: &mut &[u8]) -> Result<ThemePalette, LevError> {
+        let data = take_bytes(i, Self::BLOCK_SIZE)?;
+        let mut entries = Vec::with_capacity(256);
+        let mut cursor = data;
+        for _ in 0..256 {
+            // Each entry is 128 bytes of name (null-terminated) + 4 bytes of def index.
+            let (_remaining, _name_bytes) = {
+                let entry = take_bytes(&mut cursor, Self::ENTRY_SIZE)?;
+                let name_end = entry[..Self::NAME_LEN]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(Self::NAME_LEN);
+                let name = str::from_utf8(&entry[..name_end])
+                    .map_err(|_| LevError::SoundThemeUtf8)?
+                    .to_owned();
+                let def_index = i32::from_le_bytes(
+                    entry[Self::NAME_LEN..Self::ENTRY_SIZE].try_into().unwrap(),
+                );
+                entries.push(ThemePaletteEntry { name, def_index });
+                (cursor, entry)
+            };
+        }
+        Ok(ThemePalette { entries })
+    }
+}
+
+/// A single entry in the level's theme palette.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemePaletteEntry {
+    pub name: String,
+    pub def_index: i32,
 }
 
 impl LevHeader {
@@ -110,10 +156,10 @@ impl LevHeader {
         let width = take::<u32>(i)?.to_le();
         let height = take::<u32>(i)?.to_le();
         let _always_true = take::<u8>(i)?;
-        let _heightmap_palette = take_bytes(i, PALETTE_SIZE)?;
+        let heightmap_palette = ThemePalette::parse(i)?;
         let ambient_sound_version = take::<u32>(i)?.to_le();
         let sound_themes_count = take::<u32>(i)?.to_le();
-        let _sound_palette = take_bytes(i, PALETTE_SIZE)?;
+        let sound_palette = ThemePalette::parse(i)?;
         let checksum = take::<u32>(i)?.to_le();
 
         // The first sound theme slot is empty, so there are `count - 1` named themes.
@@ -137,6 +183,8 @@ impl LevHeader {
             ambient_sound_version,
             checksum,
             sound_themes,
+            heightmap_palette,
+            sound_palette,
         })
     }
 }
