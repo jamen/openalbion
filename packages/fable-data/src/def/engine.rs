@@ -1,6 +1,6 @@
 use super::binary::control::{ID_BYTE_SIZE, ParseControlError, SerializeControlError, parse_scalar, serialize_scalar};
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct EngineDef {
     pub lod_error_tolerance: f32,
     pub character_lod_error_tolerance: f32,

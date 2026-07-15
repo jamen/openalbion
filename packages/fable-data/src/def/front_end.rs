@@ -4,7 +4,7 @@ use super::binary::control::{
 };
 use crate::bytes::{put, put_null_terminated_utf8, take, take_null_terminated_utf8};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct FrontEndDef {
     pub attract_mode_movie: Vec<String>,
     pub error_message_background_graphic: u32,

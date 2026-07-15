@@ -1,6 +1,6 @@
 use super::binary::control::{ID_BYTE_SIZE, ParseControlError, SerializeControlError, parse_scalar, serialize_scalar};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ConfigOptionsDefaultsDef {
     pub antialiasing: i32,
     pub resolution_width: u32,
@@ -19,7 +19,7 @@ pub struct ConfigOptionsDefaultsDef {
 }
 
 impl ConfigOptionsDefaultsDef {
-    pub(crate) const BYTE_SIZE: usize = ID_BYTE_SIZE * 12 + size_of::<ConfigOptionsDefaultsDef>();
+    pub(crate) const BYTE_SIZE: usize = ID_BYTE_SIZE * 14 + size_of::<ConfigOptionsDefaultsDef>();
 
     pub(crate) const fn byte_size(&self) -> usize {
         Self::BYTE_SIZE

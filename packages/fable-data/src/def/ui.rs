@@ -10,7 +10,7 @@ use crate::bytes::{
     put_le, put_null_terminated_utf8, take_le, take_null_terminated_utf8,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UiDef {
     pub ui_type: UiType,
     pub children: Vec<u32>,
@@ -468,7 +468,7 @@ impl UiDef {
 
 macro_rules! i32_control {
     ($name:ident, $control:literal) => {
-        #[derive(Debug)]
+        #[derive(Debug, Clone, PartialEq)]
         pub struct $name {
             pub inner: i32,
         }
@@ -498,7 +498,7 @@ i32_control!(StateChangeType, "StateChangeType");
 
 /// Like the fixed-name newtypes, but the control name varies per field (the same
 /// `ActionType` is written under many different names in [`UiDef`]).
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActionType {
     pub inner: i32,
 }
@@ -519,7 +519,7 @@ impl ActionType {
 
 // ── States ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UiStateDef {
     pub graphic_index: u32,
     pub position_x: f32,
@@ -535,6 +535,30 @@ pub struct UiStateDef {
     pub linear_change: bool,
     pub state_change_flag: u32,
     pub children_not_affected: Vec<i32>,
+}
+
+/// Defaults match the `NUISystem::CUIStateDef` constructor (decomp
+/// `fablelib/defs/ui_def.cpp`): zoom and colour 1.0, `UpdateTime` -1.0,
+/// `StateChangeFlag` 7, everything else zero/empty.
+impl Default for UiStateDef {
+    fn default() -> Self {
+        Self {
+            graphic_index: 0,
+            position_x: 0.0,
+            position_y: 0.0,
+            zoom_x: 1.0,
+            zoom_y: 1.0,
+            colour_r: 1.0,
+            colour_g: 1.0,
+            colour_b: 1.0,
+            colour_a: 1.0,
+            update_time: -1.0,
+            state_change_type: StateChangeType { inner: 0 },
+            linear_change: false,
+            state_change_flag: 7,
+            children_not_affected: Vec::new(),
+        }
+    }
 }
 
 impl UiStateDef {
@@ -651,7 +675,7 @@ impl UiStateDef {
 
 // ── Sprites (TableSprites key -> i32) ─────────────────────────────────────────
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TableSprites {
     pub inner: i32,
 }
@@ -676,7 +700,7 @@ impl TableSprites {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Sprites {
     pub map: BTreeMap<TableSprites, i32>,
 }
@@ -727,7 +751,7 @@ impl Sprites {
 
 // ── ActionMap (u32 -> String) ─────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActionMap {
     pub map: BTreeMap<u32, String>,
 }
@@ -788,7 +812,7 @@ impl ActionMap {
 
 // ── ActionMapAliases (u32 -> u32) ─────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActionMapAliases {
     pub map: BTreeMap<u32, u32>,
 }

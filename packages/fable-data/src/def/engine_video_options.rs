@@ -1,6 +1,6 @@
 use super::binary::control::{ID_BYTE_SIZE, ParseControlError, SerializeControlError, parse_bool, parse_scalar, serialize_bool, serialize_scalar};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct EngineVideoOptionsDef {
     pub hires_texture_memory: i32,
     pub lod_error_tolerance: f32,

@@ -1,6 +1,6 @@
 use super::binary::control::{ID_BYTE_SIZE, ParseControlError, SerializeControlError, parse_scalar, serialize_scalar};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct UiIconsDef {
     pub icon_friend_request_received: u32,
     pub icon_friend_request_received_on: u32,

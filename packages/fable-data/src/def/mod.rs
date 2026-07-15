@@ -3,16 +3,16 @@ pub mod object;
 pub mod text;
 
 mod config_options_defaults;
-mod controls;
+pub mod controls;
 mod engine;
 mod engine_video_options;
 pub mod environment;
 pub mod environment_theme;
 mod front_end;
 mod hero_morph;
-mod ui;
+pub mod ui;
 mod ui_icons;
-mod ui_misc_things;
+pub mod ui_misc_things;
 
 pub use self::config_options_defaults::ConfigOptionsDefaultsDef;
 pub use self::controls::ControlsDef;

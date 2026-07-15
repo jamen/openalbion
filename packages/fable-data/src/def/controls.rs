@@ -4,7 +4,7 @@ use super::binary::control::{
 };
 use crate::bytes::{TakeError, UnexpectedEnd, put, put_le, take, take_le};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ControlsDef {
     pub controls: Vec<ActionInputControl>,
     pub toggle_z_target: bool,
@@ -59,7 +59,7 @@ impl ControlsDef {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ActionInputControl {
     pub game_action: GameAction,
     pub controller_type: ControllerType,
@@ -144,7 +144,7 @@ impl ActionInputControl {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct GameAction {
     pub inner: i32,
@@ -160,7 +160,7 @@ impl GameAction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct ControllerType {
     pub inner: i32,
@@ -176,7 +176,7 @@ impl ControllerType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct InputKey {
     pub inner: i32,
@@ -192,7 +192,7 @@ impl InputKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct XboxControllerButton {
     pub inner: i32,
@@ -208,7 +208,7 @@ impl XboxControllerButton {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 #[repr(transparent)]
 pub struct MouseButtonControl {
     pub inner: i32,

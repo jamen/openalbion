@@ -6,7 +6,7 @@ use super::binary::control::{
 };
 use crate::bytes::{put_le, put_null_terminated_utf8, take_le, take_null_terminated_utf8};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UiMiscThingsDef {
     pub space_separator: String,
     pub comma_separator: String,
@@ -556,7 +556,7 @@ impl UiMiscThingsDef {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MapPaths {
     pub paths: Vec<String>,
 }
@@ -609,7 +609,7 @@ impl MapPaths {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MiniMapGraphics {
     pub graphics: Vec<(String, i32)>,
 }
