@@ -478,7 +478,10 @@ impl Chunk {
         for entry in &self.entries {
             entry.serialize(&mut cur).unwrap();
         }
-        miniz_oxide::deflate::compress_to_vec_zlib(&buf, 6)
+        // Retail def binaries compress every chunk at zlib level 1
+        // (78 01 header); match them so our output mirrors the files the
+        // game's loader was built against.
+        miniz_oxide::deflate::compress_to_vec_zlib(&buf, 1)
     }
 }
 
@@ -748,12 +751,19 @@ impl DefBody {
             "CENVIRONMENT_THEME_DAY" | "ENVIRONMENT_THEME_DAY" => DefBody::EnvironmentThemeDaySet(
                 EnvironmentThemeDaySetDef::parse(cur).map_err(|e| (name, e))?,
             ),
+            // Unknown type names fall back to raw bytes. A *known* type that
+            // fails to parse propagates the error instead: EntryRecord::parse
+            // retries past a 2-byte instance prefix, and its raw-byte fallback
+            // then captures the entry intact — swallowing the error here would
+            // capture the stream from wherever the failed parse stopped,
+            // silently dropping bytes on re-serialization.
             _ => match crate::def::dispatch::parse_game_def(name, cur) {
-                Ok(body) => body,
-                Err(_) => DefBody::Unknown {
+                Ok(Some(body)) => body,
+                Ok(None) => DefBody::Unknown {
                     name: name.to_string(),
                     bytes: core::mem::take(cur).to_vec(),
                 },
+                Err(e) => return Err((name, e)),
             },
         })
     }
@@ -919,8 +929,10 @@ impl DefBinary {
         let header_size = 13;
         let name_refs_size = self.name_refs.len() * 12;
         let chunk_index_header_size = 8;
-        let chunk_index_entries_count = chunk_count.saturating_sub(1);
-        let chunk_index_entries_size = chunk_index_entries_count as usize * 8;
+        // The index holds `chunk_count` entries: one per chunk, plus a
+        // terminating sentinel (verified against retail frontend.bin,
+        // game.bin, and script.bin).
+        let chunk_index_entries_size = chunk_count as usize * 8;
 
         let chunk_blobs: Vec<Vec<u8>> = self.chunks.iter().map(|c| c.to_bytes()).collect();
         let chunks_data_size: usize = chunk_blobs.iter().map(|b| b.len()).sum();
@@ -945,6 +957,15 @@ impl DefBinary {
                 .serialize(&mut cur).unwrap();
             relative_offset += chunk_blobs[i].len() as u32;
         }
+
+        // Terminating sentinel entry: both fields hold the total compressed
+        // data size (i.e. the end offset of the last chunk). Retail def
+        // binaries always carry it, and the game's loader reads it — chunk
+        // offsets are relative to a data region that starts *after* the
+        // sentinel, so omitting it shifts every chunk seek by 8 bytes and
+        // the game crashes on load.
+        ChunkIndexEntry { compressed_offset: relative_offset, cumulative_entry_count: relative_offset }
+            .serialize(&mut cur).unwrap();
 
         for blob in &chunk_blobs {
             put_bytes(&mut cur, blob).unwrap();

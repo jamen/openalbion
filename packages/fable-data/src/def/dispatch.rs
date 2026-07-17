@@ -2,9 +2,8 @@
 //! Single-format (OG retail only).
 
 use crate::def::prelude::*;
-use crate::def::binary::control::{ParseControlError, ParseControlErrorReason, SerializeControlError};
+use crate::def::binary::control::{ParseControlError, SerializeControlError};
 use crate::def::binary::def_binary::DefBody;
-use crate::def::wire::ParseWireError;
 
 // ── GameBody enum ────────────────────────────────────────────────────────────
 
@@ -845,11 +844,15 @@ pub fn def_name_has_subdef_table(name: &str) -> bool {
 
 // ── Dispatch ───────────────────────────────────────────
 
+/// Parse a game def body by type name. Returns `Ok(None)` when `name` isn't a
+/// known game def type (callers fall back to raw bytes); returns `Err` when
+/// the type is known but its body doesn't match the modeled layout — callers
+/// may then retry past an instance prefix rather than losing data.
 pub fn parse_game_def(
     name: &str,
     cur: &mut &[u8],
-) -> Result<DefBody, ParseControlError> {
-    Ok(match name {
+) -> Result<Option<DefBody>, ParseControlError> {
+    Ok(Some(match name {
         "CAbilityDef" => DefBody::Game(GameBody::AbilityDef(AbilityDef::parse(cur)?)),
         "CActionUseDef" => DefBody::Game(GameBody::ActionUseDef(ActionUseDef::parse(cur)?)),
         "CActivateQuestDef" => DefBody::Game(GameBody::ActivateQuestDef(ActivateQuestDef::parse(cur)?)),
@@ -1094,18 +1097,19 @@ pub fn parse_game_def(
         "CAppearanceModifierDef" => DefBody::Game(GameBody::AppearanceModifierDef(AppearanceModifierDef::parse(cur)?)),
         "CShopDef" => DefBody::Game(GameBody::ShopDef(ShopDef::parse(cur)?)),
         "CShopItemDef" => DefBody::Game(GameBody::ShopItemDef(ShopItemDef::parse(cur)?)),
-        _ => {
-            return Err(ParseControlError {
-                name: "<unknown game def type>",
-                reason: ParseControlErrorReason::Wire(ParseWireError::UnexpectedEnd),
-            });
-        }
-    })
+        _ => return Ok(None),
+    }))
 }
 
 pub fn parse_script_def(
     name: &str,
     cur: &mut &[u8],
 ) -> Result<DefBody, ParseControlError> {
-    parse_game_def(name, cur)
+    Ok(match parse_game_def(name, cur)? {
+        Some(body) => body,
+        None => DefBody::Unknown {
+            name: name.to_string(),
+            bytes: core::mem::take(cur).to_vec(),
+        },
+    })
 }
