@@ -27,8 +27,8 @@ fn explore() {
                         entry.def_name, s.time.len(), s.sun_tilt, s.colour_lookup_column);
                     for (i, kf) in s.time.iter().enumerate().take(3) {
                         println!("    kf[{i}] tod={} sky0={} sky1={} blend={} moonlit={}",
-                            kf.time_of_day, kf.sky_texture_0, kf.sky_texture_1,
-                            kf.sky_texture_1_blend, kf.moon_lit);
+                            kf.time_of_day, kf.sky_texture0, kf.sky_texture1,
+                            kf.sky_texture1_blend, kf.moon_lit);
                     }
                 }
             }

@@ -630,8 +630,16 @@ dependencies = [
 name = "fable-def-compiler"
 version = "0.1.0"
 dependencies = [
+ "fable-data",
+]
+
+[[package]]
+name = "fable-def-compiler-cli"
+version = "0.1.0"
+dependencies = [
  "argh",
  "fable-data",
+ "fable-def-compiler",
 ]
 
 [[package]]

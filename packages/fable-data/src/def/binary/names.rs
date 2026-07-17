@@ -1,4 +1,5 @@
 use crate::bytes::{TakeError, TakeNullTerminatedUtf8, take, take_null_terminated_utf8};
+use crate::bytes::{put, put_bytes, put_null_terminated_utf8};
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -79,9 +80,53 @@ impl Names {
 
         Ok(Self { header_bytes, map })
     }
+
+    /// Serialize to the wire format (header + entries).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let total: usize =
+            20 + self
+                .map
+                .values()
+                .map(|e| e.byte_size())
+                .sum::<usize>();
+        let mut out = vec![0u8; total];
+        let mut cur: &mut [u8] = &mut out;
+        put_bytes(&mut cur, &self.header_bytes).unwrap();
+        for entry in self.map.values() {
+            entry.serialize(&mut cur).unwrap();
+        }
+        debug_assert!(cur.is_empty(), "Names::to_bytes: buffer over/underflow");
+        out
+    }
 }
 
-#[derive(Debug)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrip_names_bin() {
+        // Load the real OG retail names.bin and verify byte-exact roundtrip.
+        let path = Path::new(env!("HOME")).join("Fable/data/CompiledDefs/names.bin");
+        if !path.exists() {
+            return; // skip if data not available
+        }
+        let original = std::fs::read(&path).unwrap();
+        let names = Names::from_bytes(&original).unwrap();
+        let re_serialized = names.to_bytes();
+        assert_eq!(
+            re_serialized.len(),
+            original.len(),
+            "length mismatch"
+        );
+        assert_eq!(
+            re_serialized, original,
+            "byte-exact roundtrip failed"
+        );
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct NamesEntry {
     pub crc: u32,
     pub string: String,
@@ -108,5 +153,15 @@ impl NamesEntry {
             .to_owned();
 
         Ok(Self { crc, string })
+    }
+
+    fn byte_size(&self) -> usize {
+        4 + self.string.len() + 1
+    }
+
+    fn serialize(&self, out: &mut &mut [u8]) -> Result<(), crate::bytes::UnexpectedEnd> {
+        put(out, &self.crc)?;
+        put_null_terminated_utf8(out, &self.string)?;
+        Ok(())
     }
 }

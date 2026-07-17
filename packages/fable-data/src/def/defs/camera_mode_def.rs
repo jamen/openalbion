@@ -1,0 +1,50 @@
+use crate::def_struct;
+use crate::def::prelude::*;
+
+def_struct! {
+    /// `CAMERA_MODE` — C++ `CCameraModeDef`.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct CameraModeDef {
+        "CameraMode" => pub camera_mode: i32,
+        "StringLengthXY" => pub string_length_xy: f32,
+        "CageRadius" => pub cage_radius: f32,
+        "HeightOffsetZ" => pub height_offset_z: f32,
+        "LookOffsetZ" => pub look_offset_z: f32,
+        "FOV" => pub fov: f32,
+        "RollAngle" => pub roll_angle: f32,
+        "TransitionInFrames" => pub transition_in_frames: i32,
+        "LazyLookAtPosWeight" => pub lazy_look_at_pos_weight: f32,
+        "RaiseUpWhenClose" => pub raise_up_when_close: bool,
+        "StretchAroundHero" => pub stretch_around_hero: bool,
+        "ZTargetBaseOffset" => pub z_target_base_offset: f32,
+        "ZTargetLookAtTargetOffset" => pub z_target_look_at_target_offset: f32,
+        "ZTargetStringLengthToObservedThing" => pub z_target_string_length_to_observed_thing: f32,
+        "ZTargetStringLengthPerpendicularToObservedThing" => pub z_target_string_length_perpendicular_to_observed_thing: f32,
+        "PerformExtendedOcclusionTests" => pub perform_extended_occlusion_tests: bool,
+        "XAxisDisplacementCoupling" => pub x_axis_displacement_coupling: f32,
+        "XAxisVelocityDamping" => pub x_axis_velocity_damping: f32,
+        "XAxisAttractorCoupling" => pub x_axis_attractor_coupling: f32,
+        "XAxisAttractorFallOff" => pub x_axis_attractor_fall_off: f32,
+        "YAxisDisplacementCoupling" => pub y_axis_displacement_coupling: f32,
+        "YAxisVelocityDamping" => pub y_axis_velocity_damping: f32,
+        "YAxisAttractorCoupling" => pub y_axis_attractor_coupling: f32,
+        "YAxisAttractorFallOff" => pub y_axis_attractor_fall_off: f32,
+        "ProjectileCameraFOVZoom" => pub projectile_camera_fov_zoom: bool,
+        "ProjectileCameraZoomToggle" => pub projectile_camera_zoom_toggle: bool,
+        "ProjectileCameraDefaultTranslationalZoomOffset" => pub projectile_camera_default_translational_zoom_offset: f32,
+        "ProjectileCameraInitialPhiOffsetForCamera" => pub projectile_camera_initial_phi_offset_for_camera: f32,
+        "ProjectileCameraInitialHeightParamForCamera" => pub projectile_camera_initial_height_param_for_camera: f32,
+        "PhiRotationCouple" => pub phi_rotation_couple: f32,
+        "ThetaRotationCouple" => pub theta_rotation_couple: f32,
+        "DollyLength" => pub dolly_length: f32,
+        "NumberOfFramesToAverageInputsOver" => pub number_of_frames_to_average_inputs_over: i32,
+        "DollyLengthBlendResistance" => pub dolly_length_blend_resistance: f32,
+        "ThetaAngleLimitUp" => pub theta_angle_limit_up: f32,
+        "ThetaAngleLimitDown" => pub theta_angle_limit_down: f32,
+        "SecondsToReset" => pub seconds_to_reset: f32,
+        "ViewHeroXYRotationMaxVelocity" => pub view_hero_xy_rotation_max_velocity: f32,
+        "ViewHeroHeightParamMaxVelocity" => pub view_hero_height_param_max_velocity: f32,
+        "ViewHeroXYOffsetMultiplier" => pub view_hero_xy_offset_multiplier: f32,
+        "ViewHeroGroundHeightOffset" => pub view_hero_ground_height_offset: f32,
+    }
+}

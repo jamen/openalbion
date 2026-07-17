@@ -1,0 +1,52 @@
+use crate::def_struct;
+use crate::def::prelude::*;
+
+def_struct! {
+    /// `CVillageDef` — C++ `CVillageDef`.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct VillageDef {
+        "Tasks" => pub tasks: Vec<i32>,
+        "PatrolTrackName" => pub patrol_track_name: DefString,
+        "DefaultStanceToHero" => pub default_stance_to_hero: i32,
+        "SecondsSecuritySweepLasts" => pub seconds_security_sweep_lasts: i32,
+        "WarehouseCrateDef" => pub warehouse_crate_def: i32,
+        "SleepAdultStartTime" => pub sleep_adult_start_time: i32,
+        "SleepAdultEndTime" => pub sleep_adult_end_time: i32,
+        "SleepChildStartTime" => pub sleep_child_start_time: i32,
+        "SleepChildEndTime" => pub sleep_child_end_time: i32,
+        "SleepElderlyStartTime" => pub sleep_elderly_start_time: i32,
+        "SleepElderlyEndTime" => pub sleep_elderly_end_time: i32,
+        "HouseLightsOnTime" => pub house_lights_on_time: i32,
+        "HouseLightsOffTime" => pub house_lights_off_time: i32,
+        "SociableStartTime" => pub sociable_start_time: i32,
+        "SociableFinishTime" => pub sociable_finish_time: i32,
+        "CurfewStartTime" => pub curfew_start_time: i32,
+        "CurfewFinishTime" => pub curfew_finish_time: i32,
+        "StoryStartTimes" => pub story_start_times: Vec<i32>,
+        "StoryDuration" => pub story_duration: i32,
+        "SchoolStartTimes" => pub school_start_times: Vec<i32>,
+        "SchoolDuration" => pub school_duration: i32,
+        "WorkStartTimes" => pub work_start_times: Vec<i32>,
+        "WorkDuration" => pub work_duration: i32,
+        "CookStartTimes" => pub cook_start_times: Vec<i32>,
+        "CookDuration" => pub cook_duration: i32,
+        "EatStartTimes" => pub eat_start_times: Vec<i32>,
+        "EatDuration" => pub eat_duration: i32,
+        "TavernStartTimes" => pub tavern_start_times: Vec<i32>,
+        "TavernDuration" => pub tavern_duration: i32,
+        "GamingStartTimes" => pub gaming_start_times: Vec<i32>,
+        "GamingDuration" => pub gaming_duration: i32,
+        "EnableAutoPlacement" => pub enable_auto_placement: bool,
+        "AllowHouseBuying" => pub allow_house_buying: bool,
+        "HearTownCrier" => pub hear_town_crier: bool,
+        "CurfewStartSound" => pub curfew_start_sound: String,
+        "CurfewEndSound" => pub curfew_end_sound: String,
+        "WorkStartSound" => pub work_start_sound: String,
+        "WorkEndSound" => pub work_end_sound: String,
+        "BribeCost" => pub bribe_cost: i32,
+        "FramesBetweenGuardSnoop" => pub frames_between_guard_snoop: i32,
+        "FramesBetweenGuardSnoopNightShops" => pub frames_between_guard_snoop_night_shops: i32,
+        "FramesBeforeGuardSnoop" => pub frames_before_guard_snoop: i32,
+        "FramesBeforeGuardSnoopNightShops" => pub frames_before_guard_snoop_night_shops: i32,
+    }
+}

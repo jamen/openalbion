@@ -326,22 +326,20 @@ impl ChunkIndexEntry {
     fn parse_sentinel(cur: &mut &[u8]) -> Result<Option<Self>, ParseChunkIndexSentinelError> {
         use ParseChunkIndexSentinelError as E;
 
-        let input_copied = &mut *cur;
+        let mut input_copied = *cur;
 
         let sentinel_entry =
-            ChunkIndexEntry::parse(input_copied).map_err(E::ParseChunkIndexEntry)?;
+            ChunkIndexEntry::parse(&mut input_copied).map_err(E::ParseChunkIndexEntry)?;
 
-        let sentinel_entry = if sentinel_entry.compressed_offset
+        let matches = sentinel_entry.compressed_offset
             == sentinel_entry.cumulative_entry_count
-            && sentinel_entry.compressed_offset == input_copied.len() as u32
-        {
-            *cur = *input_copied;
-            Some(sentinel_entry)
-        } else {
-            None
-        };
+            && sentinel_entry.compressed_offset == input_copied.len() as u32;
 
-        Ok(sentinel_entry)
+        if matches {
+            *cur = input_copied;
+        }
+
+        Ok(if matches { Some(sentinel_entry) } else { None })
     }
 }
 
@@ -456,9 +454,35 @@ impl Chunk {
             entries,
         })
     }
+
+    pub fn from_entries(entry_base: u32, entries: Vec<EntryRecord>) -> Self {
+        let entry_count = entries.len() as u32;
+        Self { entry_base, entry_count, entries }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let entry_count = self.entries.len();
+        let offset_table_size = entry_count * size_of::<u16>();
+        let mut payload_size = 0usize;
+        for entry in &self.entries {
+            payload_size += entry.byte_size();
+        }
+        let decompressed_size = offset_table_size + payload_size;
+        let mut buf = vec![0u8; decompressed_size];
+        let mut offset = offset_table_size as u16;
+        for (i, entry) in self.entries.iter().enumerate() {
+            buf[i * 2..i * 2 + 2].copy_from_slice(&offset.to_le_bytes());
+            offset += entry.byte_size() as u16;
+        }
+        let mut cur: &mut [u8] = &mut buf[offset_table_size..];
+        for entry in &self.entries {
+            entry.serialize(&mut cur).unwrap();
+        }
+        miniz_oxide::deflate::compress_to_vec_zlib(&buf, 6)
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EntryRecord {
     pub preamble: EntryPreamble,
     /// "Instance" defs carry a 2-byte prefix (always `0x0000` observed) between
@@ -681,7 +705,7 @@ impl EntryRecord {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DefBody {
     Engine(EngineDef),
     Controls(ControlsDef),
@@ -694,6 +718,7 @@ pub enum DefBody {
     ConfigOptionsDefaults(ConfigOptionsDefaultsDef),
     Environment(EnvironmentDef),
     EnvironmentThemeDaySet(EnvironmentThemeDaySetDef),
+    Game(crate::def::dispatch::GameBody),
     Unknown { name: String, bytes: Vec<u8> },
 }
 
@@ -723,9 +748,12 @@ impl DefBody {
             "CENVIRONMENT_THEME_DAY" | "ENVIRONMENT_THEME_DAY" => DefBody::EnvironmentThemeDaySet(
                 EnvironmentThemeDaySetDef::parse(cur).map_err(|e| (name, e))?,
             ),
-            _ => DefBody::Unknown {
-                name: name.to_string(),
-                bytes: core::mem::take(cur).to_vec(),
+            _ => match crate::def::dispatch::parse_game_def(name, cur) {
+                Ok(body) => body,
+                Err(_) => DefBody::Unknown {
+                    name: name.to_string(),
+                    bytes: core::mem::take(cur).to_vec(),
+                },
             },
         })
     }
@@ -752,15 +780,13 @@ impl DefBody {
             D::EnvironmentThemeDaySet(d) => {
                 d.serialize(out).map_err(|e| ("ENVIRONMENT_THEME_DAY", e))?
             }
-            D::Unknown { .. } => {
-                return Err((
-                    "UNKNOWN",
-                    SerializeControlError {
-                        name: "<none>",
-                        reason: SerializeControlErrorReason::Value(UnexpectedEnd),
-                    },
-                ));
-            }
+            D::Game(d) => d.serialize(out).map_err(|e| ("GAME", e))?,
+            D::Unknown { bytes, .. } => put_bytes(out, bytes).map_err(|e| {
+                ("UNKNOWN", SerializeControlError {
+                    name: "<raw>",
+                    reason: SerializeControlErrorReason::Value(e),
+                })
+            })?,
         }
         Ok(())
     }
@@ -778,6 +804,7 @@ impl DefBody {
             D::ConfigOptionsDefaults(d) => d.byte_size(),
             D::Environment(d) => d.byte_size(),
             D::EnvironmentThemeDaySet(d) => d.byte_size(),
+            D::Game(d) => d.byte_size(),
             D::Unknown { bytes, .. } => bytes.len(),
         }
     }
@@ -787,7 +814,7 @@ impl DefBody {
 /// `game.bin`: bodies are `(u32 id, u32 value)` control pairs starting at byte
 /// 3, and a body-less entry (e.g. a `CHeroCentreDef` template) is exactly these
 /// 3 bytes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EntryPreamble {
     pub is_real: bool,
     pub is_template: bool,
@@ -885,5 +912,45 @@ impl DefBinary {
                         }
                     })
             })
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let chunk_count = self.chunks.len() as u32 + 1;
+        let header_size = 13;
+        let name_refs_size = self.name_refs.len() * 12;
+        let chunk_index_header_size = 8;
+        let chunk_index_entries_count = chunk_count.saturating_sub(1);
+        let chunk_index_entries_size = chunk_index_entries_count as usize * 8;
+
+        let chunk_blobs: Vec<Vec<u8>> = self.chunks.iter().map(|c| c.to_bytes()).collect();
+        let chunks_data_size: usize = chunk_blobs.iter().map(|b| b.len()).sum();
+
+        let total_size = header_size + name_refs_size + chunk_index_header_size
+            + chunk_index_entries_size + chunks_data_size;
+
+        let mut buf = vec![0u8; total_size];
+        let mut cur: &mut [u8] = &mut buf;
+
+        self.header.serialize(&mut cur).unwrap();
+        for nr in &self.name_refs {
+            nr.serialize(&mut cur).unwrap();
+        }
+        ChunkIndexHeader { chunk_count, reserved: 0 }.serialize(&mut cur).unwrap();
+
+        let mut relative_offset = 0u32;
+        let mut cumulative = 0u32;
+        for (i, chunk) in self.chunks.iter().enumerate() {
+            cumulative += chunk.entry_count;
+            ChunkIndexEntry { compressed_offset: relative_offset, cumulative_entry_count: cumulative }
+                .serialize(&mut cur).unwrap();
+            relative_offset += chunk_blobs[i].len() as u32;
+        }
+
+        for blob in &chunk_blobs {
+            put_bytes(&mut cur, blob).unwrap();
+        }
+
+        debug_assert!(cur.is_empty(), "DefBinary::to_bytes: {} bytes remaining", cur.len());
+        buf
     }
 }

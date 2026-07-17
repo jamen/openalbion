@@ -1,0 +1,53 @@
+use crate::def_struct;
+use crate::def::prelude::*;
+
+def_struct! {
+    /// `OBJECT` — C++ `CThingObjectDef`.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct ThingObjectDef {
+        "Components" => pub components: ThingComponentSet,
+        "AvailableInEditor" => pub available_in_editor: bool,
+        "GameStatePersisted" => pub game_state_persisted: bool,
+        "LevelLess" => pub level_less: bool,
+        "IsDrawable" => pub is_drawable: bool,
+        "AlwaysFrameUpdate" => pub always_frame_update: bool,
+        "InMapSearches" => pub in_map_searches: bool,
+        "StartKillLocked" => pub start_kill_locked: bool,
+        "IsLoadableGlobal" => pub is_loadable_global: bool,
+        "CanComeBetweenCameraAndObservedThing" => pub can_come_between_camera_and_observed_thing: bool,
+        "IsVulnerableToMelee" => pub is_vulnerable_to_melee: bool,
+        "Damageable" => pub damageable: bool,
+        "ForceNoSerialise" => pub force_no_serialise: bool,
+        "DrawWeaponTrails" => pub draw_weapon_trails: bool,
+        "DrawProjectileWeaponTrails" => pub draw_projectile_weapon_trails: bool,
+        "AlwaysIncludeInObjectStrikeScans" => pub always_include_in_object_strike_scans: bool,
+        "DisableOcclusionTesting" => pub disable_occlusion_testing: bool,
+        "DrawAfterWater" => pub draw_after_water: bool,
+        "ForceRenderedLastFrameOverride" => pub force_rendered_last_frame_override: bool,
+        "AddToComboMultiplierOnHit" => pub add_to_combo_multiplier_on_hit: bool,
+        "GiveHeroStatChangesOnBeingHit" => pub give_hero_stat_changes_on_being_hit: bool,
+        "GroupDef" => pub group_def: DefIndex,
+        "RenderFadeDistance" => pub render_fade_distance: f32,
+        "PersistenceFlags" => pub persistence_flags: DefIndex,
+        "Health" => pub health: f32,
+        "MinHealth" => pub min_health: f32,
+        "MeshHeightOffset" => pub mesh_height_offset: f32,
+        "MeshHeight" => pub mesh_height: f32,
+        "MeshRadius" => pub mesh_radius: f32,
+        "ApproxMaxMeshHeight" => pub approx_max_mesh_height: f32,
+        "DefaultScriptName" => pub default_script_name: DefString,
+        "DefaultScriptData" => pub default_script_data: DefString,
+        "Graphic" => pub graphic: EngineGraphic,
+        "RotationTime" => pub rotation_time: f32,
+        "Material" => pub material: i32,
+        "FloorMaterial" => pub floor_material: i32,
+        "OnDeathObject" => pub on_death_object: i32,
+        "Property" => pub property: u32,
+        "DieOffTimer" => pub die_off_timer: i32,
+        "IsFragile" => pub is_fragile: bool,
+        "IsClothing" => pub is_clothing: bool,
+        "IsSelfIlluminating" => pub is_self_illuminating: bool,
+        "UseHighDetailQuadTree" => pub use_high_detail_quad_tree: bool,
+        "Electrocutable" => pub electrocutable: bool,
+    }
+}

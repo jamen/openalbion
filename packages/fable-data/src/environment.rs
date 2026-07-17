@@ -17,9 +17,9 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Default)]
 pub struct TimeKeyframe {
     pub time_of_day: f32,
-    pub sky_texture_0: Option<String>,
-    pub sky_texture_1: Option<String>,
-    pub sky_texture_1_blend: f32,
+    pub sky_texture0: Option<String>,
+    pub sky_texture1: Option<String>,
+    pub sky_texture1_blend: f32,
     pub moon_lit: bool,
     pub fog_start_z: f32,
     pub fog_end_z: f32,
@@ -35,9 +35,9 @@ impl EnvironmentTheme {
     pub fn sky_texture_names(&self) -> Vec<&str> {
         let mut names = Vec::new();
         for kf in &self.keyframes {
-            if let Some(ref name) = kf.sky_texture_0
+            if let Some(ref name) = kf.sky_texture0
                 && !names.contains(&name.as_str()) { names.push(name.as_str()); }
-            if let Some(ref name) = kf.sky_texture_1
+            if let Some(ref name) = kf.sky_texture1
                 && !names.contains(&name.as_str()) { names.push(name.as_str()); }
         }
         names
@@ -73,15 +73,15 @@ impl EnvironmentTheme {
             return (None, None, 0.0);
         };
         if keyframe_blend < 0.5 {
-            if prev.sky_texture_1.is_some() {
-                (prev.sky_texture_0.as_deref(), prev.sky_texture_1.as_deref(), prev.sky_texture_1_blend)
+            if prev.sky_texture1.is_some() {
+                (prev.sky_texture0.as_deref(), prev.sky_texture1.as_deref(), prev.sky_texture1_blend)
             } else {
-                (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), keyframe_blend * 2.0)
+                (prev.sky_texture0.as_deref(), next.sky_texture0.as_deref(), keyframe_blend * 2.0)
             }
-        } else if next.sky_texture_1.is_some() {
-            (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), (keyframe_blend - 0.5) * 2.0)
+        } else if next.sky_texture1.is_some() {
+            (prev.sky_texture0.as_deref(), next.sky_texture0.as_deref(), (keyframe_blend - 0.5) * 2.0)
         } else {
-            (prev.sky_texture_0.as_deref(), next.sky_texture_0.as_deref(), keyframe_blend)
+            (prev.sky_texture0.as_deref(), next.sky_texture0.as_deref(), keyframe_blend)
         }
     }
 }
@@ -133,9 +133,9 @@ impl EnvironmentConfig {
                         moon_lit: def.moon_lit,
                         fog_start_z: def.fog_start_z,
                         fog_end_z: def.fog_end_z,
-                        sky_texture_0: resolve_sky_texture(def.sky_texture_0),
-                        sky_texture_1: resolve_sky_texture(def.sky_texture_1),
-                        sky_texture_1_blend: def.sky_texture_1_blend,
+                        sky_texture0: resolve_sky_texture(def.sky_texture0),
+                        sky_texture1: resolve_sky_texture(def.sky_texture1),
+                        sky_texture1_blend: def.sky_texture1_blend,
                     })
                     .collect();
                 themes.insert(
@@ -159,9 +159,9 @@ impl EnvironmentConfig {
             moon_lit: theme.moon_lit,
             fog_start_z: theme.fog_start_z,
             fog_end_z: theme.fog_end_z,
-            sky_texture_0: None,
-            sky_texture_1: None,
-            sky_texture_1_blend: theme.sky_texture_1_blend,
+            sky_texture0: None,
+            sky_texture1: None,
+            sky_texture1_blend: theme.sky_texture1_blend,
         };
         self.themes.insert(
             name.clone(),
@@ -203,11 +203,11 @@ impl EnvironmentConfig {
                 Expr::Integer(i) => keyframe.time_of_day = *i as f32,
                 _ => {}
             },
-            "SkyTexture0" => { if let Expr::Symbol(s) = expr { keyframe.sky_texture_0 = Some(s.clone()); } }
-            "SkyTexture1" => { if let Expr::Symbol(s) = expr { keyframe.sky_texture_1 = Some(s.clone()); } }
+            "SkyTexture0" => { if let Expr::Symbol(s) = expr { keyframe.sky_texture0 = Some(s.clone()); } }
+            "SkyTexture1" => { if let Expr::Symbol(s) = expr { keyframe.sky_texture1 = Some(s.clone()); } }
             "SkyTexture1Blend" => match expr {
-                Expr::Float(f) => keyframe.sky_texture_1_blend = *f,
-                Expr::Integer(i) => keyframe.sky_texture_1_blend = *i as f32,
+                Expr::Float(f) => keyframe.sky_texture1_blend = *f,
+                Expr::Integer(i) => keyframe.sky_texture1_blend = *i as f32,
                 _ => {}
             },
             "MoonLit" => { if let Expr::Bool(b) = expr { keyframe.moon_lit = *b; } }
@@ -241,10 +241,10 @@ mod tests {
         let theme = EnvironmentTheme {
             name: "test".to_string(),
             keyframes: vec![
-                TimeKeyframe { time_of_day: 0.0, sky_texture_0: Some("MIDNIGHT".to_string()), ..Default::default() },
-                TimeKeyframe { time_of_day: 6.0, sky_texture_0: Some("MORNING".to_string()), ..Default::default() },
-                TimeKeyframe { time_of_day: 12.0, sky_texture_0: Some("MIDDAY".to_string()), ..Default::default() },
-                TimeKeyframe { time_of_day: 18.0, sky_texture_0: Some("EVENING".to_string()), ..Default::default() },
+                TimeKeyframe { time_of_day: 0.0, sky_texture0: Some("MIDNIGHT".to_string()), ..Default::default() },
+                TimeKeyframe { time_of_day: 6.0, sky_texture0: Some("MORNING".to_string()), ..Default::default() },
+                TimeKeyframe { time_of_day: 12.0, sky_texture0: Some("MIDDAY".to_string()), ..Default::default() },
+                TimeKeyframe { time_of_day: 18.0, sky_texture0: Some("EVENING".to_string()), ..Default::default() },
             ],
         };
         let (prev, _next, blend) = theme.keyframes_at_time(0.0).unwrap();
@@ -299,9 +299,9 @@ mod tests {
                 kf.moon_lit,
                 kf.fog_start_z,
                 kf.fog_end_z,
-                kf.sky_texture_0,
-                kf.sky_texture_1,
-                kf.sky_texture_1_blend,
+                kf.sky_texture0,
+                kf.sky_texture1,
+                kf.sky_texture1_blend,
             );
         }
     }

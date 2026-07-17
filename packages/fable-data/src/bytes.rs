@@ -20,6 +20,24 @@ impl Le for u16 {
     }
 }
 
+impl Le for i16 {
+    fn le(self) -> Self {
+        self.to_le()
+    }
+}
+
+impl Le for i8 {
+    fn le(self) -> Self {
+        self
+    }
+}
+
+impl Le for u64 {
+    fn le(self) -> Self {
+        self.to_le()
+    }
+}
+
 impl Le for i32 {
     fn le(self) -> Self {
         self.to_le()
