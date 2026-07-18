@@ -34,12 +34,14 @@ def_struct! {
         "ShadowFactor" => pub shadow_factor: f32,
         "FadedShadowFactor" => pub faded_shadow_factor: f32,
         "WaterRefractionBlendStart" => pub water_refraction_blend_start: f32,
-        "WaterRefractionBlendEnd" => pub water_refraction_blend_end: f32,
-        "WaterFlowSpeedFactor" => pub water_flow_speed_factor: f32,
-        "WaterOscilationSpeed" => pub water_oscilation_speed: f32,
-        "WaterSwellFactor" => pub water_swell_factor: f32,
-        "WaterShoreSwellFactor" => pub water_shore_swell_factor: f32,
-        "WaterReflectionOffset" => pub water_reflection_offset: f32,
+        // Non-zero C++ constructor defaults (verified constant across all retail
+        // keyframes; the Anniversary text comments these out and relies on them).
+        "WaterRefractionBlendEnd" => pub water_refraction_blend_end: f32 = 15.0,
+        "WaterFlowSpeedFactor" => pub water_flow_speed_factor: f32 = 0.25,
+        "WaterOscilationSpeed" => pub water_oscilation_speed: f32 = 0.05,
+        "WaterSwellFactor" => pub water_swell_factor: f32 = 0.0625,
+        "WaterShoreSwellFactor" => pub water_shore_swell_factor: f32 = 0.041666668,
+        "WaterReflectionOffset" => pub water_reflection_offset: f32 = 0.01,
     }
 }
 

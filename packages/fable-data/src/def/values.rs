@@ -282,6 +282,18 @@ wire_struct! {
     /// C++ `COpinionTransientOffset` — 6 consecutive u32 values (24 bytes).
     /// The text form supplies 5 positional args: `(opinion_axis, peak, run_in,
     /// run_out, persist)`; the 6th field defaults to zero.
+    ///
+    /// KNOWN DIVERGENCE (OPINION_DEED_EFFECTS/SOURCE/PERSONALITY, ~99 entries):
+    /// the retail compiled values are NOT a straight copy of the text args.
+    /// `opinion_axis` and `peak` match, but the trailing fields are
+    /// engine-*computed* at compile time (e.g. text
+    /// `Add(OPINION_MORALITY,-0.1,0.0,100.0,-0.025)` → retail
+    /// `{axis:0, peak:-0.1, run_in:<raw int 1>, run_out:0.0, persist:5e-5,
+    /// f5:1500}`), converting human-readable seconds/persist into internal
+    /// units. That transform is not present in the current decomp bodies, so
+    /// these entries are deferred to the retail body by the linker until it is
+    /// reverse-engineered. This is a value transform, NOT a field layout/type
+    /// bug (layout is confirmed 24 bytes / 6 fields) or source drift.
     pub struct OpinionTransientOffset {
         pub opinion_axis: i32,
         pub peak: f32,

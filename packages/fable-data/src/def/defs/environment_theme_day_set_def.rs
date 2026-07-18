@@ -13,7 +13,7 @@ def_struct! {
         "MoonRotate" => pub moon_rotate: f32,
         "MoonHeight" => pub moon_height: f32,
         "ColourLookupColumn" => pub colour_lookup_column: i32,
-        "EditorColour" => pub editor_colour: u32,
+        "EditorColour" => pub editor_colour: RGBColour,
         "FishWeightMult" => pub fish_weight_mult: f32,
     }
 }

@@ -17,7 +17,12 @@ def_struct! {
         "SideLimit" => pub side_limit: f32,
         "RearLimit" => pub rear_limit: f32,
         "PreferredCombatDistance" => pub preferred_combat_distance: f32,
-        "AttackPatterns" => pub attack_patterns: VecMap<i32, IdleStateGroup>,
+        // `std::map<ECombatCreatureType, long>` — key-sorted (BTreeMap), value
+        // is an ATTACK_PATTERN def index (verified against retail:
+        // HOBBE_ATTACK_STYLE_BASE stores keys 0,1 → 417,418 =
+        // ATTACK_PATTERN_MEDIUM/EASY). The decomp template's `EIdleStateGroup`
+        // ValueT is a misattribution; the slot holds a `long` def index.
+        "AttackPatterns" => pub attack_patterns: BTreeMap<i32, DefIndex>,
         "CombatCreatureType" => pub combat_creature_type: CombatCreatureType,
         "AlwaysAttackIfNearest" => pub always_attack_if_nearest: bool,
         "KnockdownCausesStun" => pub knockdown_causes_stun: bool,
