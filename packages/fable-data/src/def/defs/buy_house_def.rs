@@ -5,6 +5,6 @@ def_struct! {
     /// `CBuyHouseDef` — C++ `CBuyHouseDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct BuyHouseDef {
-        "Main" => pub main: bool,
+        "Main" => pub main: bool = true,
     }
 }

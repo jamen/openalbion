@@ -279,28 +279,30 @@ wire_struct! {
 }
 
 wire_struct! {
-    /// C++ `COpinionTransientOffset` — 6 consecutive u32 values (24 bytes).
-    /// The text form supplies 5 positional args: `(opinion_axis, peak, run_in,
-    /// run_out, persist)`; the 6th field defaults to zero.
+    /// C++ `COpinionTransientOffset` — 6 consecutive 4-byte values (24 bytes).
+    /// Layout confirmed against `tc_opinion_of_hero.hpp` (member offsets 0..0x14)
+    /// and retail bytes.
     ///
-    /// KNOWN DIVERGENCE (OPINION_DEED_EFFECTS/SOURCE/PERSONALITY, ~99 entries):
-    /// the retail compiled values are NOT a straight copy of the text args.
-    /// `opinion_axis` and `peak` match, but the trailing fields are
-    /// engine-*computed* at compile time (e.g. text
-    /// `Add(OPINION_MORALITY,-0.1,0.0,100.0,-0.025)` → retail
-    /// `{axis:0, peak:-0.1, run_in:<raw int 1>, run_out:0.0, persist:5e-5,
-    /// f5:1500}`), converting human-readable seconds/persist into internal
-    /// units. That transform is not present in the current decomp bodies, so
-    /// these entries are deferred to the retail body by the linker until it is
-    /// reverse-engineered. This is a value transform, NOT a field layout/type
-    /// bug (layout is confirmed 24 bytes / 6 fields) or source drift.
+    /// The text form `Effects.Add(opinion, peak, run_in_secs, run_out_secs,
+    /// persist)` supplies human-readable *seconds*; the constructor
+    /// (`tc_opinion_of_hero.cpp:4438`) converts them to per-frame rates and
+    /// frame counts at compile time (see `apply_opinion_transient_offset` in
+    /// the compiler). This struct stores the *computed* result, not the raw
+    /// text args — so a straight positional copy is wrong. The seconds→frames
+    /// factor is 15 (opinion tick rate).
     pub struct OpinionTransientOffset {
-        pub opinion_axis: i32,
-        pub peak: f32,
-        pub run_in: f32,
-        pub run_out: f32,
-        pub persist: f32,
-        pub f5: i32,
+        /// `EOpinion` axis (offset 0x0).
+        pub opinion: i32,
+        /// `OffsetPerFrameRunIn` = peak / max(run_in_frames, 1) (offset 0x4).
+        pub offset_per_frame_run_in: f32,
+        /// `FramesToRunIn` = max(run_in_secs*15, 1) (offset 0x8).
+        pub frames_to_run_in: i32,
+        /// `FramesOfCappedPeak` — always 0 from the text ctor (offset 0xc).
+        pub frames_of_capped_peak: i32,
+        /// `OffsetPerFrameRunOut` = (persist-peak)/max(run_out_frames,1) (offset 0x10).
+        pub offset_per_frame_run_out: f32,
+        /// `FramesToRunOut` = max(run_out_secs*15, 1) (offset 0x14).
+        pub frames_to_run_out: i32,
     }
 }
 

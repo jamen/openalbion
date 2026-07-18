@@ -5,7 +5,7 @@ def_struct! {
     /// `OPINION_SOURCE` — C++ `COpinionSourceDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct OpinionSourceDef {
-        "ProducedOpinion" => pub produced_opinion: VecMap<Opinion, f32>,
+        "ProducedOpinion" => pub produced_opinion: BTreeMap<Opinion, f32>,
         "AlwaysAwareOf" => pub always_aware_of: bool,
         "UnknownThreatSource" => pub unknown_threat_source: bool,
         "ReactNonstop" => pub react_nonstop: bool,
