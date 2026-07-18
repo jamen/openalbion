@@ -610,6 +610,14 @@ macro_rules! def_struct {
                     )+
                     None
                 }
+                fn visit_named(&mut self, visitor: &mut dyn $crate::def::visit::FieldVisitor) -> bool {
+                    // `def_struct!` fields carry their def-script names, so a
+                    // def_struct used as a `Vec` element / map value can be
+                    // lowered by name (nested `Field[i].Subfield …`).
+                    let mut fwd: &mut dyn $crate::def::visit::FieldVisitor = visitor;
+                    $name::visit_fields(self, &mut fwd);
+                    true
+                }
             }
 
             impl $crate::def::visit::AsField for $name {

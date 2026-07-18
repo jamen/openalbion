@@ -32,7 +32,16 @@ macro_rules! def_default_impl {
     };
 }
 
-def_default_impl!(f32, i32, u32, bool, u8, u16, u64, i8, i16, String, WStr, DefString, DefIndex, PString);
+def_default_impl!(f32, i32, u32, bool, u8, u16, u64, i8, i16, String, WStr, DefIndex, PString);
+
+/// A `CDefString` defaults to -1 (the "no string" name-table offset) — the
+/// game's `CDefString` constructor default, verified against retail (e.g. an
+/// unset `OpinionDeedReactionDef::Animation` is -1, not 0).
+impl DefDefault for DefString {
+    fn def_default() -> Self {
+        DefString(-1)
+    }
+}
 
 impl<T: DefDefault> DefDefault for Vec<T> {
     fn def_default() -> Self {
@@ -120,6 +129,14 @@ pub trait FieldVisitor {
 /// Types whose fields can be visited generically (all `def_struct!` types).
 pub trait VisitFields {
     fn visit_fields<V: FieldVisitor>(&mut self, visitor: &mut V);
+}
+
+/// Lets a `&mut dyn FieldVisitor` be passed where a generic `V: FieldVisitor`
+/// is expected (so an object-safe visitor can drive [`VisitFields`]).
+impl FieldVisitor for &mut (dyn FieldVisitor + '_) {
+    fn field(&mut self, name: &'static str, field: FieldRef<'_>) {
+        (**self).field(name, field)
+    }
 }
 
 /// Element-wise mutable access to a `Vec` field.
@@ -250,6 +267,14 @@ pub trait StructSlot {
         let index = (0..self.member_count())
             .find(|&i| self.member_name(i).map(normalize_member_name) == Some(want.clone()))?;
         self.member(index)
+    }
+    /// Visit this compound's fields *by their def-script names* via
+    /// [`VisitFields`], returning `true` if it did. `def_struct!` types (named
+    /// fields, e.g. a def_struct used as a `Vec` element) override this to
+    /// enable name-based nested lowering; positional `wire_struct!` compounds
+    /// keep the default `false` and are lowered member-by-member instead.
+    fn visit_named(&mut self, _visitor: &mut dyn FieldVisitor) -> bool {
+        false
     }
 }
 
