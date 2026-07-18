@@ -1,4 +1,5 @@
 use super::base::{ConsumeCharError, ParseError, ParserBase, SkipTriviaError};
+use super::header::{HeaderItem, HeaderParser};
 use derive_more::Display;
 use std::collections::HashMap;
 
@@ -6,6 +7,11 @@ use std::collections::HashMap;
 pub struct DefFile {
     pub definitions: Vec<Definition>,
     pub by_name: HashMap<String, usize>,
+    /// File-local `enum`/`#define` declarations embedded in the `.def` (some
+    /// files, e.g. `engine_local_detail.def`, declare symbol constants at the
+    /// top). Evaluate these into the [`SymbolTable`](super::SymbolTable) so the
+    /// definitions in this file can reference them.
+    pub headers: Vec<HeaderItem>,
 }
 
 #[derive(Debug, Clone)]
@@ -177,19 +183,30 @@ impl<'a> DefParser<'a> {
 impl<'a> DefParser<'a> {
     pub fn parse_file(&mut self) -> Result<DefFile, DefParseError> {
         let mut file = DefFile::default();
-        while self.skip_to_next_definition() {
-            let def = self.parse_definition()?;
-            let name_index = file.definitions.len();
-            let def_name = def.name.clone();
-            file.definitions.push(def);
-            file.by_name.insert(def_name, name_index);
+        while self.skip_to_next_top_level_item() {
+            if self.at_definition_keyword() {
+                let def = self.parse_definition()?;
+                let name_index = file.definitions.len();
+                let def_name = def.name.clone();
+                file.definitions.push(def);
+                file.by_name.insert(def_name, name_index);
+            } else {
+                // A file-local `enum`/`#define` declaration.
+                file.headers.push(self.parse_header_item()?);
+            }
         }
         Ok(file)
     }
 
-    fn skip_to_next_definition(&mut self) -> bool {
+    /// Advance to the next top-level item — a definition or a file-local
+    /// `enum`/`#define` — returning `false` at end of input.
+    fn skip_to_next_top_level_item(&mut self) -> bool {
         loop {
-            if self.at_definition_keyword() && self.at_line_start() { return true; }
+            if self.at_line_start()
+                && (self.at_definition_keyword() || self.at_header_item_keyword())
+            {
+                return true;
+            }
             match self.peek_char() {
                 Some(c) => self.advance(c.len_utf8()),
                 None => return false,
@@ -202,6 +219,32 @@ impl<'a> DefParser<'a> {
         let after = rest.strip_prefix("#definition_template")
             .or_else(|| rest.strip_prefix("#definition"));
         after.is_some_and(|s| s.chars().next().is_some_and(|c| c.is_whitespace()))
+    }
+
+    /// Whether the cursor is at a file-local header declaration (`enum …` or
+    /// `#define …`).
+    fn at_header_item_keyword(&self) -> bool {
+        let rest = self.rest();
+        rest.strip_prefix("enum")
+            .is_some_and(|s| s.starts_with(|c: char| c.is_whitespace() || c == '{'))
+            || rest
+                .strip_prefix("#define")
+                .is_some_and(|s| s.starts_with(char::is_whitespace))
+    }
+
+    /// Parse one file-local header item by delegating to the header parser over
+    /// the remaining input, then advancing past what it consumed.
+    fn parse_header_item(&mut self) -> Result<HeaderItem, DefParseError> {
+        let start = self.pos();
+        let mut header = HeaderParser::new(&self.input()[start..]);
+        let item = header.parse_one_item().map_err(|e| {
+            DefParseError::new(
+                start + e.pos,
+                DefParseErrorKind::UnexpectedToken { expected: "enum or #define declaration".into() },
+            )
+        })?;
+        self.advance(header.consumed());
+        Ok(item)
     }
 
     fn parse_definition(&mut self) -> Result<Definition, DefParseError> {

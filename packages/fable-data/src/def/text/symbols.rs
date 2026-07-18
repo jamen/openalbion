@@ -38,7 +38,12 @@ pub enum SymbolEvalError {
 
 impl SymbolTable {
     pub fn evaluate(&mut self, header: &Header) -> Result<(), SymbolEvalError> {
-        for item in &header.items {
+        self.evaluate_items(&header.items)
+    }
+    /// Evaluate a list of header items (e.g. the file-local `enum`/`#define`
+    /// declarations parsed from a `.def` file) into the table.
+    pub fn evaluate_items(&mut self, items: &[HeaderItem]) -> Result<(), SymbolEvalError> {
+        for item in items {
             self.evaluate_header_item(item)?;
         }
         Ok(())

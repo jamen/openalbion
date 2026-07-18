@@ -502,6 +502,16 @@ macro_rules! wire_struct {
 /// with field-name error context) and a delegating [`Wire`] impl — a def class
 /// is itself a wire value, because sub-component defs appear inline in other
 /// defs' bodies (and as elements of their lists).
+/// A field's default in a [`def_struct!`]: the explicit `= expr` if given, else
+/// the type's [`DefDefault`]. Some def fields have non-zero game constructor
+/// defaults (e.g. `ReceiveShadows` defaults to `true`); the `= expr` form
+/// captures those without special-casing lowering.
+#[macro_export]
+macro_rules! def_field_default {
+    ($ty:ty) => { <$ty as $crate::def::visit::DefDefault>::def_default() };
+    ($ty:ty, $default:expr) => { $default };
+}
+
 #[macro_export]
 macro_rules! def_struct {
     // One or more structs in a single macro call.
@@ -509,7 +519,7 @@ macro_rules! def_struct {
         $(
             $(#[$meta:meta])*
             pub struct $name:ident {
-                $( $(#[$fmeta:meta])* $wire_name:literal => pub $field:ident: $ty:ty, )+
+                $( $(#[$fmeta:meta])* $wire_name:literal => pub $field:ident: $ty:ty $(= $default:expr)?, )+
             }
         )+
     ) => {
@@ -521,7 +531,7 @@ macro_rules! def_struct {
 
             impl Default for $name {
                 fn default() -> Self {
-                    Self { $( $field: $crate::def::visit::DefDefault::def_default(), )+ }
+                    Self { $( $field: $crate::def_field_default!($ty $(, $default)?), )+ }
                 }
             }
 

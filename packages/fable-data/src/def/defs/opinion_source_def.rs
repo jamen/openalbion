@@ -5,7 +5,7 @@ def_struct! {
     /// `OPINION_SOURCE` — C++ `COpinionSourceDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct OpinionSourceDef {
-        "ProducedOpinion" => pub produced_opinion: VecMap<f32, Opinion>,
+        "ProducedOpinion" => pub produced_opinion: VecMap<Opinion, f32>,
         "AlwaysAwareOf" => pub always_aware_of: bool,
         "UnknownThreatSource" => pub unknown_threat_source: bool,
         "ReactNonstop" => pub react_nonstop: bool,
@@ -151,6 +151,24 @@ impl OpinionSourceDef {
             } else {
                 false
             };
+        }
+    }
+
+    /// The 5 `BinaryOpinion` floats aren't def-file controls: the game derives
+    /// them from the [`Self::produced_opinion`] map (verified against retail
+    /// OPINION_SOURCE entries): index `i` is the float for [`Opinion`]`(i)`,
+    /// zero when that opinion is absent from the map.
+    pub fn derive_binary_opinions(&mut self) {
+        let opinions = [
+            &mut self.binary_opinion, &mut self.binary_opinion2, &mut self.binary_opinion3,
+            &mut self.binary_opinion4, &mut self.binary_opinion5,
+        ];
+        for (i, op) in opinions.into_iter().enumerate() {
+            *op = self
+                .produced_opinion
+                .get(&Opinion(i as i32))
+                .copied()
+                .unwrap_or(0.0);
         }
     }
 }

@@ -98,6 +98,20 @@ impl<'a> HeaderParser<'a> {
         Ok(header)
     }
 
+    /// Parse a single header item (`enum`/`#define`/`namespace`/`#ifdef`) at
+    /// the current position, skipping leading trivia. Used by the def parser to
+    /// consume file-local declarations embedded in a `.def` file. On return,
+    /// [`consumed`](Self::consumed) is the number of bytes read.
+    pub fn parse_one_item(&mut self) -> Result<HeaderItem, HeaderParseError> {
+        self.skip_trivia()?;
+        self.parse_item()
+    }
+
+    /// Bytes consumed so far (for splicing into another parser's stream).
+    pub fn consumed(&self) -> usize {
+        self.parser.pos()
+    }
+
     fn parse_item(&mut self) -> Result<HeaderItem, HeaderParseError> {
         if self.try_consume_keyword("enum") {
             Ok(HeaderItem::Enum(self.parse_enum_body()?))

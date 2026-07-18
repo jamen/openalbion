@@ -27,7 +27,7 @@ def_struct! {
         "ThirdPersonTargetingOverrideShortRangeFalloff" => pub third_person_targeting_override_short_range_falloff: f32,
         "FirstPersonTargetingEnemyPreferenceFactor" => pub first_person_targeting_enemy_preference_factor: f32,
         "ThirdPersonTargetingEnemyPreferenceFactor" => pub third_person_targeting_enemy_preference_factor: f32,
-        "TargetingRanges" => pub targeting_ranges: VecMap<f32, Opinion>,
+        "TargetingRanges" => pub targeting_ranges: VecMap<Opinion, f32>,
         "PreferPlayerWeight" => pub prefer_player_weight: f32,
         "PreferNonCombatantsWeight" => pub prefer_non_combatants_weight: f32,
         "PreferLastAttackerWeight" => pub prefer_last_attacker_weight: f32,
