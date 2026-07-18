@@ -6,8 +6,57 @@
 //! e.g. applying text-def overrides — without fable-data depending on it, and
 //! without orphan-rule trouble: fable-data produces the `FieldRef`, the
 //! consumer only reads it.
+//!
+//! Containers are exposed through slot traits ([`VecSlot`], [`MapSlot`],
+//! [`StructSlot`], [`VariantSlot`]) so the consumer can lower text-def
+//! statements element-by-element without knowing the concrete types.
 
-use crate::def::wire::WStr;
+use crate::def::wire::{DefIndex, DefString, PString, VecMap, WStr};
+
+/// Default construction for def wire types. Parallel to [`Default`] because
+/// big fixed arrays (`[u8; 180]`, …) can't implement `Default` (orphan rule);
+/// container slots and macro-generated struct defaults go through this trait.
+pub trait DefDefault: Sized {
+    fn def_default() -> Self;
+}
+
+macro_rules! def_default_impl {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl DefDefault for $ty {
+                fn def_default() -> Self {
+                    Default::default()
+                }
+            }
+        )+
+    };
+}
+
+def_default_impl!(f32, i32, u32, bool, u8, u16, u64, i8, i16, String, WStr, DefString, DefIndex, PString);
+
+impl<T: DefDefault> DefDefault for Vec<T> {
+    fn def_default() -> Self {
+        Vec::new()
+    }
+}
+
+impl<K: DefDefault + Ord, V: DefDefault> DefDefault for std::collections::BTreeMap<K, V> {
+    fn def_default() -> Self {
+        std::collections::BTreeMap::new()
+    }
+}
+
+impl<K: DefDefault, V: DefDefault> DefDefault for VecMap<K, V> {
+    fn def_default() -> Self {
+        VecMap(Vec::new())
+    }
+}
+
+impl<T: DefDefault, const N: usize> DefDefault for [T; N] {
+    fn def_default() -> Self {
+        std::array::from_fn(|_| T::def_default())
+    }
+}
 
 /// A closed def enum viewed as its wire `i32`, for generic field access.
 pub trait EnumSlot {
@@ -34,15 +83,31 @@ pub enum FieldRef<'a> {
     WStr(&'a mut WStr),
     Enum(&'a mut dyn EnumSlot),
     Flags(&'a mut dyn FlagsSlot),
-    /// A field the generic walk doesn't cover (lists, maps, sub-defs). Carries
-    /// the field's Rust type name for diagnostics; the consumer handles these
-    /// explicitly. `mut` access isn't offered here.
+    DefString(&'a mut DefString),
+    DefIndex(&'a mut DefIndex),
+    U8(&'a mut u8),
+    U16(&'a mut u16),
+    U64(&'a mut u64),
+    I8(&'a mut i8),
+    I16(&'a mut i16),
+    /// Length-prefixed byte string (`u32` length + bytes).
+    PString(&'a mut PString),
+    /// `u32` count + elements.
+    Vec(&'a mut dyn VecSlot),
+    /// `u32` count + (key, value) pairs.
+    Map(&'a mut dyn MapSlot),
+    /// Fixed sequence of named member values (a `wire_struct!` compound).
+    Struct(&'a mut dyn StructSlot),
+    /// Tagged union (a `def_variant!` type).
+    Variant(&'a mut dyn VariantSlot),
+    /// A field the generic walk doesn't cover. Carries the field's Rust type
+    /// name for diagnostics; the consumer handles these explicitly.
     Complex(&'static str),
 }
 
 /// Expose `&mut self` as a [`FieldRef`]. Implemented for the scalar/string
 /// wire types here, for enum/flags types by the enum macros, and for the
-/// container types (as [`FieldRef::Complex`]) below.
+/// container types below.
 pub trait AsField {
     fn as_field(&mut self) -> FieldRef<'_>;
 }
@@ -50,6 +115,162 @@ pub trait AsField {
 /// Receives each field of a def during [`visit_fields`](crate::def_struct).
 pub trait FieldVisitor {
     fn field(&mut self, name: &'static str, field: FieldRef<'_>);
+}
+
+/// Types whose fields can be visited generically (all `def_struct!` types).
+pub trait VisitFields {
+    fn visit_fields<V: FieldVisitor>(&mut self, visitor: &mut V);
+}
+
+/// Element-wise mutable access to a `Vec` field.
+pub trait VecSlot {
+    fn len(&self) -> usize;
+    fn clear(&mut self);
+    fn push_default(&mut self);
+    fn element<'b>(&'b mut self, index: usize) -> FieldRef<'b>;
+}
+
+impl<T: AsField + DefDefault + Clone> VecSlot for Vec<T> {
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+    fn clear(&mut self) {
+        Vec::clear(self);
+    }
+    fn push_default(&mut self) {
+        self.push(T::def_default());
+    }
+    fn element<'b>(&'b mut self, index: usize) -> FieldRef<'b> {
+        self[index].as_field()
+    }
+}
+
+/// A (key, value) pair under construction for a map field: the pair is built
+/// outside the map (keys can't be mutated in place) and inserted on
+/// [`commit`](MapEntrySlot::commit).
+pub trait MapEntrySlot<'a> {
+    fn key(&mut self) -> FieldRef<'_>;
+    fn value(&mut self) -> FieldRef<'_>;
+    fn commit(self: Box<Self>);
+}
+
+/// Pair-wise mutable access to a map field (`BTreeMap` or `VecMap`).
+pub trait MapSlot {
+    fn len(&self) -> usize;
+    fn clear(&mut self);
+    /// Begin a new pair with default key and value.
+    fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a>;
+}
+
+struct BTreeMapEntry<'a, K, V> {
+    map: &'a mut std::collections::BTreeMap<K, V>,
+    key: K,
+    value: V,
+}
+
+impl<'a, K: AsField + Ord + Clone, V: AsField + Clone> MapEntrySlot<'a> for BTreeMapEntry<'a, K, V> {
+    fn key(&mut self) -> FieldRef<'_> {
+        self.key.as_field()
+    }
+    fn value(&mut self) -> FieldRef<'_> {
+        self.value.as_field()
+    }
+    fn commit(self: Box<Self>) {
+        let this = *self;
+        this.map.insert(this.key, this.value);
+    }
+}
+
+impl<K: AsField + Ord + DefDefault + Clone, V: AsField + DefDefault + Clone> MapSlot
+    for std::collections::BTreeMap<K, V>
+{
+    fn len(&self) -> usize {
+        self.len()
+    }
+    fn clear(&mut self) {
+        self.clear();
+    }
+    fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a> {
+        Box::new(BTreeMapEntry { map: self, key: K::def_default(), value: V::def_default() })
+    }
+}
+
+struct VecMapEntry<'a, K, V> {
+    map: &'a mut VecMap<K, V>,
+    key: K,
+    value: V,
+}
+
+impl<'a, K: AsField + PartialEq + Clone, V: AsField + Clone> MapEntrySlot<'a> for VecMapEntry<'a, K, V> {
+    fn key(&mut self) -> FieldRef<'_> {
+        self.key.as_field()
+    }
+    fn value(&mut self) -> FieldRef<'_> {
+        self.value.as_field()
+    }
+    fn commit(self: Box<Self>) {
+        let this = *self;
+        this.map.insert(this.key, this.value);
+    }
+}
+
+impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clone> MapSlot for VecMap<K, V> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+    fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a> {
+        Box::new(VecMapEntry { map: self, key: K::def_default(), value: V::def_default() })
+    }
+}
+
+/// Normalize a member name for matching: lowercase, underscores stripped.
+/// Text-def member spellings follow the C++ members (`BankIndex`), the Rust
+/// fields follow snake_case (`bank_index`); normalization unifies them.
+pub fn normalize_member_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| *c != '_')
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// Member-wise mutable access to a `wire_struct!` compound.
+pub trait StructSlot {
+    /// The compound's Rust type name (for diagnostics).
+    fn type_name(&self) -> &'static str;
+    fn member_count(&self) -> usize;
+    /// Member Rust field name by declaration index.
+    fn member_name(&self, index: usize) -> Option<&'static str>;
+    fn member<'b>(&'b mut self, index: usize) -> Option<FieldRef<'b>>;
+    /// Member by name, matched normalized (case-insensitive, no underscores).
+    fn member_by_name<'b>(&'b mut self, name: &str) -> Option<FieldRef<'b>> {
+        let want = normalize_member_name(name);
+        let index = (0..self.member_count())
+            .find(|&i| self.member_name(i).map(normalize_member_name) == Some(want.clone()))?;
+        self.member(index)
+    }
+}
+
+/// Mutable access to a `def_variant!` tagged union.
+pub trait VariantSlot {
+    /// The variant enum's Rust type name (for ctor-name mapping tables).
+    fn type_name(&self) -> &'static str;
+    fn tag(&self) -> u32;
+    /// Reset to the variant for `tag` with default field values. `false` when
+    /// the tag isn't a known case.
+    fn set_tag(&mut self, tag: u32) -> bool;
+    /// The current variant's member count.
+    fn member_count(&self) -> usize;
+    fn member_name(&self, index: usize) -> Option<&'static str>;
+    fn member<'b>(&'b mut self, index: usize) -> Option<FieldRef<'b>>;
+    fn member_by_name<'b>(&'b mut self, name: &str) -> Option<FieldRef<'b>> {
+        let want = normalize_member_name(name);
+        let index = (0..self.member_count())
+            .find(|&i| self.member_name(i).map(normalize_member_name) == Some(want.clone()))?;
+        self.member(index)
+    }
 }
 
 impl AsField for f32 {
@@ -82,47 +303,67 @@ impl AsField for WStr {
         FieldRef::WStr(self)
     }
 }
-
-// Wire types the generic walk doesn't cover yet; the consumer handles these
-// explicitly (they only occur in game.bin defs, which aren't text-lowered).
-macro_rules! as_complex {
-    ($($ty:ty => $label:literal),+ $(,)?) => {
-        $(
-            impl AsField for $ty {
-                fn as_field(&mut self) -> FieldRef<'_> {
-                    FieldRef::Complex($label)
-                }
-            }
-        )+
-    };
-}
-
-as_complex! {
-    u8 => "u8",
-    u16 => "u16",
-    u64 => "u64",
-    i8 => "i8",
-    i16 => "i16",
-    crate::def::wire::DefString => "DefString",
-    crate::def::wire::DefIndex => "DefIndex",
-    crate::def::wire::PString => "PString",
-}
-
-impl<T> AsField for Vec<T> {
+impl AsField for DefString {
     fn as_field(&mut self) -> FieldRef<'_> {
-        FieldRef::Complex("Vec")
+        FieldRef::DefString(self)
     }
 }
-impl<K, V> AsField for std::collections::BTreeMap<K, V> {
+impl AsField for DefIndex {
     fn as_field(&mut self) -> FieldRef<'_> {
-        FieldRef::Complex("BTreeMap")
+        FieldRef::DefIndex(self)
     }
 }
-impl<K, V> AsField for crate::def::wire::VecMap<K, V> {
+impl AsField for PString {
     fn as_field(&mut self) -> FieldRef<'_> {
-        FieldRef::Complex("VecMap")
+        FieldRef::PString(self)
     }
 }
+impl AsField for u8 {
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::U8(self)
+    }
+}
+impl AsField for u16 {
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::U16(self)
+    }
+}
+impl AsField for u64 {
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::U64(self)
+    }
+}
+impl AsField for i8 {
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::I8(self)
+    }
+}
+impl AsField for i16 {
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::I16(self)
+    }
+}
+
+impl<T: AsField + DefDefault + Clone> AsField for Vec<T> {
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::Vec(self)
+    }
+}
+impl<K: AsField + Ord + DefDefault + Clone, V: AsField + DefDefault + Clone> AsField
+    for std::collections::BTreeMap<K, V>
+{
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::Map(self)
+    }
+}
+impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clone> AsField for VecMap<K, V> {
+    fn as_field(&mut self) -> FieldRef<'_> {
+        FieldRef::Map(self)
+    }
+}
+
+/// Fixed-size run of values: the generic walk doesn't index into arrays (they
+/// appear as positional ctor data in text); consumers handle them explicitly.
 impl<T, const N: usize> AsField for [T; N] {
     fn as_field(&mut self) -> FieldRef<'_> {
         FieldRef::Complex("array")

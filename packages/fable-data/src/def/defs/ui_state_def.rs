@@ -3,7 +3,7 @@ use crate::def::prelude::*;
 
 def_struct! {
     /// `NUISystem::CUIStateDef` — C++ `NUISystem::CUIStateDef`.
-    #[derive(Debug, Clone, PartialEq, Default)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct UiStateDef {
         "GraphicIndex" => pub graphic_index: u32,
         "PositionX" => pub position_x: f32,

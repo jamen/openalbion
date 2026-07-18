@@ -3,7 +3,7 @@ use crate::def::prelude::*;
 
 def_struct! {
     /// `UI_ICONS_DEF` — C++ `NUISystem::CUIIconsDef`.
-    #[derive(Debug, Clone, PartialEq, Default)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct UiIconsDef {
         "IconFriendRequestReceived" => pub icon_friend_request_received: u32,
         "IconFriendRequestReceivedOn" => pub icon_friend_request_received_on: u32,

@@ -729,7 +729,11 @@ impl GameBody {
 }
 
 // ── Sub-def table ──────────────────────────────────────
-#[allow(dead_code)]
+/// Whether entries of the named def type carry a sub-def table (`u16` count +
+/// 12-byte records) between the entry preamble and the field controls.
+/// Presence is a per-type property: these are the def classes deriving from
+/// the sub-def bases (`CSubDefClassBase`/`CParentDefClassBase`), verified
+/// against all three retail bins.
 pub fn def_name_has_subdef_table(name: &str) -> bool {
     matches!(
         name,
@@ -1112,4 +1116,45 @@ pub fn parse_script_def(
             bytes: core::mem::take(cur).to_vec(),
         },
     })
+}
+
+/// Copy fields that lowering deliberately *preserves* (rather than computes)
+/// from a reference entry's body. Currently that's the Thing component list:
+/// its per-entry records are opaque to the lowerer (`Components.Add` edits
+/// are future from-scratch-compiler work), so the reference's value is kept.
+pub fn preserve_unlowered(lowered: &mut DefBody, reference: &DefBody) {
+    use crate::def::binary::def_binary::DefBody as D;
+    match (lowered, reference) {
+        (D::Game(GameBody::ThingBaseDef(a)), D::Game(GameBody::ThingBaseDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingBuildingDef(a)), D::Game(GameBody::ThingBuildingDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingCreatureDef(a)), D::Game(GameBody::ThingCreatureDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingHolySiteDef(a)), D::Game(GameBody::ThingHolySiteDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingMarkerDef(a)), D::Game(GameBody::ThingMarkerDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingNoiseDef(a)), D::Game(GameBody::ThingNoiseDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingObjectDef(a)), D::Game(GameBody::ThingObjectDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingPhysicalSwitchDef(a)), D::Game(GameBody::ThingPhysicalSwitchDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingSwitchDef(a)), D::Game(GameBody::ThingSwitchDef(b))) => {
+            a.components = b.components.clone();
+        }
+        (D::Game(GameBody::ThingVillageDef(a)), D::Game(GameBody::ThingVillageDef(b))) => {
+            a.components = b.components.clone();
+        }
+        _ => {}
+    }
 }

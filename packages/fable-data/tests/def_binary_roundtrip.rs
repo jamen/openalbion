@@ -117,13 +117,7 @@ fn roundtrip(dir: &Path, names: &Names, bin_name: &str) {
 fn roundtrip_retail_defs() {
     let dir = Path::new("/home/jamen/Fable/data/CompiledDefs");
     let names = Names::load(&dir.join("names.bin")).unwrap();
-    for bin in ["frontend.bin", "script.bin"] {
+    for bin in ["frontend.bin", "script.bin", "game.bin"] {
         roundtrip(dir, &names, bin);
     }
-
-    // game.bin doesn't fully parse yet (known THING_GROUP layout gap), so
-    // only check its container layout invariants without a round-trip.
-    let game = std::fs::read(dir.join("game.bin")).unwrap();
-    let (chunk_count, _, _) = check_layout(&game, "game.bin");
-    println!("game.bin: container layout OK ({chunk_count} index entries)");
 }

@@ -67,6 +67,13 @@ macro_rules! def_enum {
             }
         }
 
+        impl crate::def::visit::DefDefault for $name {
+            fn def_default() -> Self {
+                // The first variant is the conventional default/zero value.
+                [$( Self::$variant ),+][0]
+            }
+        }
+
         impl crate::def::wire::Wire for $name {
             fn parse(
                 cur: &mut &[u8],
@@ -159,6 +166,12 @@ macro_rules! def_flags {
                     $( $symbol => Some(Self::$flag), )+
                     _ => None,
                 }
+            }
+        }
+
+        impl crate::def::visit::DefDefault for $name {
+            fn def_default() -> Self {
+                Self(0)
             }
         }
 

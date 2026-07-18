@@ -24,13 +24,13 @@ pub struct DefBinary {
 }
 
 #[derive(Debug)]
-pub enum LoadError<'a> {
+pub enum LoadError {
     Open(io::Error),
-    FromReader(FromReaderError<'a>),
+    FromReader(FromReaderError),
 }
 
 impl DefBinary {
-    pub fn load_with_names<'a>(path: &Path, names: &'a Names) -> Result<Self, LoadError<'a>> {
+    pub fn load_with_names<'a>(path: &Path, names: &'a Names) -> Result<Self, LoadError> {
         use LoadError as E;
         let file = File::open(path).map_err(E::Open)?;
         let reader = BufReader::new(file);
@@ -39,16 +39,16 @@ impl DefBinary {
 }
 
 #[derive(Debug)]
-pub enum FromReaderError<'a> {
+pub enum FromReaderError {
     Read(io::Error),
-    FromBytes(FromBytesError<'a>),
+    FromBytes(FromBytesError),
 }
 
 impl DefBinary {
     pub fn from_reader_with_names<'a, R: Read>(
         mut reader: R,
         names: &'a Names,
-    ) -> Result<Self, FromReaderError<'a>> {
+    ) -> Result<Self, FromReaderError> {
         use FromReaderError as E;
         let mut buf = Vec::new();
         reader.read_to_end(&mut buf).map_err(E::Read)?;
@@ -57,18 +57,18 @@ impl DefBinary {
 }
 
 #[derive(Debug)]
-pub enum FromBytesError<'a> {
+pub enum FromBytesError {
     ParseHeader(ParseHeaderError),
     NameRefs(ParseNameRefListError),
     ParseChunkIndex(ParseChunkIndexError),
-    ParseChunks(ParseChunkListError<'a>),
+    ParseChunks(ParseChunkListError),
 }
 
 impl DefBinary {
     pub fn from_bytes_with_names<'a>(
         bytes: &[u8],
         names: &Names,
-    ) -> Result<Self, FromBytesError<'a>> {
+    ) -> Result<Self, FromBytesError> {
         use FromBytesError as E;
 
         let bytes_cursor = &mut &bytes[..];
@@ -344,8 +344,8 @@ impl ChunkIndexEntry {
 }
 
 #[derive(Debug)]
-pub enum ParseChunkListError<'a> {
-    ParseChunk(ParseChunkError<'a>),
+pub enum ParseChunkListError {
+    ParseChunk(ParseChunkError),
 }
 
 impl Chunk {
@@ -354,7 +354,7 @@ impl Chunk {
         chunk_index: &ChunkIndex,
         name_refs: &[NameRef],
         names: &Names,
-    ) -> Result<Vec<Self>, ParseChunkListError<'a>> {
+    ) -> Result<Vec<Self>, ParseChunkListError> {
         use ParseChunkListError as E;
 
         let mut list = Vec::new();
@@ -401,9 +401,9 @@ pub struct Chunk {
 }
 
 #[derive(Debug)]
-pub enum ParseChunkError<'a> {
+pub enum ParseChunkError {
     MinizOxideDecompress(miniz_oxide::inflate::DecompressError),
-    ParseEntries(ParseEntryRecordListError<'a>),
+    ParseEntries(ParseEntryRecordListError),
     TrailingBytes {
         base: u32,
         count: u32,
@@ -420,7 +420,7 @@ impl Chunk {
         entry_count: u32,
         name_refs: &[NameRef],
         names: &Names,
-    ) -> Result<Self, ParseChunkError<'a>> {
+    ) -> Result<Self, ParseChunkError> {
         use ParseChunkError as E;
 
         let decompressed_bytes = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(
@@ -488,21 +488,51 @@ impl Chunk {
 #[derive(Debug, Clone)]
 pub struct EntryRecord {
     pub preamble: EntryPreamble,
-    /// "Instance" defs carry a 2-byte prefix (always `0x0000` observed) between
-    /// the preamble and the control body; class templates don't. Preserved here
-    /// so the entry round-trips.
-    pub instance_prefix: Option<[u8; 2]>,
+    /// The def's sub-def table: `Some` (possibly empty) for def types deriving
+    /// from the sub-def bases, `None` for all other types. Presence is a
+    /// per-type property — see [`crate::def::dispatch::def_name_has_subdef_table`].
+    pub sub_defs: Option<Vec<SubDefRecord>>,
     pub chunk_start: usize,
     pub chunk_end: usize,
     pub body: DefBody,
     pub raw_bytes: Vec<u8>,
 }
 
+/// One record of a def's sub-def table, written between the entry preamble
+/// and the field controls for def types deriving from the sub-def bases:
+/// `u16` count, then `count` of these 12-byte records. Each record links the
+/// entry (`owner_index`, usually its own global index) to another def entry
+/// (`def_index`, an unnamed compiler-generated sub-def), keyed by the
+/// sub-def's `name_crc`. Verified against all three retail bins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SubDefRecord {
+    pub name_crc: u32,
+    pub def_index: u32,
+    pub owner_index: u32,
+}
+
+impl SubDefRecord {
+    fn parse(cur: &mut &[u8]) -> Result<Self, TakeError> {
+        let name_crc = take::<u32>(cur)?.to_le();
+        let def_index = take::<u32>(cur)?.to_le();
+        let owner_index = take::<u32>(cur)?.to_le();
+        Ok(Self { name_crc, def_index, owner_index })
+    }
+
+    pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), UnexpectedEnd> {
+        put(out, &self.name_crc)?;
+        put(out, &self.def_index)?;
+        put(out, &self.owner_index)
+    }
+
+    pub const BYTE_SIZE: usize = 12;
+}
+
 #[derive(Debug)]
-pub enum ParseEntryRecordListError<'a> {
+pub enum ParseEntryRecordListError {
     Offset(TakeError),
     EntryBytes(UnexpectedEnd),
-    EntryRecord(u32, ParseEntryRecordError<'a>),
+    EntryRecord(u32, ParseEntryRecordError),
     NoNameEntry {
         position: u32,
         name_ref: NameRef,
@@ -526,7 +556,7 @@ impl EntryRecord {
         chunk_entry_count: u32,
         name_refs: &[NameRef],
         names: &Names,
-    ) -> Result<Vec<Self>, ParseEntryRecordListError<'a>> {
+    ) -> Result<Vec<Self>, ParseEntryRecordListError> {
         use ParseEntryRecordListError as E;
 
         let original_cur = &mut &cur[..];
@@ -602,69 +632,57 @@ impl EntryRecord {
 }
 
 #[derive(Debug)]
-pub enum ParseEntryRecordError<'a> {
+pub enum ParseEntryRecordError {
     Preamble(ParseEntryPreambleError),
-    DefBody((&'a str, ParseControlError)),
+    SubDefTable(TakeError),
 }
 
 impl EntryRecord {
-    fn parse<'a>(
+    fn parse(
         cur: &mut &[u8],
         name: &NamesEntry,
         chunk_start: usize,
         chunk_end: usize,
-    ) -> Result<Self, ParseEntryRecordError<'a>> {
+    ) -> Result<Self, ParseEntryRecordError> {
         use ParseEntryRecordError as E;
 
         let raw_bytes = cur.to_vec();
 
         let preamble = EntryPreamble::parse(cur).map_err(E::Preamble)?;
 
-        // The body is a sequence of `(crc_id, value)` controls. "Instance" defs
-        // carry a 2-byte prefix before the first control that templates lack,
-        // and it isn't flagged anywhere in the header. Since `parse_id`
-        // validates each id against `crc(field_name)`, a misaligned parse fails
-        // loudly — so try the body as-is, and on failure retry past a 2-byte
-        // prefix. (Unknown def types swallow their whole body and never reach
-        // the retry; their prefix is preserved in the raw bytes.)
-        // Full body bytes, used for the `Unknown` fallback below.
+        // Def types deriving from the sub-def bases carry a sub-def table
+        // between the preamble and the field controls. Presence is a per-type
+        // property (verified against all three retail bins), so the table is
+        // read deterministically — never sniffed per entry.
+        let sub_defs = if crate::def::dispatch::def_name_has_subdef_table(&name.string) {
+            let count = take::<u16>(cur).map_err(E::SubDefTable)?.to_le();
+            let mut records = Vec::with_capacity(count as usize);
+            for _ in 0..count {
+                records.push(SubDefRecord::parse(cur).map_err(E::SubDefTable)?);
+            }
+            Some(records)
+        } else {
+            None
+        };
+
+        // The body is a sequence of `(crc_id, value)` controls. A def type we
+        // model but whose layout doesn't match the entry's bytes falls back to
+        // raw bytes rather than aborting the whole file (truly unknown def
+        // types already parse as `DefBody::Unknown`).
         let body_bytes = cur.to_vec();
 
         let mut attempt = *cur;
-        let typed = match DefBody::parse(&mut attempt, &name.string) {
+        let body = match DefBody::parse(&mut attempt, &name.string) {
             Ok(body) => {
                 *cur = attempt;
-                Some((None, body))
+                body
             }
-            // When the as-is parse fails and a 2-byte instance prefix is present,
-            // it's an instance def — retry past the prefix.
-            Err(_) if cur.starts_with(&[0x00, 0x00]) => {
-                let mut skipped = &cur[2..];
-                match DefBody::parse(&mut skipped, &name.string) {
-                    Ok(body) => {
-                        *cur = skipped;
-                        Some((Some([0x00, 0x00]), body))
-                    }
-                    Err(_) => None,
-                }
-            }
-            Err(_) => None,
-        };
-
-        // A def type we model but whose retail layout we don't match exactly
-        // falls back to raw bytes rather than aborting the whole file. (Truly
-        // unknown def types already parse as `DefBody::Unknown` above.)
-        let (instance_prefix, body) = match typed {
-            Some(parsed) => parsed,
-            None => {
+            Err(_) => {
                 *cur = &cur[cur.len()..];
-                (
-                    None,
-                    DefBody::Unknown {
-                        name: name.string.clone(),
-                        bytes: body_bytes,
-                    },
-                )
+                DefBody::Unknown {
+                    name: name.string.clone(),
+                    bytes: body_bytes,
+                }
             }
         };
 
@@ -673,7 +691,7 @@ impl EntryRecord {
             chunk_end,
             raw_bytes,
             preamble,
-            instance_prefix,
+            sub_defs,
             body,
         })
     }
@@ -682,7 +700,7 @@ impl EntryRecord {
 #[derive(Debug)]
 pub enum SerializeEntryRecordError {
     Preamble(SerializeEntryPreambleError),
-    InstancePrefix(UnexpectedEnd),
+    SubDefTable(UnexpectedEnd),
     Body((&'static str, SerializeControlError)),
 }
 
@@ -690,8 +708,11 @@ impl EntryRecord {
     pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), SerializeEntryRecordError> {
         use SerializeEntryRecordError as E;
         self.preamble.serialize(out).map_err(E::Preamble)?;
-        if let Some(prefix) = &self.instance_prefix {
-            put_bytes(out, prefix).map_err(E::InstancePrefix)?;
+        if let Some(records) = &self.sub_defs {
+            put(out, &(records.len() as u16)).map_err(E::SubDefTable)?;
+            for record in records {
+                record.serialize(out).map_err(E::SubDefTable)?;
+            }
         }
         self.body.serialize(out).map_err(E::Body)?;
         Ok(())
@@ -699,7 +720,7 @@ impl EntryRecord {
 
     pub fn byte_size(&self) -> usize {
         EntryPreamble::BYTE_SIZE
-            + self.instance_prefix.map_or(0, |p| p.len())
+            + self.sub_defs.as_ref().map_or(0, |r| 2 + r.len() * SubDefRecord::BYTE_SIZE)
             + self.body.byte_size()
     }
 

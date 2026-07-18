@@ -11,13 +11,16 @@ wire_struct! {
 }
 
 wire_struct! {
-    /// C++ `CEngineGraphic`.
+    /// C++ `CEngineGraphic` — OG retail layout (the Anniversary build reordered
+    /// it to bank…alpha,type; the spec documents the newer order). Retail
+    /// bytes only fit type-first: `Type` is a 4-byte enum value and
+    /// `AdditiveAlpha` a 1-byte bool.
     pub struct EngineGraphic {
+        pub type_: i32,
         pub bank_index: i32,
         pub anim_step: f32,
         pub render_size_x: f32,
-        pub additive_alpha: f32,
-        pub type_: u8,
+        pub additive_alpha: u8,
     }
 }
 

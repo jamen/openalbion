@@ -3,7 +3,7 @@ use crate::def::prelude::*;
 
 def_struct! {
     /// `CONTROL_SCHEME` — `CControlsDef`.
-    #[derive(Debug, Clone, PartialEq, Default)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct ControlsDef {
         "Controls" => pub controls: Vec<ActionInputControl>,
         "ToggleZTarget" => pub toggle_z_target: bool,

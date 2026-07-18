@@ -419,6 +419,12 @@ macro_rules! wire_struct {
             $( $(#[$fmeta])* pub $field: $ty, )+
         }
 
+        impl $crate::def::visit::DefDefault for $name {
+            fn def_default() -> Self {
+                Self { $( $field: $crate::def::visit::DefDefault::def_default(), )+ }
+            }
+        }
+
         impl $crate::def::wire::Wire for $name {
             fn parse(
                 cur: &mut &[u8],
@@ -446,9 +452,31 @@ macro_rules! wire_struct {
             }
         }
 
+        impl $crate::def::visit::StructSlot for $name {
+            fn type_name(&self) -> &'static str {
+                stringify!($name)
+            }
+            fn member_count(&self) -> usize {
+                0 $(+ { let _ = stringify!($field); 1 })+
+            }
+            fn member_name(&self, index: usize) -> Option<&'static str> {
+                [$(stringify!($field)),+].get(index).copied()
+            }
+            fn member<'b>(&'b mut self, index: usize) -> Option<$crate::def::visit::FieldRef<'b>> {
+                let mut i = 0usize;
+                $(
+                    if i == index {
+                        return Some($crate::def::visit::AsField::as_field(&mut self.$field));
+                    }
+                    i += 1;
+                )+
+                None
+            }
+        }
+
         impl $crate::def::visit::AsField for $name {
             fn as_field(&mut self) -> $crate::def::visit::FieldRef<'_> {
-                $crate::def::visit::FieldRef::Complex(stringify!($name))
+                $crate::def::visit::FieldRef::Struct(self)
             }
         }
     };
@@ -491,6 +519,18 @@ macro_rules! def_struct {
                 $( $(#[$fmeta])* pub $field: $ty, )+
             }
 
+            impl Default for $name {
+                fn default() -> Self {
+                    Self { $( $field: $crate::def::visit::DefDefault::def_default(), )+ }
+                }
+            }
+
+            impl $crate::def::visit::DefDefault for $name {
+                fn def_default() -> Self {
+                    Self::default()
+                }
+            }
+
             impl $name {
                 pub(crate) fn parse(
                     cur: &mut &[u8],
@@ -524,6 +564,12 @@ macro_rules! def_struct {
                 }
             }
 
+            impl $crate::def::visit::VisitFields for $name {
+                fn visit_fields<V: $crate::def::visit::FieldVisitor>(&mut self, visitor: &mut V) {
+                    $name::visit_fields(self, visitor);
+                }
+            }
+
             impl $crate::def::wire::Wire for $name {
                 fn parse(
                     cur: &mut &[u8],
@@ -544,9 +590,31 @@ macro_rules! def_struct {
                 }
             }
 
+            impl $crate::def::visit::StructSlot for $name {
+                fn type_name(&self) -> &'static str {
+                    stringify!($name)
+                }
+                fn member_count(&self) -> usize {
+                    0 $(+ { let _ = stringify!($field); 1 })+
+                }
+                fn member_name(&self, index: usize) -> Option<&'static str> {
+                    [$(stringify!($field)),+].get(index).copied()
+                }
+                fn member<'b>(&'b mut self, index: usize) -> Option<$crate::def::visit::FieldRef<'b>> {
+                    let mut i = 0usize;
+                    $(
+                        if i == index {
+                            return Some($crate::def::visit::AsField::as_field(&mut self.$field));
+                        }
+                        i += 1;
+                    )+
+                    None
+                }
+            }
+
             impl $crate::def::visit::AsField for $name {
                 fn as_field(&mut self) -> $crate::def::visit::FieldRef<'_> {
-                    $crate::def::visit::FieldRef::Complex(stringify!($name))
+                    $crate::def::visit::FieldRef::Struct(self)
                 }
             }
         )+
@@ -578,6 +646,16 @@ macro_rules! def_variant {
         #[derive(Debug, Clone, PartialEq)]
         pub enum $name {
             $( $variant { $( $field: $ty ),* } ),+
+        }
+
+        impl $crate::def::visit::DefDefault for $name {
+            fn def_default() -> Self {
+                // The first (tag-0) variant is the conventional default.
+                [$( Self::$variant { $( $field: $crate::def::visit::DefDefault::def_default() ),* } ),+]
+                    .into_iter()
+                    .next()
+                    .unwrap()
+            }
         }
 
         impl $crate::def::wire::Wire for $name {
@@ -626,15 +704,63 @@ macro_rules! def_variant {
             }
         }
 
+        impl $crate::def::visit::VariantSlot for $name {
+            fn type_name(&self) -> &'static str {
+                stringify!($name)
+            }
+            fn tag(&self) -> u32 {
+                match self {
+                    $( Self::$variant { .. } => $tag, )+
+                }
+            }
+            fn set_tag(&mut self, tag: u32) -> bool {
+                match tag {
+                    $(
+                        $tag => {
+                            *self = Self::$variant { $( $field: $crate::def::visit::DefDefault::def_default(), )* };
+                            true
+                        }
+                    )+
+                    _ => false,
+                }
+            }
+            fn member_count(&self) -> usize {
+                match self {
+                    $( Self::$variant { .. } => 0 $(+ { let _ = stringify!($field); 1 })*, )+
+                }
+            }
+            fn member_name(&self, index: usize) -> Option<&'static str> {
+                match self {
+                    $( Self::$variant { .. } => [$(stringify!($field)),*].get(index).copied(), )+
+                }
+            }
+            fn member<'b>(&'b mut self, index: usize) -> Option<$crate::def::visit::FieldRef<'b>> {
+                match self {
+                    $(
+                        Self::$variant { $( $field ),* } => {
+                            let mut i = 0usize;
+                            $(
+                                if i == index {
+                                    return Some($crate::def::visit::AsField::as_field($field));
+                                }
+                                i += 1;
+                            )*
+                            None
+                        }
+                    )+
+                }
+            }
+        }
+
         impl $crate::def::visit::AsField for $name {
             fn as_field(&mut self) -> $crate::def::visit::FieldRef<'_> {
-                $crate::def::visit::FieldRef::Complex(stringify!($name))
+                $crate::def::visit::FieldRef::Variant(self)
             }
         }
     };
 }
 
-// ── def classes ───────────────────────────────────────────────────────────────
+// ── def classes ───────────────────────────────────────────────────────────
 /// Parse one field control: `u32 crc32(name)` (validated) then the value.
 pub fn parse_field<T: Wire>(
     cur: &mut &[u8],

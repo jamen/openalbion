@@ -6,6 +6,6 @@ def_struct! {
     #[derive(Debug, Clone, PartialEq)]
     pub struct OpinionReactionMaskDef {
         "ReactionEnabledDefault" => pub reaction_enabled_default: bool,
-        "ReactionEnabled" => pub reaction_enabled: VecMap<OpinionDeedType, bool>,
+        "ReactionEnabled" => pub reaction_enabled: BTreeMap<OpinionDeedType, bool>,
     }
 }

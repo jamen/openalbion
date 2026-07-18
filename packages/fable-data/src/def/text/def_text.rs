@@ -225,7 +225,18 @@ impl<'a> DefParser<'a> {
             self.skip_trivia()?;
             if self.try_consume("#end_definition") { let _ = self.try_consume(";"); break; }
             if self.is_eof() { return Err(self.err(DefParseErrorKind::UnexpectedToken { expected: "#end_definition".into() })); }
-            body.push(self.parse_statement()?);
+            match self.parse_statement() {
+                Ok(statement) => body.push(statement),
+                // The original compiler tolerated malformed statements (the
+                // retail bins contain defs whose text has stray tokens) —
+                // skip the rest of the line and carry on.
+                Err(_) => {
+                    while let Some(c) = self.peek_char() {
+                        self.advance(c.len_utf8());
+                        if c == '\n' { break; }
+                    }
+                }
+            }
         }
 
         Ok(Definition { is_template, def_type, name, specializes, body })
@@ -242,12 +253,14 @@ impl<'a> DefParser<'a> {
             let (object, method) = self.split_method_path(path)?;
             let call = self.parse_call_with_name(method)?;
             self.skip_trivia()?;
-            self.consume_char(';')?;
+            // The original compiler tolerated a missing statement ';'.
+            let _ = self.try_consume(";");
             return Ok(Statement::MethodCall(MethodCall { object, call }));
         }
         let value = self.parse_expr()?;
         self.skip_trivia()?;
-        self.consume_char(';')?;
+        // The original compiler tolerated a missing statement ';'.
+        let _ = self.try_consume(";");
         Ok(Statement::Field(Field { path, expr: value }))
     }
 
@@ -692,27 +705,42 @@ mod tests {
     }
 
     #[test]
-    fn err_unterminated_block_comment() {
-        let kind = parse_err("#definition OBJECT T\n  Health /* never closes\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::SkipTrivia(SkipTriviaError::UnterminatedBlockComment)));
+    fn unterminated_block_comment_recovered() {
+        // An unterminated block comment inside a statement is recovered by
+        // skipping the rest of the line; the definition still parses.
+        let def = parse_def("  Health /* never closes");
+        assert_eq!(def.body.len(), 0);
     }
 
     #[test]
     fn err_unterminated_string() {
+        // An unterminated string consumes the rest of the file, so the
+        // definition's `#end_definition` is lost and the file errors.
         let kind = parse_err("#definition OBJECT T\n  Name \"no close\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::UnterminatedString));
+        assert!(matches!(kind, DefParseErrorKind::UnexpectedToken { .. }));
     }
 
     #[test]
-    fn err_mismatched_tag() {
-        let kind = parse_err("#definition OBJECT T\n  <A>\n  <\\B>\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::MismatchedTag { .. }));
+    fn mismatched_tag_recovered() {
+        // A mismatched close tag drops the malformed statement, not the def.
+        let def = parse_def("  <A>\n  <\\B>");
+        assert_eq!(def.body.len(), 0);
     }
 
     #[test]
-    fn err_missing_semicolon() {
-        let kind = parse_err("#definition OBJECT T\n  Health 100\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::ConsumeChar(ConsumeCharError::MismatchedCharacter { .. })));
+    fn missing_semicolon_tolerated() {
+        // The original compiler tolerated a missing statement ';' (retail
+        // defs rely on it).
+        let def = parse_def("  Health 100");
+        assert_eq!(def.body.len(), 1);
+    }
+
+    #[test]
+    fn stray_tokens_recovered() {
+        // A stray fragment after a complete statement (seen in retail's
+        // building_herocentre.def) is dropped; sibling statements survive.
+        let def = parse_def("  MESH_GUILD_SHOP_01 IsPartOfHeroGuild TRUE;\n  GroupDef G_REGION_GUILD;");
+        assert_eq!(def.body.len(), 2);
     }
 
     #[test]

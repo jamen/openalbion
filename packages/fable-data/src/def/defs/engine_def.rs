@@ -3,7 +3,7 @@ use crate::def::prelude::*;
 
 def_struct! {
     /// `ENGINE` — C++ `CEngineDef`.
-    #[derive(Debug, Clone, PartialEq, Default)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct EngineDef {
         "LODErrorTolerance" => pub lod_error_tolerance: f32,
         "CharacterLODErrorTolerance" => pub character_lod_error_tolerance: f32,

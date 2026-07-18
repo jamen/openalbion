@@ -3,7 +3,7 @@ use crate::def::prelude::*;
 
 def_struct! {
     /// `CONFIG_OPTIONS_DEFAULTS_DEF` — C++ `CConfigOptionsDefaultsDef`.
-    #[derive(Debug, Clone, PartialEq, Default)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct ConfigOptionsDefaultsDef {
         "Antialiasing" => pub antialiasing: u32,
         "ResolutionWidth" => pub resolution_width: i32,

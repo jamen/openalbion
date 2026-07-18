@@ -3,7 +3,7 @@ use crate::def::prelude::*;
 
 def_struct! {
     /// `ENGINE_VIDEO_OPTIONS` — C++ `CEngineVideoOptionsDef`.
-    #[derive(Debug, Clone, PartialEq, Default)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct EngineVideoOptionsDef {
         "HiresTextureMemory" => pub hires_texture_memory: i32,
         "LODErrorTolerance" => pub lod_error_tolerance: f32,

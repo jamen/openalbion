@@ -11,7 +11,7 @@ def_struct! {
         "ReactNonstop" => pub react_nonstop: bool,
         "ReactToSelfPermitted" => pub react_to_self_permitted: bool,
         "ReactionFlagDefault" => pub reaction_flag_default: bool,
-        "ReactionFlag" => pub reaction_flag: VecMap<OpinionDeedType, bool>,
+        "ReactionFlag" => pub reaction_flag: BTreeMap<OpinionDeedType, bool>,
         "UseNavLineOfSight" => pub use_nav_line_of_sight: bool,
         "WitnessesWillNotAttack" => pub witnesses_will_not_attack: bool,
         "WitnessesWillOverrideFactionEnemy" => pub witnesses_will_override_faction_enemy: bool,
@@ -103,5 +103,54 @@ def_struct! {
         "BinaryOpinion" => pub binary_opinion3: f32,
         "BinaryOpinion" => pub binary_opinion4: f32,
         "BinaryOpinion" => pub binary_opinion5: f32,
+    }
+}
+
+impl OpinionSourceDef {
+    /// The 79 `BinaryReaction` bools aren't def-file controls: the game
+    /// derives them from [`Self::reaction_flag_default`] and the
+    /// [`Self::reaction_flag`] map (verified against all 51 retail
+    /// OPINION_SOURCE entries): index `i` is `map.get(i, default)` for
+    /// `i >= 18`, always `false` below.
+    pub fn derive_binary_reactions(&mut self) {
+        let flags = [
+            &mut self.binary_reaction, &mut self.binary_reaction2, &mut self.binary_reaction3,
+            &mut self.binary_reaction4, &mut self.binary_reaction5, &mut self.binary_reaction6,
+            &mut self.binary_reaction7, &mut self.binary_reaction8, &mut self.binary_reaction9,
+            &mut self.binary_reaction10, &mut self.binary_reaction11, &mut self.binary_reaction12,
+            &mut self.binary_reaction13, &mut self.binary_reaction14, &mut self.binary_reaction15,
+            &mut self.binary_reaction16, &mut self.binary_reaction17, &mut self.binary_reaction18,
+            &mut self.binary_reaction19, &mut self.binary_reaction20, &mut self.binary_reaction21,
+            &mut self.binary_reaction22, &mut self.binary_reaction23, &mut self.binary_reaction24,
+            &mut self.binary_reaction25, &mut self.binary_reaction26, &mut self.binary_reaction27,
+            &mut self.binary_reaction28, &mut self.binary_reaction29, &mut self.binary_reaction30,
+            &mut self.binary_reaction31, &mut self.binary_reaction32, &mut self.binary_reaction33,
+            &mut self.binary_reaction34, &mut self.binary_reaction35, &mut self.binary_reaction36,
+            &mut self.binary_reaction37, &mut self.binary_reaction38, &mut self.binary_reaction39,
+            &mut self.binary_reaction40, &mut self.binary_reaction41, &mut self.binary_reaction42,
+            &mut self.binary_reaction43, &mut self.binary_reaction44, &mut self.binary_reaction45,
+            &mut self.binary_reaction46, &mut self.binary_reaction47, &mut self.binary_reaction48,
+            &mut self.binary_reaction49, &mut self.binary_reaction50, &mut self.binary_reaction51,
+            &mut self.binary_reaction52, &mut self.binary_reaction53, &mut self.binary_reaction54,
+            &mut self.binary_reaction55, &mut self.binary_reaction56, &mut self.binary_reaction57,
+            &mut self.binary_reaction58, &mut self.binary_reaction59, &mut self.binary_reaction60,
+            &mut self.binary_reaction61, &mut self.binary_reaction62, &mut self.binary_reaction63,
+            &mut self.binary_reaction64, &mut self.binary_reaction65, &mut self.binary_reaction66,
+            &mut self.binary_reaction67, &mut self.binary_reaction68, &mut self.binary_reaction69,
+            &mut self.binary_reaction70, &mut self.binary_reaction71, &mut self.binary_reaction72,
+            &mut self.binary_reaction73, &mut self.binary_reaction74, &mut self.binary_reaction75,
+            &mut self.binary_reaction76, &mut self.binary_reaction77, &mut self.binary_reaction78,
+            &mut self.binary_reaction79,
+        ];
+        for (i, flag) in flags.into_iter().enumerate() {
+            *flag = if i >= 18 {
+                self.reaction_flag
+                    .get(&OpinionDeedType(i as i32))
+                    .copied()
+                    .unwrap_or(self.reaction_flag_default)
+            } else {
+                false
+            };
+        }
     }
 }

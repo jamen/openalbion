@@ -3,7 +3,7 @@ use crate::def::prelude::*;
 
 def_struct! {
     /// `UI_MISC_THINGS_DEF` — C++ `NUISystem::CUIMiscThingsDef`.
-    #[derive(Debug, Clone, PartialEq, Default)]
+    #[derive(Debug, Clone, PartialEq)]
     pub struct UiMiscThingsDef {
         "SpaceSeparator" => pub space_separator: WStr,
         "CommaSeparator" => pub comma_separator: WStr,
