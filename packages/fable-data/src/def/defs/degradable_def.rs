@@ -24,7 +24,7 @@ def_struct! {
     pub struct DegradableDef {
         "Degradable" => pub degradable: bool,
         "GraphicType" => pub graphic_type: EngineGraphicType,
-        "InitiallyBlocksNavigation" => pub initially_blocks_navigation: bool,
+        "InitiallyBlocksNavigation" => pub initially_blocks_navigation: bool = true,
         "Degradations" => pub degradations: Vec<DegradableInfo>,
     }
 }

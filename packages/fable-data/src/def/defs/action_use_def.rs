@@ -7,7 +7,7 @@ def_struct! {
     pub struct ActionUseDef {
         "AnimationGroup" => pub animation_group: DefString,
         "SnapToActionPoint" => pub snap_to_action_point: bool,
-        "IgnoreActionPoints" => pub ignore_action_points: bool,
+        "IgnoreActionPoints" => pub ignore_action_points: bool = true,
         "TutorialCategory" => pub tutorial_category: TutorialCategory,
     }
 }

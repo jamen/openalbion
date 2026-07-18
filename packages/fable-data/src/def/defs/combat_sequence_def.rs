@@ -13,6 +13,6 @@ def_struct! {
         "OnStopType" => pub on_stop_type: CombatSequenceOnStopModuleType,
         "ActionList" => pub action_list: Vec<ActionRegisteredType>,
         "SecondsToPredictTargetPosition" => pub seconds_to_predict_target_position: f32,
-        "PreferIfValid" => pub prefer_if_valid: bool,
+        "PreferIfValid" => pub prefer_if_valid: bool = true,
     }
 }

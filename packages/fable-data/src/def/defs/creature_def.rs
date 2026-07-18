@@ -38,7 +38,7 @@ def_struct! {
         "FlashOnHit" => pub flash_on_hit: bool,
         "PickPocketable" => pub pick_pocketable: bool,
         "ChildThatCanRegionFollow" => pub child_that_can_region_follow: bool,
-        "AllowedInProtectedTowns" => pub allowed_in_protected_towns: bool,
+        "AllowedInProtectedTowns" => pub allowed_in_protected_towns: bool = true,
         "RadiusWeight" => pub radius_weight: VecMap<Opinion, f32>,
         "RadiusSpread" => pub radius_spread: FloatRange,
         "AGhostIsWhatIBe" => pub a_ghost_is_what_i_be: bool,

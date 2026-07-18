@@ -5,9 +5,9 @@ def_struct! {
     /// `CCombatAbilityBlockHeavyWeaponAttackDef` | `CCombatAbilityBlockLightWeaponAttackDef` | `CCombatAbilityBlockProjectileWeaponAttackDef` | `CCombatAbilityBlockUnarmedAttackDef` — C++ `CCombatAbilityBlockDefBase`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct CombatAbilityBlockDefBase {
-        "BlockAngle" => pub block_angle: f32,
-        "BlockCanBeBroken" => pub block_can_be_broken: bool,
-        "ForceRecoilWhenBlocking" => pub force_recoil_when_blocking: bool,
+        "BlockAngle" => pub block_angle: f32 = 120.0,
+        "BlockCanBeBroken" => pub block_can_be_broken: bool = true,
+        "ForceRecoilWhenBlocking" => pub force_recoil_when_blocking: bool = true,
         "CombatAbility" => pub combat_ability: CombatAbilityData,
         "ValidBlockWeaponTypes" => pub valid_block_weapon_types: Vec<WeaponClass>,
     }

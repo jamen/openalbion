@@ -6,11 +6,11 @@ def_struct! {
     #[derive(Debug, Clone, PartialEq)]
     pub struct DoorDef {
         "TriggerType" => pub trigger_type: DoorTriggerType,
-        "TriggerRadius" => pub trigger_radius: f32,
+        "TriggerRadius" => pub trigger_radius: f32 = 3.5,
         "OpenCollisionMesh" => pub open_collision_mesh: i32,
         "ClosedCollisionMesh" => pub closed_collision_mesh: i32,
         "PostVandalismCrimeIfDestroyed" => pub post_vandalism_crime_if_destroyed: bool,
-        "LockPickable" => pub lock_pickable: bool,
+        "LockPickable" => pub lock_pickable: bool = true,
         "PreventLockingByOwner" => pub prevent_locking_by_owner: bool,
     }
 }

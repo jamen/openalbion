@@ -17,6 +17,6 @@ def_struct! {
         "SummonerDeathExplosion" => pub summoner_death_explosion: i32,
         "LightningOrb" => pub lightning_orb: i32,
         "LightningOrbAttackFireheart" => pub lightning_orb_attack_fireheart: i32,
-        "LightningOrbLifeSeconds" => pub lightning_orb_life_seconds: f32,
+        "LightningOrbLifeSeconds" => pub lightning_orb_life_seconds: f32 = -1.0,
     }
 }

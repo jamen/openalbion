@@ -14,7 +14,7 @@ def_struct! {
         "MoonHeight" => pub moon_height: f32,
         "ColourLookupColumn" => pub colour_lookup_column: i32,
         "EditorColour" => pub editor_colour: RGBColour,
-        "FishWeightMult" => pub fish_weight_mult: f32,
+        "FishWeightMult" => pub fish_weight_mult: f32 = 1.0,
     }
 }
 

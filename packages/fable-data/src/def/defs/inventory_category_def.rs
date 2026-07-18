@@ -13,6 +13,6 @@ def_struct! {
         "CategoryName" => pub category_name: DefString,
         "AllowItemsToFillMoreThanOneSlot" => pub allow_items_to_fill_more_than_one_slot: bool,
         "CategoryIdentifier" => pub category_identifier: i32,
-        "AddCategoryOnCreate" => pub add_category_on_create: bool,
+        "AddCategoryOnCreate" => pub add_category_on_create: bool = true,
     }
 }

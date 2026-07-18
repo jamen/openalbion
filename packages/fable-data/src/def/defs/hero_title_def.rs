@@ -15,6 +15,6 @@ def_struct! {
         "RequiredSkillExpLevel" => pub required_skill_exp_level: i32,
         "RequiredWillExpLevel" => pub required_will_exp_level: i32,
         "IsBuyable" => pub is_buyable: bool,
-        "IsAutomatic" => pub is_automatic: bool,
+        "IsAutomatic" => pub is_automatic: bool = true,
     }
 }

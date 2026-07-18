@@ -7,7 +7,7 @@ def_struct! {
     pub struct ThunderBattleDef {
         "NumGetHitsBeforeStormAttack" => pub num_get_hits_before_storm_attack: i32,
         "NumMissesBeforeStormAttack" => pub num_misses_before_storm_attack: i32,
-        "LightningDamage" => pub lightning_damage: f32,
+        "LightningDamage" => pub lightning_damage: f32 = 5.0,
         "BattleChargeLevel" => pub battle_charge_level: i32,
     }
 }

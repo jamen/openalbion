@@ -5,7 +5,7 @@ def_struct! {
     /// `CCombatAbilityStrafeDef` — C++ `CCombatAbilityStrafeDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct CombatAbilityStrafeDef {
-        "RotationSpeed" => pub rotation_speed: f32,
+        "RotationSpeed" => pub rotation_speed: f32 = 20.0,
         "CombatAbility" => pub combat_ability: CombatAbilityData,
     }
 }

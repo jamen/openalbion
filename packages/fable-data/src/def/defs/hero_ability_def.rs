@@ -19,7 +19,7 @@ def_struct! {
         "LevDescription" => pub lev_description: Vec<i32>,
         "ABXYPriority" => pub abxy_priority: i32,
         "MoralityCostFactor" => pub morality_cost_factor: f32,
-        "Aggressive" => pub aggressive: bool,
+        "Aggressive" => pub aggressive: bool = true,
         "MaxedOutDescription" => pub maxed_out_description: i32,
         "DummyObject" => pub dummy_object: DefIndex,
     }

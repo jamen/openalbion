@@ -55,7 +55,7 @@ def_struct! {
         "WifeMarriedIndicatorIcon" => pub wife_married_indicator_icon: i32,
         "ExpressionIndicatorIcon" => pub expression_indicator_icon: i32,
         "FollowerIndicatorIcon" => pub follower_indicator_icon: i32,
-        "EmoteIconDrawDistance" => pub emote_icon_draw_distance: f32,
+        "EmoteIconDrawDistance" => pub emote_icon_draw_distance: f32 = 24.0,
         "AngleToBeConsideredVertical" => pub angle_to_be_considered_vertical: f32,
         "SoundGainLowerValueWhenInsideOutside" => pub sound_gain_lower_value_when_inside_outside: f32,
         "TeleportOutParticleEffect" => pub teleport_out_particle_effect: i32,

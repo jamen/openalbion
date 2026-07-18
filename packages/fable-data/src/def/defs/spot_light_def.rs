@@ -10,7 +10,7 @@ def_struct! {
         "OuterRadius" => pub outer_radius: f32,
         "Width" => pub width: f32,
         "Flicker" => pub flicker: f32,
-        "FlickerSpeed" => pub flicker_speed: f32,
+        "FlickerSpeed" => pub flicker_speed: f32 = 0.3,
         "Angle" => pub angle: f32,
     }
 }

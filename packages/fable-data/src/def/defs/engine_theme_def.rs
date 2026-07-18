@@ -26,10 +26,10 @@ def_struct! {
         "LocalDetailGeneratorDef" => pub local_detail_generator_def: i32,
         "DestructionEffectDef" => pub destruction_effect_def: i32,
         "DestructionThemeDef" => pub destruction_theme_def: i32,
-        "Friction" => pub friction: f32,
+        "Friction" => pub friction: f32 = 1.0,
         "WaterHeight" => pub water_height: f32,
         "WaterType" => pub water_type: WaterType,
         "NoWaterThemeDef" => pub no_water_theme_def: i32,
-        "Passable" => pub passable: bool,
+        "Passable" => pub passable: bool = true,
     }
 }

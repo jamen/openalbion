@@ -5,7 +5,7 @@ def_struct! {
     /// `OPINION_DEED_MASK` — C++ `COpinionDeedMaskDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct OpinionDeedMaskDef {
-        "DeedEnabledDefault" => pub deed_enabled_default: bool,
+        "DeedEnabledDefault" => pub deed_enabled_default: bool = true,
         "DeedEnabled" => pub deed_enabled: VecMap<OpinionDeedType, bool>,
     }
 }

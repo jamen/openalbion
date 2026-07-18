@@ -27,9 +27,9 @@ def_struct! {
         "AlwaysAttackIfNearest" => pub always_attack_if_nearest: bool,
         "KnockdownCausesStun" => pub knockdown_causes_stun: bool,
         "RecoilStyle" => pub recoil_style: CombatStrikeRecoilStyle,
-        "CanBeKnockedDown" => pub can_be_knocked_down: bool,
+        "CanBeKnockedDown" => pub can_be_knocked_down: bool = true,
         "ComboContinueSpeed" => pub combo_continue_speed: f32,
-        "CombatFOV" => pub combat_fov: f32,
-        "StartsAsReadyForMelee" => pub starts_as_ready_for_melee: bool,
+        "CombatFOV" => pub combat_fov: f32 = 36.0,
+        "StartsAsReadyForMelee" => pub starts_as_ready_for_melee: bool = true,
     }
 }

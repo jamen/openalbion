@@ -12,7 +12,7 @@ def_struct! {
         "SpikeDecisionTime" => pub spike_decision_time: f32,
         "TailStrikePrepareTime" => pub tail_strike_prepare_time: f32,
         "DamageToCauseTailStrike" => pub damage_to_cause_tail_strike: f32,
-        "ChargeDamage" => pub charge_damage: f32,
-        "ClawObstructionRadius" => pub claw_obstruction_radius: f32,
+        "ChargeDamage" => pub charge_damage: f32 = 10.0,
+        "ClawObstructionRadius" => pub claw_obstruction_radius: f32 = 2.0,
     }
 }

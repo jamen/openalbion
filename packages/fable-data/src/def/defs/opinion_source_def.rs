@@ -12,7 +12,7 @@ def_struct! {
         "ReactToSelfPermitted" => pub react_to_self_permitted: bool,
         "ReactionFlagDefault" => pub reaction_flag_default: bool,
         "ReactionFlag" => pub reaction_flag: BTreeMap<OpinionDeedType, bool>,
-        "UseNavLineOfSight" => pub use_nav_line_of_sight: bool,
+        "UseNavLineOfSight" => pub use_nav_line_of_sight: bool = true,
         "WitnessesWillNotAttack" => pub witnesses_will_not_attack: bool,
         "WitnessesWillOverrideFactionEnemy" => pub witnesses_will_override_faction_enemy: bool,
         "BypassesPersonality" => pub bypasses_personality: bool,

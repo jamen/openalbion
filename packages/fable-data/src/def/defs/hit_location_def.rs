@@ -16,13 +16,13 @@ def_struct! {
         "HitKnockdownDeathAction" => pub hit_knockdown_death_action: i32,
         "BlockResponseAction" => pub block_response_action: i32,
         "Flags" => pub flags: i32,
-        "DefendableAgainstShots" => pub defendable_against_shots: bool,
-        "DefendableAgainstMelee" => pub defendable_against_melee: bool,
+        "DefendableAgainstShots" => pub defendable_against_shots: bool = true,
+        "DefendableAgainstMelee" => pub defendable_against_melee: bool = true,
         "Priority" => pub priority: i32,
         "Default" => pub default: bool,
         "DecapitateOnHit" => pub decapitate_on_hit: bool,
-        "PlayGetHitResponse" => pub play_get_hit_response: bool,
-        "EnableOnCreate" => pub enable_on_create: bool,
+        "PlayGetHitResponse" => pub play_get_hit_response: bool = true,
+        "EnableOnCreate" => pub enable_on_create: bool = true,
         "HitLocationCodelet" => pub hit_location_codelet: i32,
     }
 }

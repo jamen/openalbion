@@ -12,8 +12,8 @@ def_struct! {
         "FlyAroundTime" => pub fly_around_time: i32,
         "ShotTrapType" => pub shot_trap_type: i32,
         "ShotsBeforeIdle" => pub shots_before_idle: i32,
-        "IdleTimeBetweenShots" => pub idle_time_between_shots: f32,
-        "FadeInTime" => pub fade_in_time: f32,
-        "FadeOutTime" => pub fade_out_time: f32,
+        "IdleTimeBetweenShots" => pub idle_time_between_shots: f32 = 1.0,
+        "FadeInTime" => pub fade_in_time: f32 = 1.0,
+        "FadeOutTime" => pub fade_out_time: f32 = 1.0,
     }
 }

@@ -4,9 +4,10 @@ use crate::{wire_struct, def_variant};
 use crate::def::prelude::*;
 
 wire_struct! {
-    /// C++ `CRGBColour`.
+    /// C++ `CRGBColour`. The default ctor is opaque black
+    /// (`0xFF000000` — alpha 0xFF, rgb 0), which is what retail NULLDEFs store.
     pub struct RGBColour {
-        pub int_value: u32,
+        pub int_value: u32 = 0xFF000000,
     }
 }
 
@@ -19,7 +20,7 @@ wire_struct! {
         pub type_: i32,
         pub bank_index: i32,
         pub anim_step: f32,
-        pub render_size_x: f32,
+        pub render_size_x: f32 = 1.0,
         pub additive_alpha: u8,
     }
 }
@@ -227,7 +228,7 @@ wire_struct! {
 wire_struct! {
     /// C++ `CRandomAppearanceMorph`.
     pub struct RandomAppearanceMorph {
-        pub num_body_parts: u32,
+        pub num_body_parts: u32 = 3,
         pub body_parts0: RandomAppearanceMorphBodyParts0,
         pub body_parts1: RandomAppearanceMorphBodyParts1,
         pub body_parts2: RandomAppearanceMorphBodyParts2,
@@ -316,8 +317,8 @@ wire_struct! {
 wire_struct! {
     /// C++ `CCombatAbilityData`.
     pub struct CombatAbilityData {
-        pub percentage_chance: i32,
-        pub seconds_duration: f32,
+        pub percentage_chance: i32 = 100,
+        pub seconds_duration: f32 = -1.0,
         pub seconds_to_wait_before_repeat: f32,
         pub anim: DefString,
     }
@@ -504,7 +505,7 @@ wire_struct! {
         pub default_flags: u32,
         pub default_transition_time: u32,
         pub default_delay: u32,
-        pub default_group: i32,
+        pub default_group: i32 = -1,
     }
 }
 

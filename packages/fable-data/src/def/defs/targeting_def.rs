@@ -6,8 +6,8 @@ def_struct! {
     #[derive(Debug, Clone, PartialEq)]
     pub struct TargetingDef {
         "Type" => pub type_: u32,
-        "UseGlowTargeting" => pub use_glow_targeting: bool,
-        "TargetArc" => pub target_arc: f32,
+        "UseGlowTargeting" => pub use_glow_targeting: bool = true,
+        "TargetArc" => pub target_arc: f32 = 90.0,
         "TargetArcPCThirdPersonAimingMode" => pub target_arc_pc_third_person_aiming_mode: f32,
         "TargetingBasePosFromCamera" => pub targeting_base_pos_from_camera: bool,
         "TargetingFacingDirFromCamera" => pub targeting_facing_dir_from_camera: bool,
@@ -28,9 +28,9 @@ def_struct! {
         "FirstPersonTargetingEnemyPreferenceFactor" => pub first_person_targeting_enemy_preference_factor: f32,
         "ThirdPersonTargetingEnemyPreferenceFactor" => pub third_person_targeting_enemy_preference_factor: f32,
         "TargetingRanges" => pub targeting_ranges: VecMap<Opinion, f32>,
-        "PreferPlayerWeight" => pub prefer_player_weight: f32,
-        "PreferNonCombatantsWeight" => pub prefer_non_combatants_weight: f32,
-        "PreferLastAttackerWeight" => pub prefer_last_attacker_weight: f32,
-        "PreferCurrentBestEnemyWeight" => pub prefer_current_best_enemy_weight: f32,
+        "PreferPlayerWeight" => pub prefer_player_weight: f32 = 1.25,
+        "PreferNonCombatantsWeight" => pub prefer_non_combatants_weight: f32 = 2.0,
+        "PreferLastAttackerWeight" => pub prefer_last_attacker_weight: f32 = 1.0,
+        "PreferCurrentBestEnemyWeight" => pub prefer_current_best_enemy_weight: f32 = 1.0,
     }
 }

@@ -20,7 +20,7 @@ def_struct! {
         "MaxStaminaIncrease" => pub max_stamina_increase: i32,
         "ChangeTimeOfDayToDay" => pub change_time_of_day_to_day: bool,
         "ChangeTimeOfDayToNight" => pub change_time_of_day_to_night: bool,
-        "SpeedMultiplier" => pub speed_multiplier: f32,
+        "SpeedMultiplier" => pub speed_multiplier: f32 = 1.0,
         "SecondsForSpeedMultiplierToLast" => pub seconds_for_speed_multiplier_to_last: f32,
         "ParticleEffect" => pub particle_effect: i32,
         "AddsDrunkenness" => pub adds_drunkenness: bool,

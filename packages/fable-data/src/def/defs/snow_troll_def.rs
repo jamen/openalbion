@@ -18,6 +18,6 @@ def_struct! {
         "DistanceExclusionAroundIcicles" => pub distance_exclusion_around_icicles: f32,
         "IcicleAssaultWarningFXIndex" => pub icicle_assault_warning_fx_index: i32,
         "IcicleAssaultTrapIndex" => pub icicle_assault_trap_index: i32,
-        "IceTrailDistanceLimit" => pub ice_trail_distance_limit: f32,
+        "IceTrailDistanceLimit" => pub ice_trail_distance_limit: f32 = -1.0,
     }
 }

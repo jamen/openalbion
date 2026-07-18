@@ -6,6 +6,6 @@ def_struct! {
     #[derive(Debug, Clone, PartialEq)]
     pub struct ActivateQuestDef {
         "ScriptName" => pub script_name: DefString,
-        "LoadResources" => pub load_resources: bool,
+        "LoadResources" => pub load_resources: bool = true,
     }
 }

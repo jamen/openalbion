@@ -6,7 +6,7 @@ def_struct! {
     #[derive(Debug, Clone, PartialEq)]
     pub struct OpinionPersonalityDef {
         "PersonalityTraits" => pub personality_traits: OpinionPersonalityTraitsPtr,
-        "AttitudeEnabledDefaultForNotNone" => pub attitude_enabled_default_for_not_none: bool,
+        "AttitudeEnabledDefaultForNotNone" => pub attitude_enabled_default_for_not_none: bool = true,
         "AttitudeEnabled" => pub attitude_enabled: VecMap<OpinionDeedType, bool>,
         "ToleranceToBeingHit" => pub tolerance_to_being_hit: f32,
     }

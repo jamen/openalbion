@@ -20,8 +20,8 @@ def_struct! {
         "IsExclusive" => pub is_exclusive: bool,
         "MakeVignetteRouteAppearOnMinimap" => pub make_vignette_route_appear_on_minimap: bool,
         "Prerequisites" => pub prerequisites: VecMap<i32, IdleStateGroup>,
-        "NumBoasts" => pub num_boasts: i32,
-        "CanPlayerCancel" => pub can_player_cancel: bool,
+        "NumBoasts" => pub num_boasts: i32 = 1,
+        "CanPlayerCancel" => pub can_player_cancel: bool = true,
         "QuestEpilogue" => pub quest_epilogue: i32,
     }
 }

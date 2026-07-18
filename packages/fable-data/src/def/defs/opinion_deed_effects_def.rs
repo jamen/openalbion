@@ -12,7 +12,7 @@ def_struct! {
         "Effects" => pub effects: OpinionTransientOffsetList,
         "ReactionPriority" => pub reaction_priority: i32,
         "Reaction" => pub reaction: Vec<OpinionDeedReactionDef>,
-        "ReactionDialogueLayer" => pub reaction_dialogue_layer: DialogueLayer,
+        "ReactionDialogueLayer" => pub reaction_dialogue_layer: DialogueLayer = DialogueLayer::MIDGROUND,
         "WarningText" => pub warning_text: Vec<String>,
         "CrimeSeverity" => pub crime_severity: CrimeSeverity,
         "CrimeFineAmount" => pub crime_fine_amount: i32,

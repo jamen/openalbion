@@ -410,7 +410,7 @@ macro_rules! wire_struct {
     (
         $(#[$meta:meta])*
         pub struct $name:ident {
-            $( $(#[$fmeta:meta])* pub $field:ident: $ty:ty, )+
+            $( $(#[$fmeta:meta])* pub $field:ident: $ty:ty $(= $default:expr)?, )+
         }
     ) => {
         $(#[$meta])*
@@ -421,7 +421,7 @@ macro_rules! wire_struct {
 
         impl $crate::def::visit::DefDefault for $name {
             fn def_default() -> Self {
-                Self { $( $field: $crate::def::visit::DefDefault::def_default(), )+ }
+                Self { $( $field: $crate::def_field_default!($ty $(, $default)?), )+ }
             }
         }
 

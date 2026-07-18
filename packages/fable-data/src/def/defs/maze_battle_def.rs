@@ -11,8 +11,8 @@ def_struct! {
         "EnflameRange" => pub enflame_range: f32,
         "LightningRange" => pub lightning_range: f32,
         "TutorialNumGetHits" => pub tutorial_num_get_hits: i32,
-        "MinTimeBetweenHeals" => pub min_time_between_heals: f32,
-        "HealSpellLevel" => pub heal_spell_level: i32,
-        "TutorialTeleportTime" => pub tutorial_teleport_time: f32,
+        "MinTimeBetweenHeals" => pub min_time_between_heals: f32 = 5.0,
+        "HealSpellLevel" => pub heal_spell_level: i32 = 1,
+        "TutorialTeleportTime" => pub tutorial_teleport_time: f32 = 9.0,
     }
 }

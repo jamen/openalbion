@@ -12,6 +12,6 @@ def_struct! {
         "OnKillFX" => pub on_kill_fx: i32,
         "OffsetCoordRelativeToAttachToDummy" => pub offset_coord_relative_to_attach_to_dummy: Vector3D,
         "OffsetAmountForThingsOnTopOfMe" => pub offset_amount_for_things_on_top_of_me: f32,
-        "PassiveCarrySlotScale" => pub passive_carry_slot_scale: f32,
+        "PassiveCarrySlotScale" => pub passive_carry_slot_scale: f32 = 1.0,
     }
 }

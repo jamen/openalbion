@@ -7,7 +7,7 @@ def_struct! {
     pub struct ShopItemDef {
         "Type" => pub type_: i32,
         "Quantity" => pub quantity: f32,
-        "PriceMultiplier" => pub price_multiplier: f32,
+        "PriceMultiplier" => pub price_multiplier: f32 = 1.0,
         "MaxStock" => pub max_stock: f32,
         "RestockPeriod" => pub restock_period: i32,
         "RestockPeriodRandomness" => pub restock_period_randomness: f32,
