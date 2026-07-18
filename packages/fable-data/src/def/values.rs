@@ -279,9 +279,16 @@ wire_struct! {
 }
 
 wire_struct! {
-    /// C++ `COpinionTransientOffset`.
+    /// C++ `COpinionTransientOffset` — 6 consecutive u32 values (24 bytes).
+    /// The text form supplies 5 positional args: `(opinion_axis, peak, run_in,
+    /// run_out, persist)`; the 6th field defaults to zero.
     pub struct OpinionTransientOffset {
-        pub data: [u8; 24],
+        pub opinion_axis: i32,
+        pub peak: f32,
+        pub run_in: f32,
+        pub run_out: f32,
+        pub persist: f32,
+        pub f5: i32,
     }
 }
 
