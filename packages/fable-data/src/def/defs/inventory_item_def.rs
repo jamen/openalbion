@@ -6,8 +6,8 @@ def_struct! {
     #[derive(Debug, Clone, PartialEq)]
     pub struct InventoryItemDef {
         "Graphic" => pub graphic: EngineGraphic,
-        "ItemDescription" => pub item_description: DefString,
-        "ItemDetails" => pub item_details: DefString,
+        "ItemDescription" => pub item_description: DefString = DefString(0),
+        "ItemDetails" => pub item_details: DefString = DefString(0),
         "InventoryCategory" => pub inventory_category: i32,
         "MaxNumberItems" => pub max_number_items: i32 = 1,
         "SlotIndex" => pub slot_index: i32 = -1,
