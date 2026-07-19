@@ -350,9 +350,14 @@ wire_struct! {
 
 wire_struct! {
     /// C++ `NParticleAttachment::CParticleAttachmentInfo`.
+    /// Layout (tc decomp): `ParticleIndex`(long), `AttachmentObjectName`(CDefString),
+    /// `GenerationCutoffDistance`(float), `DummyObject`(bool). The text ctor is
+    /// `CParticleAttachmentInfo("<attach_point>", <PARTICLE>, dist, dummy)` — its
+    /// first two args are SWAPPED relative to this wire order (see the
+    /// `ParticleAttachmentInfo` arm in `apply_struct_from_expr`).
     pub struct ParticleAttachmentInfo {
-        pub particle_effect: DefString,
-        pub offset: DefString,
+        pub particle_index: i32,
+        pub attachment_object_name: DefString,
         pub weight: f32,
         pub dummy_object: bool,
     }
@@ -657,7 +662,10 @@ wire_struct! {
 }
 
 wire_struct! {
-    /// C++ `CExplosionRing`.
+    /// C++ `CExplosionRing`. The serialized wire order is
+    /// (NumExplosions, RingRadius, AngleOffset, Seconds) — verified against
+    /// retail — but the text ctor is `CExplosionRing(radius, count, …)`, so its
+    /// first two args map SWAPPED (see the arm in `apply_struct_from_expr`).
     pub struct ExplosionRing {
         pub num_explosions: i32,
         pub ring_radius: f32,
