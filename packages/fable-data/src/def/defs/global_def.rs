@@ -5,13 +5,13 @@ def_struct! {
     /// `GLOBAL` — C++ `CGlobalDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct GlobalDef {
-        "ControlSchemePC" => pub control_scheme_pc: i32,
-        "ControlSchemePCAggressive" => pub control_scheme_pc_aggressive: i32,
-        "ControlSchemeXBOX" => pub control_scheme_xbox: i32,
-        "ControlSchemeXBOXAggressive" => pub control_scheme_xbox_aggressive: i32,
+        "ControlSchemePC" => pub control_scheme_pc: DefIndex,
+        "ControlSchemePCAggressive" => pub control_scheme_pc_aggressive: DefIndex,
+        "ControlSchemeXBOX" => pub control_scheme_xbox: DefIndex,
+        "ControlSchemeXBOXAggressive" => pub control_scheme_xbox_aggressive: DefIndex,
         "PhysicsTexture" => pub physics_texture: i32,
-        "InvalidThemeStandin" => pub invalid_theme_standin: i32,
-        "DefaultEngineThemeDef" => pub default_engine_theme_def: i32,
+        "InvalidThemeStandin" => pub invalid_theme_standin: DefIndex,
+        "DefaultEngineThemeDef" => pub default_engine_theme_def: DefIndex,
         "StaticMapGenerationEstimatedMaxCameraHeightAboveLandscape" => pub static_map_generation_estimated_max_camera_height_above_landscape: f32,
         "GraphicWeaponTrail" => pub graphic_weapon_trail: i32,
         "GraphicWeaponTrail2" => pub graphic_weapon_trail2: i32,

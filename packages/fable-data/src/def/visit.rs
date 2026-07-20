@@ -177,6 +177,12 @@ pub trait MapSlot {
     fn clear(&mut self);
     /// Begin a new pair with default key and value.
     fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a>;
+    /// Read each existing (key, value) pair, in the map's stored order. Because
+    /// a `BTreeMap`'s keys aren't mutably accessible (and [`FieldRef`] needs
+    /// `&mut`), both key and value are exposed via short-lived owned clones —
+    /// the callback must consume them within the call (the semantic decoder
+    /// turns them into owned `SemVal`s immediately).
+    fn for_each_pair(&self, f: &mut dyn FnMut(FieldRef<'_>, FieldRef<'_>));
 }
 
 struct BTreeMapEntry<'a, K, V> {
@@ -210,6 +216,13 @@ impl<K: AsField + Ord + DefDefault + Clone, V: AsField + DefDefault + Clone> Map
     fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a> {
         Box::new(BTreeMapEntry { map: self, key: K::def_default(), value: V::def_default() })
     }
+    fn for_each_pair(&self, f: &mut dyn FnMut(FieldRef<'_>, FieldRef<'_>)) {
+        for (k, v) in self.iter() {
+            let mut k = k.clone();
+            let mut v = v.clone();
+            f(k.as_field(), v.as_field());
+        }
+    }
 }
 
 struct VecMapEntry<'a, K, V> {
@@ -240,6 +253,13 @@ impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clon
     }
     fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a> {
         Box::new(VecMapEntry { map: self, key: K::def_default(), value: V::def_default() })
+    }
+    fn for_each_pair(&self, f: &mut dyn FnMut(FieldRef<'_>, FieldRef<'_>)) {
+        for (k, v) in self.0.iter() {
+            let mut k = k.clone();
+            let mut v = v.clone();
+            f(k.as_field(), v.as_field());
+        }
     }
 }
 

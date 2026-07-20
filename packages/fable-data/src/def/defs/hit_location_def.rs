@@ -6,7 +6,7 @@ def_struct! {
     #[derive(Debug, Clone, PartialEq)]
     pub struct HitLocationDef {
         "PhysicalPrimitive" => pub physical_primitive: PhysicalPrimitiveInit,
-        "Armour" => pub armour: i32,
+        "Armour" => pub armour: DefIndex,
         "HitDamageEffect" => pub hit_damage_effect: i32,
         "HitBlockedEffect" => pub hit_blocked_effect: i32,
         "VulnerableEffect" => pub vulnerable_effect: i32,

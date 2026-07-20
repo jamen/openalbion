@@ -5,7 +5,7 @@ def_struct! {
     /// `INVENTORY_CATEGORY` — C++ `CInventoryCategoryDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct InventoryCategoryDef {
-        "Inventory" => pub inventory: i32,
+        "Inventory" => pub inventory: DefIndex,
         "NumberOfSlots" => pub number_of_slots: i32,
         "DrawItemSlots" => pub draw_item_slots: bool,
         "SelectEmptySlots" => pub select_empty_slots: bool,

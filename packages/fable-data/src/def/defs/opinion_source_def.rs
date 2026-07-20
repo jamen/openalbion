@@ -17,7 +17,7 @@ def_struct! {
         "WitnessesWillOverrideFactionEnemy" => pub witnesses_will_override_faction_enemy: bool,
         "BypassesPersonality" => pub bypasses_personality: bool,
         "RelativeEffect" => pub relative_effect: bool,
-        "RestrictToFactionAndAllies" => pub restrict_to_faction_and_allies: i32,
+        "RestrictToFactionAndAllies" => pub restrict_to_faction_and_allies: DefIndex,
         "RestrictToFactionIsReversed" => pub restrict_to_faction_is_reversed: bool,
         "BinaryReaction" => pub binary_reaction: bool,
         "BinaryReaction" => pub binary_reaction2: bool,

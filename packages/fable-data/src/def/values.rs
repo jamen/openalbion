@@ -363,10 +363,30 @@ wire_struct! {
     }
 }
 
+const fn personality_traits_default() -> [u8; 180] {
+    let mut blob = [0u8; 180];
+    let mut trait_idx = 0;
+    while trait_idx < 5 {
+        let base = trait_idx * 36;
+        let mut field = 0;
+        while field < 8 {
+            let off = base + 4 + field * 4;
+            let bytes = 1.0f32.to_le_bytes();
+            blob[off] = bytes[0];
+            blob[off + 1] = bytes[1];
+            blob[off + 2] = bytes[2];
+            blob[off + 3] = bytes[3];
+            field += 1;
+        }
+        trait_idx += 1;
+    }
+    blob
+}
+
 wire_struct! {
     /// C++ `COpinionPersonalityTraits*`.
     pub struct OpinionPersonalityTraitsPtr {
-        pub f0: [u8; 180],
+        pub f0: [u8; 180] = personality_traits_default(),
     }
 }
 
@@ -426,7 +446,7 @@ wire_struct! {
 wire_struct! {
     /// C++ `CObjectFamilyEntry`.
     pub struct ObjectFamilyEntry {
-        pub object: i32,
+        pub object: DefIndex,
         pub probability: f32,
     }
 }
@@ -463,8 +483,8 @@ wire_struct! {
 wire_struct! {
     /// C++ `CWeaponTrailGraphicSet`.
     pub struct WeaponTrailGraphicSet {
-        pub attack: i32,
-        pub knockdown: i32,
+        pub attack: i32 = -1,
+        pub knockdown: i32 = -1,
     }
 }
 

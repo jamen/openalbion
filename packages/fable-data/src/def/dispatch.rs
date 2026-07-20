@@ -726,6 +726,250 @@ impl GameBody {
             Self::ShopItemDef(d) => ShopItemDef::byte_size(d),
         }
     }
+
+    /// Visit the active variant's fields via reflection (drives the
+    /// semantic differ / SemVal decoder in `semantic.rs`).
+    pub fn visit_active(&mut self, visitor: &mut dyn crate::def::visit::FieldVisitor) {
+        use crate::def::visit::VisitFields as _;
+        let mut visitor: &mut dyn crate::def::visit::FieldVisitor = visitor;
+        match self {
+            Self::AbilityDef(d) => AbilityDef::visit_fields(d, &mut visitor),
+            Self::ActionUseDef(d) => ActionUseDef::visit_fields(d, &mut visitor),
+            Self::ActivateQuestDef(d) => ActivateQuestDef::visit_fields(d, &mut visitor),
+            Self::AICreatureWillPowerIndicatorDef(d) => AICreatureWillPowerIndicatorDef::visit_fields(d, &mut visitor),
+            Self::AIScratchpadDef(d) => AIScratchpadDef::visit_fields(d, &mut visitor),
+            Self::AnimatingObjectDef(d) => AnimatingObjectDef::visit_fields(d, &mut visitor),
+            Self::AppearanceDef(d) => AppearanceDef::visit_fields(d, &mut visitor),
+            Self::AreaOfEffectAttackDef(d) => AreaOfEffectAttackDef::visit_fields(d, &mut visitor),
+            Self::ArmourDef(d) => ArmourDef::visit_fields(d, &mut visitor),
+            Self::AttackPatternDef(d) => AttackPatternDef::visit_fields(d, &mut visitor),
+            Self::AugmentationDef(d) => AugmentationDef::visit_fields(d, &mut visitor),
+            Self::BalverineBattleDef(d) => BalverineBattleDef::visit_fields(d, &mut visitor),
+            Self::BedDef(d) => BedDef::visit_fields(d, &mut visitor),
+            Self::BettingDef(d) => BettingDef::visit_fields(d, &mut visitor),
+            Self::BoastingPodiumDef(d) => BoastingPodiumDef::visit_fields(d, &mut visitor),
+            Self::BonusItemDef(d) => BonusItemDef::visit_fields(d, &mut visitor),
+            Self::BossDef(d) => BossDef::visit_fields(d, &mut visitor),
+            Self::BrainDef(d) => BrainDef::visit_fields(d, &mut visitor),
+            Self::BriarRoseDef(d) => BriarRoseDef::visit_fields(d, &mut visitor),
+            Self::BuyHouseDef(d) => BuyHouseDef::visit_fields(d, &mut visitor),
+            Self::BuyableHouseDef(d) => BuyableHouseDef::visit_fields(d, &mut visitor),
+            Self::CameraCollisionDef(d) => CameraCollisionDef::visit_fields(d, &mut visitor),
+            Self::CameraManagerDef(d) => CameraManagerDef::visit_fields(d, &mut visitor),
+            Self::CameraManagerSetDef(d) => CameraManagerSetDef::visit_fields(d, &mut visitor),
+            Self::CameraModeDef(d) => CameraModeDef::visit_fields(d, &mut visitor),
+            Self::CarriedReadableDef(d) => CarriedReadableDef::visit_fields(d, &mut visitor),
+            Self::CarrySlotDef(d) => CarrySlotDef::visit_fields(d, &mut visitor),
+            Self::CarryableDef(d) => CarryableDef::visit_fields(d, &mut visitor),
+            Self::CarryingDef(d) => CarryingDef::visit_fields(d, &mut visitor),
+            Self::ChestDef(d) => ChestDef::visit_fields(d, &mut visitor),
+            Self::ClockDef(d) => ClockDef::visit_fields(d, &mut visitor),
+            Self::CoinGameObstacleDef(d) => CoinGameObstacleDef::visit_fields(d, &mut visitor),
+            Self::CombatAbilityAttackBase(d) => CombatAbilityAttackBase::visit_fields(d, &mut visitor),
+            Self::CombatAbilityBlockDefBase(d) => CombatAbilityBlockDefBase::visit_fields(d, &mut visitor),
+            Self::CombatAbilityStrafeDef(d) => CombatAbilityStrafeDef::visit_fields(d, &mut visitor),
+            Self::CombatAbilityUseProjectileWeaponDef(d) => CombatAbilityUseProjectileWeaponDef::visit_fields(d, &mut visitor),
+            Self::CombatDialogueDef(d) => CombatDialogueDef::visit_fields(d, &mut visitor),
+            Self::CombatSequenceDef(d) => CombatSequenceDef::visit_fields(d, &mut visitor),
+            Self::CombatTypeDef(d) => CombatTypeDef::visit_fields(d, &mut visitor),
+            Self::ContainerRewardHeroDef(d) => ContainerRewardHeroDef::visit_fields(d, &mut visitor),
+            Self::ContextSensitiveItemDef(d) => ContextSensitiveItemDef::visit_fields(d, &mut visitor),
+            Self::CoopSpiritDef(d) => CoopSpiritDef::visit_fields(d, &mut visitor),
+            Self::CrateStackDef(d) => CrateStackDef::visit_fields(d, &mut visitor),
+            Self::CreatureAbilityDef(d) => CreatureAbilityDef::visit_fields(d, &mut visitor),
+            Self::CreatureDef(d) => CreatureDef::visit_fields(d, &mut visitor),
+            Self::CreatureGenerationFamilyDef(d) => CreatureGenerationFamilyDef::visit_fields(d, &mut visitor),
+            Self::CreatureGeneratorDef(d) => CreatureGeneratorDef::visit_fields(d, &mut visitor),
+            Self::CreatureModeDef(d) => CreatureModeDef::visit_fields(d, &mut visitor),
+            Self::CreatureNavigationDef(d) => CreatureNavigationDef::visit_fields(d, &mut visitor),
+            Self::CreatureStatsDef(d) => CreatureStatsDef::visit_fields(d, &mut visitor),
+            Self::CutsceneDef(d) => CutsceneDef::visit_fields(d, &mut visitor),
+            Self::DecapitationDef(d) => DecapitationDef::visit_fields(d, &mut visitor),
+            Self::DoorDef(d) => DoorDef::visit_fields(d, &mut visitor),
+            Self::DragonActionHoverDef(d) => DragonActionHoverDef::visit_fields(d, &mut visitor),
+            Self::DragonActionNapalmDef(d) => DragonActionNapalmDef::visit_fields(d, &mut visitor),
+            Self::DragonActionSwoopDef(d) => DragonActionSwoopDef::visit_fields(d, &mut visitor),
+            Self::DrunkennessDef(d) => DrunkennessDef::visit_fields(d, &mut visitor),
+            Self::EnemyDef(d) => EnemyDef::visit_fields(d, &mut visitor),
+            Self::EngineLocalDetailGeneratorDef(d) => EngineLocalDetailGeneratorDef::visit_fields(d, &mut visitor),
+            Self::EngineThemeDef(d) => EngineThemeDef::visit_fields(d, &mut visitor),
+            Self::EngineThemeGroupDef(d) => EngineThemeGroupDef::visit_fields(d, &mut visitor),
+            Self::EntitySoundDef(d) => EntitySoundDef::visit_fields(d, &mut visitor),
+            Self::ExperienceDef(d) => ExperienceDef::visit_fields(d, &mut visitor),
+            Self::ExplodingObjectDef(d) => ExplodingObjectDef::visit_fields(d, &mut visitor),
+            Self::ExplosionDef(d) => ExplosionDef::visit_fields(d, &mut visitor),
+            Self::ExplosiveTrailDef(d) => ExplosiveTrailDef::visit_fields(d, &mut visitor),
+            Self::ExpressionDef(d) => ExpressionDef::visit_fields(d, &mut visitor),
+            Self::ExpressionSubDef(d) => ExpressionSubDef::visit_fields(d, &mut visitor),
+            Self::FactionDef(d) => FactionDef::visit_fields(d, &mut visitor),
+            Self::FireballSpellLevelDef(d) => FireballSpellLevelDef::visit_fields(d, &mut visitor),
+            Self::FireheartMinigameDef(d) => FireheartMinigameDef::visit_fields(d, &mut visitor),
+            Self::FishDef(d) => FishDef::visit_fields(d, &mut visitor),
+            Self::FishingDef(d) => FishingDef::visit_fields(d, &mut visitor),
+            Self::FishingRodDef(d) => FishingRodDef::visit_fields(d, &mut visitor),
+            Self::FlammableDef(d) => FlammableDef::visit_fields(d, &mut visitor),
+            Self::GiftDef(d) => GiftDef::visit_fields(d, &mut visitor),
+            Self::GoldDef(d) => GoldDef::visit_fields(d, &mut visitor),
+            Self::GuardDef(d) => GuardDef::visit_fields(d, &mut visitor),
+            Self::GuildMasterDef(d) => GuildMasterDef::visit_fields(d, &mut visitor),
+            Self::HairCardDef(d) => HairCardDef::visit_fields(d, &mut visitor),
+            Self::HasNameDef(d) => HasNameDef::visit_fields(d, &mut visitor),
+            Self::HeroAbilityDef(d) => HeroAbilityDef::visit_fields(d, &mut visitor),
+            Self::HeroCentreDef(d) => HeroCentreDef::visit_fields(d, &mut visitor),
+            Self::HeroCombatDef(d) => HeroCombatDef::visit_fields(d, &mut visitor),
+            Self::HeroDef(d) => HeroDef::visit_fields(d, &mut visitor),
+            Self::HeroExperienceDef(d) => HeroExperienceDef::visit_fields(d, &mut visitor),
+            Self::HeroMarriageDef(d) => HeroMarriageDef::visit_fields(d, &mut visitor),
+            Self::HeroMorphDef(d) => HeroMorphDef::visit_fields(d, &mut visitor),
+            Self::HeroPostcardGeneratorDef(d) => HeroPostcardGeneratorDef::visit_fields(d, &mut visitor),
+            Self::HeroSpecialMovementDef(d) => HeroSpecialMovementDef::visit_fields(d, &mut visitor),
+            Self::HeroStatsDef(d) => HeroStatsDef::visit_fields(d, &mut visitor),
+            Self::HeroSuitDef(d) => HeroSuitDef::visit_fields(d, &mut visitor),
+            Self::HeroTitleDef(d) => HeroTitleDef::visit_fields(d, &mut visitor),
+            Self::HighlightItemDef(d) => HighlightItemDef::visit_fields(d, &mut visitor),
+            Self::HitLocationDef(d) => HitLocationDef::visit_fields(d, &mut visitor),
+            Self::HitLocationsDef(d) => HitLocationsDef::visit_fields(d, &mut visitor),
+            Self::IdleSchedulerDef(d) => IdleSchedulerDef::visit_fields(d, &mut visitor),
+            Self::InterestingToVillagersDef(d) => InterestingToVillagersDef::visit_fields(d, &mut visitor),
+            Self::InventoryCategoryDef(d) => InventoryCategoryDef::visit_fields(d, &mut visitor),
+            Self::InventoryDef(d) => InventoryDef::visit_fields(d, &mut visitor),
+            Self::InventoryItemDef(d) => InventoryItemDef::visit_fields(d, &mut visitor),
+            Self::JackDragonDef(d) => JackDragonDef::visit_fields(d, &mut visitor),
+            Self::JackOfBladesBattleDef(d) => JackOfBladesBattleDef::visit_fields(d, &mut visitor),
+            Self::KickableDef(d) => KickableDef::visit_fields(d, &mut visitor),
+            Self::KrakenDef(d) => KrakenDef::visit_fields(d, &mut visitor),
+            Self::KrakenTentacleDef(d) => KrakenTentacleDef::visit_fields(d, &mut visitor),
+            Self::LightDef(d) => LightDef::visit_fields(d, &mut visitor),
+            Self::LightningDef(d) => LightningDef::visit_fields(d, &mut visitor),
+            Self::LightningOrbDef(d) => LightningOrbDef::visit_fields(d, &mut visitor),
+            Self::LookDef(d) => LookDef::visit_fields(d, &mut visitor),
+            Self::MaterialDef(d) => MaterialDef::visit_fields(d, &mut visitor),
+            Self::MazeBattleDef(d) => MazeBattleDef::visit_fields(d, &mut visitor),
+            Self::MeleeCombatAbilityDef(d) => MeleeCombatAbilityDef::visit_fields(d, &mut visitor),
+            Self::MeleeCombatKnockdownEffects(d) => MeleeCombatKnockdownEffects::visit_fields(d, &mut visitor),
+            Self::MessageEventDef(d) => MessageEventDef::visit_fields(d, &mut visitor),
+            Self::MultiStaticMeshDef(d) => MultiStaticMeshDef::visit_fields(d, &mut visitor),
+            Self::NymphDef(d) => NymphDef::visit_fields(d, &mut visitor),
+            Self::ObjectAugmentationsDef(d) => ObjectAugmentationsDef::visit_fields(d, &mut visitor),
+            Self::ObjectFamilyDef(d) => ObjectFamilyDef::visit_fields(d, &mut visitor),
+            Self::OccupiableDef(d) => OccupiableDef::visit_fields(d, &mut visitor),
+            Self::OpinionDeedEffectsDef(d) => OpinionDeedEffectsDef::visit_fields(d, &mut visitor),
+            Self::OpinionDeedMaskDef(d) => OpinionDeedMaskDef::visit_fields(d, &mut visitor),
+            Self::OpinionOfHeroDef(d) => OpinionOfHeroDef::visit_fields(d, &mut visitor),
+            Self::OpinionPersonalityDef(d) => OpinionPersonalityDef::visit_fields(d, &mut visitor),
+            Self::OpinionReactionManagerDef(d) => OpinionReactionManagerDef::visit_fields(d, &mut visitor),
+            Self::OpinionReactionMaskDef(d) => OpinionReactionMaskDef::visit_fields(d, &mut visitor),
+            Self::OpinionSourceDef(d) => OpinionSourceDef::visit_fields(d, &mut visitor),
+            Self::OracleMinigameDef(d) => OracleMinigameDef::visit_fields(d, &mut visitor),
+            Self::OverheadDisplayDef(d) => OverheadDisplayDef::visit_fields(d, &mut visitor),
+            Self::ParticleAttacherDef(d) => ParticleAttacherDef::visit_fields(d, &mut visitor),
+            Self::PerceivedThingDef(d) => PerceivedThingDef::visit_fields(d, &mut visitor),
+            Self::PhysicsDef(d) => PhysicsDef::visit_fields(d, &mut visitor),
+            Self::PlayerDef(d) => PlayerDef::visit_fields(d, &mut visitor),
+            Self::PlayerGuiDef(d) => PlayerGuiDef::visit_fields(d, &mut visitor),
+            Self::PlayerInventoryDef(d) => PlayerInventoryDef::visit_fields(d, &mut visitor),
+            Self::QuestCardDef(d) => QuestCardDef::visit_fields(d, &mut visitor),
+            Self::ReadableDef(d) => ReadableDef::visit_fields(d, &mut visitor),
+            Self::RegionDef(d) => RegionDef::visit_fields(d, &mut visitor),
+            Self::RegionScriptDef(d) => RegionScriptDef::visit_fields(d, &mut visitor),
+            Self::ResurrectionItemDef(d) => ResurrectionItemDef::visit_fields(d, &mut visitor),
+            Self::RumbleDef(d) => RumbleDef::visit_fields(d, &mut visitor),
+            Self::ScorpionKingBattleDef(d) => ScorpionKingBattleDef::visit_fields(d, &mut visitor),
+            Self::ScriptDef(d) => ScriptDef::visit_fields(d, &mut visitor),
+            Self::ShipDef(d) => ShipDef::visit_fields(d, &mut visitor),
+            Self::SimBuildingDef(d) => SimBuildingDef::visit_fields(d, &mut visitor),
+            Self::SimVoicesDef(d) => SimVoicesDef::visit_fields(d, &mut visitor),
+            Self::SkeletalMorphDef(d) => SkeletalMorphDef::visit_fields(d, &mut visitor),
+            Self::SkyDef(d) => SkyDef::visit_fields(d, &mut visitor),
+            Self::SmashableDef(d) => SmashableDef::visit_fields(d, &mut visitor),
+            Self::SmokeGeneratorDef(d) => SmokeGeneratorDef::visit_fields(d, &mut visitor),
+            Self::SnowTrollDef(d) => SnowTrollDef::visit_fields(d, &mut visitor),
+            Self::SoundAtmospheresDef(d) => SoundAtmospheresDef::visit_fields(d, &mut visitor),
+            Self::SoundDef(d) => SoundDef::visit_fields(d, &mut visitor),
+            Self::SoundThemeDef(d) => SoundThemeDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesAssassinRushDef(d) => SpecialAbilitiesAssassinRushDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesBattleChargeDef(d) => SpecialAbilitiesBattleChargeDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesBerserkDef(d) => SpecialAbilitiesBerserkDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesBulletTimeDef(d) => SpecialAbilitiesBulletTimeDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesBurntEffectDef(d) => SpecialAbilitiesBurntEffectDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesCreatureTintDef(d) => SpecialAbilitiesCreatureTintDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesDrainLifeDef(d) => SpecialAbilitiesDrainLifeDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesDrunkennessDef(d) => SpecialAbilitiesDrunkennessDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesElectrocutedEffectDef(d) => SpecialAbilitiesElectrocutedEffectDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesEnflameDef(d) => SpecialAbilitiesEnflameDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesFireballSpellDef(d) => SpecialAbilitiesFireballSpellDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesForcePushDataDef(d) => SpecialAbilitiesForcePushDataDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesForcePushDef(d) => SpecialAbilitiesForcePushDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesGhostSwordDef(d) => SpecialAbilitiesGhostSwordDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesHealLifeDef(d) => SpecialAbilitiesHealLifeDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesLightningSpellDef(d) => SpecialAbilitiesLightningSpellDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesMultiArrowDef(d) => SpecialAbilitiesMultiArrowDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesMultiStrikeDef(d) => SpecialAbilitiesMultiStrikeDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesPhysicalShieldDef(d) => SpecialAbilitiesPhysicalShieldDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesSummonSpellDef(d) => SpecialAbilitiesSummonSpellDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesThunderLightningStormDef(d) => SpecialAbilitiesThunderLightningStormDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesTurncoatSpellDef(d) => SpecialAbilitiesTurncoatSpellDef::visit_fields(d, &mut visitor),
+            Self::SpecialAbilitiesUnholyPowerDef(d) => SpecialAbilitiesUnholyPowerDef::visit_fields(d, &mut visitor),
+            Self::SpecialEffectsDef(d) => SpecialEffectsDef::visit_fields(d, &mut visitor),
+            Self::SpotLightDef(d) => SpotLightDef::visit_fields(d, &mut visitor),
+            Self::StealthDef(d) => StealthDef::visit_fields(d, &mut visitor),
+            Self::StockItemDef(d) => StockItemDef::visit_fields(d, &mut visitor),
+            Self::SummonDef(d) => SummonDef::visit_fields(d, &mut visitor),
+            Self::SummonableCreatureDef(d) => SummonableCreatureDef::visit_fields(d, &mut visitor),
+            Self::SummonerDef(d) => SummonerDef::visit_fields(d, &mut visitor),
+            Self::TCVolumeContainmentTrackerDef(d) => TCVolumeContainmentTrackerDef::visit_fields(d, &mut visitor),
+            Self::TargetingDef(d) => TargetingDef::visit_fields(d, &mut visitor),
+            Self::TattooDef(d) => TattooDef::visit_fields(d, &mut visitor),
+            Self::TavernDef(d) => TavernDef::visit_fields(d, &mut visitor),
+            Self::TavernGameCardBaseDef(d) => TavernGameCardBaseDef::visit_fields(d, &mut visitor),
+            Self::TavernGameCoinBaseDef(d) => TavernGameCoinBaseDef::visit_fields(d, &mut visitor),
+            Self::TavernGameCoinGolfDef(d) => TavernGameCoinGolfDef::visit_fields(d, &mut visitor),
+            Self::TavernGameDef(d) => TavernGameDef::visit_fields(d, &mut visitor),
+            Self::TavernGameShoveHaPennyDef(d) => TavernGameShoveHaPennyDef::visit_fields(d, &mut visitor),
+            Self::TavernGameSpotTheAdditionDef(d) => TavernGameSpotTheAdditionDef::visit_fields(d, &mut visitor),
+            Self::TavernTableDef(d) => TavernTableDef::visit_fields(d, &mut visitor),
+            Self::TeleporterDef(d) => TeleporterDef::visit_fields(d, &mut visitor),
+            Self::TextureReplacementDef(d) => TextureReplacementDef::visit_fields(d, &mut visitor),
+            Self::ThingBaseDef(d) => ThingBaseDef::visit_fields(d, &mut visitor),
+            Self::ThingBuildingDef(d) => ThingBuildingDef::visit_fields(d, &mut visitor),
+            Self::ThingCreatureDef(d) => ThingCreatureDef::visit_fields(d, &mut visitor),
+            Self::ThingDrainLifeShotDef(d) => ThingDrainLifeShotDef::visit_fields(d, &mut visitor),
+            Self::ThingHolySiteDef(d) => ThingHolySiteDef::visit_fields(d, &mut visitor),
+            Self::ThingMarkerDef(d) => ThingMarkerDef::visit_fields(d, &mut visitor),
+            Self::ThingMultiArrowShotDef(d) => ThingMultiArrowShotDef::visit_fields(d, &mut visitor),
+            Self::ThingNoiseDef(d) => ThingNoiseDef::visit_fields(d, &mut visitor),
+            Self::ThingObjectDef(d) => ThingObjectDef::visit_fields(d, &mut visitor),
+            Self::ThingPhysicalSwitchDef(d) => ThingPhysicalSwitchDef::visit_fields(d, &mut visitor),
+            Self::ThingShotDef(d) => ThingShotDef::visit_fields(d, &mut visitor),
+            Self::ThingSwitchDef(d) => ThingSwitchDef::visit_fields(d, &mut visitor),
+            Self::ThingVillageDef(d) => ThingVillageDef::visit_fields(d, &mut visitor),
+            Self::ThunderBattleDef(d) => ThunderBattleDef::visit_fields(d, &mut visitor),
+            Self::TimeAppearanceFadeDef(d) => TimeAppearanceFadeDef::visit_fields(d, &mut visitor),
+            Self::TrapDef(d) => TrapDef::visit_fields(d, &mut visitor),
+            Self::TrollBattleDef(d) => TrollBattleDef::visit_fields(d, &mut visitor),
+            Self::TrophyDef(d) => TrophyDef::visit_fields(d, &mut visitor),
+            Self::TurncoatDef(d) => TurncoatDef::visit_fields(d, &mut visitor),
+            Self::UILocaleGraphicsDef(d) => UILocaleGraphicsDef::visit_fields(d, &mut visitor),
+            Self::UiMiscThingsDef(d) => UiMiscThingsDef::visit_fields(d, &mut visitor),
+            Self::VillageDef(d) => VillageDef::visit_fields(d, &mut visitor),
+            Self::VillageMemberDef(d) => VillageMemberDef::visit_fields(d, &mut visitor),
+            Self::VillagePeopleDef(d) => VillagePeopleDef::visit_fields(d, &mut visitor),
+            Self::VillagerInteractionsDef(d) => VillagerInteractionsDef::visit_fields(d, &mut visitor),
+            Self::WallMountEffectsDef(d) => WallMountEffectsDef::visit_fields(d, &mut visitor),
+            Self::WaspQueenBattleDef(d) => WaspQueenBattleDef::visit_fields(d, &mut visitor),
+            Self::WeaponDef(d) => WeaponDef::visit_fields(d, &mut visitor),
+            Self::WhisperBattleDef(d) => WhisperBattleDef::visit_fields(d, &mut visitor),
+            Self::WifeDef(d) => WifeDef::visit_fields(d, &mut visitor),
+            Self::WillResponseDef(d) => WillResponseDef::visit_fields(d, &mut visitor),
+            Self::DegradableDef(d) => DegradableDef::visit_fields(d, &mut visitor),
+            Self::ReplaceableMeshDef(d) => ReplaceableMeshDef::visit_fields(d, &mut visitor),
+            Self::GlobalDef(d) => GlobalDef::visit_fields(d, &mut visitor),
+            Self::PlayerMovementDef(d) => PlayerMovementDef::visit_fields(d, &mut visitor),
+            Self::AppearanceModifierDef(d) => AppearanceModifierDef::visit_fields(d, &mut visitor),
+            Self::ShopDef(d) => ShopDef::visit_fields(d, &mut visitor),
+            Self::ShopItemDef(d) => ShopItemDef::visit_fields(d, &mut visitor),
+        }
+    }
 }
 
 // ── Sub-def table ──────────────────────────────────────
@@ -1119,42 +1363,12 @@ pub fn parse_script_def(
 }
 
 /// Copy fields that lowering deliberately *preserves* (rather than computes)
-/// from a reference entry's body. Currently that's the Thing component list:
-/// its per-entry records are opaque to the lowerer (`Components.Add` edits
-/// are future from-scratch-compiler work), so the reference's value is kept.
-pub fn preserve_unlowered(lowered: &mut DefBody, reference: &DefBody) {
-    use crate::def::binary::def_binary::DefBody as D;
-    match (lowered, reference) {
-        (D::Game(GameBody::ThingBaseDef(a)), D::Game(GameBody::ThingBaseDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingBuildingDef(a)), D::Game(GameBody::ThingBuildingDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingCreatureDef(a)), D::Game(GameBody::ThingCreatureDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingHolySiteDef(a)), D::Game(GameBody::ThingHolySiteDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingMarkerDef(a)), D::Game(GameBody::ThingMarkerDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingNoiseDef(a)), D::Game(GameBody::ThingNoiseDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingObjectDef(a)), D::Game(GameBody::ThingObjectDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingPhysicalSwitchDef(a)), D::Game(GameBody::ThingPhysicalSwitchDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingSwitchDef(a)), D::Game(GameBody::ThingSwitchDef(b))) => {
-            a.components = b.components.clone();
-        }
-        (D::Game(GameBody::ThingVillageDef(a)), D::Game(GameBody::ThingVillageDef(b))) => {
-            a.components = b.components.clone();
-        }
-        _ => {}
-    }
-}
+/// from a reference entry's body.
+///
+/// **Now a no-op.** This used to copy the Thing component list (`Components`)
+/// from the reference because the lowerer couldn't build it. That list is now
+/// generated from the `Components.Add`/`Components.Remove` method calls in the
+/// text (`lower_generic::build_thing_components`), so there is nothing left to
+/// preserve. Kept as a no-op so existing call sites (the link step, verify
+/// harnesses) stay valid; remove once those are updated.
+pub fn preserve_unlowered(_lowered: &mut DefBody, _reference: &DefBody) {}

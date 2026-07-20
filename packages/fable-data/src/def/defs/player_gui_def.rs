@@ -386,7 +386,7 @@ def_struct! {
         "HighlightEndWidthWorldSpace" => pub highlight_end_width_world_space: Vec<f32>,
         "HighlightStartWidthScreenSpace" => pub highlight_start_width_screen_space: Vec<f32>,
         "HighlightEndWidthScreenSpace" => pub highlight_end_width_screen_space: Vec<f32>,
-        "HighlightFadeSteps" => pub highlight_fade_steps: Vec<f32>,
+        "HighlightFadeSteps" => pub highlight_fade_steps: Vec<i32>,
         "NumberOfSecondsForContainerItemToReachFullSize" => pub number_of_seconds_for_container_item_to_reach_full_size: f32,
         "ContainerItemDisplayAreaTLPos" => pub container_item_display_area_tl_pos: Vector2D,
         "ContainerItemDisplayAreaBRPos" => pub container_item_display_area_br_pos: Vector2D,

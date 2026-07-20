@@ -5,7 +5,7 @@ def_struct! {
     /// `PLAYER` — C++ `CPlayerDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct PlayerDef {
-        "CharacterDef" => pub character_def: i32,
+        "CharacterDef" => pub character_def: DefIndex,
         "Colour" => pub colour: RGBColour,
     }
 }

@@ -11,7 +11,7 @@ def_struct! {
         "AllHitsKnockdown" => pub all_hits_knockdown: bool,
         "AllHitsNegated" => pub all_hits_negated: bool,
         "AllHitsCauseRecoil" => pub all_hits_cause_recoil: bool,
-        "DamageMaterial" => pub damage_material: i32,
-        "BlockMaterial" => pub block_material: i32,
+        "DamageMaterial" => pub damage_material: DefIndex,
+        "BlockMaterial" => pub block_material: DefIndex,
     }
 }

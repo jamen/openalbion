@@ -14,6 +14,7 @@ pub mod dispatch;
 pub mod enums;
 pub mod object;
 pub mod prelude;
+pub mod semantic;
 pub mod text;
 pub mod values;
 pub mod visit;

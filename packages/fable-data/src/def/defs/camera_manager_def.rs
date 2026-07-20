@@ -5,11 +5,11 @@ def_struct! {
     /// `CAMERA_MANAGER` — C++ `CCameraManagerDef`.
     #[derive(Debug, Clone, PartialEq)]
     pub struct CameraManagerDef {
-        "CameraList" => pub camera_list: Vec<i32>,
-        "SpecialityCameraList" => pub speciality_camera_list: Vec<i32>,
-        "InitialMode" => pub initial_mode: i32,
-        "ZTargetMode" => pub z_target_mode: i32,
-        "ProjectileWeaponMode" => pub projectile_weapon_mode: i32,
+        "CameraList" => pub camera_list: Vec<DefIndex>,
+        "SpecialityCameraList" => pub speciality_camera_list: Vec<DefIndex>,
+        "InitialMode" => pub initial_mode: DefIndex,
+        "ZTargetMode" => pub z_target_mode: DefIndex,
+        "ProjectileWeaponMode" => pub projectile_weapon_mode: DefIndex,
         "BaseHeightToKeepAboveFlatLandscape" => pub base_height_to_keep_above_flat_landscape: f32 = 0.25,
         "BaseHeightToKeepAboveWater" => pub base_height_to_keep_above_water: f32 = 1.25,
         "MaxHeightRelativeToGround" => pub max_height_relative_to_ground: f32 = 10.0,

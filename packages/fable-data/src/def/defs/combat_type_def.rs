@@ -9,7 +9,7 @@ def_struct! {
         "DefenderWheelOuterRingStartIndex" => pub defender_wheel_outer_ring_start_index: i32,
         "DefenderWheelAllowAttackerStrafing" => pub defender_wheel_allow_attacker_strafing: bool,
         "CombatSequence" => pub combat_sequence: Vec<String>,
-        "CombatSequenceDef" => pub combat_sequence_def: Vec<i32>,
+        "CombatSequenceDef" => pub combat_sequence_def: Vec<DefIndex>,
         "PreferOuterRing" => pub prefer_outer_ring: bool,
         "FrontFarLimit" => pub front_far_limit: f32,
         "FrontMiddleLimit" => pub front_middle_limit: f32,

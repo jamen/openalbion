@@ -11,6 +11,6 @@ def_struct! {
         "NeedLOSToBranch" => pub need_los_to_branch: bool,
         "DamagePeriod" => pub damage_period: f32,
         "DamagePerCycle" => pub damage_per_cycle: f32,
-        "NodeDefIndex" => pub node_def_index: i32,
+        "NodeDefIndex" => pub node_def_index: DefIndex,
     }
 }
