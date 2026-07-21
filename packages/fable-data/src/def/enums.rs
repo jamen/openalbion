@@ -225,9 +225,6 @@ macro_rules! def_flags {
     };
 }
 
-// Make the macros importable by the generated `game::_enums_generated` module.
-pub(crate) use {def_enum, def_flags};
-
 def_enum! {
     /// UI element type.
     ///

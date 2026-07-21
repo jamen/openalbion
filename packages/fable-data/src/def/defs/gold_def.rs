@@ -1,5 +1,4 @@
 use crate::def_struct;
-use crate::def::prelude::*;
 
 def_struct! {
     /// `CGoldDef` — C++ `CGoldDef`.

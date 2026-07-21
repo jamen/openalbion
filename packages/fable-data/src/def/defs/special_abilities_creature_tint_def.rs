@@ -1,5 +1,4 @@
 use crate::def_struct;
-use crate::def::prelude::*;
 
 def_struct! {
     /// `SPECIAL_ABILITIES_CREATURE_TINT_DEF` — C++ `CSpecialAbilitiesCreatureTintDef`.

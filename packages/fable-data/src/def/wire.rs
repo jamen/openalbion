@@ -462,6 +462,7 @@ macro_rules! wire_struct {
             fn member_name(&self, index: usize) -> Option<&'static str> {
                 [$(stringify!($field)),+].get(index).copied()
             }
+            #[allow(unused_assignments, unused_variables, unused_mut)]
             fn member<'b>(&'b mut self, index: usize) -> Option<$crate::def::visit::FieldRef<'b>> {
                 let mut i = 0usize;
                 $(
@@ -610,6 +611,7 @@ macro_rules! def_struct {
                 fn member_name(&self, index: usize) -> Option<&'static str> {
                     [$(stringify!($field)),+].get(index).copied()
                 }
+                #[allow(unused_assignments, unused_variables, unused_mut)]
                 fn member<'b>(&'b mut self, index: usize) -> Option<$crate::def::visit::FieldRef<'b>> {
                     let mut i = 0usize;
                     $(
@@ -752,6 +754,7 @@ macro_rules! def_variant {
                     $( Self::$variant { .. } => [$(stringify!($field)),*].get(index).copied(), )+
                 }
             }
+            #[allow(unused_assignments, unused_variables, unused_mut)]
             fn member<'b>(&'b mut self, index: usize) -> Option<$crate::def::visit::FieldRef<'b>> {
                 match self {
                     $(

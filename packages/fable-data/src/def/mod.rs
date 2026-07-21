@@ -12,6 +12,8 @@ pub mod binary;
 pub mod defs;
 pub mod dispatch;
 pub mod enums;
+#[macro_use]
+pub mod game_def_table;
 pub mod object;
 pub mod prelude;
 pub mod semantic;

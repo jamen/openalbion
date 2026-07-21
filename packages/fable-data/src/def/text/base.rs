@@ -61,19 +61,6 @@ impl<'a> ParserBase<'a> {
             false
         }
     }
-    pub(crate) fn at_line_start(&self) -> bool {
-        let bytes = self.input().as_bytes();
-        let mut i = self.pos();
-        while i > 0 {
-            i -= 1;
-            match bytes[i] {
-                b' ' | b'\t' => continue,
-                b'\n' => return true,
-                _ => return false,
-            }
-        }
-        true
-    }
 }
 
 #[derive(Copy, Clone, Debug, Display, Error)]

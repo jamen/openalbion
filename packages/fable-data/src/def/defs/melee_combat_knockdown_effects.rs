@@ -1,5 +1,4 @@
 use crate::def_struct;
-use crate::def::prelude::*;
 
 def_struct! {
     /// `MELEE_COMBAT_KNOCKDOWN_EFFECTS` — C++ `CMeleeCombatKnockdownEffects`.

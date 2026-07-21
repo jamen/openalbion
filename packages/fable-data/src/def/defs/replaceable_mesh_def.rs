@@ -1,7 +1,6 @@
 //! `CReplaceableMeshDef` — C++ `CReplaceableMeshDef`.
 
 use crate::{def_struct, wire_struct};
-use crate::def::prelude::*;
 
 wire_struct! {
     /// One entry of `NGraphicAppearance::CReplaceableMeshes` — original PC release layout.

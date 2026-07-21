@@ -176,7 +176,6 @@ impl<'a> DefParser<'a> {
     }
 
     fn try_consume(&mut self, s: &str) -> bool { self.parser.try_consume(s) }
-    fn at_line_start(&mut self) -> bool { self.parser.at_line_start() }
     fn err(&self, inner: DefParseErrorKind) -> ParseError<DefParseErrorKind> { ParseError::new(self.pos(), inner) }
 }
 
