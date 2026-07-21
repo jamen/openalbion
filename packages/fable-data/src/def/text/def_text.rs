@@ -202,9 +202,13 @@ impl<'a> DefParser<'a> {
     /// `enum`/`#define` — returning `false` at end of input.
     fn skip_to_next_top_level_item(&mut self) -> bool {
         loop {
-            if self.at_line_start()
-                && (self.at_definition_keyword() || self.at_header_item_keyword())
-            {
+            // Skip whitespace, `//` line comments, and `/* */` block comments
+            // so that definitions inside block comments aren't parsed.
+            let _ = self.skip_trivia();
+            if self.is_eof() {
+                return false;
+            }
+            if self.at_definition_keyword() || self.at_header_item_keyword() {
                 return true;
             }
             match self.peek_char() {
