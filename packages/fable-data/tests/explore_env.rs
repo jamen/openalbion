@@ -45,9 +45,6 @@ fn explore() {
                     }
                 }
             }
-            DefBody::Unknown { .. } => {
-                *kinds.entry("Unknown").or_default() += 1;
-            }
             _ => {
                 *kinds.entry("other-typed").or_default() += 1;
             }

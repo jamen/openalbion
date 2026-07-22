@@ -484,7 +484,7 @@ pub struct EntryRecord {
     pub preamble: EntryPreamble,
     /// The def's sub-def table: `Some` (possibly empty) for def types deriving
     /// from the sub-def bases, `None` for all other types. Presence is a
-    /// per-type property — see [`crate::def::dispatch::def_name_has_subdef_table`].
+    /// per-type property — see [`def_name_has_subdef_table`].
     pub sub_defs: Option<Vec<SubDefRecord>>,
     pub chunk_start: usize,
     pub chunk_end: usize,
@@ -633,6 +633,7 @@ impl EntryRecord {
 pub enum ParseEntryRecordError {
     Preamble(ParseEntryPreambleError),
     SubDefTable(TakeError),
+    Body(String, ParseControlError),
 }
 
 impl EntryRecord {
@@ -652,7 +653,7 @@ impl EntryRecord {
         // between the preamble and the field controls. Presence is a per-type
         // property (verified against all three retail bins), so the table is
         // read deterministically — never sniffed per entry.
-        let sub_defs = if crate::def::dispatch::def_name_has_subdef_table(&name.string) {
+        let sub_defs = if def_name_has_subdef_table(&name.string) {
             let count = take::<u16>(cur).map_err(E::SubDefTable)?.to_le();
             let mut records = Vec::with_capacity(count as usize);
             for _ in 0..count {
@@ -666,23 +667,12 @@ impl EntryRecord {
         // The body is a sequence of `(crc_id, value)` controls. A def type we
         // model but whose layout doesn't match the entry's bytes falls back to
         // raw bytes rather than aborting the whole file (truly unknown def
-        // types already parse as `DefBody::Unknown`).
-        let body_bytes = cur.to_vec();
+        // unknown types now return a parse error).
 
         let mut attempt = *cur;
-        let body = match DefBody::parse(&mut attempt, &name.string) {
-            Ok(body) => {
-                *cur = attempt;
-                body
-            }
-            Err(_) => {
-                *cur = &cur[cur.len()..];
-                DefBody::Unknown {
-                    name: name.string.clone(),
-                    bytes: body_bytes,
-                }
-            }
-        };
+        let body = DefBody::parse(&mut attempt, &name.string)
+            .map_err(|e| E::Body(name.string.clone(), e.1))?;
+        *cur = attempt;
 
         Ok(Self {
             chunk_start,
@@ -738,7 +728,6 @@ macro_rules! def_body {
         #[derive(Debug, Clone)]
         pub enum DefBody {
             $( $variant(crate::def::defs::$type), )+
-            Unknown { name: String, bytes: Vec<u8> },
         }
 
         impl DefBody {
@@ -752,10 +741,13 @@ macro_rules! def_body {
                             crate::def::defs::$type::parse(cur).map_err(|e| (name, e))?
                         ), )+
                     )+
-                    _ => DefBody::Unknown {
-                        name: name.to_string(),
-                        bytes: core::mem::take(cur).to_vec(),
-                    },
+                    _ => {
+                        return Err((name, ParseControlError {
+                            name: "<unknown type>",
+                            reason: crate::def::binary::control::ParseControlErrorReason::MalformedId(
+                                crate::bytes::TakeError::UnexpectedEnd(crate::bytes::UnexpectedEnd)),
+                        }))
+                    }
                 })
             }
 
@@ -765,19 +757,12 @@ macro_rules! def_body {
             ) -> Result<(), (&'static str, SerializeControlError)> {
                 match self {
                     $( Self::$variant(d) => d.serialize(out).map_err(|_e| ("serialize", _e)), )+
-                    Self::Unknown { bytes, .. } => put_bytes(out, bytes).map_err(|e| {
-                        ("unknown", SerializeControlError {
-                            name: "<raw>",
-                            reason: SerializeControlErrorReason::Value(e),
-                        })
-                    }),
                 }
             }
 
             pub fn byte_size(&self) -> usize {
                 match self {
                     $( Self::$variant(d) => d.byte_size(), )+
-                    Self::Unknown { bytes, .. } => bytes.len(),
                 }
             }
 
@@ -788,7 +773,6 @@ macro_rules! def_body {
                 let mut visitor: &mut dyn crate::def::visit::FieldVisitor = visitor;
                 match self {
                     $( Self::$variant(d) => crate::def::defs::$type::visit_fields(d, &mut visitor), )+
-                    Self::Unknown { .. } => {}
                 }
             }
 
@@ -1056,6 +1040,126 @@ def_body! {
     ConfigOptionsDefaults(ConfigOptionsDefaultsDef) => ["CONFIG_OPTIONS_DEFAULTS_DEF"],
     Environment(EnvironmentDef) => ["CENVIRONMENT_DEF", "ENVIRONMENT"],
     EnvironmentThemeDaySet(EnvironmentThemeDaySetDef) => ["CENVIRONMENT_THEME_DAY", "ENVIRONMENT_THEME_DAY"],
+}
+
+macro_rules! sub_def_names {
+    ($($name:literal),+ $(,)?) => {
+        pub fn def_name_has_subdef_table(name: &str) -> bool {
+            match name {
+                $( $name => true, )+
+                _ => false,
+            }
+        }
+    };
+}
+
+sub_def_names! {
+    "ARMOUR",
+    "ATTACK_PATTERN",
+    "BRAIN",
+    "BUILDING",
+    "CAMERA_MANAGER",
+    "CAMERA_MANAGER_SET",
+    "CAMERA_MODE",
+    "CAreaOfEffectAttackDef",
+    "CBalverineBattleDef",
+    "CHeroPostcardGeneratorDef",
+    "CIdleSchedulerDef",
+    "CJackOfBladesBattleDef",
+    "CMazeBattleDef",
+    "COMBAT_DIALOGUE_DEF",
+    "COMBAT_SEQUENCE",
+    "COMBAT_TYPE",
+    "CONFIG_OPTIONS_DEFAULTS_DEF",
+    "CONTROL_SCHEME",
+    "CREATURE",
+    "CREATURE_ABILITY",
+    "CREATURE_GENERATION_FAMILY",
+    "CScorpionKingBattleDef",
+    "CScriptDef",
+    "CCutsceneDef",
+    "CRegionScriptDef",
+    "CThunderBattleDef",
+    "CTrollBattleDef",
+    "CWaspQueenBattleDef",
+    "CWhisperBattleDef",
+    "ENGINE",
+    "ENGINE_THEME",
+    "ENGINE_THEME_GROUP",
+    "ENGINE_VIDEO_OPTIONS",
+    "ENVIRONMENT",
+    "ENVIRONMENT_THEME_DAY",
+    "EXPRESSION",
+    "FACTION",
+    "FRONT_END",
+    "GLOBAL",
+    "HERO_ABILITY",
+    "HERO_COMBAT",
+    "HERO_MELEE_COMBAT_ABILITY",
+    "HERO_STATS",
+    "HIT_LOCATION",
+    "HOLY_SITE",
+    "INVENTORY_CATEGORY",
+    "INVENTORY_TYPE",
+    "LIGHTNING",
+    "LOCAL_DETAIL_GENERATOR",
+    "MARKER",
+    "MATERIAL",
+    "MELEE_COMBAT_KNOCKDOWN_EFFECTS",
+    "MESSAGE_EVENT",
+    "NOISE",
+    "OBJECT",
+    "OBJECT_FAMILY",
+    "OPINION_DEED_EFFECTS",
+    "OPINION_DEED_MASK",
+    "OPINION_PERSONALITY",
+    "OPINION_REACTION_MANAGER",
+    "OPINION_REACTION_MASK",
+    "OPINION_SOURCE",
+    "PHYSICAL_SWITCH",
+    "PLAYER",
+    "PLAYER_GUI",
+    "PLAYER_INVENTORY",
+    "PLAYER_MOVEMENT",
+    "REGION",
+    "SHOT",
+    "SIM_BUILDING",
+    "SIM_VOICES",
+    "SKY",
+    "SOUND_SETUP",
+    "SOUND_THEME",
+    "SPECIAL_ABILITIES_ASSASSIN_RUSH_DEF",
+    "SPECIAL_ABILITIES_BATTLE_CHARGE_DEF",
+    "SPECIAL_ABILITIES_BERSERK_DEF",
+    "SPECIAL_ABILITIES_BULLET_TIME_DEF",
+    "SPECIAL_ABILITIES_BURNT_EFFECT_DEF",
+    "SPECIAL_ABILITIES_CREATURE_TINT_DEF",
+    "SPECIAL_ABILITIES_DIVINE_WRATH_DEF",
+    "SPECIAL_ABILITIES_DRAIN_LIFE_DEF",
+    "SPECIAL_ABILITIES_DRUNKENNESS_DEF",
+    "SPECIAL_ABILITIES_ELECTROCUTED_EFFECT_DEF",
+    "SPECIAL_ABILITIES_ENFLAME_DEF",
+    "SPECIAL_ABILITIES_FIREBALL_SPELL_DEF",
+    "SPECIAL_ABILITIES_FORCE_PUSH_DEF",
+    "SPECIAL_ABILITIES_GHOST_SWORD_DEF",
+    "SPECIAL_ABILITIES_HEAL_LIFE_DEF",
+    "SPECIAL_ABILITIES_LIGHTNING_SPELL_DEF",
+    "SPECIAL_ABILITIES_MULTI_ARROW_DEF",
+    "SPECIAL_ABILITIES_MULTI_STRIKE_DEF",
+    "SPECIAL_ABILITIES_PHYSICAL_SHIELD_DEF",
+    "SPECIAL_ABILITIES_SUMMON_SPELL_DEF",
+    "SPECIAL_ABILITIES_THUNDER_LIGHTNING_STORM_DEF",
+    "SPECIAL_ABILITIES_TURNCOAT_SPELL_DEF",
+    "SPECIAL_ABILITIES_UNHOLY_POWER_DEF",
+    "SWITCH",
+    "THING",
+    "THING_GROUP",
+    "UI",
+    "UI_ICONS_DEF",
+    "UI_LOCALE_GRAPHICS_DEF",
+    "UI_MISC_THINGS_DEF",
+    "VILLAGE",
+    "VILLAGER_INTERACTION",
 }
 
 /// 3-byte record preamble that precedes each def body. Verified against retail

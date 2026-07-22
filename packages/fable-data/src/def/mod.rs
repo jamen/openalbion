@@ -2,7 +2,6 @@
 //!
 //! - [`binary`] — compiled def container (`DefBinary`, `DefBody`, etc.)
 //! - [`defs`] — individual def-class structs (one module per type)
-//! - [`dispatch`] — per-type metadata utilities (`def_name_has_subdef_table`)
 //! - [`enums`] / [`values`] — shared enum and compound-value types
 //! - [`wire`] — wire-level parse/serialize ([`Wire`])
 //! - [`text`] — text-based definition parsing
@@ -10,7 +9,6 @@
 
 pub mod binary;
 pub mod defs;
-pub mod dispatch;
 pub mod enums;
 pub mod object;
 pub mod semantic;

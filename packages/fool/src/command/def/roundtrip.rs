@@ -44,11 +44,6 @@ pub fn handler(args: DefRoundtripArgs) -> anyhow::Result<()> {
         let record = entry.record;
         let stat = stats.entry(name.clone()).or_default();
 
-        if matches!(record.body, DefBody::Unknown { .. }) {
-            stat.unimplemented += 1;
-            continue;
-        }
-
         // Serialize into a buffer the exact size of the original record and require byte-identical
         // output — this proves the typed parser's field order/kinds/values are correct.
         let mut buf = vec![0u8; record.raw_bytes.len()];

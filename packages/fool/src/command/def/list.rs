@@ -28,7 +28,7 @@ pub fn handler(args: DefListArgs) -> anyhow::Result<()> {
     let mut by_type: BTreeMap<String, (usize, bool)> = BTreeMap::new();
     for entry in def_binary.entries(&names) {
         let name = entry.def_name.unwrap_or("<noname>").to_string();
-        let implemented = !matches!(entry.record.body, DefBody::Unknown { .. });
+        let implemented = true;
         let slot = by_type.entry(name).or_insert((0, implemented));
         slot.0 += 1;
         slot.1 = implemented;
