@@ -1,8 +1,7 @@
 use crate::{
     bytes::{TakeError, UnexpectedEnd, put, put_bytes, take, take_bytes},
     def::{
-        ConfigOptionsDefaultsDef, ControlsDef, EngineDef, EngineVideoOptionsDef, EnvironmentDef,
-        EnvironmentThemeDaySetDef, FrontEndDef, UiDef, UiIconsDef, UiMiscThingsDef,
+        prelude::*,
         binary::{
             control::{ParseControlError, SerializeControlError, SerializeControlErrorReason},
             names::{Names, NamesEntry},
@@ -729,121 +728,88 @@ impl EntryRecord {
     }
 }
 
-// `Game(GameBody)` dwarfs the other variants (GameBody inlines the largest
-// def struct). Boxing it would ripple through every construction/match site
-// for a type that is allocated per-entry anyway, so accept the size skew.
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone)]
-pub enum DefBody {
-    Engine(EngineDef),
-    Controls(ControlsDef),
-    FrontEnd(FrontEndDef),
-    // `UiDef`/`UiMiscThingsDef` are large; box them so `DefBody` stays small.
-    Ui(Box<UiDef>),
-    UiIcons(UiIconsDef),
-    UiMiscThings(Box<UiMiscThingsDef>),
-    EngineVideoOptions(EngineVideoOptionsDef),
-    ConfigOptionsDefaults(ConfigOptionsDefaultsDef),
-    Environment(EnvironmentDef),
-    EnvironmentThemeDaySet(EnvironmentThemeDaySetDef),
-    Game(crate::def::dispatch::GameBody),
-    Unknown { name: String, bytes: Vec<u8> },
-}
+// ── DefBody: generated from the canonical def table ──────────────────────────
 
-impl DefBody {
-    pub(crate) fn parse<'a>(
-        cur: &mut &[u8],
-        name: &'a str,
-    ) -> Result<Self, (&'a str, ParseControlError)> {
-        Ok(match name {
-            "ENGINE" => DefBody::Engine(EngineDef::parse(cur).map_err(|e| (name, e))?),
-            "CONTROL_SCHEME" => DefBody::Controls(ControlsDef::parse(cur).map_err(|e| (name, e))?),
-            "FRONT_END" => DefBody::FrontEnd(FrontEndDef::parse(cur).map_err(|e| (name, e))?),
-            "UI" => DefBody::Ui(Box::new(UiDef::parse(cur).map_err(|e| (name, e))?)),
-            "UI_ICONS_DEF" => DefBody::UiIcons(UiIconsDef::parse(cur).map_err(|e| (name, e))?),
-            "UI_MISC_THINGS_DEF" => {
-                DefBody::UiMiscThings(Box::new(UiMiscThingsDef::parse(cur).map_err(|e| (name, e))?))
-            }
-            "ENGINE_VIDEO_OPTIONS" => DefBody::EngineVideoOptions(
-                EngineVideoOptionsDef::parse(cur).map_err(|e| (name, e))?,
-            ),
-            "CONFIG_OPTIONS_DEFAULTS_DEF" => DefBody::ConfigOptionsDefaults(
-                ConfigOptionsDefaultsDef::parse(cur).map_err(|e| (name, e))?,
-            ),
-            "CENVIRONMENT_DEF" | "ENVIRONMENT" => {
-                DefBody::Environment(EnvironmentDef::parse(cur).map_err(|e| (name, e))?)
-            }
-            "CENVIRONMENT_THEME_DAY" | "ENVIRONMENT_THEME_DAY" => DefBody::EnvironmentThemeDaySet(
-                EnvironmentThemeDaySetDef::parse(cur).map_err(|e| (name, e))?,
-            ),
-            // Unknown type names fall back to raw bytes. A *known* type that
-            // fails to parse propagates the error instead: EntryRecord::parse
-            // retries past a 2-byte instance prefix, and its raw-byte fallback
-            // then captures the entry intact — swallowing the error here would
-            // capture the stream from wherever the failed parse stopped,
-            // silently dropping bytes on re-serialization.
-            _ => match crate::def::dispatch::parse_game_def(name, cur) {
-                Ok(Some(body)) => body,
-                Ok(None) => DefBody::Unknown {
-                    name: name.to_string(),
-                    bytes: core::mem::take(cur).to_vec(),
-                },
-                Err(e) => return Err((name, e)),
-            },
-        })
-    }
+macro_rules! def_body {
+    ($($variant:ident ( $type:ident ) => [$($name:literal),+ $(,)?]),+ $(,)?) => {
+        #[allow(clippy::large_enum_variant)]
+        #[derive(Debug, Clone)]
+        pub enum DefBody {
+            $( $variant($type), )+
+            Unknown { name: String, bytes: Vec<u8> },
+        }
 
-    pub fn serialize(
-        &self,
-        out: &mut &mut [u8],
-    ) -> Result<(), (&'static str, SerializeControlError)> {
-        use DefBody as D;
-        match self {
-            D::Engine(d) => d.serialize(out).map_err(|e| ("ENGINE", e))?,
-            D::Controls(d) => d.serialize(out).map_err(|e| ("CONTROL_SCHEME", e))?,
-            D::FrontEnd(d) => d.serialize(out).map_err(|e| ("FRONT_END", e))?,
-            D::Ui(d) => d.serialize(out).map_err(|e| ("UI", e))?,
-            D::UiIcons(d) => d.serialize(out).map_err(|e| ("UI_ICONS_DEF", e))?,
-            D::UiMiscThings(d) => d.serialize(out).map_err(|e| ("UI_MISC_THINGS_DEF", e))?,
-            D::EngineVideoOptions(d) => {
-                d.serialize(out).map_err(|e| ("ENGINE_VIDEO_OPTIONS", e))?
-            }
-            D::ConfigOptionsDefaults(d) => d
-                .serialize(out)
-                .map_err(|e| ("CONFIG_OPTIONS_DEFAULTS_DEF", e))?,
-            D::Environment(d) => d.serialize(out).map_err(|e| ("ENVIRONMENT", e))?,
-            D::EnvironmentThemeDaySet(d) => {
-                d.serialize(out).map_err(|e| ("ENVIRONMENT_THEME_DAY", e))?
-            }
-            D::Game(d) => d.serialize(out).map_err(|e| ("GAME", e))?,
-            D::Unknown { bytes, .. } => put_bytes(out, bytes).map_err(|e| {
-                ("UNKNOWN", SerializeControlError {
-                    name: "<raw>",
-                    reason: SerializeControlErrorReason::Value(e),
+        impl DefBody {
+            pub(crate) fn parse<'a>(
+                cur: &mut &[u8],
+                name: &'a str,
+            ) -> Result<Self, (&'a str, ParseControlError)> {
+                Ok(match name {
+                    $(
+                        $( $name => DefBody::$variant(
+                            $type::parse(cur).map_err(|e| (name, e))?
+                        ), )+
+                    )+
+                    _ => DefBody::Unknown {
+                        name: name.to_string(),
+                        bytes: core::mem::take(cur).to_vec(),
+                    },
                 })
-            })?,
-        }
-        Ok(())
-    }
+            }
 
-    pub fn byte_size(&self) -> usize {
-        use DefBody as D;
-        match self {
-            D::Engine(d) => d.byte_size(),
-            D::Controls(d) => d.byte_size(),
-            D::FrontEnd(d) => d.byte_size(),
-            D::Ui(d) => d.byte_size(),
-            D::UiIcons(d) => d.byte_size(),
-            D::UiMiscThings(d) => d.byte_size(),
-            D::EngineVideoOptions(d) => d.byte_size(),
-            D::ConfigOptionsDefaults(d) => d.byte_size(),
-            D::Environment(d) => d.byte_size(),
-            D::EnvironmentThemeDaySet(d) => d.byte_size(),
-            D::Game(d) => d.byte_size(),
-            D::Unknown { bytes, .. } => bytes.len(),
+            pub fn serialize(
+                &self,
+                out: &mut &mut [u8],
+            ) -> Result<(), (&'static str, SerializeControlError)> {
+                match self {
+                    $( Self::$variant(d) => d.serialize(out).map_err(|_e| ("serialize", _e)), )+
+                    Self::Unknown { bytes, .. } => put_bytes(out, bytes).map_err(|e| {
+                        ("unknown", SerializeControlError {
+                            name: "<raw>",
+                            reason: SerializeControlErrorReason::Value(e),
+                        })
+                    }),
+                }
+            }
+
+            pub fn byte_size(&self) -> usize {
+                match self {
+                    $( Self::$variant(d) => d.byte_size(), )+
+                    Self::Unknown { bytes, .. } => bytes.len(),
+                }
+            }
+
+            /// Visit the active variant's fields via reflection (drives the
+            /// semantic differ / SemVal decoder in `semantic.rs`).
+            pub fn visit_active(&mut self, visitor: &mut dyn crate::def::visit::FieldVisitor) {
+                use crate::def::visit::VisitFields as _;
+                let mut visitor: &mut dyn crate::def::visit::FieldVisitor = visitor;
+                match self {
+                    $( Self::$variant(d) => $type::visit_fields(d, &mut visitor), )+
+                    Self::Unknown { .. } => {}
+                }
+            }
+
+            pub fn def_default_for_name(name: &str) -> Option<Self> {
+                use crate::def::visit::DefDefault as _;
+                Some(match name {
+                    $(
+                        $( $name => Self::$variant(<$type>::def_default()), )+
+                    )+
+                    _ => return None,
+                })
+            }
         }
-    }
+
+        impl crate::def::visit::VisitFields for DefBody {
+            fn visit_fields<V: crate::def::visit::FieldVisitor>(&mut self, visitor: &mut V) {
+                self.visit_active(visitor);
+            }
+        }
+    };
 }
+
+crate::for_each_game_def!(def_body);
 
 /// 3-byte record preamble that precedes each def body. Verified against retail
 /// `game.bin`: bodies are `(u32 id, u32 value)` control pairs starting at byte

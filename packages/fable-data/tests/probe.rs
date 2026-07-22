@@ -10,7 +10,7 @@ fn probe() {
     let bin = DefBinary::load_with_names(&dir.join("game.bin"), &names).unwrap();
     let mut shown = 0;
     for e in bin.entries(&names) {
-        if let DefBody::Game(fable_data::def::dispatch::GameBody::ThingObjectDef(d)) = &e.record.body {
+        if let DefBody::ThingObjectDef(d) = &e.record.body {
             let g = &d.graphic;
             // if our-layout reading looks sane (type small), it contradicts type-first
             println!("#{} {}: bank={} anim_bits={:#x} render={} alpha={} type={}",

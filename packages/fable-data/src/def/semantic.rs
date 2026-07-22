@@ -20,7 +20,7 @@
 //! a mere reordering artifact (MSVC `std::sort` tie-breaks on duplicate keys →
 //! `ACCEPT_SORT`).
 
-use crate::def::dispatch::GameBody;
+use crate::def::binary::def_binary::DefBody;
 use crate::def::visit::{FieldRef, FieldVisitor, StructSlot, VisitFields};
 
 /// A decoded, owned, comparable def-field value.
@@ -176,8 +176,8 @@ pub fn to_semval<T: VisitFields>(v: &mut T, r: &Resolvers) -> SemVal {
     SemVal::Struct(c.out)
 }
 
-/// Decode a [`GameBody`]'s active variant into a [`SemVal::Struct`].
-pub fn game_body_to_semval(b: &mut GameBody, r: &Resolvers) -> SemVal {
+/// Decode a [`DefBody`]'s active variant into a [`SemVal::Struct`].
+pub fn game_body_to_semval(b: &mut DefBody, r: &Resolvers) -> SemVal {
     let mut c = Collector { r, out: Vec::new() };
     b.visit_active(&mut c);
     SemVal::Struct(c.out)

@@ -1,77 +1,15 @@
-//! Def-type dispatch: maps a wire name to the concrete Rust def type.
-//! Single-format (OG retail only).
+//! Per-type metadata (sub-def-table presence, script-def parsing).
+//!
+//! The canonical `for_each_game_def!` table is defined in `game_def_table.rs`
+//! and consumed in `def_binary.rs` to generate `DefBody`.
 
-use crate::def::prelude::*;
-use crate::def::binary::control::{ParseControlError, SerializeControlError};
-use crate::def::binary::def_binary::DefBody;
+use crate::def::{
+    binary::{
+        control::ParseControlError,
+        def_binary::DefBody,
+    },
+};
 
-// ── GameBody enum + dispatch ──────────────────────────────────────────────────
-//
-// The `GameBody` enum and its four dispatch matches (`serialize`, `byte_size`,
-// `visit_active`, and `parse_game_def`) are generated from the single canonical
-// table in `for_each_game_def!` (see `game_def_table.rs`). Each def is listed
-// there exactly once; this callback expands it into all five constructs.
-
-macro_rules! def_gamebody {
-    ($($variant:ident => [$($name:literal),+ $(,)?]),+ $(,)?) => {
-        /// A parsed game-def body (the active variant selects the def type).
-        // Variant sizes span the full range of def-struct sizes by design;
-        // boxing per-variant would complicate every generated dispatch arm.
-        #[allow(clippy::large_enum_variant)]
-        #[derive(Debug, Clone)]
-        pub enum GameBody {
-            $( $variant($variant), )+
-        }
-
-        impl GameBody {
-            pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), SerializeControlError> {
-                match self {
-                    $( Self::$variant(d) => $variant::serialize(d, out), )+
-                }
-            }
-
-            pub fn byte_size(&self) -> usize {
-                match self {
-                    $( Self::$variant(d) => $variant::byte_size(d), )+
-                }
-            }
-
-            /// Visit the active variant's fields via reflection (drives the
-            /// semantic differ / SemVal decoder in `semantic.rs`).
-            pub fn visit_active(&mut self, visitor: &mut dyn crate::def::visit::FieldVisitor) {
-                use crate::def::visit::VisitFields as _;
-                let mut visitor: &mut dyn crate::def::visit::FieldVisitor = visitor;
-                match self {
-                    $( Self::$variant(d) => $variant::visit_fields(d, &mut visitor), )+
-                }
-            }
-        }
-
-        /// Parse a game def body by type name. Returns `Ok(None)` when `name`
-        /// isn't a known game def type (callers fall back to raw bytes); returns
-        /// `Err` when the type is known but its body doesn't match the modeled
-        /// layout — callers may then retry past an instance prefix rather than
-        /// losing data.
-        pub fn parse_game_def(
-            name: &str,
-            cur: &mut &[u8],
-        ) -> Result<Option<DefBody>, ParseControlError> {
-            Ok(Some(match name {
-                $( $( $name => DefBody::Game(GameBody::$variant($variant::parse(cur)?)), )+ )+
-                _ => return Ok(None),
-            }))
-        }
-    };
-}
-
-crate::for_each_game_def!(def_gamebody);
-
-// ── Sub-def table ──────────────────────────────────────
-/// Whether entries of the named def type carry a sub-def table (`u16` count +
-/// 12-byte records) between the entry preamble and the field controls.
-/// Presence is a per-type property: these are the def classes deriving from
-/// the sub-def bases (`CSubDefClassBase`/`CParentDefClassBase`), verified
-/// against all three retail bins.
 pub fn def_name_has_subdef_table(name: &str) -> bool {
     matches!(
         name,
@@ -184,16 +122,15 @@ pub fn def_name_has_subdef_table(name: &str) -> bool {
     )
 }
 
-
 pub fn parse_script_def(
     name: &str,
     cur: &mut &[u8],
 ) -> Result<DefBody, ParseControlError> {
-    Ok(match parse_game_def(name, cur)? {
-        Some(body) => body,
-        None => DefBody::Unknown {
+    match DefBody::parse(cur, name) {
+        Ok(body) => Ok(body),
+        Err(_) => Ok(DefBody::Unknown {
             name: name.to_string(),
             bytes: core::mem::take(cur).to_vec(),
-        },
-    })
+        }),
+    }
 }

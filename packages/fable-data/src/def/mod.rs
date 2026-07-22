@@ -2,7 +2,7 @@
 //!
 //! - [`binary`] — compiled def container (`DefBinary`, `DefBody`, etc.)
 //! - [`defs`] — individual def-class structs (one module per type)
-//! - [`dispatch`] — maps wire names to typed bodies ([`GameBody`])
+//! - [`dispatch`] — per-type metadata (`def_name_has_subdef_table`, …)
 //! - [`enums`] / [`values`] — shared enum and compound-value types
 //! - [`wire`] — wire-level parse/serialize ([`Wire`])
 //! - [`text`] — text-based definition parsing
@@ -23,7 +23,6 @@ pub mod visit;
 pub mod wire;
 
 pub use self::defs::*;
-pub use self::dispatch::GameBody;
 pub use self::enums::*;
 pub use self::values::*;
 pub use self::wire::{DefIndex, DefString, PString, VecMap, WStr, Wire};
