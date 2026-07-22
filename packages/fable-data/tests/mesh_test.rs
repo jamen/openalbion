@@ -35,10 +35,9 @@ fn decode_all_graphics_meshes() {
         .bank_iter()
         .flat_map(|bank| {
             let bank_name = bank.metadata().name.to_string();
-            bank.asset_iter().filter_map(move |asset| {
-                matches!(asset.extras, Some(ExtraMetadata::Mesh(_)))
-                    .then(|| (bank_name.clone(), asset.symbol_name.to_string()))
-            })
+            bank.asset_iter()
+                .filter(|asset| matches!(asset.extras, Some(ExtraMetadata::Mesh(_))))
+                .map(move |asset| (bank_name.clone(), asset.symbol_name.to_string()))
         })
         .collect();
 

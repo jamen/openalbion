@@ -5,10 +5,10 @@
 //! (the def struct type is always identical to the variant name). This macro is
 //! consumed by callback macros to generate what were previously six parallel
 //! hand-maintained ~240-arm matches:
-//!   - `def/dispatch.rs`     — the `GameBody` enum + `serialize` / `byte_size` /
-//!                             `visit_active` / `parse_game_def`
-//!   - `fable-def-compiler`  — `lower_generic::plain_lower` (the generic lowering
-//!                             fallthrough)
+//! - `def/dispatch.rs` — the `GameBody` enum + `serialize` / `byte_size` /
+//!   `visit_active` / `parse_game_def`
+//! - `fable-def-compiler` — `lower_generic::plain_lower` (the generic lowering
+//!   fallthrough)
 //!
 //! To add a def: add its struct module, then add ONE line here. Bespoke lowering
 //! (defs needing more than the generic field walk) is layered on top in

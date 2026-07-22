@@ -142,6 +142,9 @@ impl FieldVisitor for &mut (dyn FieldVisitor + '_) {
 /// Element-wise mutable access to a `Vec` field.
 pub trait VecSlot {
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn clear(&mut self);
     fn push_default(&mut self);
     fn element<'b>(&'b mut self, index: usize) -> FieldRef<'b>;
@@ -174,6 +177,9 @@ pub trait MapEntrySlot<'a> {
 /// Pair-wise mutable access to a map field (`BTreeMap` or `VecMap`).
 pub trait MapSlot {
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn clear(&mut self);
     /// Begin a new pair with default key and value.
     fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a>;
@@ -281,13 +287,6 @@ pub trait StructSlot {
     /// Member Rust field name by declaration index.
     fn member_name(&self, index: usize) -> Option<&'static str>;
     fn member<'b>(&'b mut self, index: usize) -> Option<FieldRef<'b>>;
-    /// Member by name, matched normalized (case-insensitive, no underscores).
-    fn member_by_name<'b>(&'b mut self, name: &str) -> Option<FieldRef<'b>> {
-        let want = normalize_member_name(name);
-        let index = (0..self.member_count())
-            .find(|&i| self.member_name(i).map(normalize_member_name) == Some(want.clone()))?;
-        self.member(index)
-    }
     /// Visit this compound's fields *by their def-script names* via
     /// [`VisitFields`], returning `true` if it did. `def_struct!` types (named
     /// fields, e.g. a def_struct used as a `Vec` element) override this to
@@ -310,12 +309,6 @@ pub trait VariantSlot {
     fn member_count(&self) -> usize;
     fn member_name(&self, index: usize) -> Option<&'static str>;
     fn member<'b>(&'b mut self, index: usize) -> Option<FieldRef<'b>>;
-    fn member_by_name<'b>(&'b mut self, name: &str) -> Option<FieldRef<'b>> {
-        let want = normalize_member_name(name);
-        let index = (0..self.member_count())
-            .find(|&i| self.member_name(i).map(normalize_member_name) == Some(want.clone()))?;
-        self.member(index)
-    }
 }
 
 impl AsField for f32 {

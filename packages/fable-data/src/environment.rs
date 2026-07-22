@@ -287,7 +287,7 @@ mod tests {
             .get("ENVIRONMENT_THEME1")
             .expect("ENVIRONMENT_THEME1 should exist");
         assert!(
-            theme1.keyframes.len() > 0,
+            !theme1.keyframes.is_empty(),
             "Theme should have at least one keyframe"
         );
 

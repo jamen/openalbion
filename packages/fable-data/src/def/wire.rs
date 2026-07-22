@@ -442,7 +442,7 @@ macro_rules! wire_struct {
             fn serialize(
                 &self,
                 out: &mut &mut [u8],
-            ) -> Result<(), crate::bytes::UnexpectedEnd> {
+            ) -> Result<(), $crate::bytes::UnexpectedEnd> {
                 $( self.$field.serialize(out)?; )+
                 Ok(())
             }
@@ -591,7 +591,7 @@ macro_rules! def_struct {
                 fn serialize(
                     &self,
                     out: &mut &mut [u8],
-                ) -> Result<(), crate::bytes::UnexpectedEnd> {
+                ) -> Result<(), $crate::bytes::UnexpectedEnd> {
                     $name::serialize(self, out)
                         .map_err($crate::def::binary::control::SerializeControlError::unexpected_end)
                 }
@@ -701,7 +701,7 @@ macro_rules! def_variant {
             fn serialize(
                 &self,
                 out: &mut &mut [u8],
-            ) -> Result<(), crate::bytes::UnexpectedEnd> {
+            ) -> Result<(), $crate::bytes::UnexpectedEnd> {
                 match self {
                     $(
                         Self::$variant { $( $field ),* } => {

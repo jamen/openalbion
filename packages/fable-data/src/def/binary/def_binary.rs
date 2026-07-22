@@ -30,7 +30,7 @@ pub enum LoadError {
 }
 
 impl DefBinary {
-    pub fn load_with_names<'a>(path: &Path, names: &'a Names) -> Result<Self, LoadError> {
+    pub fn load_with_names(path: &Path, names: &Names) -> Result<Self, LoadError> {
         use LoadError as E;
         let file = File::open(path).map_err(E::Open)?;
         let reader = BufReader::new(file);
@@ -45,9 +45,9 @@ pub enum FromReaderError {
 }
 
 impl DefBinary {
-    pub fn from_reader_with_names<'a, R: Read>(
+    pub fn from_reader_with_names<R: Read>(
         mut reader: R,
-        names: &'a Names,
+        names: &Names,
     ) -> Result<Self, FromReaderError> {
         use FromReaderError as E;
         let mut buf = Vec::new();
@@ -65,7 +65,7 @@ pub enum FromBytesError {
 }
 
 impl DefBinary {
-    pub fn from_bytes_with_names<'a>(
+    pub fn from_bytes_with_names(
         bytes: &[u8],
         names: &Names,
     ) -> Result<Self, FromBytesError> {
@@ -349,7 +349,7 @@ pub enum ParseChunkListError {
 }
 
 impl Chunk {
-    fn parse_list<'a>(
+    fn parse_list(
         cur: &mut &[u8],
         chunk_index: &ChunkIndex,
         name_refs: &[NameRef],
@@ -414,7 +414,7 @@ pub enum ParseChunkError {
 const MAX_CHUNK_DECOMPRESS_SIZE: usize = 32768; // 32KiB, just a guess for now
 
 impl Chunk {
-    fn parse<'a>(
+    fn parse(
         cur: &mut &[u8],
         entry_base: u32,
         entry_count: u32,
@@ -550,7 +550,7 @@ pub enum ParseEntryRecordListError {
 }
 
 impl EntryRecord {
-    pub fn parse_list<'a>(
+    pub fn parse_list(
         cur: &mut &[u8],
         chunk_entry_base: u32,
         chunk_entry_count: u32,
@@ -729,6 +729,10 @@ impl EntryRecord {
     }
 }
 
+// `Game(GameBody)` dwarfs the other variants (GameBody inlines the largest
+// def struct). Boxing it would ripple through every construction/match site
+// for a type that is allocated per-entry anyway, so accept the size skew.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum DefBody {
     Engine(EngineDef),

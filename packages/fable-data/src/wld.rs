@@ -161,8 +161,8 @@ EndMap;
         assert_eq!(wld.maps[0].map_number, 1);
         assert_eq!(wld.maps[0].map_x, 3232);
         assert_eq!(wld.maps[0].level_name, "FinalAlbion\\LookoutPoint.lev");
-        assert_eq!(wld.maps[0].is_sea, false);
-        assert_eq!(wld.maps[0].loaded_on_proximity, true);
+        assert!(!wld.maps[0].is_sea);
+        assert!(wld.maps[0].loaded_on_proximity);
 
         assert_eq!(wld.maps[1].map_number, 2);
         assert_eq!(wld.maps[1].level_script_name, "PicnicArea");

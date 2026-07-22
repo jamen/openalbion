@@ -15,6 +15,9 @@ use crate::def::binary::def_binary::DefBody;
 macro_rules! def_gamebody {
     ($($variant:ident => [$($name:literal),+ $(,)?]),+ $(,)?) => {
         /// A parsed game-def body (the active variant selects the def type).
+        // Variant sizes span the full range of def-struct sizes by design;
+        // boxing per-variant would complicate every generated dispatch arm.
+        #[allow(clippy::large_enum_variant)]
         #[derive(Debug, Clone)]
         pub enum GameBody {
             $( $variant($variant), )+
