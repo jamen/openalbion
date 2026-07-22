@@ -4,5 +4,6 @@ pub mod header;
 pub mod manifest;
 pub mod symbols;
 
+pub use self::base::{LineIndex, Span, Spanned};
 pub use self::def_text::*;
 pub use self::symbols::SymbolTable;

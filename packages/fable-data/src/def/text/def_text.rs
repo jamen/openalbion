@@ -1,11 +1,11 @@
-use super::base::{ConsumeCharError, ParseError, ParserBase, SkipTriviaError};
+use super::base::{ConsumeCharError, ParseError, ParserBase, SkipTriviaError, Span, Spanned};
 use super::header::{HeaderItem, HeaderParser};
 use derive_more::Display;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct DefFile {
-    pub definitions: Vec<Definition>,
+    pub definitions: Vec<Spanned<Definition>>,
     pub by_name: HashMap<String, usize>,
     /// File-local `enum`/`#define` declarations embedded in the `.def` (some
     /// files, e.g. `engine_local_detail.def`, declare symbol constants at the
@@ -20,7 +20,7 @@ pub struct Definition {
     pub def_type: String,
     pub name: String,
     pub specializes: Option<String>,
-    pub body: Vec<Statement>,
+    pub body: Vec<Spanned<Statement>>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct Field {
     pub path: PropertyPath,
-    pub expr: Expr,
+    pub expr: Spanned<Expr>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +45,7 @@ pub struct MethodCall {
 #[derive(Debug, Clone)]
 pub struct TaggedBlock {
     pub tag: String,
-    pub body: Vec<Statement>,
+    pub body: Vec<Spanned<Statement>>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,7 +71,7 @@ impl std::fmt::Display for PropertyPath {
                     }
                     f.write_str(name)?;
                 }
-                PathSegment::Index(expr) => write!(f, "[{expr}]")?,
+                PathSegment::Index(expr) => write!(f, "[{}]", expr.value)?,
             }
         }
         Ok(())
@@ -91,18 +91,28 @@ impl std::fmt::Display for Expr {
                 fmt_separated(f, &c.arguments, ", ")?;
                 f.write_str(")")
             }
-            Expr::BitOr(terms) => fmt_separated(f, terms, " | "),
-            Expr::Add(terms) => fmt_separated(f, terms, " + "),
+            Expr::BitOr(terms) => fmt_separated_spanned(f, terms, " | "),
+            Expr::Add(terms) => fmt_separated_spanned(f, terms, " + "),
         }
     }
 }
 
-fn fmt_separated(f: &mut std::fmt::Formatter<'_>, terms: &[Expr], sep: &str) -> std::fmt::Result {
+fn fmt_separated(f: &mut std::fmt::Formatter<'_>, terms: &[Spanned<Expr>], sep: &str) -> std::fmt::Result {
     for (i, term) in terms.iter().enumerate() {
         if i > 0 {
             f.write_str(sep)?;
         }
-        write!(f, "{term}")?;
+        write!(f, "{}", term.value)?;
+    }
+    Ok(())
+}
+
+fn fmt_separated_spanned(f: &mut std::fmt::Formatter<'_>, terms: &[Spanned<Expr>], sep: &str) -> std::fmt::Result {
+    for (i, term) in terms.iter().enumerate() {
+        if i > 0 {
+            f.write_str(sep)?;
+        }
+        write!(f, "{}", term.value)?;
     }
     Ok(())
 }
@@ -110,7 +120,7 @@ fn fmt_separated(f: &mut std::fmt::Formatter<'_>, terms: &[Expr], sep: &str) -> 
 #[derive(Debug, Clone)]
 pub enum PathSegment {
     Field(String),
-    Index(Expr),
+    Index(Spanned<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -121,14 +131,14 @@ pub enum Expr {
     String(String),
     Symbol(String),
     Constructor(Call),
-    BitOr(Vec<Expr>),
-    Add(Vec<Expr>),
+    BitOr(Vec<Spanned<Expr>>),
+    Add(Vec<Spanned<Expr>>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Call {
     pub name: String,
-    pub arguments: Vec<Expr>,
+    pub arguments: Vec<Spanned<Expr>>,
 }
 
 pub struct DefParser<'a> {
@@ -218,7 +228,7 @@ impl<'a> DefParser<'a> {
             if self.at_definition_keyword() {
                 let def = self.parse_definition()?;
                 let name_index = file.definitions.len();
-                let def_name = def.name.clone();
+                let def_name = def.value.name.clone();
                 file.definitions.push(def);
                 file.by_name.insert(def_name, name_index);
             } else {
@@ -285,7 +295,8 @@ impl<'a> DefParser<'a> {
         Ok(item)
     }
 
-    fn parse_definition(&mut self) -> Result<Definition, DefParseError> {
+    fn parse_definition(&mut self) -> Result<Spanned<Definition>, DefParseError> {
+        let def_start = self.pos();
         let is_template = if self.try_consume("#definition_template") {
             true
         } else if self.try_consume("#definition") {
@@ -337,19 +348,35 @@ impl<'a> DefParser<'a> {
             }
         }
 
-        Ok(Definition {
-            is_template,
-            def_type,
-            name,
-            specializes,
-            body,
+        let def_end = self.pos();
+        Ok(Spanned {
+            span: Span {
+                start: def_start,
+                end: def_end,
+            },
+            value: Definition {
+                is_template,
+                def_type,
+                name,
+                specializes,
+                body,
+            },
         })
     }
 
-    fn parse_statement(&mut self) -> Result<Statement, DefParseError> {
+    fn parse_statement(&mut self) -> Result<Spanned<Statement>, DefParseError> {
+        let stmt_start = self.pos();
         self.skip_trivia()?;
         if self.peek_char() == Some('<') && self.peek_char_at(1) != Some('\\') {
-            return self.parse_tagged_block().map(Statement::TaggedBlock);
+            let tb = self.parse_tagged_block()?;
+            let end = self.pos();
+            return Ok(Spanned {
+                span: Span {
+                    start: stmt_start,
+                    end,
+                },
+                value: Statement::TaggedBlock(tb),
+            });
         }
         let path = self.parse_property_path()?;
         self.skip_trivia()?;
@@ -359,13 +386,30 @@ impl<'a> DefParser<'a> {
             self.skip_trivia()?;
             // The original compiler tolerated a missing statement ';'.
             let _ = self.try_consume(";");
-            return Ok(Statement::MethodCall(MethodCall { object, call }));
+            let stmt_end = self.pos();
+            return Ok(Spanned {
+                span: Span {
+                    start: stmt_start,
+                    end: stmt_end,
+                },
+                value: Statement::MethodCall(MethodCall { object, call }),
+            });
         }
         let value = self.parse_expr()?;
         self.skip_trivia()?;
         // The original compiler tolerated a missing statement ';'.
         let _ = self.try_consume(";");
-        Ok(Statement::Field(Field { path, expr: value }))
+        let stmt_end = self.pos();
+        Ok(Spanned {
+            span: Span {
+                start: stmt_start,
+                end: stmt_end,
+            },
+            value: Statement::Field(Field {
+                path,
+                expr: value,
+            }),
+        })
     }
 
     fn parse_tagged_block(&mut self) -> Result<TaggedBlock, DefParseError> {
@@ -435,11 +479,12 @@ impl<'a> DefParser<'a> {
         }
     }
 
-    pub fn parse_expr(&mut self) -> Result<Expr, DefParseError> {
+    pub fn parse_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
         self.parse_bitor_expr()
     }
 
-    fn parse_bitor_expr(&mut self) -> Result<Expr, DefParseError> {
+    fn parse_bitor_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
+        let start = self.pos();
         let first = self.parse_add_expr()?;
         let mut terms = vec![first];
         self.skip_trivia()?;
@@ -448,14 +493,19 @@ impl<'a> DefParser<'a> {
             terms.push(self.parse_add_expr()?);
             self.skip_trivia()?;
         }
-        Ok(if terms.len() == 1 {
-            terms.pop().unwrap()
+        let end = self.pos();
+        if terms.len() == 1 {
+            Ok(terms.pop().unwrap())
         } else {
-            Expr::BitOr(terms)
-        })
+            Ok(Spanned {
+                span: Span { start, end },
+                value: Expr::BitOr(terms),
+            })
+        }
     }
 
-    fn parse_add_expr(&mut self) -> Result<Expr, DefParseError> {
+    fn parse_add_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
+        let start = self.pos();
         let first = self.parse_leaf_expr()?;
         let mut terms = vec![first];
         self.skip_trivia()?;
@@ -464,17 +514,27 @@ impl<'a> DefParser<'a> {
             terms.push(self.parse_leaf_expr()?);
             self.skip_trivia()?;
         }
-        Ok(if terms.len() == 1 {
-            terms.pop().unwrap()
+        let end = self.pos();
+        if terms.len() == 1 {
+            Ok(terms.pop().unwrap())
         } else {
-            Expr::Add(terms)
-        })
+            Ok(Spanned {
+                span: Span { start, end },
+                value: Expr::Add(terms),
+            })
+        }
     }
 
-    fn parse_leaf_expr(&mut self) -> Result<Expr, DefParseError> {
+    fn parse_leaf_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
         self.skip_trivia()?;
         if self.peek_char() == Some('"') {
-            return self.parse_string().map(Expr::String);
+            let start = self.pos();
+            let s = self.parse_string()?;
+            let end = self.pos();
+            return Ok(Spanned {
+                span: Span { start, end },
+                value: Expr::String(s),
+            });
         }
         let p0 = self.peek_char();
         let next_is_digit = p0.is_some_and(|c| c.is_ascii_digit());
@@ -483,19 +543,46 @@ impl<'a> DefParser<'a> {
         if next_is_digit || neg_then_digit {
             return self.parse_number();
         }
+        let ident_start = self.pos();
         let ident = self.parse_identifier()?;
+        let ident_end = self.pos();
         if ident == "TRUE" || ident == "BTRUE" {
-            return Ok(Expr::Bool(true));
+            return Ok(Spanned {
+                span: Span {
+                    start: ident_start,
+                    end: ident_end,
+                },
+                value: Expr::Bool(true),
+            });
         }
         if ident == "FALSE" || ident == "BFALSE" {
-            return Ok(Expr::Bool(false));
+            return Ok(Spanned {
+                span: Span {
+                    start: ident_start,
+                    end: ident_end,
+                },
+                value: Expr::Bool(false),
+            });
         }
         self.skip_trivia()?;
         if self.peek_char() == Some('(') {
-            Ok(Expr::Constructor(self.parse_call_with_name(ident)?))
-        } else {
-            Ok(Expr::Symbol(ident))
+            let call = self.parse_call_with_name(ident)?;
+            let end = self.pos();
+            return Ok(Spanned {
+                span: Span {
+                    start: ident_start,
+                    end,
+                },
+                value: Expr::Constructor(call),
+            });
         }
+        Ok(Spanned {
+            span: Span {
+                start: ident_start,
+                end: ident_end,
+            },
+            value: Expr::Symbol(ident),
+        })
     }
 
     fn parse_call_with_name(&mut self, name: String) -> Result<Call, DefParseError> {
@@ -505,7 +592,7 @@ impl<'a> DefParser<'a> {
         Ok(Call { name, arguments })
     }
 
-    fn parse_arguments(&mut self) -> Result<Vec<Expr>, DefParseError> {
+    fn parse_arguments(&mut self) -> Result<Vec<Spanned<Expr>>, DefParseError> {
         let mut args = Vec::new();
         self.skip_trivia()?;
         if self.peek_char() == Some(')') {
@@ -524,7 +611,7 @@ impl<'a> DefParser<'a> {
         Ok(args)
     }
 
-    fn parse_number(&mut self) -> Result<Expr, DefParseError> {
+    fn parse_number(&mut self) -> Result<Spanned<Expr>, DefParseError> {
         let start = self.pos();
         match self.parse_number_inner() {
             Ok(x) => Ok(x),
@@ -535,7 +622,7 @@ impl<'a> DefParser<'a> {
         }
     }
 
-    fn parse_number_inner(&mut self) -> Result<Expr, DefParseError> {
+    fn parse_number_inner(&mut self) -> Result<Spanned<Expr>, DefParseError> {
         let start = self.pos();
         let mut has_dot = false;
         let mut has_f_suffix = false;
@@ -558,14 +645,21 @@ impl<'a> DefParser<'a> {
         }
         let text = self.input();
         let text = &text[start..self.pos()];
+        let end = self.pos();
         if has_dot || has_f_suffix {
             let text = text.trim_end_matches('f');
             text.parse::<f32>()
-                .map(Expr::Float)
+                .map(|val| Spanned {
+                    span: Span { start, end },
+                    value: Expr::Float(val),
+                })
                 .map_err(|_| self.err(DefParseErrorKind::InvalidNumber(text.into())))
         } else {
             text.parse::<i64>()
-                .map(Expr::Integer)
+                .map(|val| Spanned {
+                    span: Span { start, end },
+                    value: Expr::Integer(val),
+                })
                 .map_err(|_| self.err(DefParseErrorKind::InvalidNumber(text.into())))
         }
     }
@@ -620,12 +714,12 @@ pub fn parse_def_file(input: &str) -> Result<DefFile, DefParseError> {
 mod tests {
     use super::*;
 
-    fn parse_def(body: &str) -> Definition {
+    fn parse_def(body: &str) -> Spanned<Definition> {
         let input = format!("#definition OBJECT T\n{body}\n#end_definition");
         parse_def_file(&input).unwrap().definitions.pop().unwrap()
     }
 
-    fn parse_first_def(input: &str) -> Definition {
+    fn parse_first_def(input: &str) -> Spanned<Definition> {
         parse_def_file(input).unwrap().definitions.pop().unwrap()
     }
 
@@ -633,19 +727,23 @@ mod tests {
         parse_def_file(input).unwrap_err().inner
     }
 
-    fn parse_stmt(stmt: &str) -> Statement {
-        parse_def(stmt).body.pop().unwrap()
+    fn parse_stmt(stmt: &str) -> Spanned<Statement> {
+        parse_def(stmt).value.body.pop().unwrap()
     }
 
-    fn parse_expr(value: &str) -> Expr {
-        match parse_stmt(&format!("X {value};")) {
-            Statement::Field(f) => f.expr,
+    fn parse_expr(value: &str) -> Spanned<Expr> {
+        match &parse_stmt(&format!("X {value};")).value {
+            Statement::Field(f) => f.expr.clone(),
             other => panic!("expected Field, got {other:?}"),
         }
     }
 
     fn parse_path(path: &str) -> PropertyPath {
-        let Statement::Field(f) = parse_stmt(&format!("{path} 0;")) else {
+        let Spanned {
+            value: Statement::Field(f),
+            ..
+        } = parse_stmt(&format!("{path} 0;"))
+        else {
             panic!()
         };
         f.path
@@ -653,27 +751,27 @@ mod tests {
 
     #[test]
     fn integer() {
-        assert_eq!(parse_expr("42"), Expr::Integer(42));
-        assert_eq!(parse_expr("42282949"), Expr::Integer(42282949));
+        assert_eq!(parse_expr("42").value, Expr::Integer(42));
+        assert_eq!(parse_expr("42282949").value, Expr::Integer(42282949));
     }
 
     #[test]
     fn negative_integer() {
-        assert_eq!(parse_expr("-42"), Expr::Integer(-42));
-        assert_eq!(parse_expr("-42282949"), Expr::Integer(-42282949));
+        assert_eq!(parse_expr("-42").value, Expr::Integer(-42));
+        assert_eq!(parse_expr("-42282949").value, Expr::Integer(-42282949));
     }
 
     #[test]
     fn float() {
-        let Expr::Float(f) = parse_expr("4.2") else {
+        let Expr::Float(f) = parse_expr("4.2").value else {
             panic!()
         };
         assert!((f - 4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("4.2f") else {
+        let Expr::Float(f) = parse_expr("4.2f").value else {
             panic!()
         };
         assert!((f - 4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("4.") else {
+        let Expr::Float(f) = parse_expr("4.").value else {
             panic!()
         };
         assert_eq!(f, 4.0);
@@ -681,15 +779,15 @@ mod tests {
 
     #[test]
     fn negative_float() {
-        let Expr::Float(f) = parse_expr("-4.2") else {
+        let Expr::Float(f) = parse_expr("-4.2").value else {
             panic!()
         };
         assert!((f - -4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("-4.2f") else {
+        let Expr::Float(f) = parse_expr("-4.2f").value else {
             panic!()
         };
         assert!((f - -4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("-4.") else {
+        let Expr::Float(f) = parse_expr("-4.").value else {
             panic!()
         };
         assert_eq!(f, -4.0);
@@ -697,7 +795,7 @@ mod tests {
 
     #[test]
     fn string() {
-        let Expr::String(s) = parse_expr(r#""Hello, World!""#) else {
+        let Expr::String(s) = parse_expr(r#""Hello, World!""#).value else {
             panic!()
         };
         assert_eq!(s, "Hello, World!");
@@ -705,19 +803,19 @@ mod tests {
 
     #[test]
     fn bool_test() {
-        assert!(matches!(parse_expr("TRUE"), Expr::Bool(true)));
-        assert!(matches!(parse_expr("FALSE"), Expr::Bool(false)));
+        assert!(matches!(parse_expr("TRUE").value, Expr::Bool(true)));
+        assert!(matches!(parse_expr("FALSE").value, Expr::Bool(false)));
     }
 
     #[test]
     fn bool_b_prefix() {
-        assert!(matches!(parse_expr("BTRUE"), Expr::Bool(true)));
-        assert!(matches!(parse_expr("BFALSE"), Expr::Bool(false)));
+        assert!(matches!(parse_expr("BTRUE").value, Expr::Bool(true)));
+        assert!(matches!(parse_expr("BFALSE").value, Expr::Bool(false)));
     }
 
     #[test]
     fn add_n_ary() {
-        let Expr::Add(terms) = parse_expr("1 + 2 + 3") else {
+        let Expr::Add(terms) = &parse_expr("1 + 2 + 3").value else {
             panic!()
         };
         assert_eq!(terms.len(), 3);
@@ -725,7 +823,7 @@ mod tests {
 
     #[test]
     fn bitor_n_ary() {
-        let Expr::BitOr(terms) = parse_expr("A | B | C") else {
+        let Expr::BitOr(terms) = &parse_expr("A | B | C").value else {
             panic!()
         };
         assert_eq!(terms.len(), 3);
@@ -733,12 +831,12 @@ mod tests {
 
     #[test]
     fn bitor_precedence_lower_than_add() {
-        let Expr::BitOr(terms) = parse_expr("A | B + C") else {
+        let Expr::BitOr(terms) = &parse_expr("A | B + C").value else {
             panic!()
         };
         assert_eq!(terms.len(), 2);
-        assert!(matches!(&terms[0], Expr::Symbol(s) if s == "A"));
-        let Expr::Add(add_terms) = &terms[1] else {
+        assert!(matches!(&terms[0].value, Expr::Symbol(s) if s == "A"));
+        let Expr::Add(add_terms) = &terms[1].value else {
             panic!()
         };
         assert_eq!(add_terms.len(), 2);
@@ -746,7 +844,7 @@ mod tests {
 
     #[test]
     fn constructor_with_args() {
-        let Expr::Constructor(c) = parse_expr("CRGBColour(255, 128, 64, 255)") else {
+        let Expr::Constructor(c) = &parse_expr("CRGBColour(255, 128, 64, 255)").value else {
             panic!()
         };
         assert_eq!(c.name, "CRGBColour");
@@ -755,7 +853,7 @@ mod tests {
 
     #[test]
     fn empty_constructor() {
-        let Expr::Constructor(c) = parse_expr("CRGBColour()") else {
+        let Expr::Constructor(c) = &parse_expr("CRGBColour()").value else {
             panic!()
         };
         assert!(c.arguments.is_empty());
@@ -763,7 +861,7 @@ mod tests {
 
     #[test]
     fn identifier() {
-        let Expr::Symbol(s) = parse_expr("GRAPHIC_NULL") else {
+        let Expr::Symbol(s) = parse_expr("GRAPHIC_NULL").value else {
             panic!()
         };
         assert_eq!(s, "GRAPHIC_NULL");
@@ -787,7 +885,7 @@ mod tests {
         let p = parse_path("Time[0]");
         assert!(matches!(
             &p.segments[1],
-            PathSegment::Index(Expr::Integer(0))
+            PathSegment::Index(spanned) if spanned.value == Expr::Integer(0)
         ));
     }
 
@@ -796,14 +894,17 @@ mod tests {
         let p = parse_path("Time[-1]");
         assert!(matches!(
             &p.segments[1],
-            PathSegment::Index(Expr::Integer(-1))
+            PathSegment::Index(spanned) if spanned.value == Expr::Integer(-1)
         ));
     }
 
     #[test]
     fn ident_index() {
         let p = parse_path("Foo[BAR_CONST]");
-        let PathSegment::Index(Expr::Symbol(s)) = &p.segments[1] else {
+        let PathSegment::Index(spanned) = &p.segments[1] else {
+            panic!()
+        };
+        let Expr::Symbol(s) = &spanned.value else {
             panic!()
         };
         assert_eq!(s, "BAR_CONST");
@@ -812,7 +913,10 @@ mod tests {
     #[test]
     fn string_index() {
         let p = parse_path("Map[\"DAY\"]");
-        let PathSegment::Index(Expr::String(s)) = &p.segments[1] else {
+        let PathSegment::Index(spanned) = &p.segments[1] else {
+            panic!()
+        };
+        let Expr::String(s) = &spanned.value else {
             panic!()
         };
         assert_eq!(s, "DAY");
@@ -821,7 +925,10 @@ mod tests {
     #[test]
     fn expression_index() {
         let p = parse_path("States[STATE + 1]");
-        assert!(matches!(&p.segments[1], PathSegment::Index(Expr::Add(_))));
+        assert!(matches!(
+            &p.segments[1],
+            PathSegment::Index(spanned) if matches!(spanned.value, Expr::Add(_))
+        ));
     }
 
     #[test]
@@ -831,23 +938,30 @@ mod tests {
         assert!(matches!(&p.segments[0], PathSegment::Field(s) if s == "Time"));
         assert!(matches!(
             &p.segments[1],
-            PathSegment::Index(Expr::Integer(0))
+            PathSegment::Index(spanned) if spanned.value == Expr::Integer(0)
         ));
         assert!(matches!(&p.segments[2], PathSegment::Field(s) if s == "SkyTexture0"));
     }
 
     #[test]
     fn field_assignment() {
-        let Statement::Field(f) = parse_stmt("Health 100;") else {
+        let Spanned {
+            value: Statement::Field(f),
+            ..
+        } = parse_stmt("Health 100;")
+        else {
             panic!()
         };
         assert_eq!(f.path.segments.len(), 1);
-        assert!(matches!(f.expr, Expr::Integer(100)));
+        assert!(matches!(f.expr.value, Expr::Integer(100)));
     }
 
     #[test]
     fn method_call() {
-        let Statement::MethodCall(mc) = parse_stmt("Components.Add(\"CTCPhysicsStandard\");")
+        let Spanned {
+            value: Statement::MethodCall(mc),
+            ..
+        } = parse_stmt("Components.Add(\"CTCPhysicsStandard\");")
         else {
             panic!()
         };
@@ -857,8 +971,10 @@ mod tests {
 
     #[test]
     fn tagged_block() {
-        let Statement::TaggedBlock(tb) =
-            parse_stmt("<CCreatureDef>\n  Health 100;\n<\\CCreatureDef>")
+        let Spanned {
+            value: Statement::TaggedBlock(tb),
+            ..
+        } = parse_stmt("<CCreatureDef>\n  Health 100;\n<\\CCreatureDef>")
         else {
             panic!()
         };
@@ -869,7 +985,7 @@ mod tests {
     #[test]
     fn template_flag() {
         let def = parse_first_def("#definition_template OBJECT T\n#end_definition");
-        assert!(def.is_template);
+        assert!(def.value.is_template);
     }
 
     #[test]
@@ -877,7 +993,7 @@ mod tests {
         let def = parse_first_def(
             "#definition OBJECT CHILD specialises PARENT\n  Health 50;\n#end_definition",
         );
-        assert_eq!(def.specializes.as_deref(), Some("PARENT"));
+        assert_eq!(def.value.specializes.as_deref(), Some("PARENT"));
     }
 
     #[test]
@@ -899,8 +1015,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(file.definitions.len(), 2);
-        assert_eq!(file.definitions[0].name, "FIRST");
-        assert_eq!(file.definitions[1].name, "SECOND");
+        assert_eq!(file.definitions[0].value.name, "FIRST");
+        assert_eq!(file.definitions[1].value.name, "SECOND");
         assert_eq!(file.by_name["FIRST"], 0);
         assert_eq!(file.by_name["SECOND"], 1);
     }
@@ -908,30 +1024,34 @@ mod tests {
     #[test]
     fn line_comment_in_body() {
         let def = parse_def("// just a comment\nHealth 100;");
-        assert_eq!(def.body.len(), 1);
+        assert_eq!(def.value.body.len(), 1);
     }
 
     #[test]
     fn block_comment_in_body() {
         let def = parse_def("/* block comment */\nHealth 100;");
-        assert_eq!(def.body.len(), 1);
+        assert_eq!(def.value.body.len(), 1);
     }
 
     #[test]
     fn block_comment_inline() {
         let def = parse_def("Name /* inline */ \"Test\";");
-        assert_eq!(def.body.len(), 1);
-        let Statement::Field(f) = &def.body[0] else {
+        assert_eq!(def.value.body.len(), 1);
+        let Spanned {
+            value: Statement::Field(f),
+            ..
+        } = &def.value.body[0]
+        else {
             panic!()
         };
-        let Expr::String(s) = &f.expr else { panic!() };
+        let Expr::String(s) = &f.expr.value else { panic!() };
         assert_eq!(s, "Test");
     }
 
     #[test]
     fn block_comment_multiline() {
         let def = parse_def("/* multi\n   line\n   comment */\nHealth 100;");
-        assert_eq!(def.body.len(), 1);
+        assert_eq!(def.value.body.len(), 1);
     }
 
     #[test]
@@ -939,7 +1059,7 @@ mod tests {
         // An unterminated block comment inside a statement is recovered by
         // skipping the rest of the line; the definition still parses.
         let def = parse_def("  Health /* never closes");
-        assert_eq!(def.body.len(), 0);
+        assert_eq!(def.value.body.len(), 0);
     }
 
     #[test]
@@ -954,7 +1074,7 @@ mod tests {
     fn mismatched_tag_recovered() {
         // A mismatched close tag drops the malformed statement, not the def.
         let def = parse_def("  <A>\n  <\\B>");
-        assert_eq!(def.body.len(), 0);
+        assert_eq!(def.value.body.len(), 0);
     }
 
     #[test]
@@ -962,7 +1082,7 @@ mod tests {
         // The original compiler tolerated a missing statement ';' (retail
         // defs rely on it).
         let def = parse_def("  Health 100");
-        assert_eq!(def.body.len(), 1);
+        assert_eq!(def.value.body.len(), 1);
     }
 
     #[test]
@@ -971,7 +1091,7 @@ mod tests {
         // building_herocentre.def) is dropped; sibling statements survive.
         let def =
             parse_def("  MESH_GUILD_SHOP_01 IsPartOfHeroGuild TRUE;\n  GroupDef G_REGION_GUILD;");
-        assert_eq!(def.body.len(), 2);
+        assert_eq!(def.value.body.len(), 2);
     }
 
     #[test]
@@ -1024,7 +1144,7 @@ mod tests {
     "#;
         let file = parse_def_file(input).unwrap();
         assert_eq!(file.definitions.len(), 2);
-        assert_eq!(file.definitions[0].name, "FIRST");
-        assert_eq!(file.definitions[1].name, "SECOND");
+        assert_eq!(file.definitions[0].value.name, "FIRST");
+        assert_eq!(file.definitions[1].value.name, "SECOND");
     }
 }

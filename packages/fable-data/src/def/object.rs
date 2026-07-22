@@ -5,7 +5,8 @@
 //! `Graphic.Type` (static/animated/none).
 
 use super::text::DefParseError;
-use super::text::def_text::{Definition, Statement, parse_def_file};
+use super::text::def_text::{Definition, Expr, Statement, parse_def_file};
+use super::text::Spanned;
 
 /// The resolved graphic type for an object definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,7 +71,7 @@ impl ObjectDefs {
         self.defs
             .by_name
             .get(name)
-            .map(|&idx| &self.defs.definitions[idx])
+            .map(|&idx| &self.defs.definitions[idx].value)
     }
 
     /// Walk `specialises` chain from `def` to collect all properties (later overrides earlier).
@@ -97,7 +98,7 @@ impl ObjectDefs {
         // Apply in reverse order (root template first, leaf last so leaf overrides).
         for ancestor in chain.iter().rev() {
             for stmt in &ancestor.body {
-                if let Statement::Field(field) = stmt {
+                if let Statement::Field(field) = &stmt.value {
                     props.push((field.path.to_string(), expr_to_string(&field.expr)));
                 }
             }
@@ -118,9 +119,8 @@ fn parse_graphic_type(s: &str) -> ObjectGraphicType {
     }
 }
 
-fn expr_to_string(expr: &super::text::Expr) -> String {
-    use super::text::Expr;
-    match expr {
+fn expr_to_string(expr: &Spanned<Expr>) -> String {
+    match &expr.value {
         Expr::String(s) => s.clone(),
         Expr::Symbol(s) => s.clone(),
         Expr::Integer(n) => n.to_string(),
@@ -133,7 +133,7 @@ fn expr_to_string(expr: &super::text::Expr) -> String {
             }
         }
         Expr::Constructor(c) => c.name.clone(),
-        Expr::BitOr(_) | Expr::Add(_) => expr.to_string(),
+        Expr::BitOr(_) | Expr::Add(_) => expr.value.to_string(),
     }
 }
 

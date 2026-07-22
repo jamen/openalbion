@@ -22,4 +22,4 @@ pub use self::enums::*;
 pub use self::values::*;
 pub use self::wire::{DefIndex, DefString, PString, VecMap, WStr, Wire};
 
-pub use self::text::{DefParseError, Definition, Expr, PathSegment, Statement, parse_def_file};
+pub use self::text::{DefParseError, Definition, Expr, PathSegment, Spanned, Span, Statement, parse_def_file};

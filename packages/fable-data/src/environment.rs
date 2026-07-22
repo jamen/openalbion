@@ -7,7 +7,7 @@
 
 use crate::def::binary::def_binary::{DefBinary, DefBody};
 use crate::def::binary::names::Names;
-use crate::def::text::{DefParseError, Definition, Expr, PathSegment, Statement, parse_def_file};
+use crate::def::text::{DefParseError, Definition, Expr, PathSegment, Spanned, Statement, parse_def_file};
 use crate::def::{EnvironmentDef, EnvironmentThemeDef};
 use derive_more::{Display, Error};
 use std::collections::HashMap;
@@ -127,9 +127,9 @@ impl EnvironmentConfig {
         let def_file = parse_def_file(input).map_err(EnvironmentParseError::Def)?;
         let mut themes = HashMap::new();
         for def in &def_file.definitions {
-            if def.def_type == "ENVIRONMENT_THEME_DAY" {
-                let theme = Self::parse_theme(&def.name, def)?;
-                themes.insert(def.name.clone(), theme);
+            if def.value.def_type == "ENVIRONMENT_THEME_DAY" {
+                let theme = Self::parse_theme(&def.value.name, &def.value)?;
+                themes.insert(def.value.name.clone(), theme);
             }
         }
         Ok(Self {
@@ -211,20 +211,23 @@ impl EnvironmentConfig {
     ) -> Result<EnvironmentTheme, EnvironmentParseError> {
         let mut keyframes_map: HashMap<i32, TimeKeyframe> = HashMap::new();
         for stmt in &def.body {
-            let Statement::Field(field) = stmt else {
+            let Statement::Field(field) = &stmt.value else {
                 continue;
             };
             let segments = &field.path.segments;
             // We only care about `Time[idx].Property = ...` fields.
             if let [
                 PathSegment::Field(field_name),
-                PathSegment::Index(Expr::Integer(idx)),
+                PathSegment::Index(idx_expr),
                 PathSegment::Field(prop),
                 ..,
             ] = segments.as_slice()
                 && field_name == "Time"
             {
-                let keyframe = keyframes_map.entry(*idx as i32).or_default();
+                let Expr::Integer(idx) = idx_expr.value else {
+                    continue;
+                };
+                let keyframe = keyframes_map.entry(idx as i32).or_default();
                 Self::set_keyframe_property(keyframe, prop, &field.expr);
             }
         }
@@ -237,39 +240,39 @@ impl EnvironmentConfig {
         })
     }
 
-    fn set_keyframe_property(keyframe: &mut TimeKeyframe, prop: &str, expr: &Expr) {
+    fn set_keyframe_property(keyframe: &mut TimeKeyframe, prop: &str, expr: &Spanned<Expr>) {
         match prop {
-            "TimeOfDay" => match expr {
+            "TimeOfDay" => match &expr.value {
                 Expr::Float(f) => keyframe.time_of_day = *f,
                 Expr::Integer(i) => keyframe.time_of_day = *i as f32,
                 _ => {}
             },
             "SkyTexture0" => {
-                if let Expr::Symbol(s) = expr {
+                if let Expr::Symbol(s) = &expr.value {
                     keyframe.sky_texture0 = Some(s.clone());
                 }
             }
             "SkyTexture1" => {
-                if let Expr::Symbol(s) = expr {
+                if let Expr::Symbol(s) = &expr.value {
                     keyframe.sky_texture1 = Some(s.clone());
                 }
             }
-            "SkyTexture1Blend" => match expr {
+            "SkyTexture1Blend" => match &expr.value {
                 Expr::Float(f) => keyframe.sky_texture1_blend = *f,
                 Expr::Integer(i) => keyframe.sky_texture1_blend = *i as f32,
                 _ => {}
             },
             "MoonLit" => {
-                if let Expr::Bool(b) = expr {
+                if let Expr::Bool(b) = &expr.value {
                     keyframe.moon_lit = *b;
                 }
             }
-            "FogStartZ" => match expr {
+            "FogStartZ" => match &expr.value {
                 Expr::Float(f) => keyframe.fog_start_z = *f,
                 Expr::Integer(i) => keyframe.fog_start_z = *i as f32,
                 _ => {}
             },
-            "FogEndZ" => match expr {
+            "FogEndZ" => match &expr.value {
                 Expr::Float(f) => keyframe.fog_end_z = *f,
                 Expr::Integer(i) => keyframe.fog_end_z = *i as f32,
                 _ => {}
