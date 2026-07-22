@@ -1,7 +1,6 @@
 use crate::DefStruct;
 use crate::def::prelude::*;
 
-/// `CCombatAbilityBlockHeavyWeaponAttackDef` | `CCombatAbilityBlockLightWeaponAttackDef` | `CCombatAbilityBlockProjectileWeaponAttackDef` | `CCombatAbilityBlockUnarmedAttackDef` — C++ `CCombatAbilityBlockDefBase`.
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct CombatAbilityBlockDefBase {
     #[def("BlockAngle", default = 120.0)]

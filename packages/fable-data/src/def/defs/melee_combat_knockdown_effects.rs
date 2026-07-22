@@ -1,6 +1,5 @@
 use crate::DefStruct;
 
-/// `MELEE_COMBAT_KNOCKDOWN_EFFECTS` — C++ `CMeleeCombatKnockdownEffects`.
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct MeleeCombatKnockdownEffects {
     #[def("BlendInFrames")]

@@ -1,7 +1,6 @@
 use crate::DefStruct;
 use crate::def::prelude::*;
 
-/// `CCombatAbilityBlockCounterAttackDef` | `CCombatAbilityFlourishCounterAttackDef` | `CCombatAbilityGetHitCounterAttackDef` — C++ `CCombatAbilityAttackBase`.
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct CombatAbilityAttackBase {
     #[def("Blockable", default = true)]

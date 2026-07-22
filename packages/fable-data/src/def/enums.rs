@@ -30,7 +30,6 @@ use crate::{DefEnum, DefFlags};
 
 /// UI element type.
 ///
-/// C++ `NUISystem::EType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum UiType {
@@ -126,7 +125,6 @@ pub enum UiType {
 
 /// Table growth direction. Declared as an enum in C++ but OR-combined in real data (game.bin has `3`).
 ///
-/// C++ `NUISystem::ETableExpansionTypes`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     HORIZONTAL = 1 => "TABLE_EXPANSION_HORIZONTAL",
@@ -136,7 +134,6 @@ pub struct TableExpansion(pub i32);
 
 /// Text alignment.
 ///
-/// C++ `NUISystem::ETextAlignement`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum TextAlignment {
@@ -150,7 +147,6 @@ pub enum TextAlignment {
 
 /// Order in which a UI state change propagates.
 ///
-/// C++ `NUISystem::EStateChangeType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum StateChangeType {
@@ -168,7 +164,6 @@ pub enum StateChangeType {
 
 /// UI action fired by buttons and menu entries.
 ///
-/// C++ `NUISystem::EActionType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ActionType {
@@ -718,7 +713,6 @@ pub enum ActionType {
 
 /// Sprite slot of a UI table (key of `UiDef::sprites`).
 ///
-/// C++ `NUISystem::ETableSprites`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum TableSprites {
@@ -754,7 +748,6 @@ pub enum TableSprites {
 
 /// Engine graphic/mesh kind.
 ///
-/// C++ `EEngineGraphicType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum EngineGraphicType {
@@ -776,7 +769,6 @@ pub enum EngineGraphicType {
 
 /// 2D sprite render flags. `0` (no flags) occurs in real data.
 ///
-/// C++ `EEngineSprite2DFlag`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     CENTRE_ON_POS = 1 => "ENGINE_2D_SPRITE_CENTRE_ON_POS",
@@ -786,7 +778,6 @@ pub struct Sprite2dFlags(pub i32);
 
 /// Bindable game action.
 ///
-/// C++ `EGameAction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum GameAction {
@@ -1051,7 +1042,6 @@ pub enum GameAction {
 
 /// Input controller kind.
 ///
-/// C++ `EControllerType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ControllerType {
@@ -1067,7 +1057,6 @@ pub enum ControllerType {
 
 /// Xbox pad button.
 ///
-/// C++ `EXboxControllerButton`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum XboxControllerButton {
@@ -1113,7 +1102,6 @@ pub enum XboxControllerButton {
 
 /// Mouse button or movement binding.
 ///
-/// C++ `EMouseButtonControl`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum MouseButtonControl {
@@ -1437,7 +1425,6 @@ mod tests {
 
 // ── generated game.bin enums ──────────────────────────────────
 
-/// C++ `EActionRegisteredType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ActionRegisteredType {
@@ -1553,7 +1540,6 @@ pub enum ActionRegisteredType {
     SUMMONERDIE = 54,
 }
 
-/// C++ `EClockHandType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ClockHandType {
@@ -1565,7 +1551,6 @@ pub enum ClockHandType {
     HOUR = 2,
 }
 
-/// C++ `EClothingSuitPart`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ClothingSuitPart {
@@ -1583,7 +1568,6 @@ pub enum ClothingSuitPart {
     FEET = 5,
 }
 
-/// C++ `ECombatCreatureType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CombatCreatureType {
@@ -1607,7 +1591,6 @@ pub enum CombatCreatureType {
     GUARD = 8,
 }
 
-/// C++ `ECombatSequenceInterruptionType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CombatSequenceInterruptionType {
@@ -1619,7 +1602,6 @@ pub enum CombatSequenceInterruptionType {
     INTERRUPTABLEDUETOZONECHANGE = 2,
 }
 
-/// C++ `ECombatSequenceIsValidType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CombatSequenceIsValidType {
@@ -1643,7 +1625,6 @@ pub enum CombatSequenceIsValidType {
     TARGETINLINEOFSIGHT = 8,
 }
 
-/// C++ `ECombatSequenceOnStartModuleType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CombatSequenceOnStartModuleType {
@@ -1653,7 +1634,6 @@ pub enum CombatSequenceOnStartModuleType {
     CONTINUEAIMING = 1,
 }
 
-/// C++ `ECombatSequenceOnStopModuleType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CombatSequenceOnStopModuleType {
@@ -1661,7 +1641,6 @@ pub enum CombatSequenceOnStopModuleType {
     NULL = 0,
 }
 
-/// C++ `ECombatSequenceType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CombatSequenceType {
@@ -1677,7 +1656,6 @@ pub enum CombatSequenceType {
     LEADER = 4,
 }
 
-/// C++ `ECombatStrikeRecoilStyle`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CombatStrikeRecoilStyle {
@@ -1691,7 +1669,6 @@ pub enum CombatStrikeRecoilStyle {
     MAXNUMBEROFRECOILTYPES = 3,
 }
 
-/// C++ `ECompositeBlendType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CompositeBlendType {
@@ -1707,7 +1684,6 @@ pub enum CompositeBlendType {
     MULTIPLY = 4,
 }
 
-/// C++ `EContextSensitiveType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ContextSensitiveType {
@@ -1735,7 +1711,6 @@ pub enum ContextSensitiveType {
     SCRIPT = 10,
 }
 
-/// C++ `EControlledMovementType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ControlledMovementType {
@@ -1749,7 +1724,6 @@ pub enum ControlledMovementType {
     FIRSTPERSON = 3,
 }
 
-/// C++ `ECreatureAbility`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CreatureAbility {
@@ -1773,7 +1747,6 @@ pub enum CreatureAbility {
     MAXNUMBEROFCREATUREABILITIES = 8,
 }
 
-/// C++ `ECreatureGeneratorGenerateType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CreatureGeneratorGenerateType {
@@ -1789,7 +1762,6 @@ pub enum CreatureGeneratorGenerateType {
     UNDEAD = 4,
 }
 
-/// C++ `ECreatureInteractionType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     NULL = 0 => "CREATURE_INTERACTION_NULL",
@@ -1800,7 +1772,6 @@ pub enum CreatureGeneratorGenerateType {
 )]
 pub struct CreatureInteractionType(pub i32);
 
-/// C++ `ECreatureType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CreatureType {
@@ -1814,7 +1785,6 @@ pub enum CreatureType {
     HUMANELDERLY = 3,
 }
 
-/// C++ `ECrimeSeverity`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum CrimeSeverity {
@@ -1828,7 +1798,6 @@ pub enum CrimeSeverity {
     SERIOUS = 3,
 }
 
-/// C++ `EDamageAttribute`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum DamageAttribute {
@@ -1858,7 +1827,6 @@ pub enum DamageAttribute {
     UNHOLYPOWER = 10,
 }
 
-/// C++ `EDoorTriggerType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum DoorTriggerType {
@@ -1868,7 +1836,6 @@ pub enum DoorTriggerType {
     MANUAL = 1,
 }
 
-/// C++ `EExpressionInventoryType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ExpressionInventoryType {
@@ -1884,7 +1851,6 @@ pub enum ExpressionInventoryType {
     NUMINVENTORYEXPRESSIONS = 4,
 }
 
-/// C++ `EFeatAttackType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum FeatAttackType {
@@ -1900,7 +1866,6 @@ pub enum FeatAttackType {
     WILL = 4,
 }
 
-/// C++ `EGameEventType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum GameEventType {
@@ -2082,7 +2047,6 @@ pub enum GameEventType {
     NOGAMEEVENTS = 87,
 }
 
-/// C++ `EGiftType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum GiftType {
@@ -2094,7 +2058,6 @@ pub enum GiftType {
     OFFENSIVE = 2,
 }
 
-/// C++ `EHeroAbility`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum HeroAbility {
@@ -2142,7 +2105,6 @@ pub enum HeroAbility {
     MAXNUMBEROFHEROABILITIES = 20,
 }
 
-/// C++ `EHeroAttachableAppearanceModifierType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum HeroAttachableAppearanceModifierType {
@@ -2156,7 +2118,6 @@ pub enum HeroAttachableAppearanceModifierType {
     NOOFAPPEARANCEMODIFIERTYPES = 3,
 }
 
-/// C++ `EHeroExperienceStatCategory`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum HeroExperienceStatCategory {
@@ -2170,7 +2131,6 @@ pub enum HeroExperienceStatCategory {
     NUMBEROFHEROSTATCATEGORIES = 3,
 }
 
-/// C++ `EHeroTitle`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum HeroTitle {
@@ -2242,7 +2202,6 @@ pub enum HeroTitle {
     DEATHBRINGER_ = 32,
 }
 
-/// C++ `EHeroTrainingStatus`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum HeroTrainingStatus {
@@ -2254,7 +2213,6 @@ pub enum HeroTrainingStatus {
     BOY = 2,
 }
 
-/// C++ `EIdleStateGroup`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     NULL = 0 => "ISG_NULL",
@@ -2272,7 +2230,6 @@ pub enum HeroTrainingStatus {
 )]
 pub struct IdleStateGroup(pub i32);
 
-/// C++ `ELightingChannel`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum LightingChannel {
@@ -2292,7 +2249,6 @@ pub enum LightingChannel {
     COUNT = 6,
 }
 
-/// C++ `EMessageEventType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum MessageEventType {
@@ -2450,7 +2406,6 @@ pub enum MessageEventType {
     ACTIONMODEBUTTONPRESSED = 75,
 }
 
-/// C++ `EMinimapThemeType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum MinimapThemeType {
@@ -2474,7 +2429,6 @@ pub enum MinimapThemeType {
     BUILDING = 8,
 }
 
-/// C++ `ENavigatorType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum NavigatorType {
@@ -2484,7 +2438,6 @@ pub enum NavigatorType {
     FLYER = 2,
 }
 
-/// C++ `ENoiseType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum NoiseType {
@@ -2494,7 +2447,6 @@ pub enum NoiseType {
     ONCEONLY = 1,
 }
 
-/// C++ `EObjectAugmentationType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     NULL = 0 => "AUGMENTATION_NULL",
@@ -2511,7 +2463,6 @@ pub enum NoiseType {
 )]
 pub struct ObjectAugmentationType(pub i32);
 
-/// C++ `EOpinion`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     MORALITY = 0 => "OPINION_MORALITY",
@@ -2523,7 +2474,6 @@ pub struct ObjectAugmentationType(pub i32);
 )]
 pub struct Opinion(pub i32);
 
-/// C++ `EOpinionAttitudeType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     NONE = 0 => "OPINION_ATTITUDE_TYPE_NONE",
@@ -2549,7 +2499,6 @@ pub struct Opinion(pub i32);
 )]
 pub struct OpinionAttitudeType(pub i32);
 
-/// C++ `EOpinionDeedType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     NONE = 0 => "OPINION_DEED_TYPE_NONE",
@@ -2648,7 +2597,6 @@ pub struct OpinionAttitudeType(pub i32);
 )]
 pub struct OpinionDeedType(pub i32);
 
-/// C++ `EOpinionReactionType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     NONE = 0 => "OPINION_REACTION_TYPE_NONE",
@@ -2736,7 +2684,6 @@ pub struct OpinionDeedType(pub i32);
 )]
 pub struct OpinionReactionType(pub i32);
 
-/// C++ `EOpinionTargetingConditionType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     NONE = 0 => "OPINION_TARGETING_CONDITION_TYPE_NONE",
@@ -2748,7 +2695,6 @@ pub struct OpinionReactionType(pub i32);
 )]
 pub struct OpinionTargetingConditionType(pub i32);
 
-/// C++ `EPSwitchTriggerType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     PSWITCH_TRIGGER_ON_PLAYER = 1 => "PSWITCH_TRIGGER_ON_PLAYER",
@@ -2756,7 +2702,6 @@ pub struct OpinionTargetingConditionType(pub i32);
 )]
 pub struct PSwitchTriggerType(pub i32);
 
-/// C++ `EPerceivedThingType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum PerceivedThingType {
@@ -2766,7 +2711,6 @@ pub enum PerceivedThingType {
     MAXNOPERCEIVEDTHINGTYPES = 1,
 }
 
-/// C++ `EPointLightChannelEffect`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum PointLightChannelEffect {
@@ -2780,7 +2724,6 @@ pub enum PointLightChannelEffect {
     ALL = 3,
 }
 
-/// C++ `EQuakeLength`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum QuakeLength {
@@ -2794,7 +2737,6 @@ pub enum QuakeLength {
     CONTINUOUS = 3,
 }
 
-/// C++ `EQuakeStrength`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum QuakeStrength {
@@ -2808,7 +2750,6 @@ pub enum QuakeStrength {
     MADNESS = 3,
 }
 
-/// C++ `EReactionSpeechType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ReactionSpeechType {
@@ -2928,7 +2869,6 @@ pub enum ReactionSpeechType {
     MAXNOREACTIONSPEECHTYPES = 56,
 }
 
-/// C++ `EReverbEnvironmentType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ReverbEnvironmentType {
@@ -2950,7 +2890,6 @@ pub enum ReverbEnvironmentType {
     SCHOOL = 7,
 }
 
-/// C++ `EScriptingStateGroups`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ScriptingStateGroups {
@@ -2978,7 +2917,6 @@ pub enum ScriptingStateGroups {
     RUNATHEROANDATTACKUNTILDEAD = 10,
 }
 
-/// C++ `ESex`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum Sex {
@@ -2992,7 +2930,6 @@ pub enum Sex {
     NOOFSEXES = 3,
 }
 
-/// C++ `ESwitchTriggerType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     PLAYER_ONLY_ONCE_IN_AREA = 1 => "SWITCH_TRIGGER_PLAYER_ONLY_ONCE_IN_AREA",
@@ -3004,7 +2941,6 @@ pub enum Sex {
 )]
 pub struct SwitchTriggerType(pub i32);
 
-/// C++ `ETavernGameControlType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum TavernGameControlType {
@@ -3014,7 +2950,6 @@ pub enum TavernGameControlType {
     ABSOLUTE = 1,
 }
 
-/// C++ `EThingCreatureProperty`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum ThingCreatureProperty {
@@ -3030,7 +2965,6 @@ pub enum ThingCreatureProperty {
     FIREFLY = 4,
 }
 
-/// C++ `ETrapTriggerType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum TrapTriggerType {
@@ -3040,7 +2974,6 @@ pub enum TrapTriggerType {
     PROXIMITY = 1,
 }
 
-/// C++ `ETrapType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum TrapType {
@@ -3056,7 +2989,6 @@ pub enum TrapType {
     TRIGGERANDDIE = 4,
 }
 
-/// C++ `ETutorialCategory`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum TutorialCategory {
@@ -3254,7 +3186,6 @@ pub enum TutorialCategory {
     COUNT = 95,
 }
 
-/// C++ `EWallMountEffects`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum WallMountEffects {
@@ -3266,7 +3197,6 @@ pub enum WallMountEffects {
     HEAL = 2,
 }
 
-/// C++ `EWaterType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum WaterType {
@@ -3292,7 +3222,6 @@ pub enum WaterType {
     COUNT = 9,
 }
 
-/// C++ `EWeaponClass`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum WeaponClass {
@@ -3306,7 +3235,6 @@ pub enum WeaponClass {
     PROJECTILE = 3,
 }
 
-/// C++ `EWeaponType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum WeaponType {
@@ -3328,7 +3256,6 @@ pub enum WeaponType {
     THROWING = 7,
 }
 
-/// C++ `EWorldMapNameGraphic`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
 #[flags(
     BANDIT_CAMP = 0 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP",
@@ -3387,7 +3314,6 @@ pub enum WeaponType {
 )]
 pub struct WorldMapNameGraphic(pub i32);
 
-/// C++ `NSpeechGainManager::EDialogueLayer`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
 #[repr(i32)]
 pub enum DialogueLayer {

@@ -43,7 +43,6 @@ pub struct SoundMapF1Entry {
     pub value: i32,
 }
 
-/// C++ `CSoundMap`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct SoundMap {
     pub f0: Vec<SoundMapF0Entry>,
@@ -56,7 +55,6 @@ pub struct WoundMorphsMorphsEntry {
     pub data: [u8; 40],
 }
 
-/// C++ `CWoundMorphs`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct WoundMorphs {
     pub morphs: Vec<WoundMorphsMorphsEntry>,
@@ -198,7 +196,6 @@ pub struct RandomAppearanceMorphGeneralTextureMorphs {
     pub dirty: u8,
 }
 
-/// C++ `CRandomAppearanceMorph`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct RandomAppearanceMorph {
     #[def(default = 3)]
@@ -221,14 +218,12 @@ pub struct ExpressionSetExpressionsEntry {
     pub data2: u32,
 }
 
-/// C++ `CExpressionSet`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ExpressionSet {
     pub expressions: Vec<ExpressionSetExpressionsEntry>,
     pub trailing_u32: u32,
 }
 
-/// C++ `CFloatRange`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct FloatRange {
     pub low_value: f32,
@@ -240,7 +235,6 @@ pub struct ThingComponentSetEntriesEntry {
     pub data: [u8; 9],
 }
 
-/// C++ `CThingComponentSet`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ThingComponentSet {
     pub entries: Vec<ThingComponentSetEntriesEntry>,
@@ -274,13 +268,11 @@ pub struct OpinionTransientOffset {
     pub frames_to_run_out: i32,
 }
 
-/// C++ `std::list<COpinionTransientOffset>`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct OpinionTransientOffsetList {
     pub f0: Vec<OpinionTransientOffset>,
 }
 
-/// C++ `CCombatAbilityData`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct CombatAbilityData {
     #[def(default = 100)]
@@ -291,7 +283,6 @@ pub struct CombatAbilityData {
     pub anim: DefString,
 }
 
-/// C++ `C3DVector`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct Vector3D {
     pub x: f32,
@@ -299,20 +290,17 @@ pub struct Vector3D {
     pub z: f32,
 }
 
-/// C++ `C2DVector`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct Vector2D {
     pub x: f32,
     pub y: f32,
 }
 
-/// C++ `CMiniMapGraphics`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct MiniMapGraphics {
     pub f0: VecMap<String, i32>,
 }
 
-/// C++ `NParticleAttachment::CParticleAttachmentInfo`.
 /// Layout (tc decomp): `ParticleIndex`(long), `AttachmentObjectName`(CDefString),
 /// `GenerationCutoffDistance`(float), `DummyObject`(bool). The text ctor is
 /// `CParticleAttachmentInfo("<attach_point>", <PARTICLE>, dist, dummy)` — its
@@ -346,14 +334,12 @@ const fn personality_traits_default() -> [u8; 180] {
     blob
 }
 
-/// C++ `COpinionPersonalityTraits*`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct OpinionPersonalityTraitsPtr {
     #[def(default = personality_traits_default())]
     pub f0: [u8; 180],
 }
 
-/// C++ `CTextureReplacementDef::CEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct TextureReplacementEntry {
     pub original_texture: i32,
@@ -366,13 +352,11 @@ pub struct MapPathsF0Entry {
     pub graphic: i32,
 }
 
-/// C++ `CMapPaths`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct MapPaths {
     pub f0: Vec<MapPathsF0Entry>,
 }
 
-/// C++ `CComboMultiplierData`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ComboMultiplierData {
     pub experience_multiplier_num_seconds_for_attenuation: f32,
@@ -380,7 +364,6 @@ pub struct ComboMultiplierData {
     pub combo_multiplier: VecMap<DamageAttribute, f32>,
 }
 
-/// C++ `CHeroStatIncreaseData`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct HeroStatIncreaseData {
     pub stat_increases: VecMap<HeroExperienceStatCategory, f32>,
@@ -392,21 +375,18 @@ pub struct AttackHistoryComboAttackComboEntry {
     pub attribute: u32,
 }
 
-/// C++ `CAttackHistoryCombo`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct AttackHistoryCombo {
     pub attack_combo: Vec<AttackHistoryComboAttackComboEntry>,
     pub multiplier: f32,
 }
 
-/// C++ `CObjectFamilyEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ObjectFamilyEntry {
     pub object: DefIndex,
     pub probability: f32,
 }
 
-/// C++ `CObjectAugmentationParticleSet`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ObjectAugmentationParticleSet {
     pub period_secs: f32,
@@ -430,13 +410,11 @@ pub enum PhysicalPrimitiveInitType {
     Tag3 {},
 }
 
-/// C++ `CPhysicalPrimitiveInit`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct PhysicalPrimitiveInit {
     pub type_: PhysicalPrimitiveInitType,
 }
 
-/// C++ `CWeaponTrailGraphicSet`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct WeaponTrailGraphicSet {
     #[def(default = -1)]
@@ -475,7 +453,6 @@ pub enum AnimationEntryComponentsEntry {
     Tag12 { response_anim_name: PString },
 }
 
-/// C++ `CAnimationEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct AnimationEntry {
     pub bank_index: i32,
@@ -490,7 +467,6 @@ pub struct AnimationSetAnimsEntry {
     pub entry: AnimationEntry,
 }
 
-/// C++ `CAnimationSet`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct AnimationSet {
     pub anims: Vec<AnimationSetAnimsEntry>,
@@ -501,13 +477,11 @@ pub struct AnimationSet {
     pub default_group: i32,
 }
 
-/// C++ `CSpecialEffectsStringMap`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct SpecialEffectsStringMap {
     pub f0: VecMap<u32, i32>,
 }
 
-/// C++ `CFireEffectCreationSet`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct FireEffectCreationSet {
     pub containment_map: VecMap<DefString, i32>,
@@ -543,7 +517,6 @@ pub enum ReactionFrequencyTraitsArrayTraitsEntry {
     Tag3 { allow_individual_repeats: bool, min_gap_frames: u32, count_recharge_per_frame: f32, current_available_count: f32, max_count: f32, inv_max_count: f32 },
 }
 
-/// C++ `CReactionFrequencyTraitsArray`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ReactionFrequencyTraitsArray {
     pub traits: [ReactionFrequencyTraitsArrayTraitsEntry; 158],
@@ -555,7 +528,6 @@ pub struct SimVoiceVoicesEntry {
     pub voice_id: i32,
 }
 
-/// C++ `CSimVoice`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct SimVoice {
     pub voices: Vec<SimVoiceVoicesEntry>,
@@ -566,13 +538,11 @@ pub struct AppearanceModifierGraphicsGraphicsEntry {
     pub data: [u8; 24],
 }
 
-/// C++ `CAppearanceModifierGraphics`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct AppearanceModifierGraphics {
     pub graphics: Vec<AppearanceModifierGraphicsGraphicsEntry>,
 }
 
-/// C++ `CBrainUpdateZone`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct BrainUpdateZone {
     pub distance: i32,
@@ -580,7 +550,6 @@ pub struct BrainUpdateZone {
     pub interruption_frequency: i32,
 }
 
-/// C++ `CBrainBehaviour`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct BrainBehaviour {
     pub name: DefString,
@@ -588,7 +557,6 @@ pub struct BrainBehaviour {
     pub script_ai_priority: i32,
 }
 
-/// C++ `CBlendedParticleEffectSet`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct BlendedParticleEffectSet {
     pub particle1_index: i32,
@@ -603,7 +571,6 @@ pub struct TextureMorphsMorphsEntry {
     pub data: [u8; 20],
 }
 
-/// C++ `CTextureMorphs`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct TextureMorphs {
     pub morphs: Vec<TextureMorphsMorphsEntry>,
@@ -618,7 +585,6 @@ pub struct SkeletalMorphsMorphsEntry {
     pub mirror_over: bool,
 }
 
-/// C++ `CSkeletalMorphs`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct SkeletalMorphs {
     pub morphs: Vec<SkeletalMorphsMorphsEntry>,
@@ -630,7 +596,6 @@ pub struct ParticleMorphsMorphsEntry {
     pub data: [u8; 36],
 }
 
-/// C++ `CParticleMorphs`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ParticleMorphs {
     pub morphs: Vec<ParticleMorphsMorphsEntry>,
@@ -649,7 +614,6 @@ pub struct ExplosionRing {
     pub seconds_before_spawn_new_ring: f32,
 }
 
-/// C++ `CSoundBankEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct SoundBankEntry {
     pub id: u32,
@@ -659,14 +623,12 @@ pub struct SoundBankEntry {
     pub dvd: bool,
 }
 
-/// C++ `CAtmosBankEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct AtmosBankEntry {
     pub id: u32,
     pub filename: DefString,
 }
 
-/// C++ `CMusicEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct MusicEntry {
     pub id: u32,
@@ -675,7 +637,6 @@ pub struct MusicEntry {
     pub cache_to_hd: bool,
 }
 
-/// C++ `CMusicSetEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct MusicSetEntry {
     pub normal_music_id: i32,
@@ -683,7 +644,6 @@ pub struct MusicSetEntry {
     pub loop_count: i32,
 }
 
-/// C++ `CReverbEnvironmentEntry`.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct ReverbEnvironmentEntry {
     pub param0: f32,

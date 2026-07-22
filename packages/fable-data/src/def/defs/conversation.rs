@@ -1,6 +1,5 @@
 use crate::DefStruct;
 
-/// C++ `CConversation` (sub-component def).
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct Conversation {
     #[def("Lines")]
