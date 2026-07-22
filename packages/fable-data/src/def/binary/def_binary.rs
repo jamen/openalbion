@@ -1,11 +1,8 @@
 use crate::{
     bytes::{TakeError, UnexpectedEnd, put, put_bytes, take, take_bytes},
-    def::{
-        prelude::*,
-        binary::{
-            control::{ParseControlError, SerializeControlError, SerializeControlErrorReason},
-            names::{Names, NamesEntry},
-        },
+    def::binary::{
+        control::{ParseControlError, SerializeControlError, SerializeControlErrorReason},
+        names::{Names, NamesEntry},
     },
 };
 use std::{
@@ -64,10 +61,7 @@ pub enum FromBytesError {
 }
 
 impl DefBinary {
-    pub fn from_bytes_with_names(
-        bytes: &[u8],
-        names: &Names,
-    ) -> Result<Self, FromBytesError> {
+    pub fn from_bytes_with_names(bytes: &[u8], names: &Names) -> Result<Self, FromBytesError> {
         use FromBytesError as E;
 
         let bytes_cursor = &mut &bytes[..];
@@ -330,8 +324,7 @@ impl ChunkIndexEntry {
         let sentinel_entry =
             ChunkIndexEntry::parse(&mut input_copied).map_err(E::ParseChunkIndexEntry)?;
 
-        let matches = sentinel_entry.compressed_offset
-            == sentinel_entry.cumulative_entry_count
+        let matches = sentinel_entry.compressed_offset == sentinel_entry.cumulative_entry_count
             && sentinel_entry.compressed_offset == input_copied.len() as u32;
 
         if matches {
@@ -422,11 +415,9 @@ impl Chunk {
     ) -> Result<Self, ParseChunkError> {
         use ParseChunkError as E;
 
-        let decompressed_bytes = miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(
-            cur,
-            MAX_CHUNK_DECOMPRESS_SIZE,
-        )
-        .map_err(E::MinizOxideDecompress)?;
+        let decompressed_bytes =
+            miniz_oxide::inflate::decompress_to_vec_zlib_with_limit(cur, MAX_CHUNK_DECOMPRESS_SIZE)
+                .map_err(E::MinizOxideDecompress)?;
 
         let decompressed_bytes_cursor = &mut &decompressed_bytes[..];
 
@@ -456,7 +447,11 @@ impl Chunk {
 
     pub fn from_entries(entry_base: u32, entries: Vec<EntryRecord>) -> Self {
         let entry_count = entries.len() as u32;
-        Self { entry_base, entry_count, entries }
+        Self {
+            entry_base,
+            entry_count,
+            entries,
+        }
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -515,7 +510,11 @@ impl SubDefRecord {
         let name_crc = take::<u32>(cur)?.to_le();
         let def_index = take::<u32>(cur)?.to_le();
         let owner_index = take::<u32>(cur)?.to_le();
-        Ok(Self { name_crc, def_index, owner_index })
+        Ok(Self {
+            name_crc,
+            def_index,
+            owner_index,
+        })
     }
 
     pub fn serialize(&self, out: &mut &mut [u8]) -> Result<(), UnexpectedEnd> {
@@ -719,7 +718,10 @@ impl EntryRecord {
 
     pub fn byte_size(&self) -> usize {
         EntryPreamble::BYTE_SIZE
-            + self.sub_defs.as_ref().map_or(0, |r| 2 + r.len() * SubDefRecord::BYTE_SIZE)
+            + self
+                .sub_defs
+                .as_ref()
+                .map_or(0, |r| 2 + r.len() * SubDefRecord::BYTE_SIZE)
             + self.body.byte_size()
     }
 
@@ -735,7 +737,7 @@ macro_rules! def_body {
         #[allow(clippy::large_enum_variant)]
         #[derive(Debug, Clone)]
         pub enum DefBody {
-            $( $variant($type), )+
+            $( $variant(crate::def::defs::$type), )+
             Unknown { name: String, bytes: Vec<u8> },
         }
 
@@ -747,7 +749,7 @@ macro_rules! def_body {
                 Ok(match name {
                     $(
                         $( $name => DefBody::$variant(
-                            $type::parse(cur).map_err(|e| (name, e))?
+                            crate::def::defs::$type::parse(cur).map_err(|e| (name, e))?
                         ), )+
                     )+
                     _ => DefBody::Unknown {
@@ -785,7 +787,7 @@ macro_rules! def_body {
                 use crate::def::visit::VisitFields as _;
                 let mut visitor: &mut dyn crate::def::visit::FieldVisitor = visitor;
                 match self {
-                    $( Self::$variant(d) => $type::visit_fields(d, &mut visitor), )+
+                    $( Self::$variant(d) => crate::def::defs::$type::visit_fields(d, &mut visitor), )+
                     Self::Unknown { .. } => {}
                 }
             }
@@ -794,7 +796,7 @@ macro_rules! def_body {
                 use crate::def::visit::DefDefault as _;
                 Some(match name {
                     $(
-                        $( $name => Self::$variant(<$type>::def_default()), )+
+                        $( $name => Self::$variant(<crate::def::defs::$type>::def_default()), )+
                     )+
                     _ => return None,
                 })
@@ -809,7 +811,252 @@ macro_rules! def_body {
     };
 }
 
-crate::for_each_game_def!(def_body);
+def_body! {
+    AbilityDef(AbilityDef) => ["CAbilityDef"],
+    ActionUseDef(ActionUseDef) => ["CActionUseDef"],
+    ActivateQuestDef(ActivateQuestDef) => ["CActivateQuestDef"],
+    AICreatureWillPowerIndicatorDef(AICreatureWillPowerIndicatorDef) => ["CAICreatureWillPowerIndicatorDef"],
+    AIScratchpadDef(AIScratchpadDef) => ["CAIScratchpadDef"],
+    AnimatingObjectDef(AnimatingObjectDef) => ["CAnimatingObjectDef"],
+    AppearanceDef(AppearanceDef) => ["CAppearanceDef"],
+    AreaOfEffectAttackDef(AreaOfEffectAttackDef) => ["CAreaOfEffectAttackDef"],
+    ArmourDef(ArmourDef) => ["ARMOUR"],
+    AttackPatternDef(AttackPatternDef) => ["ATTACK_PATTERN"],
+    AugmentationDef(AugmentationDef) => ["CAugmentationDef"],
+    BalverineBattleDef(BalverineBattleDef) => ["CBalverineBattleDef"],
+    BedDef(BedDef) => ["CBedDef"],
+    BettingDef(BettingDef) => ["CBettingDef"],
+    BoastingPodiumDef(BoastingPodiumDef) => ["CBoastingPodiumDef"],
+    BonusItemDef(BonusItemDef) => ["CBonusItemDef"],
+    BossDef(BossDef) => ["CBossDef"],
+    BrainDef(BrainDef) => ["BRAIN"],
+    BriarRoseDef(BriarRoseDef) => ["CBriarRoseDef"],
+    BuyHouseDef(BuyHouseDef) => ["CBuyHouseDef"],
+    BuyableHouseDef(BuyableHouseDef) => ["CBuyableHouseDef"],
+    CameraCollisionDef(CameraCollisionDef) => ["CCameraCollisionDef"],
+    CameraManagerDef(CameraManagerDef) => ["CAMERA_MANAGER"],
+    CameraManagerSetDef(CameraManagerSetDef) => ["CAMERA_MANAGER_SET"],
+    CameraModeDef(CameraModeDef) => ["CAMERA_MODE"],
+    CarriedReadableDef(CarriedReadableDef) => ["CCarriedReadableDef"],
+    CarrySlotDef(CarrySlotDef) => ["CARRY_SLOT"],
+    CarryableDef(CarryableDef) => ["CCarryableDef"],
+    CarryingDef(CarryingDef) => ["CCarryingDef"],
+    ChestDef(ChestDef) => ["CChestDef"],
+    ClockDef(ClockDef) => ["CClockDef"],
+    CoinGameObstacleDef(CoinGameObstacleDef) => ["CCoinGameObstacleDef"],
+    CombatAbilityAttackBase(CombatAbilityAttackBase) => ["CCombatAbilityBlockCounterAttackDef", "CCombatAbilityFlourishCounterAttackDef", "CCombatAbilityGetHitCounterAttackDef"],
+    CombatAbilityBlockDefBase(CombatAbilityBlockDefBase) => ["CCombatAbilityBlockHeavyWeaponAttackDef", "CCombatAbilityBlockLightWeaponAttackDef", "CCombatAbilityBlockProjectileWeaponAttackDef", "CCombatAbilityBlockUnarmedAttackDef"],
+    CombatAbilityStrafeDef(CombatAbilityStrafeDef) => ["CCombatAbilityStrafeDef"],
+    CombatAbilityUseProjectileWeaponDef(CombatAbilityUseProjectileWeaponDef) => ["CCombatAbilityUseProjectileWeaponDef"],
+    CombatDialogueDef(CombatDialogueDef) => ["COMBAT_DIALOGUE_DEF"],
+    CombatSequenceDef(CombatSequenceDef) => ["COMBAT_SEQUENCE"],
+    CombatTypeDef(CombatTypeDef) => ["COMBAT_TYPE"],
+    ContainerRewardHeroDef(ContainerRewardHeroDef) => ["CContainerRewardHeroDef"],
+    ContextSensitiveItemDef(ContextSensitiveItemDef) => ["CContextSensitiveItemDef"],
+    CoopSpiritDef(CoopSpiritDef) => ["CCoopSpiritDef"],
+    CrateStackDef(CrateStackDef) => ["CCrateStackDef"],
+    CreatureAbilityDef(CreatureAbilityDef) => ["CREATURE_ABILITY"],
+    CreatureDef(CreatureDef) => ["CCreatureDef"],
+    CreatureGenerationFamilyDef(CreatureGenerationFamilyDef) => ["CREATURE_GENERATION_FAMILY"],
+    CreatureGeneratorDef(CreatureGeneratorDef) => ["CCreatureGeneratorDef"],
+    CreatureModeDef(CreatureModeDef) => ["CCreatureModeDef"],
+    CreatureNavigationDef(CreatureNavigationDef) => ["CCreatureNavigationDef"],
+    CreatureStatsDef(CreatureStatsDef) => ["CCreatureStatsDef"],
+    CutsceneDef(CutsceneDef) => ["CCutsceneDef"],
+    DecapitationDef(DecapitationDef) => ["CDecapitationDef"],
+    DoorDef(DoorDef) => ["CDoorDef"],
+    DragonActionHoverDef(DragonActionHoverDef) => ["CDragonActionHoverDef"],
+    DragonActionNapalmDef(DragonActionNapalmDef) => ["CDragonActionNapalmDef"],
+    DragonActionSwoopDef(DragonActionSwoopDef) => ["CDragonActionSwoopDef"],
+    DrunkennessDef(DrunkennessDef) => ["CDrunkennessDef"],
+    EnemyDef(EnemyDef) => ["CEnemyDef"],
+    EngineLocalDetailGeneratorDef(EngineLocalDetailGeneratorDef) => ["LOCAL_DETAIL_GENERATOR"],
+    EngineThemeDef(EngineThemeDef) => ["ENGINE_THEME"],
+    EngineThemeGroupDef(EngineThemeGroupDef) => ["ENGINE_THEME_GROUP", "THING_GROUP"],
+    EntitySoundDef(EntitySoundDef) => ["CEntitySoundDef"],
+    ExperienceDef(ExperienceDef) => ["CExperienceDef"],
+    ExplodingObjectDef(ExplodingObjectDef) => ["CExplodingObjectDef"],
+    ExplosionDef(ExplosionDef) => ["CExplosionDef"],
+    ExplosiveTrailDef(ExplosiveTrailDef) => ["CExplosiveTrailDef"],
+    ExpressionDef(ExpressionDef) => ["EXPRESSION"],
+    ExpressionSubDef(ExpressionSubDef) => ["CExpressionSubDef"],
+    FactionDef(FactionDef) => ["FACTION"],
+    FireballSpellLevelDef(FireballSpellLevelDef) => ["CFireballSpellLevelDef"],
+    FireheartMinigameDef(FireheartMinigameDef) => ["CFireheartMinigameDef"],
+    FishDef(FishDef) => ["CFishDef"],
+    FishingDef(FishingDef) => ["CFishingDef"],
+    FishingRodDef(FishingRodDef) => ["CFishingRodDef"],
+    FlammableDef(FlammableDef) => ["CFlammableDef"],
+    GiftDef(GiftDef) => ["CGiftDef"],
+    GoldDef(GoldDef) => ["CGoldDef"],
+    GuardDef(GuardDef) => ["CGuardDef"],
+    GuildMasterDef(GuildMasterDef) => ["CGuildMasterDef"],
+    HairCardDef(HairCardDef) => ["CHairCardDef"],
+    HasNameDef(HasNameDef) => ["CHasNameDef"],
+    HeroAbilityDef(HeroAbilityDef) => ["HERO_ABILITY"],
+    HeroCentreDef(HeroCentreDef) => ["CHeroCentreDef"],
+    HeroCombatDef(HeroCombatDef) => ["HERO_COMBAT"],
+    HeroDef(HeroDef) => ["CHeroDef"],
+    HeroExperienceDef(HeroExperienceDef) => ["CHeroExperienceDef"],
+    HeroMarriageDef(HeroMarriageDef) => ["CHeroMarriageDef"],
+    HeroMorphDef(HeroMorphDef) => ["CHeroMorphDef"],
+    HeroPostcardGeneratorDef(HeroPostcardGeneratorDef) => ["CHeroPostcardGeneratorDef"],
+    HeroSpecialMovementDef(HeroSpecialMovementDef) => ["CHeroSpecialMovementDef"],
+    HeroStatsDef(HeroStatsDef) => ["HERO_STATS"],
+    HeroSuitDef(HeroSuitDef) => ["CHeroSuitDef"],
+    HeroTitleDef(HeroTitleDef) => ["CHeroTitleDef"],
+    HighlightItemDef(HighlightItemDef) => ["CHighlightItemDef"],
+    HitLocationDef(HitLocationDef) => ["HIT_LOCATION"],
+    HitLocationsDef(HitLocationsDef) => ["CHitLocationsDef"],
+    IdleSchedulerDef(IdleSchedulerDef) => ["CIdleSchedulerDef"],
+    InterestingToVillagersDef(InterestingToVillagersDef) => ["CInterestingToVillagersDef"],
+    InventoryCategoryDef(InventoryCategoryDef) => ["INVENTORY_CATEGORY"],
+    InventoryDef(InventoryDef) => ["INVENTORY_TYPE"],
+    InventoryItemDef(InventoryItemDef) => ["CInventoryItemDef", "INVENTORY_ITEM"],
+    JackDragonDef(JackDragonDef) => ["CJackDragonDef"],
+    JackOfBladesBattleDef(JackOfBladesBattleDef) => ["CJackOfBladesBattleDef"],
+    KickableDef(KickableDef) => ["CKickableDef"],
+    KrakenDef(KrakenDef) => ["CKrakenDef"],
+    KrakenTentacleDef(KrakenTentacleDef) => ["CKrakenTentacleDef"],
+    LightDef(LightDef) => ["CLightDef"],
+    LightningDef(LightningDef) => ["LIGHTNING"],
+    LightningOrbDef(LightningOrbDef) => ["CLightningOrbDef"],
+    LookDef(LookDef) => ["CLookDef"],
+    MaterialDef(MaterialDef) => ["MATERIAL"],
+    MazeBattleDef(MazeBattleDef) => ["CMazeBattleDef"],
+    MeleeCombatAbilityDef(MeleeCombatAbilityDef) => ["HERO_MELEE_COMBAT_ABILITY"],
+    MeleeCombatKnockdownEffects(MeleeCombatKnockdownEffects) => ["MELEE_COMBAT_KNOCKDOWN_EFFECTS"],
+    MessageEventDef(MessageEventDef) => ["MESSAGE_EVENT"],
+    MultiStaticMeshDef(MultiStaticMeshDef) => ["CMultiStaticMeshDef"],
+    NymphDef(NymphDef) => ["CNymphDef"],
+    ObjectAugmentationsDef(ObjectAugmentationsDef) => ["CObjectAugmentationsDef"],
+    ObjectFamilyDef(ObjectFamilyDef) => ["OBJECT_FAMILY"],
+    OccupiableDef(OccupiableDef) => ["COccupiableDef"],
+    OpinionDeedEffectsDef(OpinionDeedEffectsDef) => ["OPINION_DEED_EFFECTS"],
+    OpinionDeedMaskDef(OpinionDeedMaskDef) => ["OPINION_DEED_MASK"],
+    OpinionOfHeroDef(OpinionOfHeroDef) => ["COpinionOfHeroDef"],
+    OpinionPersonalityDef(OpinionPersonalityDef) => ["OPINION_PERSONALITY"],
+    OpinionReactionManagerDef(OpinionReactionManagerDef) => ["OPINION_REACTION_MANAGER"],
+    OpinionReactionMaskDef(OpinionReactionMaskDef) => ["OPINION_REACTION_MASK"],
+    OpinionSourceDef(OpinionSourceDef) => ["OPINION_SOURCE"],
+    OracleMinigameDef(OracleMinigameDef) => ["COracleMinigameDef"],
+    OverheadDisplayDef(OverheadDisplayDef) => ["COverheadDisplayDef"],
+    ParticleAttacherDef(ParticleAttacherDef) => ["CParticleAttacherDef"],
+    PerceivedThingDef(PerceivedThingDef) => ["CPerceivedThingDef"],
+    PhysicsDef(PhysicsDef) => ["CPhysicsDef"],
+    PlayerDef(PlayerDef) => ["PLAYER"],
+    PlayerGuiDef(PlayerGuiDef) => ["PLAYER_GUI"],
+    PlayerInventoryDef(PlayerInventoryDef) => ["PLAYER_INVENTORY"],
+    QuestCardDef(QuestCardDef) => ["CQuestCardDef"],
+    ReadableDef(ReadableDef) => ["CReadableDef"],
+    RegionDef(RegionDef) => ["REGION"],
+    RegionScriptDef(RegionScriptDef) => ["CRegionScriptDef"],
+    ResurrectionItemDef(ResurrectionItemDef) => ["CResurrectionItemDef"],
+    RumbleDef(RumbleDef) => ["CRumbleDef"],
+    ScorpionKingBattleDef(ScorpionKingBattleDef) => ["CScorpionKingBattleDef"],
+    ScriptDef(ScriptDef) => ["CScriptDef"],
+    ShipDef(ShipDef) => ["CShipDef"],
+    SimBuildingDef(SimBuildingDef) => ["SIM_BUILDING"],
+    SimVoicesDef(SimVoicesDef) => ["SIM_VOICES"],
+    SkeletalMorphDef(SkeletalMorphDef) => ["CSkeletalMorphDef"],
+    SkyDef(SkyDef) => ["SKY"],
+    SmashableDef(SmashableDef) => ["CSmashableDef"],
+    SmokeGeneratorDef(SmokeGeneratorDef) => ["CSmokeGeneratorDef"],
+    SnowTrollDef(SnowTrollDef) => ["CSnowTrollDef"],
+    SoundAtmospheresDef(SoundAtmospheresDef) => ["CSoundAtmospheresDef"],
+    SoundDef(SoundDef) => ["SOUND_SETUP"],
+    SoundThemeDef(SoundThemeDef) => ["SOUND_THEME"],
+    SpecialAbilitiesAssassinRushDef(SpecialAbilitiesAssassinRushDef) => ["SPECIAL_ABILITIES_ASSASSIN_RUSH_DEF"],
+    SpecialAbilitiesBattleChargeDef(SpecialAbilitiesBattleChargeDef) => ["SPECIAL_ABILITIES_BATTLE_CHARGE_DEF"],
+    SpecialAbilitiesBerserkDef(SpecialAbilitiesBerserkDef) => ["SPECIAL_ABILITIES_BERSERK_DEF"],
+    SpecialAbilitiesBulletTimeDef(SpecialAbilitiesBulletTimeDef) => ["SPECIAL_ABILITIES_BULLET_TIME_DEF"],
+    SpecialAbilitiesBurntEffectDef(SpecialAbilitiesBurntEffectDef) => ["SPECIAL_ABILITIES_BURNT_EFFECT_DEF"],
+    SpecialAbilitiesCreatureTintDef(SpecialAbilitiesCreatureTintDef) => ["SPECIAL_ABILITIES_CREATURE_TINT_DEF"],
+    SpecialAbilitiesDrainLifeDef(SpecialAbilitiesDrainLifeDef) => ["SPECIAL_ABILITIES_DRAIN_LIFE_DEF"],
+    SpecialAbilitiesDrunkennessDef(SpecialAbilitiesDrunkennessDef) => ["SPECIAL_ABILITIES_DRUNKENNESS_DEF"],
+    SpecialAbilitiesElectrocutedEffectDef(SpecialAbilitiesElectrocutedEffectDef) => ["SPECIAL_ABILITIES_ELECTROCUTED_EFFECT_DEF"],
+    SpecialAbilitiesEnflameDef(SpecialAbilitiesEnflameDef) => ["SPECIAL_ABILITIES_ENFLAME_DEF"],
+    SpecialAbilitiesFireballSpellDef(SpecialAbilitiesFireballSpellDef) => ["SPECIAL_ABILITIES_FIREBALL_SPELL_DEF"],
+    SpecialAbilitiesForcePushDataDef(SpecialAbilitiesForcePushDataDef) => ["CSpecialAbilitiesDrainLifeDataDef", "CSpecialAbilitiesForcePushDataDef"],
+    SpecialAbilitiesForcePushDef(SpecialAbilitiesForcePushDef) => ["SPECIAL_ABILITIES_FORCE_PUSH_DEF"],
+    SpecialAbilitiesGhostSwordDef(SpecialAbilitiesGhostSwordDef) => ["SPECIAL_ABILITIES_GHOST_SWORD_DEF"],
+    SpecialAbilitiesHealLifeDef(SpecialAbilitiesHealLifeDef) => ["SPECIAL_ABILITIES_HEAL_LIFE_DEF"],
+    SpecialAbilitiesLightningSpellDef(SpecialAbilitiesLightningSpellDef) => ["SPECIAL_ABILITIES_LIGHTNING_SPELL_DEF"],
+    SpecialAbilitiesMultiArrowDef(SpecialAbilitiesMultiArrowDef) => ["SPECIAL_ABILITIES_MULTI_ARROW_DEF"],
+    SpecialAbilitiesMultiStrikeDef(SpecialAbilitiesMultiStrikeDef) => ["SPECIAL_ABILITIES_MULTI_STRIKE_DEF"],
+    SpecialAbilitiesPhysicalShieldDef(SpecialAbilitiesPhysicalShieldDef) => ["SPECIAL_ABILITIES_PHYSICAL_SHIELD_DEF"],
+    SpecialAbilitiesSummonSpellDef(SpecialAbilitiesSummonSpellDef) => ["SPECIAL_ABILITIES_SUMMON_SPELL_DEF"],
+    SpecialAbilitiesThunderLightningStormDef(SpecialAbilitiesThunderLightningStormDef) => ["SPECIAL_ABILITIES_THUNDER_LIGHTNING_STORM_DEF"],
+    SpecialAbilitiesTurncoatSpellDef(SpecialAbilitiesTurncoatSpellDef) => ["SPECIAL_ABILITIES_TURNCOAT_SPELL_DEF"],
+    SpecialAbilitiesUnholyPowerDef(SpecialAbilitiesUnholyPowerDef) => ["SPECIAL_ABILITIES_DIVINE_WRATH_DEF", "SPECIAL_ABILITIES_UNHOLY_POWER_DEF"],
+    SpecialEffectsDef(SpecialEffectsDef) => ["CSpecialEffectsDef"],
+    SpotLightDef(SpotLightDef) => ["CSpotLightDef"],
+    StealthDef(StealthDef) => ["CStealthDef"],
+    StockItemDef(StockItemDef) => ["CStockItemDef"],
+    SummonDef(SummonDef) => ["CSummonDef"],
+    SummonableCreatureDef(SummonableCreatureDef) => ["CSummonableCreatureDef"],
+    SummonerDef(SummonerDef) => ["CSummonerDef"],
+    TCVolumeContainmentTrackerDef(TCVolumeContainmentTrackerDef) => ["CTCVolumeContainmentTrackerDef"],
+    TargetingDef(TargetingDef) => ["CTargetingDef"],
+    TattooDef(TattooDef) => ["CTattooDef"],
+    TavernDef(TavernDef) => ["CTavernDef"],
+    TavernGameCardBaseDef(TavernGameCardBaseDef) => ["CTavernGameCardBaseDef"],
+    TavernGameCoinBaseDef(TavernGameCoinBaseDef) => ["CTavernGameCoinBaseDef"],
+    TavernGameCoinGolfDef(TavernGameCoinGolfDef) => ["CTavernGameCoinGolfDef"],
+    TavernGameDef(TavernGameDef) => ["CTavernGameDef"],
+    TavernGameShoveHaPennyDef(TavernGameShoveHaPennyDef) => ["CTavernGameShoveHaPennyDef"],
+    TavernGameSpotTheAdditionDef(TavernGameSpotTheAdditionDef) => ["CTavernGameSpotTheAdditionDef"],
+    TavernTableDef(TavernTableDef) => ["CTavernTableDef"],
+    TeleporterDef(TeleporterDef) => ["CTeleporterDef"],
+    TextureReplacementDef(TextureReplacementDef) => ["CTextureReplacementDef"],
+    ThingBaseDef(ThingBaseDef) => ["THING"],
+    ThingBuildingDef(ThingBuildingDef) => ["BUILDING"],
+    ThingCreatureDef(ThingCreatureDef) => ["CREATURE"],
+    ThingDrainLifeShotDef(ThingDrainLifeShotDef) => ["CThingDrainLifeShotDef"],
+    ThingHolySiteDef(ThingHolySiteDef) => ["HOLY_SITE"],
+    ThingMarkerDef(ThingMarkerDef) => ["MARKER"],
+    ThingMultiArrowShotDef(ThingMultiArrowShotDef) => ["CThingMultiArrowShotDef"],
+    ThingNoiseDef(ThingNoiseDef) => ["NOISE"],
+    ThingObjectDef(ThingObjectDef) => ["OBJECT"],
+    ThingPhysicalSwitchDef(ThingPhysicalSwitchDef) => ["PHYSICAL_SWITCH"],
+    ThingShotDef(ThingShotDef) => ["SHOT"],
+    ThingSwitchDef(ThingSwitchDef) => ["SWITCH"],
+    ThingVillageDef(ThingVillageDef) => ["VILLAGE"],
+    ThunderBattleDef(ThunderBattleDef) => ["CThunderBattleDef"],
+    TimeAppearanceFadeDef(TimeAppearanceFadeDef) => ["CTimeAppearanceFadeDef"],
+    TrapDef(TrapDef) => ["CTrapDef"],
+    TrollBattleDef(TrollBattleDef) => ["CTrollBattleDef"],
+    TrophyDef(TrophyDef) => ["CTrophyDef"],
+    TurncoatDef(TurncoatDef) => ["CTurncoatDef"],
+    UILocaleGraphicsDef(UILocaleGraphicsDef) => ["UI_LOCALE_GRAPHICS_DEF"],
+    VillageDef(VillageDef) => ["CVillageDef"],
+    VillageMemberDef(VillageMemberDef) => ["CVillageMemberDef"],
+    VillagePeopleDef(VillagePeopleDef) => ["CVillagePeopleDef"],
+    VillagerInteractionsDef(VillagerInteractionsDef) => ["VILLAGER_INTERACTION"],
+    WallMountEffectsDef(WallMountEffectsDef) => ["CWallMountEffectsDef"],
+    WaspQueenBattleDef(WaspQueenBattleDef) => ["CWaspQueenBattleDef"],
+    WeaponDef(WeaponDef) => ["CWeaponDef"],
+    WhisperBattleDef(WhisperBattleDef) => ["CWhisperBattleDef"],
+    WifeDef(WifeDef) => ["CWifeDef"],
+    WillResponseDef(WillResponseDef) => ["CWillResponseDef"],
+    DegradableDef(DegradableDef) => ["CDegradableDef"],
+    ReplaceableMeshDef(ReplaceableMeshDef) => ["CReplaceableMeshDef"],
+    GlobalDef(GlobalDef) => ["GLOBAL"],
+    PlayerMovementDef(PlayerMovementDef) => ["PLAYER_MOVEMENT"],
+    AppearanceModifierDef(AppearanceModifierDef) => ["CAppearanceModifierDef"],
+    ShopDef(ShopDef) => ["CShopDef"],
+    ShopItemDef(ShopItemDef) => ["CShopItemDef"],
+    Engine(EngineDef) => ["ENGINE"],
+    Controls(ControlsDef) => ["CONTROL_SCHEME"],
+    FrontEnd(FrontEndDef) => ["FRONT_END"],
+    Ui(UiDef) => ["UI"],
+    UiIcons(UiIconsDef) => ["UI_ICONS_DEF"],
+    UiMiscThings(UiMiscThingsDef) => ["UI_MISC_THINGS_DEF"],
+    EngineVideoOptions(EngineVideoOptionsDef) => ["ENGINE_VIDEO_OPTIONS"],
+    ConfigOptionsDefaults(ConfigOptionsDefaultsDef) => ["CONFIG_OPTIONS_DEFAULTS_DEF"],
+    Environment(EnvironmentDef) => ["CENVIRONMENT_DEF", "ENVIRONMENT"],
+    EnvironmentThemeDaySet(EnvironmentThemeDaySetDef) => ["CENVIRONMENT_THEME_DAY", "ENVIRONMENT_THEME_DAY"],
+}
 
 /// 3-byte record preamble that precedes each def body. Verified against retail
 /// `game.bin`: bodies are `(u32 id, u32 value)` control pairs starting at byte
@@ -928,8 +1175,11 @@ impl DefBinary {
         let chunk_blobs: Vec<Vec<u8>> = self.chunks.iter().map(|c| c.to_bytes()).collect();
         let chunks_data_size: usize = chunk_blobs.iter().map(|b| b.len()).sum();
 
-        let total_size = header_size + name_refs_size + chunk_index_header_size
-            + chunk_index_entries_size + chunks_data_size;
+        let total_size = header_size
+            + name_refs_size
+            + chunk_index_header_size
+            + chunk_index_entries_size
+            + chunks_data_size;
 
         let mut buf = vec![0u8; total_size];
         let mut cur: &mut [u8] = &mut buf;
@@ -938,14 +1188,23 @@ impl DefBinary {
         for nr in &self.name_refs {
             nr.serialize(&mut cur).unwrap();
         }
-        ChunkIndexHeader { chunk_count, reserved: 0 }.serialize(&mut cur).unwrap();
+        ChunkIndexHeader {
+            chunk_count,
+            reserved: 0,
+        }
+        .serialize(&mut cur)
+        .unwrap();
 
         let mut relative_offset = 0u32;
         let mut cumulative = 0u32;
         for (i, chunk) in self.chunks.iter().enumerate() {
             cumulative += chunk.entry_count;
-            ChunkIndexEntry { compressed_offset: relative_offset, cumulative_entry_count: cumulative }
-                .serialize(&mut cur).unwrap();
+            ChunkIndexEntry {
+                compressed_offset: relative_offset,
+                cumulative_entry_count: cumulative,
+            }
+            .serialize(&mut cur)
+            .unwrap();
             relative_offset += chunk_blobs[i].len() as u32;
         }
 
@@ -955,14 +1214,22 @@ impl DefBinary {
         // offsets are relative to a data region that starts *after* the
         // sentinel, so omitting it shifts every chunk seek by 8 bytes and
         // the game crashes on load.
-        ChunkIndexEntry { compressed_offset: relative_offset, cumulative_entry_count: relative_offset }
-            .serialize(&mut cur).unwrap();
+        ChunkIndexEntry {
+            compressed_offset: relative_offset,
+            cumulative_entry_count: relative_offset,
+        }
+        .serialize(&mut cur)
+        .unwrap();
 
         for blob in &chunk_blobs {
             put_bytes(&mut cur, blob).unwrap();
         }
 
-        debug_assert!(cur.is_empty(), "DefBinary::to_bytes: {} bytes remaining", cur.len());
+        debug_assert!(
+            cur.is_empty(),
+            "DefBinary::to_bytes: {} bytes remaining",
+            cur.len()
+        );
         buf
     }
 }

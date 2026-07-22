@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    values::RGBColour,
+    wire::DefIndex,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct TavernGameSpotTheAdditionDef {

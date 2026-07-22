@@ -104,22 +104,16 @@ impl Camera {
 
     /// Rebuild orientation from yaw + pitch.
     fn update_orientation(&mut self) {
-        let pitch_clamped = self.pitch.clamp(
-            -85.0_f32.to_radians(),
-            85.0_f32.to_radians(),
-        );
+        let pitch_clamped = self
+            .pitch
+            .clamp(-85.0_f32.to_radians(), 85.0_f32.to_radians());
         let yaw_quat = Quat::from_rotation_y(self.yaw);
         let pitch_quat = Quat::from_rotation_x(pitch_clamped);
         self.orientation = yaw_quat * pitch_quat;
     }
 
     /// Apply fly movement. `keys` is (forward, backward, left, right, up, down).
-    pub fn fly(
-        &mut self,
-        dt: f32,
-        keys: (bool, bool, bool, bool, bool, bool),
-        speed_mult: f32,
-    ) {
+    pub fn fly(&mut self, dt: f32, keys: (bool, bool, bool, bool, bool, bool), speed_mult: f32) {
         self.yaw -= self.mouse_delta.0 * self.mouse_sensitivity;
         self.pitch -= self.mouse_delta.1 * self.mouse_sensitivity;
         self.mouse_delta = (0.0, 0.0);
@@ -130,12 +124,24 @@ impl Camera {
         let right = self.right();
 
         let mut velocity = Vec3::ZERO;
-        if keys.0 { velocity += forward; }
-        if keys.1 { velocity -= forward; }
-        if keys.2 { velocity -= right; }
-        if keys.3 { velocity += right; }
-        if keys.4 { velocity += Vec3::Y; }
-        if keys.5 { velocity -= Vec3::Y; }
+        if keys.0 {
+            velocity += forward;
+        }
+        if keys.1 {
+            velocity -= forward;
+        }
+        if keys.2 {
+            velocity -= right;
+        }
+        if keys.3 {
+            velocity += right;
+        }
+        if keys.4 {
+            velocity += Vec3::Y;
+        }
+        if keys.5 {
+            velocity -= Vec3::Y;
+        }
 
         if velocity.length_squared() > 0.0 {
             velocity = velocity.normalize() * speed;

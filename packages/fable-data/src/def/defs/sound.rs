@@ -1,5 +1,12 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    values::AtmosBankEntry,
+    values::MusicEntry,
+    values::MusicSetEntry,
+    values::ReverbEnvironmentEntry,
+    values::SoundBankEntry,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct SoundDef {

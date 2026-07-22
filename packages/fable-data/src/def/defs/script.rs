@@ -1,5 +1,13 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    defs::ArenaRoundDef,
+    defs::Conversation,
+    defs::FeatDef,
+    defs::FireHeartPatternDef,
+    defs::HeroSoulsRoundDef,
+    wire::DefString,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ScriptDef {

@@ -93,8 +93,7 @@ impl Files {
             let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
 
             let from_binary = (|| -> Result<EnvironmentConfig, String> {
-                let names =
-                    Names::load(&names_path).map_err(|e| format!("names.bin: {e:?}"))?;
+                let names = Names::load(&names_path).map_err(|e| format!("names.bin: {e:?}"))?;
                 let def_binary = DefBinary::load_with_names(&game_bin_path, &names)
                     .map_err(|e| format!("game.bin: {e:?}"))?;
 
@@ -119,11 +118,12 @@ impl Files {
                     Some(environment)
                 }
                 Err(bin_error) => {
-                    tracing::warn!("Failed to load binary defs, falling back to environment.def: {bin_error}");
+                    tracing::warn!(
+                        "Failed to load binary defs, falling back to environment.def: {bin_error}"
+                    );
 
-                    match Self::try_read_paths(&[
-                        fable_directory.join("data/Defs/environment.def"),
-                    ]) {
+                    match Self::try_read_paths(&[fable_directory.join("data/Defs/environment.def")])
+                    {
                         Ok(env_bytes) => {
                             let env_str = String::from_utf8_lossy(&env_bytes);
                             match EnvironmentConfig::parse(&env_str) {
@@ -246,7 +246,9 @@ impl Files {
             .find(|a| a.path.to_lowercase().ends_with(&suffix))
             .cloned()
             .ok_or_else(|| format!("{level_name}.tng not found in wad"))?;
-        let bytes = wad.read_content(&asset).map_err(|e| format!("read tng: {e}"))?;
+        let bytes = wad
+            .read_content(&asset)
+            .map_err(|e| format!("read tng: {e}"))?;
         let text = String::from_utf8_lossy(&bytes);
         Tng::parse(&text).map_err(|e| format!("parse tng: {e}"))
     }
@@ -294,7 +296,10 @@ impl Files {
             mesh_name,
             mesh.materials.len(),
             mesh_extras.texture_ids,
-            mesh.materials.iter().map(|m| m.base_texture_id).collect::<Vec<_>>(),
+            mesh.materials
+                .iter()
+                .map(|m| m.base_texture_id)
+                .collect::<Vec<_>>(),
         );
 
         // Resolve each material's diffuse texture, keeping the result aligned 1:1 with

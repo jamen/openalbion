@@ -32,7 +32,9 @@ macro_rules! def_default_impl {
     };
 }
 
-def_default_impl!(f32, i32, u32, bool, u8, u16, u64, i8, i16, String, WStr, DefIndex, PString);
+def_default_impl!(
+    f32, i32, u32, bool, u8, u16, u64, i8, i16, String, WStr, DefIndex, PString
+);
 
 /// A `CDefString` defaults to -1 (the "no string" name-table offset) — the
 /// game's `CDefString` constructor default, verified against retail (e.g. an
@@ -197,7 +199,9 @@ struct BTreeMapEntry<'a, K, V> {
     value: V,
 }
 
-impl<'a, K: AsField + Ord + Clone, V: AsField + Clone> MapEntrySlot<'a> for BTreeMapEntry<'a, K, V> {
+impl<'a, K: AsField + Ord + Clone, V: AsField + Clone> MapEntrySlot<'a>
+    for BTreeMapEntry<'a, K, V>
+{
     fn key(&mut self) -> FieldRef<'_> {
         self.key.as_field()
     }
@@ -220,7 +224,11 @@ impl<K: AsField + Ord + DefDefault + Clone, V: AsField + DefDefault + Clone> Map
         self.clear();
     }
     fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a> {
-        Box::new(BTreeMapEntry { map: self, key: K::def_default(), value: V::def_default() })
+        Box::new(BTreeMapEntry {
+            map: self,
+            key: K::def_default(),
+            value: V::def_default(),
+        })
     }
     fn for_each_pair(&self, f: &mut dyn FnMut(FieldRef<'_>, FieldRef<'_>)) {
         for (k, v) in self.iter() {
@@ -237,7 +245,9 @@ struct VecMapEntry<'a, K, V> {
     value: V,
 }
 
-impl<'a, K: AsField + PartialEq + Clone, V: AsField + Clone> MapEntrySlot<'a> for VecMapEntry<'a, K, V> {
+impl<'a, K: AsField + PartialEq + Clone, V: AsField + Clone> MapEntrySlot<'a>
+    for VecMapEntry<'a, K, V>
+{
     fn key(&mut self) -> FieldRef<'_> {
         self.key.as_field()
     }
@@ -250,7 +260,9 @@ impl<'a, K: AsField + PartialEq + Clone, V: AsField + Clone> MapEntrySlot<'a> fo
     }
 }
 
-impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clone> MapSlot for VecMap<K, V> {
+impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clone> MapSlot
+    for VecMap<K, V>
+{
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -258,7 +270,11 @@ impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clon
         self.0.clear();
     }
     fn new_entry<'a>(&'a mut self) -> Box<dyn MapEntrySlot<'a> + 'a> {
-        Box::new(VecMapEntry { map: self, key: K::def_default(), value: V::def_default() })
+        Box::new(VecMapEntry {
+            map: self,
+            key: K::def_default(),
+            value: V::def_default(),
+        })
     }
     fn for_each_pair(&self, f: &mut dyn FnMut(FieldRef<'_>, FieldRef<'_>)) {
         for (k, v) in self.0.iter() {
@@ -394,7 +410,9 @@ impl<K: AsField + Ord + DefDefault + Clone, V: AsField + DefDefault + Clone> AsF
         FieldRef::Map(self)
     }
 }
-impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clone> AsField for VecMap<K, V> {
+impl<K: AsField + PartialEq + DefDefault + Clone, V: AsField + DefDefault + Clone> AsField
+    for VecMap<K, V>
+{
     fn as_field(&mut self) -> FieldRef<'_> {
         FieldRef::Map(self)
     }

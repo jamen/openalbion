@@ -7,10 +7,8 @@
 
 use crate::def::binary::def_binary::{DefBinary, DefBody};
 use crate::def::binary::names::Names;
+use crate::def::text::{DefParseError, Definition, Expr, PathSegment, Statement, parse_def_file};
 use crate::def::{EnvironmentDef, EnvironmentThemeDef};
-use crate::def::text::{
-    Definition, DefParseError, Expr, PathSegment, Statement, parse_def_file,
-};
 use derive_more::{Display, Error};
 use std::collections::HashMap;
 
@@ -36,9 +34,15 @@ impl EnvironmentTheme {
         let mut names = Vec::new();
         for kf in &self.keyframes {
             if let Some(ref name) = kf.sky_texture0
-                && !names.contains(&name.as_str()) { names.push(name.as_str()); }
+                && !names.contains(&name.as_str())
+            {
+                names.push(name.as_str());
+            }
             if let Some(ref name) = kf.sky_texture1
-                && !names.contains(&name.as_str()) { names.push(name.as_str()); }
+                && !names.contains(&name.as_str())
+            {
+                names.push(name.as_str());
+            }
         }
         names
     }
@@ -53,18 +57,28 @@ impl EnvironmentTheme {
         let time = time.rem_euclid(24.0);
         let mut prev_idx = 0;
         for (i, kf) in self.keyframes.iter().enumerate() {
-            if kf.time_of_day <= time { prev_idx = i; }
+            if kf.time_of_day <= time {
+                prev_idx = i;
+            }
         }
         let next_idx = (prev_idx + 1) % self.keyframes.len();
         let prev = &self.keyframes[prev_idx];
         let next = &self.keyframes[next_idx];
         let prev_time = prev.time_of_day;
         let mut next_time = next.time_of_day;
-        if next_time <= prev_time { next_time += 24.0; }
+        if next_time <= prev_time {
+            next_time += 24.0;
+        }
         let mut adjusted_time = time;
-        if adjusted_time < prev_time { adjusted_time += 24.0; }
+        if adjusted_time < prev_time {
+            adjusted_time += 24.0;
+        }
         let duration = next_time - prev_time;
-        let blend = if duration > 0.0 { ((adjusted_time - prev_time) / duration).clamp(0.0, 1.0) } else { 0.0 };
+        let blend = if duration > 0.0 {
+            ((adjusted_time - prev_time) / duration).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         Some((prev, next, blend))
     }
 
@@ -74,14 +88,30 @@ impl EnvironmentTheme {
         };
         if keyframe_blend < 0.5 {
             if prev.sky_texture1.is_some() {
-                (prev.sky_texture0.as_deref(), prev.sky_texture1.as_deref(), prev.sky_texture1_blend)
+                (
+                    prev.sky_texture0.as_deref(),
+                    prev.sky_texture1.as_deref(),
+                    prev.sky_texture1_blend,
+                )
             } else {
-                (prev.sky_texture0.as_deref(), next.sky_texture0.as_deref(), keyframe_blend * 2.0)
+                (
+                    prev.sky_texture0.as_deref(),
+                    next.sky_texture0.as_deref(),
+                    keyframe_blend * 2.0,
+                )
             }
         } else if next.sky_texture1.is_some() {
-            (prev.sky_texture0.as_deref(), next.sky_texture0.as_deref(), (keyframe_blend - 0.5) * 2.0)
+            (
+                prev.sky_texture0.as_deref(),
+                next.sky_texture0.as_deref(),
+                (keyframe_blend - 0.5) * 2.0,
+            )
         } else {
-            (prev.sky_texture0.as_deref(), next.sky_texture0.as_deref(), keyframe_blend)
+            (
+                prev.sky_texture0.as_deref(),
+                next.sky_texture0.as_deref(),
+                keyframe_blend,
+            )
         }
     }
 }
@@ -102,7 +132,10 @@ impl EnvironmentConfig {
                 themes.insert(def.name.clone(), theme);
             }
         }
-        Ok(Self { themes, environment_def: None })
+        Ok(Self {
+            themes,
+            environment_def: None,
+        })
     }
 
     pub fn from_def(env_def: EnvironmentDef) -> Self {
@@ -172,10 +205,15 @@ impl EnvironmentConfig {
         );
     }
 
-    fn parse_theme(name: &str, def: &Definition) -> Result<EnvironmentTheme, EnvironmentParseError> {
+    fn parse_theme(
+        name: &str,
+        def: &Definition,
+    ) -> Result<EnvironmentTheme, EnvironmentParseError> {
         let mut keyframes_map: HashMap<i32, TimeKeyframe> = HashMap::new();
         for stmt in &def.body {
-            let Statement::Field(field) = stmt else { continue };
+            let Statement::Field(field) = stmt else {
+                continue;
+            };
             let segments = &field.path.segments;
             // We only care about `Time[idx].Property = ...` fields.
             if let [
@@ -193,7 +231,10 @@ impl EnvironmentConfig {
         let mut keyframes: Vec<_> = keyframes_map.into_iter().collect();
         keyframes.sort_by_key(|(idx, _)| *idx);
         let keyframes: Vec<_> = keyframes.into_iter().map(|(_, kf)| kf).collect();
-        Ok(EnvironmentTheme { name: name.to_string(), keyframes })
+        Ok(EnvironmentTheme {
+            name: name.to_string(),
+            keyframes,
+        })
     }
 
     fn set_keyframe_property(keyframe: &mut TimeKeyframe, prop: &str, expr: &Expr) {
@@ -203,14 +244,26 @@ impl EnvironmentConfig {
                 Expr::Integer(i) => keyframe.time_of_day = *i as f32,
                 _ => {}
             },
-            "SkyTexture0" => { if let Expr::Symbol(s) = expr { keyframe.sky_texture0 = Some(s.clone()); } }
-            "SkyTexture1" => { if let Expr::Symbol(s) = expr { keyframe.sky_texture1 = Some(s.clone()); } }
+            "SkyTexture0" => {
+                if let Expr::Symbol(s) = expr {
+                    keyframe.sky_texture0 = Some(s.clone());
+                }
+            }
+            "SkyTexture1" => {
+                if let Expr::Symbol(s) = expr {
+                    keyframe.sky_texture1 = Some(s.clone());
+                }
+            }
             "SkyTexture1Blend" => match expr {
                 Expr::Float(f) => keyframe.sky_texture1_blend = *f,
                 Expr::Integer(i) => keyframe.sky_texture1_blend = *i as f32,
                 _ => {}
             },
-            "MoonLit" => { if let Expr::Bool(b) = expr { keyframe.moon_lit = *b; } }
+            "MoonLit" => {
+                if let Expr::Bool(b) = expr {
+                    keyframe.moon_lit = *b;
+                }
+            }
             "FogStartZ" => match expr {
                 Expr::Float(f) => keyframe.fog_start_z = *f,
                 Expr::Integer(i) => keyframe.fog_start_z = *i as f32,
@@ -241,10 +294,26 @@ mod tests {
         let theme = EnvironmentTheme {
             name: "test".to_string(),
             keyframes: vec![
-                TimeKeyframe { time_of_day: 0.0, sky_texture0: Some("MIDNIGHT".to_string()), ..Default::default() },
-                TimeKeyframe { time_of_day: 6.0, sky_texture0: Some("MORNING".to_string()), ..Default::default() },
-                TimeKeyframe { time_of_day: 12.0, sky_texture0: Some("MIDDAY".to_string()), ..Default::default() },
-                TimeKeyframe { time_of_day: 18.0, sky_texture0: Some("EVENING".to_string()), ..Default::default() },
+                TimeKeyframe {
+                    time_of_day: 0.0,
+                    sky_texture0: Some("MIDNIGHT".to_string()),
+                    ..Default::default()
+                },
+                TimeKeyframe {
+                    time_of_day: 6.0,
+                    sky_texture0: Some("MORNING".to_string()),
+                    ..Default::default()
+                },
+                TimeKeyframe {
+                    time_of_day: 12.0,
+                    sky_texture0: Some("MIDDAY".to_string()),
+                    ..Default::default()
+                },
+                TimeKeyframe {
+                    time_of_day: 18.0,
+                    sky_texture0: Some("EVENING".to_string()),
+                    ..Default::default()
+                },
             ],
         };
         let (prev, _next, blend) = theme.keyframes_at_time(0.0).unwrap();
@@ -260,7 +329,10 @@ mod tests {
 
     #[test]
     fn empty_theme_does_not_panic() {
-        let theme = EnvironmentTheme { name: "empty".to_string(), keyframes: Vec::new() };
+        let theme = EnvironmentTheme {
+            name: "empty".to_string(),
+            keyframes: Vec::new(),
+        };
         assert!(theme.keyframes_at_time(6.0).is_none());
         assert_eq!(theme.sky_textures_at_time(6.0), (None, None, 0.0));
     }
@@ -277,10 +349,9 @@ mod tests {
         let def_binary =
             DefBinary::load_with_names(game_bin_path, &names).expect("Failed to load game.bin");
 
-        let config =
-            EnvironmentConfig::from_binary_defs(&def_binary, &names, |id| {
-                Some(format!("TEXTURE_{id}"))
-            });
+        let config = EnvironmentConfig::from_binary_defs(&def_binary, &names, |id| {
+            Some(format!("TEXTURE_{id}"))
+        });
 
         let theme1 = config
             .themes

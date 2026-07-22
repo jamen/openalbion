@@ -24,7 +24,10 @@ pub enum LevError {
     NavSectionNameUtf8,
     #[from(skip)]
     #[display("cell reported size ({size}) smaller than its {consumed} parsed bytes")]
-    CellSizeUnderflow { size: u32, consumed: usize },
+    CellSizeUnderflow {
+        size: u32,
+        consumed: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -123,9 +126,8 @@ impl ThemePalette {
                 let name = str::from_utf8(&entry[..name_end])
                     .map_err(|_| LevError::SoundThemeUtf8)?
                     .to_owned();
-                let def_index = i32::from_le_bytes(
-                    entry[Self::NAME_LEN..Self::ENTRY_SIZE].try_into().unwrap(),
-                );
+                let def_index =
+                    i32::from_le_bytes(entry[Self::NAME_LEN..Self::ENTRY_SIZE].try_into().unwrap());
                 entries.push(ThemePaletteEntry { name, def_index });
                 (cursor, entry)
             };

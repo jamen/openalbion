@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::LightingChannel;
+use crate::def::values::{AnimationSet, EngineGraphic};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct AppearanceDef {

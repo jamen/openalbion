@@ -82,11 +82,13 @@ fn parse_def_attr(attrs: &[syn::Attribute]) -> syn::Result<DefAttr> {
             continue;
         }
         if seen {
-            return Err(syn::Error::new_spanned(attr, "duplicate #[def(...)] attribute"));
+            return Err(syn::Error::new_spanned(
+                attr,
+                "duplicate #[def(...)] attribute",
+            ));
         }
         seen = true;
-        let args =
-            attr.parse_args_with(Punctuated::<DefArg, Token![,]>::parse_terminated)?;
+        let args = attr.parse_args_with(Punctuated::<DefArg, Token![,]>::parse_terminated)?;
         for arg in args {
             match arg {
                 DefArg::Str(s) => {
@@ -445,14 +447,18 @@ pub fn derive_def_variant(input: TokenStream) -> TokenStream {
         },
     );
 
-    let serialize_arms = vidents.iter().zip(&tags).zip(&vfields).map(|((vident, tag), fields)| {
-        quote! {
-            Self::#vident { #( #fields ),* } => {
-                <u32 as crate::def::wire::Wire>::serialize(&#tag, out)?;
-                #( #fields.serialize(out)?; )*
+    let serialize_arms = vidents
+        .iter()
+        .zip(&tags)
+        .zip(&vfields)
+        .map(|((vident, tag), fields)| {
+            quote! {
+                Self::#vident { #( #fields ),* } => {
+                    <u32 as crate::def::wire::Wire>::serialize(&#tag, out)?;
+                    #( #fields.serialize(out)?; )*
+                }
             }
-        }
-    });
+        });
 
     let size_arms = vidents.iter().zip(&vfields).map(|(vident, fields)| {
         quote! {
@@ -462,9 +468,10 @@ pub fn derive_def_variant(input: TokenStream) -> TokenStream {
         }
     });
 
-    let tag_arms = vidents.iter().zip(&tags).map(|(vident, tag)| {
-        quote!( Self::#vident { .. } => #tag, )
-    });
+    let tag_arms = vidents
+        .iter()
+        .zip(&tags)
+        .map(|(vident, tag)| quote!( Self::#vident { .. } => #tag, ));
 
     let set_tag_arms = vidents.iter().zip(&tags).zip(&vfields).map(|((vident, tag), fields)| {
         quote! {
@@ -607,9 +614,12 @@ pub fn derive_def_enum(input: TokenStream) -> TokenStream {
         let symbol = match attr.str_lit {
             Some(s) => s,
             None => {
-                return syn::Error::new_spanned(&v.ident, "DefEnum variant needs #[def(\"SYMBOL\")]")
-                    .to_compile_error()
-                    .into();
+                return syn::Error::new_spanned(
+                    &v.ident,
+                    "DefEnum variant needs #[def(\"SYMBOL\")]",
+                )
+                .to_compile_error()
+                .into();
             }
         };
         let value = match &v.discriminant {
@@ -727,7 +737,11 @@ impl Parse for FlagRow {
         let value: LitInt = input.parse()?;
         input.parse::<Token![=>]>()?;
         let symbol: LitStr = input.parse()?;
-        Ok(FlagRow { ident, value, symbol })
+        Ok(FlagRow {
+            ident,
+            value,
+            symbol,
+        })
     }
 }
 
@@ -747,8 +761,7 @@ pub fn derive_def_flags(input: TokenStream) -> TokenStream {
                 .into();
         }
     };
-    let rows = match flags_attr
-        .parse_args_with(Punctuated::<FlagRow, Token![,]>::parse_terminated)
+    let rows = match flags_attr.parse_args_with(Punctuated::<FlagRow, Token![,]>::parse_terminated)
     {
         Ok(r) => r,
         Err(e) => return e.to_compile_error().into(),

@@ -1,5 +1,7 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::{CombatCreatureType, CombatStrikeRecoilStyle};
+use crate::def::wire::DefIndex;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct CombatTypeDef {

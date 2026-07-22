@@ -1,5 +1,8 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    values::SpecialEffectsStringMap,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct SpecialEffectsDef {

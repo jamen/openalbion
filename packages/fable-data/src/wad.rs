@@ -110,10 +110,7 @@ impl<T: Read + Seek> WadReader<T> {
     }
 
     /// Read the raw file content for an asset.
-    pub fn read_content(
-        &mut self,
-        asset: &AssetMetadata,
-    ) -> Result<Vec<u8>, ReadContentError> {
+    pub fn read_content(&mut self, asset: &AssetMetadata) -> Result<Vec<u8>, ReadContentError> {
         use ReadContentError as E;
 
         let mut content = vec![0u8; asset.content_length as usize];

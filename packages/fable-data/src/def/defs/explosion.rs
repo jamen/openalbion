@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::{QuakeLength, QuakeStrength};
+use crate::def::values::ExplosionRing;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ExplosionDef {

@@ -1,5 +1,8 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    values::{EngineGraphic, RGBColour, Vector2D, Vector3D},
+    wire::{DefIndex, DefString},
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct InventoryDef {

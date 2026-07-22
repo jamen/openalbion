@@ -1,5 +1,10 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    defs::PrizeScoreDef,
+    wire::DefIndex,
+    wire::DefString,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct TavernGameDef {

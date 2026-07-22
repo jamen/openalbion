@@ -1,14 +1,4 @@
-//! Per-type metadata (sub-def-table presence, script-def parsing).
-//!
-//! The canonical `for_each_game_def!` table is defined in `game_def_table.rs`
-//! and consumed in `def_binary.rs` to generate `DefBody`.
-
-use crate::def::{
-    binary::{
-        control::ParseControlError,
-        def_binary::DefBody,
-    },
-};
+//! Per-type metadata (sub-def-table presence).
 
 pub fn def_name_has_subdef_table(name: &str) -> bool {
     matches!(
@@ -120,17 +110,4 @@ pub fn def_name_has_subdef_table(name: &str) -> bool {
             | "VILLAGE"
             | "VILLAGER_INTERACTION"
     )
-}
-
-pub fn parse_script_def(
-    name: &str,
-    cur: &mut &[u8],
-) -> Result<DefBody, ParseControlError> {
-    match DefBody::parse(cur, name) {
-        Ok(body) => Ok(body),
-        Err(_) => Ok(DefBody::Unknown {
-            name: name.to_string(),
-            bytes: core::mem::take(cur).to_vec(),
-        }),
-    }
 }

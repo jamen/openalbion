@@ -1,5 +1,12 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::SwitchTriggerType,
+    values::EngineGraphic,
+    values::ThingComponentSet,
+    wire::DefIndex,
+    wire::DefString,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ThingMarkerDef {

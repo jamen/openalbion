@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::WeaponClass;
+use crate::def::values::CombatAbilityData;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct CombatAbilityBlockDefBase {

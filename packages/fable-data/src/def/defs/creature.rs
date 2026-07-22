@@ -1,5 +1,8 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::defs::CreatureStatsDef;
+use crate::def::enums::Opinion;
+use crate::def::values::{ExpressionSet, FloatRange, RandomAppearanceMorph, WoundMorphs};
+use crate::def::wire::{DefString, VecMap};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct CreatureDef {

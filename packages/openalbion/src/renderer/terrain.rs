@@ -10,9 +10,9 @@ use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingType, BufferBindingType, BufferUsages, CommandEncoder,
-    CompareFunction, DepthBiasState, DepthStencilState, Device, FragmentState, IndexFormat,
-    MultisampleState, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue,
-    FrontFace, RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderStages, StencilState,
+    CompareFunction, DepthBiasState, DepthStencilState, Device, FragmentState, FrontFace,
+    IndexFormat, MultisampleState, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue,
+    RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderStages, StencilState,
     TextureFormat, TextureView, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
     include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
@@ -47,13 +47,12 @@ struct TerrainVertex {
 }
 
 impl TerrainVertex {
-    const ATTRIBS: [VertexAttribute; 4] =
-        wgpu::vertex_attr_array![
-            0 => Float32x3,
-            1 => Float32x3,
-            2 => Uint8x4,
-            3 => Uint8x4,
-        ];
+    const ATTRIBS: [VertexAttribute; 4] = wgpu::vertex_attr_array![
+        0 => Float32x3,
+        1 => Float32x3,
+        2 => Uint8x4,
+        3 => Uint8x4,
+    ];
 
     fn layout() -> VertexBufferLayout<'static> {
         VertexBufferLayout {
@@ -109,8 +108,18 @@ fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
             vertices.push(TerrainVertex {
                 position: [col as f32 * CELL_SIZE, y, row as f32 * CELL_SIZE],
                 normal,
-                theme_indices: [cell.ground_theme.0, cell.ground_theme.1, cell.ground_theme.2, 0],
-                blend: [cell.ground_theme_strength.0, cell.ground_theme_strength.1, cliff_u, cliff_v],
+                theme_indices: [
+                    cell.ground_theme.0,
+                    cell.ground_theme.1,
+                    cell.ground_theme.2,
+                    0,
+                ],
+                blend: [
+                    cell.ground_theme_strength.0,
+                    cell.ground_theme_strength.1,
+                    cliff_u,
+                    cliff_v,
+                ],
             });
         }
     }
@@ -290,7 +299,11 @@ pub struct TerrainPass {
 }
 
 impl TerrainPass {
-    pub fn new(device: &Device, surface_format: TextureFormat, depth_format: TextureFormat) -> Self {
+    pub fn new(
+        device: &Device,
+        surface_format: TextureFormat,
+        depth_format: TextureFormat,
+    ) -> Self {
         let shader = TerrainShader::new(device);
         let uniform_layout = TerrainUniformBindGroupLayout::new(device);
         let layout = TerrainPipelineLayout::new(device, &uniform_layout);
@@ -304,12 +317,22 @@ impl TerrainPass {
     }
 
     pub fn set_terrain(&mut self, device: &Device, lev: &Lev) {
-        let min_height = lev.heightmap_cells.iter().map(|c| c.height).fold(f32::INFINITY, f32::min);
-        let max_height = lev.heightmap_cells.iter().map(|c| c.height).fold(f32::NEG_INFINITY, f32::max);
+        let min_height = lev
+            .heightmap_cells
+            .iter()
+            .map(|c| c.height)
+            .fold(f32::INFINITY, f32::min);
+        let max_height = lev
+            .heightmap_cells
+            .iter()
+            .map(|c| c.height)
+            .fold(f32::NEG_INFINITY, f32::max);
         tracing::info!(
             "Terrain height range: raw [{:.2}, {:.2}], scaled [{:.2}, {:.2}]",
-            min_height, max_height,
-            min_height * HEIGHT_SCALE, max_height * HEIGHT_SCALE,
+            min_height,
+            max_height,
+            min_height * HEIGHT_SCALE,
+            max_height * HEIGHT_SCALE,
         );
         self.mesh = Some(TerrainMesh::new(device, &self.uniform_layout, lev));
     }

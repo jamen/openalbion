@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::ClockHandType;
+use crate::def::wire::VecMap;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ClockDef {

@@ -1,5 +1,5 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::defs::{AbilityTrackDef, AppearanceModifierScalingDef};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct HeroStatsDef {

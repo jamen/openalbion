@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::defs::EnvironmentThemeDef;
+use crate::def::values::RGBColour;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct EnvironmentThemeDaySetDef {

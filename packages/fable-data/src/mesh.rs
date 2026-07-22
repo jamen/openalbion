@@ -196,7 +196,8 @@ fn decode_helper_names(i: &mut &[u8], size: u32) -> Result<(Vec<u8>, Vec<u8>), M
     let d = &mut &names[..];
     let point_index_size = read_u16(d)?;
     let point_names = take_bytes(d, point_index_size.saturating_sub(2) as usize)?.to_vec();
-    let dummy_names = take_bytes(d, size.saturating_sub(point_index_size as u32) as usize)?.to_vec();
+    let dummy_names =
+        take_bytes(d, size.saturating_sub(point_index_size as u32) as usize)?.to_vec();
     Ok((point_names, dummy_names))
 }
 
@@ -528,7 +529,11 @@ impl Primitive {
 /// For a triangle strip, the standard convention after the first triangle is to emit `[v_{i+1},
 /// v_i, v_{i+2}]` on odd triangles so that every triangle in the strip shares consistent CCW
 /// winding.  Degenerate triangles (two equal indices, zero area) are dropped from the output.
-fn expand_block(view: &mut &[u8], block: &PrimitiveBlock, indices: &mut Vec<u16>) -> Result<(), MeshError> {
+fn expand_block(
+    view: &mut &[u8],
+    block: &PrimitiveBlock,
+    indices: &mut Vec<u16>,
+) -> Result<(), MeshError> {
     for strip_pos in 0..block.primitive_count {
         if block.is_strip {
             let v1 = read_u16(view)?;
@@ -714,10 +719,24 @@ impl ClothPrimitive {
 pub enum ParticleConstraint {
     Repeat(u32),
     RepeatEnd,
-    Distance { ids: [u32; 2], distance: f32, strength: f32 },
-    DistanceMinMax { ids: [u32; 2], min: f32, max: f32 },
-    Unbend { ids: [u32; 3], strength: f32 },
-    SphereCollision { center: [f32; 3], radius: f32 },
+    Distance {
+        ids: [u32; 2],
+        distance: f32,
+        strength: f32,
+    },
+    DistanceMinMax {
+        ids: [u32; 2],
+        min: f32,
+        max: f32,
+    },
+    Unbend {
+        ids: [u32; 3],
+        strength: f32,
+    },
+    SphereCollision {
+        center: [f32; 3],
+        radius: f32,
+    },
 }
 
 impl ParticleConstraint {
@@ -842,12 +861,16 @@ fn read_mat4(i: &mut &[u8]) -> Result<[f32; 16], MeshError> {
 }
 fn read_str_nul(i: &mut &[u8]) -> Result<String, MeshError> {
     let bytes = take_null_terminated_bytes(i)?;
-    Ok(str::from_utf8(bytes).map_err(|_| MeshError::Utf8)?.to_owned())
+    Ok(str::from_utf8(bytes)
+        .map_err(|_| MeshError::Utf8)?
+        .to_owned())
 }
 fn read_str_u32_prefix(i: &mut &[u8]) -> Result<String, MeshError> {
     let len = read_u32(i)? as usize;
     let bytes = take_bytes(i, len)?;
-    Ok(str::from_utf8(bytes).map_err(|_| MeshError::Utf8)?.to_owned())
+    Ok(str::from_utf8(bytes)
+        .map_err(|_| MeshError::Utf8)?
+        .to_owned())
 }
 fn read_packed_vec3(i: &mut &[u8]) -> Result<[f32; 3], MeshError> {
     Ok(unpack_packed_vec3(read_u32(i)?))

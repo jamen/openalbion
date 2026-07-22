@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::OpinionDeedType;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct OpinionReactionMaskDef {

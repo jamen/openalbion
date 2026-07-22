@@ -1,5 +1,8 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::{
+    ActionRegisteredType, CombatSequenceInterruptionType, CombatSequenceIsValidType,
+    CombatSequenceOnStartModuleType, CombatSequenceOnStopModuleType, CombatSequenceType,
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct CombatSequenceDef {

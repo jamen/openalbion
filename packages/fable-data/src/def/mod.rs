@@ -2,7 +2,7 @@
 //!
 //! - [`binary`] — compiled def container (`DefBinary`, `DefBody`, etc.)
 //! - [`defs`] — individual def-class structs (one module per type)
-//! - [`dispatch`] — per-type metadata (`def_name_has_subdef_table`, …)
+//! - [`dispatch`] — per-type metadata utilities (`def_name_has_subdef_table`)
 //! - [`enums`] / [`values`] — shared enum and compound-value types
 //! - [`wire`] — wire-level parse/serialize ([`Wire`])
 //! - [`text`] — text-based definition parsing
@@ -12,10 +12,7 @@ pub mod binary;
 pub mod defs;
 pub mod dispatch;
 pub mod enums;
-#[macro_use]
-pub mod game_def_table;
 pub mod object;
-pub mod prelude;
 pub mod semantic;
 pub mod text;
 pub mod values;

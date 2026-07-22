@@ -112,19 +112,13 @@ pub fn put_le<T: NoUninit + Le>(out: &mut &mut [u8], value: &T) -> Result<(), Un
 
 /// Take bytes up until a NUL byte.
 pub fn take_null_terminated_bytes<'a>(bytes: &mut &'a [u8]) -> Result<&'a [u8], UnexpectedEnd> {
-    let size = bytes
-        .iter()
-        .position(|&x| x == 0)
-        .ok_or(UnexpectedEnd)?;
+    let size = bytes.iter().position(|&x| x == 0).ok_or(UnexpectedEnd)?;
     let contents = take_bytes(bytes, size + 1)?;
     Ok(&contents[..contents.len() - 1])
 }
 
 /// Put bytes with a NUL byte.
-pub fn put_null_terminated_bytes(
-    out: &mut &mut [u8],
-    value: &[u8],
-) -> Result<(), UnexpectedEnd> {
+pub fn put_null_terminated_bytes(out: &mut &mut [u8], value: &[u8]) -> Result<(), UnexpectedEnd> {
     put_bytes(out, value)?;
     put(out, &0u8)?;
     Ok(())

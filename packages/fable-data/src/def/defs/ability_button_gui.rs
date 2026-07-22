@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::{ControllerType, MouseButtonControl, XboxControllerButton};
+use crate::def::values::Vector2D;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct AbilityButtonGuiDef {

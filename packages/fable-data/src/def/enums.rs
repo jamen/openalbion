@@ -1393,7 +1393,10 @@ mod tests {
         assert_eq!(UiType::from_i32(32), Some(UiType::MousePointer));
         assert_eq!(UiType::MousePointer.to_i32(), 32);
         assert_eq!(UiType::MousePointer.symbol(), "UI_TYPE_MOUSE_POINTER");
-        assert_eq!(UiType::from_symbol("UI_TYPE_MOUSE_POINTER"), Some(UiType::MousePointer));
+        assert_eq!(
+            UiType::from_symbol("UI_TYPE_MOUSE_POINTER"),
+            Some(UiType::MousePointer)
+        );
         assert_eq!(UiType::from_i32(99), None);
     }
 
@@ -1418,7 +1421,10 @@ mod tests {
         assert!(both.contains(TableExpansion::HORIZONTAL));
         assert!(both.contains(TableExpansion::VERTICAL));
         assert_eq!(both.to_i32(), 3);
-        assert_eq!((TableExpansion::HORIZONTAL | TableExpansion::VERTICAL).to_i32(), 3);
+        assert_eq!(
+            (TableExpansion::HORIZONTAL | TableExpansion::VERTICAL).to_i32(),
+            3
+        );
         assert!(Sprite2dFlags::from_i32(0).is_empty());
     }
 }

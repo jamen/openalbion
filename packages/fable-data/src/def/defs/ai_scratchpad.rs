@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::ScriptingStateGroups;
+use crate::def::values::Vector3D;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct AIScratchpadDef {

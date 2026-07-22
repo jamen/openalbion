@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::{Opinion, OpinionDeedType},
+    wire::DefIndex,
+};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct OpinionSourceDef {
@@ -202,11 +206,6 @@ pub struct OpinionSourceDef {
 }
 
 impl OpinionSourceDef {
-    /// The 79 `BinaryReaction` bools aren't def-file controls: the game
-    /// derives them from [`Self::reaction_flag_default`] and the
-    /// [`Self::reaction_flag`] map (verified against all 51 retail
-    /// OPINION_SOURCE entries): index `i` is `map.get(i, default)` for
-    /// `i >= 18`, always `false` below.
     pub fn derive_binary_reactions(&mut self) {
         let flags = [
             &mut self.binary_reaction, &mut self.binary_reaction2, &mut self.binary_reaction3,
@@ -249,10 +248,6 @@ impl OpinionSourceDef {
         }
     }
 
-    /// The 5 `BinaryOpinion` floats aren't def-file controls: the game derives
-    /// them from the [`Self::produced_opinion`] map (verified against retail
-    /// OPINION_SOURCE entries): index `i` is the float for [`Opinion`]`(i)`,
-    /// zero when that opinion is absent from the map.
     pub fn derive_binary_opinions(&mut self) {
         let opinions = [
             &mut self.binary_opinion, &mut self.binary_opinion2, &mut self.binary_opinion3,

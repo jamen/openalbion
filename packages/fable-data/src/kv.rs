@@ -187,8 +187,7 @@ impl<'a> KvParser<'a> {
 
     fn parse_value(&mut self) -> Result<KvValue<'a>, KvError> {
         self.skip_whitespace();
-        let c = self
-            .input[self.pos..]
+        let c = self.input[self.pos..]
             .chars()
             .next()
             .ok_or(self.err(KvErrorKind::UnexpectedEnd))?;
@@ -226,7 +225,13 @@ impl<'a> KvParser<'a> {
                 }
                 while self.pos < self.input.len() {
                     let d = self.input.as_bytes()[self.pos];
-                    if d.is_ascii_digit() || d == b'.' || d == b'e' || d == b'E' || d == b'-' || d == b'+' {
+                    if d.is_ascii_digit()
+                        || d == b'.'
+                        || d == b'e'
+                        || d == b'E'
+                        || d == b'-'
+                        || d == b'+'
+                    {
                         self.pos += 1;
                     } else {
                         break;

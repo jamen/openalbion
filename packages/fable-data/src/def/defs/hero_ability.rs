@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::{HeroAbility, HeroExperienceStatCategory},
+    values::Vector2D,
+    wire::DefIndex,
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct HeroAbilityDef {

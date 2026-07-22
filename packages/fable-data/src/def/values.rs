@@ -1,7 +1,11 @@
 //! Compound wire value types (`wire_struct!` / `def_variant!`).
 
-use crate::{WireStruct, DefVariant};
-use crate::def::prelude::*;
+use crate::def::enums::{
+    ControllerType, DamageAttribute, GameAction, HeroExperienceStatCategory, InputKey,
+    MouseButtonControl, ReactionSpeechType, XboxControllerButton,
+};
+use crate::def::wire::{DefIndex, DefString, PString, VecMap};
+use crate::{DefVariant, WireStruct};
 
 /// C++ `CRGBColour`. The default ctor is opaque black
 /// (`0xFF000000` — alpha 0xFF, rgb 0), which is what retail NULLDEFs store.
@@ -405,7 +409,11 @@ pub enum PhysicalPrimitiveInitType {
     #[def(1)]
     Tag1 { base_name: i32, radius: f32 },
     #[def(2)]
-    Tag2 { base_name: i32, radius: f32, height: f32 },
+    Tag2 {
+        base_name: i32,
+        radius: f32,
+        height: f32,
+    },
     #[def(3)]
     Tag3 {},
 }
@@ -432,15 +440,25 @@ pub enum AnimationEntryComponentsEntry {
     #[def(2)]
     Tag2 { delay: i32 },
     #[def(3)]
-    Tag3 { start_handedness: i32, end_handedness: i32 },
+    Tag3 {
+        start_handedness: i32,
+        end_handedness: i32,
+    },
     #[def(4)]
     Tag4 { combo_stage: i32, combo_id: i32 },
     #[def(5)]
     Tag5 { recoil_anim_index: i32 },
     #[def(6)]
-    Tag6 { melee_flourish: bool, melee_knockdown: bool },
+    Tag6 {
+        melee_flourish: bool,
+        melee_knockdown: bool,
+    },
     #[def(7)]
-    Tag7 { target_offset: bool, target_offset_vector_x: f32, target_offset_vector_y: f32 },
+    Tag7 {
+        target_offset: bool,
+        target_offset_vector_x: f32,
+        target_offset_vector_y: f32,
+    },
     #[def(8)]
     Tag8 { next_anim_name: i32 },
     #[def(9)]
@@ -490,13 +508,54 @@ pub struct FireEffectCreationSet {
 #[derive(Debug, Clone, PartialEq, DefVariant)]
 pub enum ReactionMatchListElementsEntry {
     #[def(0)]
-    Tag0 { reaction_type: i32, axis: i32, lower_bound_on_axis: f32, inv_interval_on_axis: f32, m_shift_zero: f32, m_shift_weight: f32, r_shift_zero: f32, r_shift_weight: f32 },
+    Tag0 {
+        reaction_type: i32,
+        axis: i32,
+        lower_bound_on_axis: f32,
+        inv_interval_on_axis: f32,
+        m_shift_zero: f32,
+        m_shift_weight: f32,
+        r_shift_zero: f32,
+        r_shift_weight: f32,
+    },
     #[def(1)]
-    Tag1 { reaction_type: i32, axis: i32, centre_on_axis: f32, radius_on_axis: f32, m_shift_zero: f32, m_shift_weight: f32, r_shift_zero: f32, r_shift_weight: f32 },
+    Tag1 {
+        reaction_type: i32,
+        axis: i32,
+        centre_on_axis: f32,
+        radius_on_axis: f32,
+        m_shift_zero: f32,
+        m_shift_weight: f32,
+        r_shift_zero: f32,
+        r_shift_weight: f32,
+    },
     #[def(2)]
-    Tag2 { reaction_type: i32, x_axis_opinion_type: i32, y_axis_opinion_type: i32, x_centre: f32, neg_inv_x_radius: f32, pos_inv_x_radius: f32, y_centre: f32, neg_inv_y_radius: f32, pos_inv_y_radius: f32 },
+    Tag2 {
+        reaction_type: i32,
+        x_axis_opinion_type: i32,
+        y_axis_opinion_type: i32,
+        x_centre: f32,
+        neg_inv_x_radius: f32,
+        pos_inv_x_radius: f32,
+        y_centre: f32,
+        neg_inv_y_radius: f32,
+        pos_inv_y_radius: f32,
+    },
     #[def(3)]
-    Tag3 { reaction_type: i32, x_axis_opinion_type: i32, y_axis_opinion_type: i32, x_centre: f32, neg_inv_x_radius: f32, pos_inv_x_radius: f32, y_centre: f32, neg_inv_y_radius: f32, pos_inv_y_radius: f32, scariness_shift: f32, agreeableness_shift: f32, attractiveness_shift: f32 },
+    Tag3 {
+        reaction_type: i32,
+        x_axis_opinion_type: i32,
+        y_axis_opinion_type: i32,
+        x_centre: f32,
+        neg_inv_x_radius: f32,
+        pos_inv_x_radius: f32,
+        y_centre: f32,
+        neg_inv_y_radius: f32,
+        pos_inv_y_radius: f32,
+        scariness_shift: f32,
+        agreeableness_shift: f32,
+        attractiveness_shift: f32,
+    },
 }
 
 /// C++ `std::list<CReactionMatch *,std::allocator<CReactionMatch *>>`.
@@ -512,9 +571,22 @@ pub enum ReactionFrequencyTraitsArrayTraitsEntry {
     #[def(1)]
     Tag1 { min_wait: f32, wait_range: f32 },
     #[def(2)]
-    Tag2 { low_freq_per_min: f32, high_low_freq_interval: f32, frames_per_minute: u32, ramp_up_time_frames: u32, cutoff_interval_frames: u32 },
+    Tag2 {
+        low_freq_per_min: f32,
+        high_low_freq_interval: f32,
+        frames_per_minute: u32,
+        ramp_up_time_frames: u32,
+        cutoff_interval_frames: u32,
+    },
     #[def(3)]
-    Tag3 { allow_individual_repeats: bool, min_gap_frames: u32, count_recharge_per_frame: f32, current_available_count: f32, max_count: f32, inv_max_count: f32 },
+    Tag3 {
+        allow_individual_repeats: bool,
+        min_gap_frames: u32,
+        count_recharge_per_frame: f32,
+        current_available_count: f32,
+        max_count: f32,
+        inv_max_count: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, WireStruct)]

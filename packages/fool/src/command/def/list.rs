@@ -21,8 +21,8 @@ pub struct DefListArgs {
 
 pub fn handler(args: DefListArgs) -> anyhow::Result<()> {
     let names = Names::load(&args.names_bin).map_err(|e| anyhow!("load names.bin: {e:?}"))?;
-    let def_binary =
-        DefBinary::load_with_names(&args.game_bin, &names).map_err(|e| anyhow!("load game.bin: {e:?}"))?;
+    let def_binary = DefBinary::load_with_names(&args.game_bin, &names)
+        .map_err(|e| anyhow!("load game.bin: {e:?}"))?;
 
     // def type name -> (record count, implemented?)
     let mut by_type: BTreeMap<String, (usize, bool)> = BTreeMap::new();
@@ -39,7 +39,7 @@ pub fn handler(args: DefListArgs) -> anyhow::Result<()> {
         .filter(|(_, (_, implemented))| !args.unknown_only || !implemented)
         .collect();
     // Most-common types first (best validation fixtures); ties broken by name.
-    rows.sort_by(|a, b| b.1 .0.cmp(&a.1 .0).then(a.0.cmp(b.0)));
+    rows.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.0.cmp(b.0)));
 
     println!("{:<52} {:>7}  STATUS", "DEF TYPE", "COUNT");
     for (name, (count, implemented)) in &rows {

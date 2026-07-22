@@ -1,5 +1,5 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::values::ActionInputControl;
 
 /// `CONTROL_SCHEME` — `CControlsDef`.
 #[derive(Debug, Clone, PartialEq, DefStruct)]

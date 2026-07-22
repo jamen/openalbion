@@ -1,6 +1,5 @@
-
 use crate::{DefStruct, WireStruct};
-use crate::def::prelude::*;
+use crate::def::enums::EngineGraphicType;
 
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct DegradableInfo {

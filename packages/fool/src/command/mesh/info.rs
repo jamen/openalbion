@@ -82,7 +82,10 @@ pub fn handler(args: MeshInfoArgs) -> anyhow::Result<()> {
         }
         println!("        decoded pos  min {min:?} max {max:?}");
         if let Some(v) = prim.vertices.first() {
-            println!("        vertex[0]    pos={:?} normal={:?} uv={:?}", v.pos, v.normal, v.uv);
+            println!(
+                "        vertex[0]    pos={:?} normal={:?} uv={:?}",
+                v.pos, v.normal, v.uv
+            );
         }
     }
 

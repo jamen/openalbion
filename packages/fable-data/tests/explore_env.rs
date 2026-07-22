@@ -18,22 +18,39 @@ fn explore() {
     let mut sets = 0;
     for entry in game.entries(&names) {
         match &entry.record.body {
-            DefBody::Environment(_) => { envs += 1; *kinds.entry("Environment").or_default() += 1; }
+            DefBody::Environment(_) => {
+                envs += 1;
+                *kinds.entry("Environment").or_default() += 1;
+            }
             DefBody::EnvironmentThemeDaySet(s) => {
                 sets += 1;
                 *kinds.entry("EnvironmentThemeDaySet").or_default() += 1;
                 if sets <= 2 {
-                    println!("THEME_DAY {:?}: {} keyframes, sun_tilt={}, colour_lookup_column={}",
-                        entry.def_name, s.time.len(), s.sun_tilt, s.colour_lookup_column);
+                    println!(
+                        "THEME_DAY {:?}: {} keyframes, sun_tilt={}, colour_lookup_column={}",
+                        entry.def_name,
+                        s.time.len(),
+                        s.sun_tilt,
+                        s.colour_lookup_column
+                    );
                     for (i, kf) in s.time.iter().enumerate().take(3) {
-                        println!("    kf[{i}] tod={} sky0={} sky1={} blend={} moonlit={}",
-                            kf.time_of_day, kf.sky_texture0, kf.sky_texture1,
-                            kf.sky_texture1_blend, kf.moon_lit);
+                        println!(
+                            "    kf[{i}] tod={} sky0={} sky1={} blend={} moonlit={}",
+                            kf.time_of_day,
+                            kf.sky_texture0,
+                            kf.sky_texture1,
+                            kf.sky_texture1_blend,
+                            kf.moon_lit
+                        );
                     }
                 }
             }
-            DefBody::Unknown { .. } => { *kinds.entry("Unknown").or_default() += 1; }
-            _ => { *kinds.entry("other-typed").or_default() += 1; }
+            DefBody::Unknown { .. } => {
+                *kinds.entry("Unknown").or_default() += 1;
+            }
+            _ => {
+                *kinds.entry("other-typed").or_default() += 1;
+            }
         }
     }
     println!("environments={envs} theme_day_sets={sets}");

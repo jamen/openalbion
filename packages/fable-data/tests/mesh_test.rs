@@ -77,8 +77,10 @@ fn decode_all_graphics_meshes() {
                         ));
                         break;
                     }
-                    if let Some(&bad) =
-                        prim.indices.iter().find(|&&v| v as usize >= prim.vertices.len())
+                    if let Some(&bad) = prim
+                        .indices
+                        .iter()
+                        .find(|&&v| v as usize >= prim.vertices.len())
                     {
                         failures.push(format!(
                             "{bank}/{symbol}: index {bad} >= vertices {}",

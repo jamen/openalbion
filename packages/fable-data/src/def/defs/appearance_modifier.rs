@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::{ClothingSuitPart, HeroAttachableAppearanceModifierType};
+use crate::def::values::AppearanceModifierGraphics;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct AppearanceModifierDef {

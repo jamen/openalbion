@@ -2,8 +2,12 @@ use fable_data::def::binary::{def_binary::DefBinary, names::Names};
 use std::path::Path;
 
 fn main() {
-    let data = std::env::args().nth(1).expect("usage: roundtrip_defs <Data dir> [bin name]");
-    let bin = std::env::args().nth(2).unwrap_or_else(|| "frontend.bin".to_string());
+    let data = std::env::args()
+        .nth(1)
+        .expect("usage: roundtrip_defs <Data dir> [bin name]");
+    let bin = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "frontend.bin".to_string());
     let dir = Path::new(&data).join("CompiledDefs/Development");
     let names = Names::load(&dir.join("names.bin")).unwrap();
     let def_binary = DefBinary::load_with_names(&dir.join(&bin), &names).unwrap();
@@ -30,7 +34,9 @@ fn main() {
                             written,
                             rec.raw_bytes.len()
                         );
-                        for (i, (a, b)) in buf[..written].iter().zip(rec.raw_bytes.iter()).enumerate() {
+                        for (i, (a, b)) in
+                            buf[..written].iter().zip(rec.raw_bytes.iter()).enumerate()
+                        {
                             if a != b {
                                 println!("  first diff at byte {i}: wrote {a:02x} orig {b:02x}");
                                 break;

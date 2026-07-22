@@ -137,7 +137,9 @@ fn navigation_references_resolve() {
 
     for asset in &lev_assets {
         let bytes = reader.read_content(asset).expect("read lev");
-        let Ok(lev) = Lev::from_bytes(&bytes) else { continue };
+        let Ok(lev) = Lev::from_bytes(&bytes) else {
+            continue;
+        };
 
         for section in &lev.navigation.sections {
             let ids: HashSet<u32> = section
@@ -173,7 +175,14 @@ fn navigation_references_resolve() {
     }
 
     let rate = resolved as f64 / refs as f64;
-    eprintln!("node references resolved: {resolved}/{refs} ({:.1}%)", rate * 100.0);
+    eprintln!(
+        "node references resolved: {resolved}/{refs} ({:.1}%)",
+        rate * 100.0
+    );
     // A correct decode resolves nearly all references; a misaligned one would resolve almost none.
-    assert!(rate > 0.95, "only {:.1}% of node references resolved", rate * 100.0);
+    assert!(
+        rate > 0.95,
+        "only {:.1}% of node references resolved",
+        rate * 100.0
+    );
 }

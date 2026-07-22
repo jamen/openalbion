@@ -265,7 +265,8 @@ impl LightingColoursTexture {
         for y in 0..height as usize {
             let src = y * row_bytes as usize;
             let dst = y * padded_row_bytes as usize;
-            padded[dst..dst + row_bytes as usize].copy_from_slice(&rgba_data[src..src + row_bytes as usize]);
+            padded[dst..dst + row_bytes as usize]
+                .copy_from_slice(&rgba_data[src..src + row_bytes as usize]);
         }
 
         tracing::info!(

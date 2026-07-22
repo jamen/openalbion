@@ -83,12 +83,7 @@ impl Names {
 
     /// Serialize to the wire format (header + entries).
     pub fn to_bytes(&self) -> Vec<u8> {
-        let total: usize =
-            20 + self
-                .map
-                .values()
-                .map(|e| e.byte_size())
-                .sum::<usize>();
+        let total: usize = 20 + self.map.values().map(|e| e.byte_size()).sum::<usize>();
         let mut out = vec![0u8; total];
         let mut cur: &mut [u8] = &mut out;
         put_bytes(&mut cur, &self.header_bytes).unwrap();
@@ -114,15 +109,8 @@ mod tests {
         let original = std::fs::read(&path).unwrap();
         let names = Names::from_bytes(&original).unwrap();
         let re_serialized = names.to_bytes();
-        assert_eq!(
-            re_serialized.len(),
-            original.len(),
-            "length mismatch"
-        );
-        assert_eq!(
-            re_serialized, original,
-            "byte-exact roundtrip failed"
-        );
+        assert_eq!(re_serialized.len(), original.len(), "length mismatch");
+        assert_eq!(re_serialized, original, "byte-exact roundtrip failed");
     }
 }
 

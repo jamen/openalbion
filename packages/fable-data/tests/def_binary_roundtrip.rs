@@ -62,11 +62,18 @@ fn roundtrip(dir: &Path, names: &Names, bin_name: &str) {
     // Header (13 bytes) and name-ref table must be byte-identical.
     let entry_count = u32_le(&original, 9) as usize;
     let index_at = 13 + entry_count * 12;
-    assert_eq!(&written[..index_at], &original[..index_at], "{label}: header + name refs differ");
+    assert_eq!(
+        &written[..index_at],
+        &original[..index_at],
+        "{label}: header + name refs differ"
+    );
 
     let (orig_chunk_count, orig_entries, orig_base) = check_layout(&original, label);
     let (chunk_count, entries, base) = check_layout(&written, label);
-    assert_eq!(chunk_count, orig_chunk_count, "{label}: chunk count changed");
+    assert_eq!(
+        chunk_count, orig_chunk_count,
+        "{label}: chunk count changed"
+    );
     assert_eq!(
         entries.len(),
         orig_entries.len(),
@@ -88,9 +95,10 @@ fn roundtrip(dir: &Path, names: &Names, bin_name: &str) {
                 .map(|e| base + e.compressed_offset as usize)
                 .unwrap_or(len)
         };
-        let orig_blob =
-            &original[orig_base + b.compressed_offset as usize..end(&orig_entries, orig_base, original.len(), i)];
-        let our_blob = &written[base + a.compressed_offset as usize..end(&entries, base, written.len(), i)];
+        let orig_blob = &original[orig_base + b.compressed_offset as usize
+            ..end(&orig_entries, orig_base, original.len(), i)];
+        let our_blob =
+            &written[base + a.compressed_offset as usize..end(&entries, base, written.len(), i)];
         let orig_plain = miniz_oxide::inflate::decompress_to_vec_zlib(orig_blob).unwrap();
         let our_plain = miniz_oxide::inflate::decompress_to_vec_zlib(our_blob).unwrap();
         assert_eq!(orig_plain, our_plain, "{label}: chunk {i} content differs");
@@ -100,7 +108,10 @@ fn roundtrip(dir: &Path, names: &Names, bin_name: &str) {
 
     // Re-parse our output: every entry must round-trip byte-exact.
     let reparsed = DefBinary::from_bytes_with_names(&written, names).unwrap();
-    let before: Vec<&[u8]> = parsed.entries(names).map(|e| e.record.raw_bytes.as_slice()).collect();
+    let before: Vec<&[u8]> = parsed
+        .entries(names)
+        .map(|e| e.record.raw_bytes.as_slice())
+        .collect();
     let after: Vec<&[u8]> = reparsed
         .entries(names)
         .map(|e| e.record.raw_bytes.as_slice())

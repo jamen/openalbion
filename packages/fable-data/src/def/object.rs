@@ -4,8 +4,8 @@
 //! inheritance chain to find each definition's `Graphic.BankIndex` (mesh symbol) and
 //! `Graphic.Type` (static/animated/none).
 
-use super::text::def_text::{Definition, Statement, parse_def_file};
 use super::text::DefParseError;
+use super::text::def_text::{Definition, Statement, parse_def_file};
 
 /// The resolved graphic type for an object definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,7 +67,10 @@ impl ObjectDefs {
     }
 
     fn find_def(&self, name: &str) -> Option<&Definition> {
-        self.defs.by_name.get(name).map(|&idx| &self.defs.definitions[idx])
+        self.defs
+            .by_name
+            .get(name)
+            .map(|&idx| &self.defs.definitions[idx])
     }
 
     /// Walk `specialises` chain from `def` to collect all properties (later overrides earlier).
@@ -122,7 +125,13 @@ fn expr_to_string(expr: &super::text::Expr) -> String {
         Expr::Symbol(s) => s.clone(),
         Expr::Integer(n) => n.to_string(),
         Expr::Float(x) => x.to_string(),
-        Expr::Bool(b) => if *b { "TRUE".into() } else { "FALSE".into() },
+        Expr::Bool(b) => {
+            if *b {
+                "TRUE".into()
+            } else {
+                "FALSE".into()
+            }
+        }
         Expr::Constructor(c) => c.name.clone(),
         Expr::BitOr(_) | Expr::Add(_) => expr.to_string(),
     }

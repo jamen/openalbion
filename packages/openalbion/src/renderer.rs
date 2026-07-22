@@ -6,10 +6,10 @@ mod texture;
 
 use self::depth::DepthTexture;
 use self::model::ModelPass;
-use self::sky::OuterSkyPass;
-use self::terrain::TerrainPass;
 pub use self::model::ModelTextureError;
 pub use self::sky::LightingColoursError;
+use self::sky::OuterSkyPass;
+use self::terrain::TerrainPass;
 pub use self::texture::TextureUploadError;
 use derive_more::{Display, Error};
 use fable_data::big::AssetMetadata;
@@ -107,9 +107,14 @@ impl<'target> Renderer<'target> {
         scale: f32,
         pos: [f32; 3],
     ) -> Result<(), ModelTextureError> {
-        self.passes
-            .model
-            .add_model(&self.device, &self.queue, mesh, material_textures, scale, pos)
+        self.passes.model.add_model(
+            &self.device,
+            &self.queue,
+            mesh,
+            material_textures,
+            scale,
+            pos,
+        )
     }
 
     pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4]) {

@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    defs::DialogueLayerDef,
+    values::EngineGraphic,
+    wire::{DefIndex, VecMap},
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct GlobalDef {

@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::defs::AbilityTrackLevelDef;
+use crate::def::enums::HeroExperienceStatCategory;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct AbilityTrackDef {

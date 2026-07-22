@@ -1,5 +1,8 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::OpinionDeedType,
+    wire::VecMap,
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct OpinionDeedMaskDef {

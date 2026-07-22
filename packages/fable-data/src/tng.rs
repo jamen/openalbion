@@ -27,13 +27,22 @@ impl Tng {
 
         for stmt in stmts {
             match stmt {
-                KvStatement::Block { keyword: "XXXSectionStart", kind, body } => {
+                KvStatement::Block {
+                    keyword: "XXXSectionStart",
+                    kind,
+                    body,
+                } => {
                     if let Some(sec) = current_section.take() {
                         sections.push(sec);
                     }
                     let mut things = Vec::new();
                     for body_stmt in body {
-                        if let KvStatement::Block { keyword: "NewThing", kind, body } = body_stmt {
+                        if let KvStatement::Block {
+                            keyword: "NewThing",
+                            kind,
+                            body,
+                        } = body_stmt
+                        {
                             things.push(parse_thing(kind, &body));
                         }
                     }
@@ -42,7 +51,11 @@ impl Tng {
                         things,
                     });
                 }
-                KvStatement::Block { keyword: "NewThing", kind, body } => {
+                KvStatement::Block {
+                    keyword: "NewThing",
+                    kind,
+                    body,
+                } => {
                     // Top-level things (v1 format or no sections).
                     let thing = parse_thing(kind, &body);
                     if current_section.is_none() {
@@ -133,38 +146,36 @@ fn parse_thing(thing_type: &str, body: &[KvStatement<'_>]) -> TngThing {
             KvStatement::Field("EndCTCEditor", _) => {
                 in_editor = false;
             }
-            KvStatement::Field(name, value) if in_physics => {
-                match *name {
-                    "PositionX" => {
-                        thing.position[0] = value_as_f32(value);
-                    }
-                    "PositionY" => {
-                        thing.position[1] = value_as_f32(value);
-                    }
-                    "PositionZ" => {
-                        thing.position[2] = value_as_f32(value);
-                    }
-                    "RHSetForwardX" => {
-                        thing.forward[0] = value_as_f32(value);
-                    }
-                    "RHSetForwardY" => {
-                        thing.forward[1] = value_as_f32(value);
-                    }
-                    "RHSetForwardZ" => {
-                        thing.forward[2] = value_as_f32(value);
-                    }
-                    "RHSetUpX" => {
-                        thing.up[0] = value_as_f32(value);
-                    }
-                    "RHSetUpY" => {
-                        thing.up[1] = value_as_f32(value);
-                    }
-                    "RHSetUpZ" => {
-                        thing.up[2] = value_as_f32(value);
-                    }
-                    _ => {}
+            KvStatement::Field(name, value) if in_physics => match *name {
+                "PositionX" => {
+                    thing.position[0] = value_as_f32(value);
                 }
-            }
+                "PositionY" => {
+                    thing.position[1] = value_as_f32(value);
+                }
+                "PositionZ" => {
+                    thing.position[2] = value_as_f32(value);
+                }
+                "RHSetForwardX" => {
+                    thing.forward[0] = value_as_f32(value);
+                }
+                "RHSetForwardY" => {
+                    thing.forward[1] = value_as_f32(value);
+                }
+                "RHSetForwardZ" => {
+                    thing.forward[2] = value_as_f32(value);
+                }
+                "RHSetUpX" => {
+                    thing.up[0] = value_as_f32(value);
+                }
+                "RHSetUpY" => {
+                    thing.up[1] = value_as_f32(value);
+                }
+                "RHSetUpZ" => {
+                    thing.up[2] = value_as_f32(value);
+                }
+                _ => {}
+            },
             _ => {}
         }
         let _ = in_editor;
@@ -239,7 +250,10 @@ EndThing;
         let tng = Tng::parse(input).unwrap();
         assert_eq!(tng.sections.len(), 1);
         assert_eq!(tng.sections[0].things.len(), 2);
-        assert_eq!(tng.sections[0].things[0].definition_type, "OBJECT_FISHING_ROD");
+        assert_eq!(
+            tng.sections[0].things[0].definition_type,
+            "OBJECT_FISHING_ROD"
+        );
         assert_eq!(tng.sections[0].things[1].definition_type, "MARKER_BASIC");
     }
 }

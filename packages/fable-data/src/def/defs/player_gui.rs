@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    defs::{AbilityButtonGuiDef, QuickAccessItemButtonGuiDef},
+    values::{MiniMapGraphics, RGBColour, Vector2D, Vector3D},
+    wire::VecMap,
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct PlayerGuiDef {

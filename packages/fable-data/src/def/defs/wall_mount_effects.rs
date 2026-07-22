@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::WallMountEffects,
+    wire::DefIndex,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct WallMountEffectsDef {

@@ -12,8 +12,8 @@ use fable_data::{big::AssetMetadata, mesh::Mesh};
 use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType, BufferUsages,
-    ColorTargetState, ColorWrites, CommandEncoder, CompareFunction, DepthBiasState,
+    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType,
+    BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, CompareFunction, DepthBiasState,
     DepthStencilState, Device, Extent3d, Face, FragmentState, IndexFormat, MultisampleState,
     PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline,
     RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages, StencilState,
@@ -174,7 +174,11 @@ impl ModelPipelines {
             let color_target = ColorTargetState {
                 format: target_format,
                 blend: blend.then_some(BlendState::ALPHA_BLENDING),
-                write_mask: if blend { ColorWrites::ALL } else { ColorWrites::COLOR },
+                write_mask: if blend {
+                    ColorWrites::ALL
+                } else {
+                    ColorWrites::COLOR
+                },
             };
             device.create_render_pipeline(&RenderPipelineDescriptor {
                 label: Some(type_name::<Self>()),
@@ -395,7 +399,9 @@ impl ModelPass {
         let mut materials = Vec::with_capacity(mesh.materials.len());
         for (i, material) in mesh.materials.iter().enumerate() {
             let uploaded = match material_textures.get(i).and_then(|t| t.as_ref()) {
-                Some((meta, data)) => Some(upload_texture(device, queue, meta, data).map_err(E::Texture)?),
+                Some((meta, data)) => {
+                    Some(upload_texture(device, queue, meta, data).map_err(E::Texture)?)
+                }
                 None => None,
             };
             let view = uploaded.as_ref().unwrap_or(&self.white_view);
@@ -534,7 +540,8 @@ impl ModelMesh {
         pipelines: &ModelPipelines,
         camera_pos: [f32; 3],
     ) {
-        let mut transparent_draws: Vec<(&ModelPrimitive, &SubMeshDraw, &ModelMaterial)> = Vec::new();
+        let mut transparent_draws: Vec<(&ModelPrimitive, &SubMeshDraw, &ModelMaterial)> =
+            Vec::new();
         for primitive in &self.primitives {
             for sub in &primitive.sub_meshes {
                 if let Some(material) = self.materials.get(sub.material)

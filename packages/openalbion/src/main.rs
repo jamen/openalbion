@@ -189,12 +189,23 @@ impl App {
         tracing::info!("Uploaded lighting LUT to GPU");
 
         // Load and upload the terrain.
-        let lev = self.files.load_level(&self.level_name).map_err(E::LoadLevel)?;
+        let lev = self
+            .files
+            .load_level(&self.level_name)
+            .map_err(E::LoadLevel)?;
         let span_x = lev.header.width as f32 + 1.0;
         let span_z = lev.header.height as f32 + 1.0;
 
-        let raw_min = lev.heightmap_cells.iter().map(|c| c.height).fold(f32::INFINITY, f32::min);
-        let raw_max = lev.heightmap_cells.iter().map(|c| c.height).fold(f32::NEG_INFINITY, f32::max);
+        let raw_min = lev
+            .heightmap_cells
+            .iter()
+            .map(|c| c.height)
+            .fold(f32::INFINITY, f32::min);
+        let raw_max = lev
+            .heightmap_cells
+            .iter()
+            .map(|c| c.height)
+            .fold(f32::NEG_INFINITY, f32::max);
         let scale = renderer::terrain::HEIGHT_SCALE;
         let mid_y = (raw_min + raw_max) * 0.5 * scale;
 
@@ -203,17 +214,22 @@ impl App {
         let world_span = span_x.max(span_z).max((raw_max - raw_min).abs() * scale);
         self.camera.set_world_extents(world_span);
         // Position camera above and back from the terrain centre for a good initial view.
-        self.camera.position =
-            self.terrain_center + glam::Vec3::new(world_span * 0.3, world_span * 0.4, world_span * 0.5);
+        self.camera.position = self.terrain_center
+            + glam::Vec3::new(world_span * 0.3, world_span * 0.4, world_span * 0.5);
         self.camera.look_at(self.terrain_center, glam::Vec3::Y);
         self.camera.fly_speed = world_span * 0.1;
         renderer.set_terrain(&lev);
         tracing::info!(
             "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1}, world_span={world_span:.1})",
-            lev.header.width, lev.header.height,
-            raw_min, raw_max,
-            raw_min * scale, raw_max * scale,
-            self.terrain_center.x, self.terrain_center.y, self.terrain_center.z,
+            lev.header.width,
+            lev.header.height,
+            raw_min,
+            raw_max,
+            raw_min * scale,
+            raw_max * scale,
+            self.terrain_center.x,
+            self.terrain_center.y,
+            self.terrain_center.z,
             self.terrain_radius,
         );
 
@@ -264,7 +280,10 @@ impl App {
                 upload_sky_texture(&mut self.files, renderer, name, false);
             }
             // Only upload texture1 when it differs from texture0 (the pass reuses 0 otherwise).
-            if let Some(name) = tex1_name.as_ref().filter(|n| Some(*n) != tex0_name.as_ref()) {
+            if let Some(name) = tex1_name
+                .as_ref()
+                .filter(|n| Some(*n) != tex0_name.as_ref())
+            {
                 upload_sky_texture(&mut self.files, renderer, name, true);
             }
             tracing::debug!("Sky textures at {:.1}h: {:?}", self.time_of_day, names);
@@ -286,7 +305,10 @@ impl App {
         let tng = match self.files.load_tng(&self.level_name) {
             Ok(tng) => tng,
             Err(e) => {
-                tracing::info!("No .tng for {}: {e} — loading fallback mesh", self.level_name);
+                tracing::info!(
+                    "No .tng for {}: {e} — loading fallback mesh",
+                    self.level_name
+                );
                 self.load_fallback_model(renderer, E::UploadModelTexture)?;
                 return Ok(());
             }
@@ -440,7 +462,12 @@ impl App {
 
 /// Read a sky texture from the textures archive and upload it to the renderer's primary
 /// (`secondary == false`) or blend (`secondary == true`) slot. Failures are logged, not fatal.
-fn upload_sky_texture(files: &mut Files, renderer: &mut Renderer<'static>, name: &str, secondary: bool) {
+fn upload_sky_texture(
+    files: &mut Files,
+    renderer: &mut Renderer<'static>,
+    name: &str,
+    secondary: bool,
+) {
     let (metadata, bytes) = match files.read_sky_texture(name) {
         Ok(asset) => asset,
         Err(error) => {
@@ -540,8 +567,8 @@ impl App {
                 winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
                 winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 * 0.01,
             };
-            self.camera.fly_speed = (self.camera.fly_speed * 1.1_f32.powf(dy))
-                .clamp(0.1, self.terrain_radius * 20.0);
+            self.camera.fly_speed =
+                (self.camera.fly_speed * 1.1_f32.powf(dy)).clamp(0.1, self.terrain_radius * 20.0);
         }
     }
 }

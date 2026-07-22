@@ -1,5 +1,6 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::defs::ArenaCreatureDef;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ArenaWaveDef {

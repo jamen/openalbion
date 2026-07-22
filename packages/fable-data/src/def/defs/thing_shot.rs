@@ -1,5 +1,11 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::DamageAttribute,
+    values::FloatRange,
+    wire::DefIndex,
+    wire::DefString,
+};
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ThingShotDef {

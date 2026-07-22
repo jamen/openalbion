@@ -1,5 +1,10 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    defs::BlurredAttitudesDef,
+    enums::{OpinionAttitudeType, OpinionReactionType, OpinionTargetingConditionType},
+    values::{ReactionFrequencyTraitsArray, ReactionMatchList},
+    wire::VecMap,
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct OpinionReactionManagerDef {

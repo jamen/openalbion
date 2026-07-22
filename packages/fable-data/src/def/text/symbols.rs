@@ -13,7 +13,9 @@ impl Default for SymbolTable {
 
 impl SymbolTable {
     pub fn new() -> Self {
-        Self { map: HashMap::new() }
+        Self {
+            map: HashMap::new(),
+        }
     }
     pub fn lookup(&self, name: &str) -> Option<i64> {
         self.map.get(name).copied()
@@ -54,13 +56,20 @@ impl SymbolTable {
             I::Enum(decl) => self.evaluate_enum(decl),
             I::Define(d) => self.insert(&d.name, d.value),
             I::Namespace(ns) => {
-                for item in &ns.items { self.evaluate_header_item(item)?; }
+                for item in &ns.items {
+                    self.evaluate_header_item(item)?;
+                }
                 Ok(())
             }
             I::IfDef(ifdef) => {
-                let branch = if self.is_defined(&ifdef.condition) { &ifdef.if_branch }
-                else { ifdef.else_branch.as_deref().unwrap_or(&[]) };
-                for item in branch { self.evaluate_header_item(item)?; }
+                let branch = if self.is_defined(&ifdef.condition) {
+                    &ifdef.if_branch
+                } else {
+                    ifdef.else_branch.as_deref().unwrap_or(&[])
+                };
+                for item in branch {
+                    self.evaluate_header_item(item)?;
+                }
                 Ok(())
             }
         }
@@ -78,26 +87,37 @@ impl SymbolTable {
         Ok(())
     }
     pub fn insert(&mut self, name: &str, value: i64) -> Result<(), SymbolEvalError> {
-        if self.map.contains_key(name) { return Err(SymbolEvalError::DuplicateSymbol(name.to_string())); }
+        if self.map.contains_key(name) {
+            return Err(SymbolEvalError::DuplicateSymbol(name.to_string()));
+        }
         self.map.insert(name.to_string(), value);
         Ok(())
     }
-    fn is_defined(&self, cond: &str) -> bool { cond == "_WINDOWS" }
+    fn is_defined(&self, cond: &str) -> bool {
+        cond == "_WINDOWS"
+    }
     fn evaluate_enum_expr(&self, expr: &EnumExpr) -> Result<i64, SymbolEvalError> {
         use EnumExpr as E;
         match expr {
             E::Int(n) => Ok(*n),
-            E::Ident(name) => self.lookup(name).ok_or_else(|| SymbolEvalError::UnknownSymbol(name.clone())),
+            E::Ident(name) => self
+                .lookup(name)
+                .ok_or_else(|| SymbolEvalError::UnknownSymbol(name.clone())),
             E::Shift(terms) => {
                 let mut iter = terms.iter();
                 let first = self.evaluate_enum_expr(iter.next().unwrap())?;
                 iter.try_fold(first, |acc, term| {
                     let n = self.evaluate_enum_expr(term)?;
-                    if !(0..64).contains(&n) { return Err(SymbolEvalError::InvalidShift(n)); }
+                    if !(0..64).contains(&n) {
+                        return Err(SymbolEvalError::InvalidShift(n));
+                    }
                     Ok(acc << n)
                 })
             }
-            E::BitOr(terms) => terms.iter().map(|t| self.evaluate_enum_expr(t)).try_fold(0i64, |acc, v| Ok(acc | v?)),
+            E::BitOr(terms) => terms
+                .iter()
+                .map(|t| self.evaluate_enum_expr(t))
+                .try_fold(0i64, |acc, v| Ok(acc | v?)),
         }
     }
 }

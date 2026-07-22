@@ -28,8 +28,8 @@ struct Stats {
 
 pub fn handler(args: DefRoundtripArgs) -> anyhow::Result<()> {
     let names = Names::load(&args.names_bin).map_err(|e| anyhow!("load names.bin: {e:?}"))?;
-    let def_binary =
-        DefBinary::load_with_names(&args.game_bin, &names).map_err(|e| anyhow!("load game.bin: {e:?}"))?;
+    let def_binary = DefBinary::load_with_names(&args.game_bin, &names)
+        .map_err(|e| anyhow!("load game.bin: {e:?}"))?;
 
     let mut stats: BTreeMap<String, Stats> = BTreeMap::new();
     let mut first_fail: Option<String> = None;
@@ -62,10 +62,7 @@ pub fn handler(args: DefRoundtripArgs) -> anyhow::Result<()> {
                     stat.fail += 1;
                     if first_fail.is_none() {
                         let written = record.raw_bytes.len() - unwritten;
-                        let diff = buf
-                            .iter()
-                            .zip(&record.raw_bytes)
-                            .position(|(a, b)| a != b);
+                        let diff = buf.iter().zip(&record.raw_bytes).position(|(a, b)| a != b);
                         first_fail = Some(format!(
                             "{name}: wrote {written}/{} bytes, first byte diff at {diff:?}",
                             record.raw_bytes.len(),
@@ -82,7 +79,10 @@ pub fn handler(args: DefRoundtripArgs) -> anyhow::Result<()> {
         }
     }
 
-    println!("{:<52} {:>6} {:>6} {:>6}", "DEF TYPE", "PASS", "FAIL", "SKIP");
+    println!(
+        "{:<52} {:>6} {:>6} {:>6}",
+        "DEF TYPE", "PASS", "FAIL", "SKIP"
+    );
     let (mut total_pass, mut total_fail, mut total_skip) = (0, 0, 0);
     for (name, s) in &stats {
         total_pass += s.pass;

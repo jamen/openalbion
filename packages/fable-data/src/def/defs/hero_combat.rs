@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::{IdleStateGroup, Opinion},
+    values::FloatRange,
+};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct HeroCombatDef {

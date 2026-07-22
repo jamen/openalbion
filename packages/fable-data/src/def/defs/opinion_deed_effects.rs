@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    defs::OpinionDeedReactionDef,
+    enums::{CrimeSeverity, DialogueLayer, TutorialCategory},
+    values::OpinionTransientOffsetList,
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct OpinionDeedEffectsDef {
@@ -45,8 +49,10 @@ pub struct OpinionDeedEffectsDef {
     pub on_react_set_greeted: bool,
     #[def("AllowSpeechOnNonPureAISpeaker")]
     pub allow_speech_on_non_pure_ai_speaker: bool,
-    #[def("AllowIndirectReactWhileCarrying")]
-    pub allow_indirect_react_while_carrying: bool,
+    #[def("AllowWhileCarrying")]
+    pub allow_while_carrying: bool,
     #[def("BlockWhileFollowingPlayer")]
     pub block_while_following_player: bool,
+    #[def("AllowIndirectReactWhileCarrying")]
+    pub allow_indirect_react_while_carrying: bool,
 }

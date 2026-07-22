@@ -85,7 +85,10 @@ impl Resolvers<'static> {
     /// Identity resolvers: references render as raw `idx:<n>` / `off:<n>`, so
     /// two bodies over the SAME index space (Mode A) compare exactly by value.
     pub fn raw() -> Self {
-        Resolvers { def_index_name: &resolve_none, def_string_value: &resolve_none }
+        Resolvers {
+            def_index_name: &resolve_none,
+            def_string_value: &resolve_none,
+        }
     }
 }
 
@@ -199,11 +202,17 @@ pub struct DiffPolicy {
 impl DiffPolicy {
     /// Exact structural comparison (order matters everywhere).
     pub fn strict() -> Self {
-        DiffPolicy { unordered_maps: false, unordered_lists: false }
+        DiffPolicy {
+            unordered_maps: false,
+            unordered_lists: false,
+        }
     }
     /// Order-insensitive for maps and lists.
     pub fn unordered() -> Self {
-        DiffPolicy { unordered_maps: true, unordered_lists: true }
+        DiffPolicy {
+            unordered_maps: true,
+            unordered_lists: true,
+        }
     }
 }
 
@@ -215,9 +224,9 @@ pub fn sem_eq(a: &SemVal, b: &SemVal, policy: DiffPolicy) -> bool {
                 && if policy.unordered_maps {
                     multiset_eq_pairs(xa, xb, policy)
                 } else {
-                    xa.iter()
-                        .zip(xb)
-                        .all(|((ka, va), (kb, vb))| sem_eq(ka, kb, policy) && sem_eq(va, vb, policy))
+                    xa.iter().zip(xb).all(|((ka, va), (kb, vb))| {
+                        sem_eq(ka, kb, policy) && sem_eq(va, vb, policy)
+                    })
                 }
         }
         (SemVal::List(xa), SemVal::List(xb)) => {
@@ -250,7 +259,11 @@ pub fn sem_eq(a: &SemVal, b: &SemVal, policy: DiffPolicy) -> bool {
 fn multiset_eq(a: &[SemVal], b: &[SemVal], policy: DiffPolicy) -> bool {
     let mut used = vec![false; b.len()];
     for x in a {
-        let Some(j) = b.iter().enumerate().position(|(j, y)| !used[j] && sem_eq(x, y, policy)) else {
+        let Some(j) = b
+            .iter()
+            .enumerate()
+            .position(|(j, y)| !used[j] && sem_eq(x, y, policy))
+        else {
             return false;
         };
         used[j] = true;
@@ -261,9 +274,11 @@ fn multiset_eq(a: &[SemVal], b: &[SemVal], policy: DiffPolicy) -> bool {
 fn multiset_eq_pairs(a: &[(SemVal, SemVal)], b: &[(SemVal, SemVal)], policy: DiffPolicy) -> bool {
     let mut used = vec![false; b.len()];
     for (ka, va) in a {
-        let Some(j) = b.iter().enumerate().position(|(j, (kb, vb))| {
-            !used[j] && sem_eq(ka, kb, policy) && sem_eq(va, vb, policy)
-        }) else {
+        let Some(j) = b
+            .iter()
+            .enumerate()
+            .position(|(j, (kb, vb))| !used[j] && sem_eq(ka, kb, policy) && sem_eq(va, vb, policy))
+        else {
             return false;
         };
         used[j] = true;
@@ -297,7 +312,11 @@ fn short(v: &SemVal) -> String {
 }
 
 fn diff_here(a: &SemVal, b: &SemVal, path: &str) -> Diff {
-    Diff { path: path.to_string(), ours: short(a), theirs: short(b) }
+    Diff {
+        path: path.to_string(),
+        ours: short(a),
+        theirs: short(b),
+    }
 }
 
 fn diff_members(
@@ -384,8 +403,16 @@ mod tests {
 
     #[test]
     fn scalars_and_refs() {
-        assert!(sem_eq(&SemVal::Int(3), &SemVal::Int(3), DiffPolicy::strict()));
-        assert!(!sem_eq(&SemVal::Int(3), &SemVal::Int(4), DiffPolicy::strict()));
+        assert!(sem_eq(
+            &SemVal::Int(3),
+            &SemVal::Int(3),
+            DiffPolicy::strict()
+        ));
+        assert!(!sem_eq(
+            &SemVal::Int(3),
+            &SemVal::Int(4),
+            DiffPolicy::strict()
+        ));
         assert!(sem_eq(
             &SemVal::DefRef("OBJECT_X".into()),
             &SemVal::DefRef("OBJECT_X".into()),

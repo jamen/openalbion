@@ -1,5 +1,9 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    enums::DamageAttribute,
+    values::{AttackHistoryCombo, ComboMultiplierData, HeroStatIncreaseData},
+    wire::{DefString, VecMap},
+};
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct HeroExperienceDef {

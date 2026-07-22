@@ -33,10 +33,18 @@ impl Wld {
 
         for stmt in stmts {
             match stmt {
-                KvStatement::Block { keyword: "NewMap", kind, body } => {
+                KvStatement::Block {
+                    keyword: "NewMap",
+                    kind,
+                    body,
+                } => {
                     maps.push(parse_map(kind, &body));
                 }
-                KvStatement::Block { keyword: "NewRegion", kind, body } => {
+                KvStatement::Block {
+                    keyword: "NewRegion",
+                    kind,
+                    body,
+                } => {
                     // Regions parsed later; skip for now.
                     let _ = (kind, body);
                 }

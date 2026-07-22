@@ -1,5 +1,10 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::{
+    defs::UiStateDef,
+    wire::WStr,
+};
+use std::collections::BTreeMap;
+
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct UiDef {

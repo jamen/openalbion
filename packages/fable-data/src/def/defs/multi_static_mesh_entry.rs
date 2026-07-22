@@ -1,5 +1,5 @@
 use crate::DefStruct;
-use crate::def::prelude::*;
+use crate::def::enums::LightingChannel;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct MultiStaticMeshEntryDef {

@@ -16,7 +16,10 @@ pub enum ParseControlErrorReason {
     MalformedId(TakeError),
     /// The control id read didn't match `crc(name)` — i.e. the cursor isn't
     /// aligned to this field's control (wrong order, missing/extra bytes, …).
-    WrongId { expected: u32, found: u32 },
+    WrongId {
+        expected: u32,
+        found: u32,
+    },
     /// The id matched but the value failed to parse.
     Wire(ParseWireError),
 }

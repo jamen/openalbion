@@ -21,7 +21,10 @@ pub fn handler(args: LevInfoArgs) -> anyhow::Result<()> {
     println!("{}", args.input.display());
     println!("  version              {}", header.version);
     println!("  map_version          {}", header.map_version);
-    println!("  dimensions           {} x {}", header.width, header.height);
+    println!(
+        "  dimensions           {} x {}",
+        header.width, header.height
+    );
     println!("  unique_id_count      {}", header.unique_id_count);
     println!("  navigation_offset    {}", header.navigation_offset);
     println!("  checksum             {:#010x}", header.checksum);
@@ -40,14 +43,22 @@ pub fn handler(args: LevInfoArgs) -> anyhow::Result<()> {
             if cell.walkable {
                 walkable += 1;
             }
-            for &t in &[cell.ground_theme.0, cell.ground_theme.1, cell.ground_theme.2] {
+            for &t in &[
+                cell.ground_theme.0,
+                cell.ground_theme.1,
+                cell.ground_theme.2,
+            ] {
                 *theme_usage.entry(t).or_default() += 1;
             }
         }
         let world_scale: f32 = 2048.0;
         let mid_raw = (min + max) * 0.5;
         println!("  height range (raw)   {min:.6} .. {max:.6}");
-        println!("  height range (world) {:.2} .. {:.2} (scale ×{world_scale:.0})", min * world_scale, max * world_scale);
+        println!(
+            "  height range (world) {:.2} .. {:.2} (scale ×{world_scale:.0})",
+            min * world_scale,
+            max * world_scale
+        );
         println!("  terrain Z mid        {:.2}", mid_raw * world_scale);
         println!(
             "  walkable cells       {} / {}",

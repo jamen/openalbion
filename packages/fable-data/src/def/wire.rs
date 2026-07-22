@@ -57,15 +57,23 @@ pub trait Wire: Sized {
 pub enum ParseWireError {
     UnexpectedEnd,
     /// The value isn't in the field's C++ enum table.
-    InvalidEnumValue { value: i32 },
+    InvalidEnumValue {
+        value: i32,
+    },
     /// A tagged-union tag with no matching case.
     InvalidVariantTag(u32),
     Utf8(TakeNullTerminatedUtf8),
     Utf16(TakeNullTerminatedUtf16),
     /// Error inside the `index`th element of a container.
-    Item { index: usize, inner: Box<ParseWireError> },
+    Item {
+        index: usize,
+        inner: Box<ParseWireError>,
+    },
     /// Error inside a named member of a `WireStruct` compound.
-    Member { name: &'static str, inner: Box<ParseWireError> },
+    Member {
+        name: &'static str,
+        inner: Box<ParseWireError>,
+    },
     /// Error inside a sub-component: a value that is itself a stream of
     /// id-carrying field controls (e.g. one `UiDef` state).
     Field(Box<ParseControlError>),
@@ -99,11 +107,17 @@ impl From<TakeError> for ParseWireError {
 
 impl ParseWireError {
     pub fn item(index: usize) -> impl FnOnce(ParseWireError) -> ParseWireError {
-        move |inner| ParseWireError::Item { index, inner: Box::new(inner) }
+        move |inner| ParseWireError::Item {
+            index,
+            inner: Box::new(inner),
+        }
     }
 
     pub fn member(name: &'static str) -> impl FnOnce(ParseWireError) -> ParseWireError {
-        move |inner| ParseWireError::Member { name, inner: Box::new(inner) }
+        move |inner| ParseWireError::Member {
+            name,
+            inner: Box::new(inner),
+        }
     }
 }
 
@@ -403,10 +417,7 @@ impl<K: PartialEq, V> VecMap<K, V> {
 
 // ── def classes ───────────────────────────────────────────────────────────
 /// Parse one field control: `u32 crc32(name)` (validated) then the value.
-pub fn parse_field<T: Wire>(
-    cur: &mut &[u8],
-    name: &'static str,
-) -> Result<T, ParseControlError> {
+pub fn parse_field<T: Wire>(cur: &mut &[u8], name: &'static str) -> Result<T, ParseControlError> {
     let id = take_le::<u32>(cur).map_err(|inner| ParseControlError {
         name,
         reason: ParseControlErrorReason::MalformedId(inner),
@@ -416,7 +427,10 @@ pub fn parse_field<T: Wire>(
     if id != expected {
         return Err(ParseControlError {
             name,
-            reason: ParseControlErrorReason::WrongId { expected, found: id },
+            reason: ParseControlErrorReason::WrongId {
+                expected,
+                found: id,
+            },
         });
     }
 
@@ -486,7 +500,10 @@ mod tests {
         round_trip(vec![1i32, 2, 3]);
         round_trip(Vec::<f32>::new());
         round_trip([0.5f32, -0.5]);
-        round_trip(BTreeMap::from([(1u32, String::from("a")), (2, String::from("b"))]));
+        round_trip(BTreeMap::from([
+            (1u32, String::from("a")),
+            (2, String::from("b")),
+        ]));
         round_trip(VecMap(vec![
             (String::from("MINIMAP_ARENA"), 103i32),
             (String::from("MINIMAP_ABYSS"), 7),
