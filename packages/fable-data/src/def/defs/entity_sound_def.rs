@@ -1,13 +1,15 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CEntitySoundDef` — C++ `CEntitySoundDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct EntitySoundDef {
-        "SoundMap" => pub sound_map: SoundMap,
-        "SoundIdentifier" => pub sound_identifier: String,
-        "VoicePitchOverride" => pub voice_pitch_override: f32 = 1.0,
-        "AnimCriteriaClipDistance" => pub anim_criteria_clip_distance: i32 = 22,
-    }
+/// `CEntitySoundDef` — C++ `CEntitySoundDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct EntitySoundDef {
+    #[def("SoundMap")]
+    pub sound_map: SoundMap,
+    #[def("SoundIdentifier")]
+    pub sound_identifier: String,
+    #[def("VoicePitchOverride", default = 1.0)]
+    pub voice_pitch_override: f32,
+    #[def("AnimCriteriaClipDistance", default = 22)]
+    pub anim_criteria_clip_distance: i32,
 }

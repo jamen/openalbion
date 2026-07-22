@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `OBJECT_FAMILY` — C++ `CObjectFamilyDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ObjectFamilyDef {
-        "Objects" => pub objects: Vec<ObjectFamilyEntry>,
-    }
+/// `OBJECT_FAMILY` — C++ `CObjectFamilyDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ObjectFamilyDef {
+    #[def("Objects")]
+    pub objects: Vec<ObjectFamilyEntry>,
 }

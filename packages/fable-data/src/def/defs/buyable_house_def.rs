@@ -1,16 +1,22 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CBuyableHouseDef` — C++ `CBuyableHouseDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct BuyableHouseDef {
-        "IsBuyable" => pub is_buyable: bool,
-        "InitiallyEmpty" => pub initially_empty: bool,
-        "Price" => pub price: Vec<i32>,
-        "Rent" => pub rent: Vec<i32>,
-        "DaysBetweenRentPayments" => pub days_between_rent_payments: i32 = 2,
-        "IsScripted" => pub is_scripted: bool,
-        "MaxRentBags" => pub max_rent_bags: i32 = 6,
-        "IsBuyableWithoutSignpost" => pub is_buyable_without_signpost: bool,
-    }
+/// `CBuyableHouseDef` — C++ `CBuyableHouseDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct BuyableHouseDef {
+    #[def("IsBuyable")]
+    pub is_buyable: bool,
+    #[def("InitiallyEmpty")]
+    pub initially_empty: bool,
+    #[def("Price")]
+    pub price: Vec<i32>,
+    #[def("Rent")]
+    pub rent: Vec<i32>,
+    #[def("DaysBetweenRentPayments", default = 2)]
+    pub days_between_rent_payments: i32,
+    #[def("IsScripted")]
+    pub is_scripted: bool,
+    #[def("MaxRentBags", default = 6)]
+    pub max_rent_bags: i32,
+    #[def("IsBuyableWithoutSignpost")]
+    pub is_buyable_without_signpost: bool,
 }

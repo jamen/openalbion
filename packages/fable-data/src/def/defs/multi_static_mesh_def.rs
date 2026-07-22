@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CMultiStaticMeshDef` — C++ `CMultiStaticMeshDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct MultiStaticMeshDef {
-        "Meshes" => pub meshes: Vec<MultiStaticMeshEntryDef>,
-    }
+/// `CMultiStaticMeshDef` — C++ `CMultiStaticMeshDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct MultiStaticMeshDef {
+    #[def("Meshes")]
+    pub meshes: Vec<MultiStaticMeshEntryDef>,
 }

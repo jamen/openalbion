@@ -1,10 +1,10 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// C++ `CShoveHaPennyRegionDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ShoveHaPennyRegionDef {
-        "Start" => pub start: f32,
-        "Score" => pub score: f32,
-    }
+/// C++ `CShoveHaPennyRegionDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ShoveHaPennyRegionDef {
+    #[def("Start")]
+    pub start: f32,
+    #[def("Score")]
+    pub score: f32,
 }

@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CCardPositionsDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CardPositionsDef {
-        "Offset" => pub offset: Vec<Vector2D>,
-    }
+/// C++ `CCardPositionsDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CardPositionsDef {
+    #[def("Offset")]
+    pub offset: Vec<Vector2D>,
 }

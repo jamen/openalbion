@@ -1,16 +1,21 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CDoorDef` — C++ `CDoorDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct DoorDef {
-        "TriggerType" => pub trigger_type: DoorTriggerType,
-        "TriggerRadius" => pub trigger_radius: f32 = 3.5,
-        "OpenCollisionMesh" => pub open_collision_mesh: i32,
-        "ClosedCollisionMesh" => pub closed_collision_mesh: i32,
-        "PostVandalismCrimeIfDestroyed" => pub post_vandalism_crime_if_destroyed: bool,
-        "LockPickable" => pub lock_pickable: bool = true,
-        "PreventLockingByOwner" => pub prevent_locking_by_owner: bool,
-    }
+/// `CDoorDef` — C++ `CDoorDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct DoorDef {
+    #[def("TriggerType")]
+    pub trigger_type: DoorTriggerType,
+    #[def("TriggerRadius", default = 3.5)]
+    pub trigger_radius: f32,
+    #[def("OpenCollisionMesh")]
+    pub open_collision_mesh: i32,
+    #[def("ClosedCollisionMesh")]
+    pub closed_collision_mesh: i32,
+    #[def("PostVandalismCrimeIfDestroyed")]
+    pub post_vandalism_crime_if_destroyed: bool,
+    #[def("LockPickable", default = true)]
+    pub lock_pickable: bool,
+    #[def("PreventLockingByOwner")]
+    pub prevent_locking_by_owner: bool,
 }

@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CHeroSoulsRoundDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HeroSoulsRoundDef {
-        "NumWaves" => pub num_waves: i32,
-        "Waves" => pub waves: Vec<HeroSoulsWaveDef>,
-    }
+/// C++ `CHeroSoulsRoundDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HeroSoulsRoundDef {
+    #[def("NumWaves")]
+    pub num_waves: i32,
+    #[def("Waves")]
+    pub waves: Vec<HeroSoulsWaveDef>,
 }

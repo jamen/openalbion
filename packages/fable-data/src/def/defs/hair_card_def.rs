@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CHairCardDef` — C++ `CHairCardDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HairCardDef {
-        "HairObject" => pub hair_object: i32,
-    }
+/// `CHairCardDef` — C++ `CHairCardDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HairCardDef {
+    #[def("HairObject")]
+    pub hair_object: i32,
 }

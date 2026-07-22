@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CAbilityDef` — C++ `CAbilityDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct AbilityDef {
-        "Ability" => pub ability: HeroAbility,
-    }
+/// `CAbilityDef` — C++ `CAbilityDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct AbilityDef {
+    #[def("Ability")]
+    pub ability: HeroAbility,
 }

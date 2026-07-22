@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CPrizeScoreDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct PrizeScoreDef {
-        "Score" => pub score: f32,
-        "Mult" => pub mult: DefIndex,
-    }
+/// C++ `CPrizeScoreDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct PrizeScoreDef {
+    #[def("Score")]
+    pub score: f32,
+    #[def("Mult")]
+    pub mult: DefIndex,
 }

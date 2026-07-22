@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CHitLocationsDef` — C++ `CHitLocationsDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HitLocationsDef {
-        "HitLocations" => pub hit_locations: Vec<i32>,
-    }
+/// `CHitLocationsDef` — C++ `CHitLocationsDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HitLocationsDef {
+    #[def("HitLocations")]
+    pub hit_locations: Vec<i32>,
 }

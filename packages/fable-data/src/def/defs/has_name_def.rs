@@ -1,11 +1,12 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CHasNameDef` — C++ `CHasNameDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HasNameDef {
-        "DefaultNameTag" => pub default_name_tag: u32,
-        "Home" => pub home: u32,
-        "Occupation" => pub occupation: u32,
-    }
+/// `CHasNameDef` — C++ `CHasNameDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HasNameDef {
+    #[def("DefaultNameTag")]
+    pub default_name_tag: u32,
+    #[def("Home")]
+    pub home: u32,
+    #[def("Occupation")]
+    pub occupation: u32,
 }

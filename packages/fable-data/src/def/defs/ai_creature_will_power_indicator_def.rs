@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CAICreatureWillPowerIndicatorDef` — C++ `CAICreatureWillPowerIndicatorDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct AICreatureWillPowerIndicatorDef {
-        "RechargeTime" => pub recharge_time: f32 = 5.0,
-    }
+/// `CAICreatureWillPowerIndicatorDef` — C++ `CAICreatureWillPowerIndicatorDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct AICreatureWillPowerIndicatorDef {
+    #[def("RechargeTime", default = 5.0)]
+    pub recharge_time: f32,
 }

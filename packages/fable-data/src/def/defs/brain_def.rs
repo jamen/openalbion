@@ -1,12 +1,13 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `BRAIN` — C++ `CBrainDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct BrainDef {
-        "UpdateZones" => pub update_zones: Vec<BrainUpdateZone>,
-        "Behaviours" => pub behaviours: Vec<BrainBehaviour>,
-        "DisabledBehaviours" => pub disabled_behaviours: Vec<DefString>,
-    }
+/// `BRAIN` — C++ `CBrainDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct BrainDef {
+    #[def("UpdateZones")]
+    pub update_zones: Vec<BrainUpdateZone>,
+    #[def("Behaviours")]
+    pub behaviours: Vec<BrainBehaviour>,
+    #[def("DisabledBehaviours")]
+    pub disabled_behaviours: Vec<DefString>,
 }

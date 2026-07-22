@@ -1,12 +1,13 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `VILLAGER_INTERACTION` — C++ `CVillagerInteractionsDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct VillagerInteractionsDef {
-        "Animation1" => pub animation1: DefString,
-        "Animation2" => pub animation2: DefString,
-        "Distance" => pub distance: f32,
-    }
+/// `VILLAGER_INTERACTION` — C++ `CVillagerInteractionsDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct VillagerInteractionsDef {
+    #[def("Animation1")]
+    pub animation1: DefString,
+    #[def("Animation2")]
+    pub animation2: DefString,
+    #[def("Distance")]
+    pub distance: f32,
 }

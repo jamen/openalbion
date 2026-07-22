@@ -1,13 +1,15 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CActionUseDef` — C++ `CActionUseDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ActionUseDef {
-        "AnimationGroup" => pub animation_group: DefString,
-        "SnapToActionPoint" => pub snap_to_action_point: bool,
-        "IgnoreActionPoints" => pub ignore_action_points: bool = true,
-        "TutorialCategory" => pub tutorial_category: TutorialCategory,
-    }
+/// `CActionUseDef` — C++ `CActionUseDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ActionUseDef {
+    #[def("AnimationGroup")]
+    pub animation_group: DefString,
+    #[def("SnapToActionPoint")]
+    pub snap_to_action_point: bool,
+    #[def("IgnoreActionPoints", default = true)]
+    pub ignore_action_points: bool,
+    #[def("TutorialCategory")]
+    pub tutorial_category: TutorialCategory,
 }

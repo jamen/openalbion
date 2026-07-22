@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CCombatAbilityStrafeDef` — C++ `CCombatAbilityStrafeDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CombatAbilityStrafeDef {
-        "RotationSpeed" => pub rotation_speed: f32 = 20.0,
-        "CombatAbility" => pub combat_ability: CombatAbilityData,
-    }
+/// `CCombatAbilityStrafeDef` — C++ `CCombatAbilityStrafeDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CombatAbilityStrafeDef {
+    #[def("RotationSpeed", default = 20.0)]
+    pub rotation_speed: f32,
+    #[def("CombatAbility")]
+    pub combat_ability: CombatAbilityData,
 }

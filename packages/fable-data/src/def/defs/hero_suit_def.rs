@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CHeroSuitDef` — C++ `CHeroSuitDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HeroSuitDef {
-        "SuitParts" => pub suit_parts: VecMap<i32, IdleStateGroup>,
-    }
+/// `CHeroSuitDef` — C++ `CHeroSuitDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HeroSuitDef {
+    #[def("SuitParts")]
+    pub suit_parts: VecMap<i32, IdleStateGroup>,
 }

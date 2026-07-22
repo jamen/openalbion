@@ -1,10 +1,10 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `FACTION` — C++ `CFactionDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct FactionDef {
-        "EnemyFactions" => pub enemy_factions: Vec<String>,
-        "AlliedFactions" => pub allied_factions: Vec<String>,
-    }
+/// `FACTION` — C++ `CFactionDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct FactionDef {
+    #[def("EnemyFactions")]
+    pub enemy_factions: Vec<String>,
+    #[def("AlliedFactions")]
+    pub allied_factions: Vec<String>,
 }

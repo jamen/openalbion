@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CTextureReplacementDef` — C++ `CTextureReplacementDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct TextureReplacementDef {
-        "Entries" => pub entries: Vec<TextureReplacementEntry>,
-    }
+/// `CTextureReplacementDef` — C++ `CTextureReplacementDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct TextureReplacementDef {
+    #[def("Entries")]
+    pub entries: Vec<TextureReplacementEntry>,
 }

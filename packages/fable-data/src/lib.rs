@@ -23,3 +23,8 @@ pub mod lev;
 // mod save;
 // mod stb;
 pub mod wld;
+
+/// Proc-macro derives for the def wire model (see [`def::wire`] / [`def::enums`]).
+/// Re-exported at the crate root so the generated `crate::def::…` paths resolve
+/// and def modules can `use crate::{DefStruct, WireStruct, …}`.
+pub use fable_data_derive::{DefEnum, DefFlags, DefStruct, DefVariant, WireStruct};

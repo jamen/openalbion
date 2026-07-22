@@ -10,12 +10,13 @@
 //! emission.
 //!
 //! Two shapes:
-//! - [`def_enum!`] — a strict, closed Rust enum. Used where the compiled data
-//!   provably stays inside the C++ enum table (verified by scanning all three
-//!   bins). Parsing an out-of-table value is an error.
-//! - [`def_flags!`] — a bit-set newtype. Used for the "enums" the game actually
-//!   ORs together (e.g. `TABLE_EXPANSION_HORIZONTAL | TABLE_EXPANSION_VERTICAL`
-//!   occurs in game.bin) or that legitimately carry empty/unlisted values.
+//! - `#[derive(DefEnum)]` — a strict, closed Rust enum. Used where the compiled
+//!   data provably stays inside the C++ enum table (verified by scanning all
+//!   three bins). Parsing an out-of-table value is an error.
+//! - `#[derive(DefFlags)]` — a bit-set newtype. Used for the "enums" the game
+//!   actually ORs together (e.g. `TABLE_EXPANSION_HORIZONTAL |
+//!   TABLE_EXPANSION_VERTICAL` occurs in game.bin) or that legitimately carry
+//!   empty/unlisted values.
 
 /// A def enum: a closed `i32`-repr enum with a total mapping to/from the wire
 /// value and the C++ enumerator symbols used in text defs.
@@ -25,943 +26,1374 @@ pub trait DefEnum: Sized + Copy {
     fn to_i32(self) -> i32;
 }
 
-macro_rules! def_enum {
-    (
-        $(#[$meta:meta])*
-        pub enum $name:ident: i32 {
-            $( $(#[$vmeta:meta])* $variant:ident = $value:literal => $symbol:literal, )+
-        }
-    ) => {
-        $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        #[repr(i32)]
-        pub enum $name {
-            $( $(#[$vmeta])* $variant = $value, )+
-        }
+use crate::{DefEnum, DefFlags};
 
-        impl $name {
-            /// The original C++ enumerator name, as used by text defs.
-            pub const fn symbol(self) -> &'static str {
-                match self { $( Self::$variant => $symbol, )+ }
-            }
-
-            /// Look up a variant by its C++ enumerator name.
-            pub fn from_symbol(symbol: &str) -> Option<Self> {
-                match symbol {
-                    $( $symbol => Some(Self::$variant), )+
-                    _ => None,
-                }
-            }
-        }
-
-        impl crate::def::enums::DefEnum for $name {
-            fn from_i32(value: i32) -> Option<Self> {
-                match value {
-                    $( $value => Some(Self::$variant), )+
-                    _ => None,
-                }
-            }
-
-            fn to_i32(self) -> i32 {
-                self as i32
-            }
-        }
-
-        impl crate::def::visit::DefDefault for $name {
-            fn def_default() -> Self {
-                // The first variant is the conventional default/zero value.
-                [$( Self::$variant ),+][0]
-            }
-        }
-
-        impl crate::def::wire::Wire for $name {
-            fn parse(
-                cur: &mut &[u8],
-            ) -> Result<Self, crate::def::wire::ParseWireError> {
-                use crate::def::enums::DefEnum;
-                let value = <i32 as crate::def::wire::Wire>::parse(cur)?;
-                Self::from_i32(value)
-                    .ok_or(crate::def::wire::ParseWireError::InvalidEnumValue { value })
-            }
-
-            fn serialize(
-                &self,
-                out: &mut &mut [u8],
-            ) -> Result<(), crate::bytes::UnexpectedEnd> {
-                use crate::def::enums::DefEnum;
-                crate::def::wire::Wire::serialize(&self.to_i32(), out)
-            }
-
-            fn wire_size(&self) -> usize {
-                size_of::<i32>()
-            }
-        }
-
-        impl crate::def::visit::EnumSlot for $name {
-            fn get_i32(&self) -> i32 {
-                use crate::def::enums::DefEnum;
-                self.to_i32()
-            }
-
-            fn set_i32(&mut self, value: i32) -> Result<(), i32> {
-                use crate::def::enums::DefEnum;
-                *self = Self::from_i32(value).ok_or(value)?;
-                Ok(())
-            }
-        }
-
-        impl crate::def::visit::AsField for $name {
-            fn as_field(&mut self) -> crate::def::visit::FieldRef<'_> {
-                crate::def::visit::FieldRef::Enum(self)
-            }
-        }
-    };
+/// UI element type.
+///
+/// C++ `NUISystem::EType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum UiType {
+    #[def("UI_TYPE_SPRITE")]
+    Sprite = 0,
+    #[def("UI_TYPE_MORPHING_SPRITE")]
+    MorphingSprite = 1,
+    #[def("UI_TYPE_TABLE")]
+    Table = 2,
+    #[def("UI_TYPE_MESH")]
+    Mesh = 3,
+    #[def("UI_TYPE_COMPOSITE")]
+    Composite = 4,
+    #[def("UI_TYPE_CHANGING_STATE_COMPOSITE")]
+    ChangingStateComposite = 5,
+    #[def("UI_TYPE_TEXT")]
+    Text = 6,
+    #[def("UI_TYPE_MENU_ENTRY")]
+    MenuEntry = 7,
+    #[def("UI_TYPE_LIST")]
+    List = 8,
+    #[def("UI_TYPE_VIEWPORT")]
+    Viewport = 9,
+    #[def("UI_TYPE_FRONTEND_SCREEN")]
+    FrontendScreen = 10,
+    #[def("UI_TYPE_FRONTEND_BUTTON")]
+    FrontendButton = 11,
+    #[def("UI_TYPE_FRONTEND_LIST")]
+    FrontendList = 12,
+    #[def("UI_TYPE_SCROLLING_VIEWPORT")]
+    ScrollingViewport = 13,
+    #[def("UI_TYPE_LIST_ARROW")]
+    ListArrow = 14,
+    #[def("UI_TYPE_SLIDER")]
+    Slider = 15,
+    #[def("UI_TYPE_TEXT_SLIDER")]
+    TextSlider = 16,
+    #[def("UI_TYPE_MOVIE")]
+    Movie = 17,
+    #[def("UI_TYPE_SWAPPING_STATE_COMPOSITE")]
+    SwappingStateComposite = 18,
+    #[def("UI_TYPE_SCROLLING_COMPOSITE")]
+    ScrollingComposite = 19,
+    #[def("UI_TYPE_TEXT_CONTAINER")]
+    TextContainer = 20,
+    #[def("UI_TYPE_ZOOMING_COMPOSITE")]
+    ZoomingComposite = 21,
+    #[def("UI_TYPE_COMPONENT_CONTAINER")]
+    ComponentContainer = 22,
+    #[def("UI_TYPE_SPELL_CONTAINER")]
+    SpellContainer = 23,
+    #[def("UI_TYPE_SPELL_CONTAINER_LIST")]
+    SpellContainerList = 24,
+    #[def("UI_TYPE_YESNO")]
+    YesNo = 25,
+    #[def("UI_TYPE_OK")]
+    Ok = 26,
+    #[def("UI_TYPE_PARTICLE_EFFECT")]
+    ParticleEffect = 27,
+    #[def("UI_TYPE_CONTROLLERDISCONNECT")]
+    ControllerDisconnect = 28,
+    #[def("UI_TYPE_DIRTYDISC")]
+    DirtyDisc = 29,
+    #[def("UI_TYPE_ICON_TEXT")]
+    IconText = 30,
+    #[def("UI_TYPE_DYNAMIC_LIST")]
+    DynamicList = 31,
+    #[def("UI_TYPE_MOUSE_POINTER")]
+    MousePointer = 32,
+    #[def("UI_TYPE_HOVERABLE")]
+    Hoverable = 33,
+    #[def("UI_TYPE_CLICKABLE")]
+    Clickable = 34,
+    #[def("UI_TYPE_DRAGGABLE")]
+    Draggable = 35,
+    #[def("UI_TYPE_DRAGGABLE_INTO")]
+    DraggableInto = 36,
+    #[def("UI_TYPE_EDIT_BOX")]
+    EditBox = 37,
+    #[def("UI_TYPE_NAVIGATION_BUTTON")]
+    NavigationButton = 38,
+    #[def("UI_TYPE_KEY_REDEFINER")]
+    KeyRedefiner = 39,
+    #[def("UI_TYPE_REDEFINER_LIST")]
+    RedefinerList = 40,
+    #[def("UI_TYPE_SCROLLBAR")]
+    Scrollbar = 41,
+    #[def("UI_TYPE_SCROLLBAR_OUTSIDE")]
+    ScrollbarOutside = 42,
+    #[def("UI_TYPE_SCROLLABLE_LIST")]
+    ScrollableList = 43,
 }
 
-macro_rules! def_flags {
-    (
-        $(#[$meta:meta])*
-        pub struct $name:ident: i32 {
-            $( $(#[$vmeta:meta])* $flag:ident = $value:literal => $symbol:literal, )+
-        }
-    ) => {
-        $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-        pub struct $name(pub i32);
+/// Table growth direction. Declared as an enum in C++ but OR-combined in real data (game.bin has `3`).
+///
+/// C++ `NUISystem::ETableExpansionTypes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    HORIZONTAL = 1 => "TABLE_EXPANSION_HORIZONTAL",
+    VERTICAL = 2 => "TABLE_EXPANSION_VERTICAL",
+)]
+pub struct TableExpansion(pub i32);
 
-        #[allow(non_upper_case_globals)]
-        impl $name {
-            $( $(#[$vmeta])* pub const $flag: Self = Self($value); )+
-
-            pub const fn from_i32(value: i32) -> Self {
-                Self(value)
-            }
-
-            pub const fn to_i32(self) -> i32 {
-                self.0
-            }
-
-            pub const fn is_empty(self) -> bool {
-                self.0 == 0
-            }
-
-            pub const fn contains(self, other: Self) -> bool {
-                self.0 & other.0 == other.0
-            }
-
-            /// The C++ enumerator name, when this is exactly one known flag.
-            pub const fn symbol(self) -> Option<&'static str> {
-                // Some flag sets alias a value (e.g. a `NONE = 0`), so later arms
-                // for the same value are unreachable — the first symbol wins.
-                #[allow(unreachable_patterns)]
-                match self.0 {
-                    $( $value => Some($symbol), )+
-                    _ => None,
-                }
-            }
-
-            /// Look up a single flag by its C++ enumerator name.
-            pub fn from_symbol(symbol: &str) -> Option<Self> {
-                match symbol {
-                    $( $symbol => Some(Self::$flag), )+
-                    _ => None,
-                }
-            }
-        }
-
-        impl crate::def::visit::DefDefault for $name {
-            fn def_default() -> Self {
-                Self(0)
-            }
-        }
-
-        impl core::ops::BitOr for $name {
-            type Output = Self;
-            fn bitor(self, rhs: Self) -> Self {
-                Self(self.0 | rhs.0)
-            }
-        }
-
-        impl core::ops::BitOrAssign for $name {
-            fn bitor_assign(&mut self, rhs: Self) {
-                self.0 |= rhs.0;
-            }
-        }
-
-        impl crate::def::wire::Wire for $name {
-            fn parse(
-                cur: &mut &[u8],
-            ) -> Result<Self, crate::def::wire::ParseWireError> {
-                Ok(Self::from_i32(<i32 as crate::def::wire::Wire>::parse(cur)?))
-            }
-
-            fn serialize(
-                &self,
-                out: &mut &mut [u8],
-            ) -> Result<(), crate::bytes::UnexpectedEnd> {
-                crate::def::wire::Wire::serialize(&self.to_i32(), out)
-            }
-
-            fn wire_size(&self) -> usize {
-                size_of::<i32>()
-            }
-        }
-
-        impl crate::def::visit::FlagsSlot for $name {
-            fn get_i32(&self) -> i32 {
-                self.0
-            }
-
-            fn set_i32(&mut self, value: i32) {
-                self.0 = value;
-            }
-        }
-
-        impl crate::def::visit::AsField for $name {
-            fn as_field(&mut self) -> crate::def::visit::FieldRef<'_> {
-                crate::def::visit::FieldRef::Flags(self)
-            }
-        }
-    };
+/// Text alignment.
+///
+/// C++ `NUISystem::ETextAlignement`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum TextAlignment {
+    #[def("LEFT")]
+    Left = 0,
+    #[def("CENTER")]
+    Center = 1,
+    #[def("RIGHT")]
+    Right = 2,
 }
 
-def_enum! {
-    /// UI element type.
-    ///
-    /// C++ `NUISystem::EType`.
-    pub enum UiType: i32 {
-        Sprite = 0 => "UI_TYPE_SPRITE",
-        MorphingSprite = 1 => "UI_TYPE_MORPHING_SPRITE",
-        Table = 2 => "UI_TYPE_TABLE",
-        Mesh = 3 => "UI_TYPE_MESH",
-        Composite = 4 => "UI_TYPE_COMPOSITE",
-        ChangingStateComposite = 5 => "UI_TYPE_CHANGING_STATE_COMPOSITE",
-        Text = 6 => "UI_TYPE_TEXT",
-        MenuEntry = 7 => "UI_TYPE_MENU_ENTRY",
-        List = 8 => "UI_TYPE_LIST",
-        Viewport = 9 => "UI_TYPE_VIEWPORT",
-        FrontendScreen = 10 => "UI_TYPE_FRONTEND_SCREEN",
-        FrontendButton = 11 => "UI_TYPE_FRONTEND_BUTTON",
-        FrontendList = 12 => "UI_TYPE_FRONTEND_LIST",
-        ScrollingViewport = 13 => "UI_TYPE_SCROLLING_VIEWPORT",
-        ListArrow = 14 => "UI_TYPE_LIST_ARROW",
-        Slider = 15 => "UI_TYPE_SLIDER",
-        TextSlider = 16 => "UI_TYPE_TEXT_SLIDER",
-        Movie = 17 => "UI_TYPE_MOVIE",
-        SwappingStateComposite = 18 => "UI_TYPE_SWAPPING_STATE_COMPOSITE",
-        ScrollingComposite = 19 => "UI_TYPE_SCROLLING_COMPOSITE",
-        TextContainer = 20 => "UI_TYPE_TEXT_CONTAINER",
-        ZoomingComposite = 21 => "UI_TYPE_ZOOMING_COMPOSITE",
-        ComponentContainer = 22 => "UI_TYPE_COMPONENT_CONTAINER",
-        SpellContainer = 23 => "UI_TYPE_SPELL_CONTAINER",
-        SpellContainerList = 24 => "UI_TYPE_SPELL_CONTAINER_LIST",
-        YesNo = 25 => "UI_TYPE_YESNO",
-        Ok = 26 => "UI_TYPE_OK",
-        ParticleEffect = 27 => "UI_TYPE_PARTICLE_EFFECT",
-        ControllerDisconnect = 28 => "UI_TYPE_CONTROLLERDISCONNECT",
-        DirtyDisc = 29 => "UI_TYPE_DIRTYDISC",
-        IconText = 30 => "UI_TYPE_ICON_TEXT",
-        DynamicList = 31 => "UI_TYPE_DYNAMIC_LIST",
-        MousePointer = 32 => "UI_TYPE_MOUSE_POINTER",
-        Hoverable = 33 => "UI_TYPE_HOVERABLE",
-        Clickable = 34 => "UI_TYPE_CLICKABLE",
-        Draggable = 35 => "UI_TYPE_DRAGGABLE",
-        DraggableInto = 36 => "UI_TYPE_DRAGGABLE_INTO",
-        EditBox = 37 => "UI_TYPE_EDIT_BOX",
-        NavigationButton = 38 => "UI_TYPE_NAVIGATION_BUTTON",
-        KeyRedefiner = 39 => "UI_TYPE_KEY_REDEFINER",
-        RedefinerList = 40 => "UI_TYPE_REDEFINER_LIST",
-        Scrollbar = 41 => "UI_TYPE_SCROLLBAR",
-        ScrollbarOutside = 42 => "UI_TYPE_SCROLLBAR_OUTSIDE",
-        ScrollableList = 43 => "UI_TYPE_SCROLLABLE_LIST",
-    }
+/// Order in which a UI state change propagates.
+///
+/// C++ `NUISystem::EStateChangeType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum StateChangeType {
+    #[def("STATE_CHANGE_SIMULTANEOUS")]
+    Simultaneous = 0,
+    #[def("STATE_CHANGE_PARENT_FIRST")]
+    ParentFirst = 1,
+    #[def("STATE_CHANGE_CHILDREN_FIRST")]
+    ChildrenFirst = 2,
+    #[def("STATE_CHANGE_PARENT_ONLY")]
+    ParentOnly = 3,
+    #[def("STATE_CHANGE_CHILDREN_ONLY")]
+    ChildrenOnly = 4,
 }
 
-def_flags! {
-    /// Table growth direction. Declared as an enum in C++ but OR-combined in real data (game.bin has `3`).
-    ///
-    /// C++ `NUISystem::ETableExpansionTypes`.
-    pub struct TableExpansion: i32 {
-        HORIZONTAL = 1 => "TABLE_EXPANSION_HORIZONTAL",
-        VERTICAL = 2 => "TABLE_EXPANSION_VERTICAL",
-    }
+/// UI action fired by buttons and menu entries.
+///
+/// C++ `NUISystem::EActionType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ActionType {
+    #[def("UI_ACTION_TYPE_NONE")]
+    TypeNone = 0,
+    #[def("UI_ACTION_TYPE_WIELD")]
+    TypeWield = 1,
+    #[def("UI_ACTION_TYPE_AUGMENT")]
+    TypeAugment = 2,
+    #[def("UI_ACTION_TYPE_CHANGESTATE")]
+    TypeChangestate = 3,
+    #[def("UI_ACTION_TYPE_TAKE_BOAST")]
+    TypeTakeBoast = 4,
+    #[def("UI_ACTION_TYPE_TELEPORT")]
+    TypeTeleport = 5,
+    #[def("UI_ACTION_TYPE_TAKE_QUEST")]
+    TypeTakeQuest = 6,
+    #[def("UI_ACTION_TYPE_BUY_STAT")]
+    TypeBuyStat = 7,
+    #[def("UI_ACTION_TYPE_BUY_ABILITY")]
+    TypeBuyAbility = 8,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_OPTIONS")]
+    TypeNextScreenOptions = 9,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_LIVE_AWARE")]
+    TypeNextScreenLiveAware = 10,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_EXTRAS")]
+    TypeNextScreenExtras = 11,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_AUDIO_OPTIONS")]
+    TypeNextScreenAudioOptions = 12,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_VIDEO_OPTIONS")]
+    TypeNextScreenVideoOptions = 13,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_CAMERA_OPTIONS")]
+    TypeNextScreenCameraOptions = 14,
+    #[def("UI_ACTION_TYPE_NEW_GAME")]
+    TypeNewGame = 15,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_PROFILES")]
+    TypeNextScreenProfiles = 16,
+    #[def("UI_ACTION_TYPE_LOAD_GAME")]
+    TypeLoadGame = 17,
+    #[def("UI_ACTION_TYPE_LOGIN")]
+    TypeLogin = 18,
+    #[def("UI_ACTION_TYPE_FRIENDS")]
+    TypeFriends = 19,
+    #[def("UI_ACTION_TYPE_APPEAR_OFFLINE")]
+    TypeAppearOffline = 20,
+    #[def("UI_ACTION_TYPE_DELETE")]
+    TypeDelete = 21,
+    #[def("UI_ACTION_TYPE_ADD_CHILD")]
+    TypeAddChild = 22,
+    #[def("UI_ACTION_TYPE_ADD_CHILD_AUGMENTATION")]
+    TypeAddChildAugmentation = 23,
+    #[def("UI_ACTION_TYPE_DELETE_ALL")]
+    TypeDeleteAll = 24,
+    #[def("UI_ACTION_TYPE_USE_ITEM")]
+    TypeUseItem = 25,
+    #[def("UI_ACTION_TYPE_ITEM_ASSIGN_LEFT")]
+    TypeItemAssignLeft = 26,
+    #[def("UI_ACTION_TYPE_ITEM_ASSIGN_RIGHT")]
+    TypeItemAssignRight = 27,
+    #[def("UI_ACTION_TYPE_ITEM_ASSIGN_DOWN")]
+    TypeItemAssignDown = 28,
+    #[def("UI_ACTION_TYPE_ITEM_ASSIGN_UP")]
+    TypeItemAssignUp = 29,
+    #[def("UI_ACTION_TYPE_CLOTHING_WEAR")]
+    TypeClothingWear = 30,
+    #[def("UI_ACTION_TYPE_UPDATE_MANNEQUIN_CLOTHING")]
+    TypeUpdateMannequinClothing = 31,
+    #[def("UI_ACTION_TYPE_BUY")]
+    TypeBuy = 36,
+    #[def("UI_ACTION_TYPE_SELL")]
+    TypeSell = 37,
+    #[def("UI_ACTION_TYPE_DELETE_PREVIOUS")]
+    TypeDeletePrevious = 38,
+    #[def("UI_ACTION_TYPE_RESET_CLOTHING_MANNEQUIN")]
+    TypeResetClothingMannequin = 39,
+    #[def("UI_ACTION_TYPE_SET_BRIGHTNESS")]
+    TypeSetBrightness = 40,
+    #[def("UI_ACTION_TYPE_SET_SOUND")]
+    TypeSetSound = 41,
+    #[def("UI_ACTION_TYPE_SET_MUSIC")]
+    TypeSetMusic = 42,
+    #[def("UI_ACTION_TYPE_SET_CAMERA_ROTATION")]
+    TypeSetCameraRotation = 43,
+    #[def("UI_ACTION_TYPE_SET_CAMERA_UP_DOWN")]
+    TypeSetCameraUpDown = 44,
+    #[def("UI_ACTION_TYPE_SET_VIBRATION")]
+    TypeSetVibration = 45,
+    #[def("UI_ACTION_TYPE_SET_HEADPHONES")]
+    TypeSetHeadphones = 46,
+    #[def("UI_ACTION_TYPE_SET_SUBTITLES")]
+    TypeSetSubtitles = 47,
+    #[def("UI_ACTION_TYPE_OPEN_MAP")]
+    TypeOpenMap = 48,
+    #[def("UI_ACTION_TYPE_OPEN_ABILITIES")]
+    TypeOpenAbilities = 49,
+    #[def("UI_ACTION_TYPE_OPEN_WEAPONS")]
+    TypeOpenWeapons = 50,
+    #[def("UI_ACTION_TYPE_OPEN_STATS")]
+    TypeOpenStats = 51,
+    #[def("UI_ACTION_TYPE_OPEN_CLOTHING")]
+    TypeOpenClothing = 52,
+    #[def("UI_ACTION_TYPE_OPEN_ITEMS")]
+    TypeOpenItems = 53,
+    #[def("UI_ACTION_TYPE_CLOSE_MAP")]
+    TypeCloseMap = 54,
+    #[def("UI_ACTION_TYPE_CLOSE_ABILITIES")]
+    TypeCloseAbilities = 55,
+    #[def("UI_ACTION_TYPE_CLOSE_WEAPONS")]
+    TypeCloseWeapons = 56,
+    #[def("UI_ACTION_TYPE_CLOSE_STATS")]
+    TypeCloseStats = 57,
+    #[def("UI_ACTION_TYPE_CLOSE_CLOTHING")]
+    TypeCloseClothing = 58,
+    #[def("UI_ACTION_TYPE_CLOSE_ITEMS")]
+    TypeCloseItems = 59,
+    #[def("UI_ACTION_TYPE_CLOSE_MENU")]
+    TypeCloseMenu = 60,
+    #[def("UI_ACTION_TYPE_GUILD_SEAL_RECALL")]
+    TypeGuildSealRecall = 61,
+    #[def("UI_ACTION_TYPE_LOAD")]
+    TypeLoad = 62,
+    #[def("UI_ACTION_TYPE_SAVE")]
+    TypeSave = 63,
+    #[def("UI_ACTION_TYPE_CLOSE_PAUSE_MENU")]
+    TypeClosePauseMenu = 64,
+    #[def("UI_ACTION_TYPE_PLAY_MOVIE")]
+    TypePlayMovie = 65,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_PROFILES_SAVED_GAMES")]
+    TypeNextScreenProfilesSavedGames = 66,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_CREDITS")]
+    TypeNextScreenCredits = 67,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_WEAPONS_LIST")]
+    TypeConstructWeaponsList = 68,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_CLOTHING_LIST")]
+    TypeConstructClothingList = 69,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_ITEMS_LIST")]
+    TypeConstructItemsList = 70,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_SKILLS_LIST")]
+    TypeConstructSkillsList = 71,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_QUESTS_LIST")]
+    TypeConstructQuestsList = 72,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_MAP_LIST")]
+    TypeConstructMapList = 73,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_STATS_LIST")]
+    TypeConstructStatsList = 74,
+    #[def("UI_ACTION_TYPE_CHANGE_CHILD_STATE")]
+    TypeChangeChildState = 75,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_EXPERIENCE_LIST")]
+    TypeConstructExperienceList = 76,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_PERSONALITY_LIST")]
+    TypeConstructPersonalityList = 77,
+    #[def("UI_ACTION_TYPE_SET_HUD")]
+    TypeSetHud = 78,
+    #[def("UI_ACTION_TYPE_CLOSE_QUICK_ACCESS_MENU")]
+    TypeCloseQuickAccessMenu = 79,
+    #[def("UI_ACTION_TYPE_CLOSE_TELEPORT_MENU")]
+    TypeCloseTeleportMenu = 80,
+    #[def("UI_ACTION_TYPE_BUY_BULK")]
+    TypeBuyBulk = 81,
+    #[def("UI_ACTION_TYPE_SELL_BULK")]
+    TypeSellBulk = 82,
+    #[def("UI_ACTION_TYPE_SET_TUTORIALS")]
+    TypeSetTutorials = 83,
+    #[def("UI_ACTION_TYPE_SET_SHOW_BUDDY_NAMES")]
+    TypeSetShowBuddyNames = 84,
+    #[def("UI_ACTION_TYPE_QUIT_TO_FRONT_END")]
+    TypeQuitToFrontEnd = 85,
+    #[def("UI_ACTION_TYPE_PREVIOUS_SCREEN")]
+    TypePreviousScreen = 86,
+    #[def("UI_ACTION_TYPE_ACCEPT_CHANGES")]
+    TypeAcceptChanges = 87,
+    #[def("UI_ACTION_TYPE_SET_DIALOGUE")]
+    TypeSetDialogue = 88,
+    #[def("UI_ACTION_TYPE_XLIVE")]
+    TypeXlive = 89,
+    #[def("UI_ACTION_TYPE_XLIVE_BACK")]
+    TypeXliveBack = 90,
+    #[def("UI_ACTION_TYPE_LOGOUT")]
+    TypeLogout = 91,
+    #[def("UI_ACTION_TYPE_DEMOS")]
+    TypeDemos = 92,
+    #[def("UI_ACTION_TYPE_SET_GUILD_MASTER")]
+    TypeSetGuildMaster = 93,
+    #[def("UI_ACTION_TYPE_SET_HUD_TOOLTIPS")]
+    TypeSetHudTooltips = 94,
+    #[def("UI_ACTION_TYPE_UNDO_BUY_ABILITY")]
+    TypeUndoBuyAbility = 200,
+    #[def("UI_ACTION_TYPE_UNDO_BUY_STAT")]
+    TypeUndoBuyStat = 201,
+    #[def("UI_ACTION_TYPE_GIVE_EXCLUSIVE_INPUT")]
+    TypeGiveExclusiveInput = 202,
+    #[def("UI_ACTION_TYPE_REMOVE_EXCLUSIVE_INPUT")]
+    TypeRemoveExclusiveInput = 203,
+    #[def("UI_ACTION_TYPE_SEND_BACK_EVENT")]
+    TypeSendBackEvent = 204,
+    #[def("UI_ACTION_TYPE_SHOW_SPELL_SELECTION")]
+    TypeShowSpellSelection = 205,
+    #[def("UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN")]
+    TypeSetSpellToAssign = 206,
+    #[def("UI_ACTION_TYPE_TELEPORT_TO_BOAST")]
+    TypeTeleportToBoast = 207,
+    #[def("UI_ACTION_TYPE_DROP_QUEST")]
+    TypeDropQuest = 208,
+    #[def("UI_ACTION_TYPE_ASSIGN_SPELL")]
+    TypeAssignSpell = 209,
+    #[def("UI_ACTION_TYPE_UNASSIGN_SPELL")]
+    TypeUnassignSpell = 210,
+    #[def("UI_ACTION_TYPE_RESET_ASSIGNED_SPELLS")]
+    TypeResetAssignedSpells = 211,
+    #[def("UI_ACTION_TYPE_CHANGE_ALPHA")]
+    TypeChangeAlpha = 212,
+    #[def("UI_ACTION_TYPE_CHANGE_NUMBER")]
+    TypeChangeNumber = 213,
+    #[def("UI_ACTION_TYPE_DELETE_PROFILE")]
+    TypeDeleteProfile = 214,
+    #[def("UI_ACTION_TYPE_GO_TO_DELETE_PROFILE_SCREEN")]
+    TypeGoToDeleteProfileScreen = 215,
+    #[def("UI_ACTION_TYPE_POP_MAP_STATE")]
+    TypePopMapState = 216,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_INVALID_PROFILE")]
+    TypeNextScreenInvalidProfile = 219,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_INVALID_SAVE")]
+    TypeNextScreenInvalidSave = 220,
+    #[def("UI_ACTION_TYPE_FREE_SPACE_ON_T")]
+    TypeFreeSpaceOnT = 221,
+    #[def("UI_ACTION_TYPE_FREE_SPACE_ON_U")]
+    TypeFreeSpaceOnU = 222,
+    #[def("UI_ACTION_TYPE_FLASH_DPAD_DOWN")]
+    TypeFlashDpadDown = 223,
+    #[def("UI_ACTION_TYPE_FLASH_DPAD_UP")]
+    TypeFlashDpadUp = 224,
+    #[def("UI_ACTION_TYPE_FLASH_DPAD_LEFT")]
+    TypeFlashDpadLeft = 225,
+    #[def("UI_ACTION_TYPE_FLASH_DPAD_RIGHT")]
+    TypeFlashDpadRight = 226,
+    #[def("UI_ACTION_TYPE_STOP_DPAD_FLASHING")]
+    TypeStopDpadFlashing = 227,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_LOGBOOK_LIST")]
+    TypeConstructLogbookList = 228,
+    #[def("UI_ACTION_TYPE_GO_TO_MAIN_MENU_FROM_START")]
+    TypeGoToMainMenuFromStart = 229,
+    #[def("UI_ACTION_TYPE_SEND_OWNED_EVENT")]
+    TypeSendOwnedEvent = 230,
+    #[def("UI_ACTION_TYPE_SEND_EVENT")]
+    TypeSendEvent = 231,
+    #[def("UI_ACTION_TYPE_MOVE_COMPONENT")]
+    TypeMoveComponent = 232,
+    #[def("UI_ACTION_TYPE_EXIT_LIVE_GUI")]
+    TypeExitLiveGui = 233,
+    #[def("UI_ACTION_TYPE_OPEN_PC_SKILLS_MENU")]
+    TypeOpenPcSkillsMenu = 234,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_EXPRESSIONS_LIST")]
+    TypeConstructExpressionsList = 235,
+    #[def("UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_UP")]
+    TypeScrollActiveListUp = 236,
+    #[def("UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_DOWN")]
+    TypeScrollActiveListDown = 237,
+    #[def("UI_ACTION_TYPE_OPEN_PC_INVENTORY_MENU")]
+    TypeOpenPcInventoryMenu = 238,
+    #[def("UI_ACTION_TYPE_OPEN_PC_OPTIONS_MENU")]
+    TypeOpenPcOptionsMenu = 239,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_PC_STYLE_CARDS_LIST")]
+    TypeConstructPcStyleCardsList = 240,
+    #[def("UI_ACTION_TYPE_OPEN_PC_BUY_TRADING_GOODS_LIST")]
+    TypeOpenPcBuyTradingGoodsList = 241,
+    #[def("UI_ACTION_TYPE_CLOSE_PC_BUY_TRADING_GOODS_LIST")]
+    TypeClosePcBuyTradingGoodsList = 242,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_MAGIC_LIST_PC")]
+    TypeConstructMagicListPc = 243,
+    #[def("UI_ACTION_TYPE_ASSIGN_SPELL_PC")]
+    TypeAssignSpellPc = 244,
+    #[def("UI_ACTION_TYPE_OBSERVE_EVENT")]
+    TypeObserveEvent = 245,
+    #[def("UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN_PC")]
+    TypeSetSpellToAssignPc = 246,
+    #[def("UI_ACTION_TYPE_RESET_ASSIGNED_SPELLS_PC")]
+    TypeResetAssignedSpellsPc = 247,
+    #[def("UI_ACTION_TYPE_UNASSIGN_SPELL_PC")]
+    TypeUnassignSpellPc = 248,
+    #[def("UI_ACTION_TYPE_IGNORE_EVENT")]
+    TypeIgnoreEvent = 249,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_PROFILES_FOR_DELETE")]
+    TypeNextScreenProfilesForDelete = 250,
+    #[def("UI_ACTION_TYPE_ASSIGN_EXPRESSION_ITEM_PC")]
+    TypeAssignExpressionItemPc = 251,
+    #[def("UI_ACTION_TYPE_UNASSIGN_EXPRESSION_ITEM_PC")]
+    TypeUnassignExpressionItemPc = 252,
+    #[def("UI_ACTION_TYPE_SET_EXPRESSION_ITEM_TO_ASSIGN_PC")]
+    TypeSetExpressionItemToAssignPc = 253,
+    #[def("UI_ACTION_TYPE_OPEN_PC_MAP_MENU")]
+    TypeOpenPcMapMenu = 254,
+    #[def("UI_ACTION_TYPE_OPEN_PC_STATUS_MENU")]
+    TypeOpenPcStatusMenu = 255,
+    #[def("UI_ACTION_TYPE_OPEN_PC_LOG_BOOK")]
+    TypeOpenPcLogBook = 256,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_PC_QUESTS_LIST")]
+    TypeConstructPcQuestsList = 257,
+    #[def("UI_ACTION_TYPE_SET_RESOLUTION")]
+    TypeSetResolution = 258,
+    #[def("UI_ACTION_TYPE_SET_SHADOW_DETAIL")]
+    TypeSetShadowDetail = 259,
+    #[def("UI_ACTION_TYPE_SET_DECALS")]
+    TypeSetDecals = 260,
+    #[def("UI_ACTION_TYPE_SET_WEATHER_EFFECTS")]
+    TypeSetWeatherEffects = 261,
+    #[def("UI_ACTION_TYPE_SET_VERTICAL_SYNC")]
+    TypeSetVerticalSync = 262,
+    #[def("UI_ACTION_TYPE_SET_GLOW_EFFECTS")]
+    TypeSetGlowEffects = 263,
+    #[def("UI_ACTION_TYPE_SET_REVERSE_STEREO")]
+    TypeSetReverseStereo = 264,
+    #[def("UI_ACTION_TYPE_SET_ANTIALIASING")]
+    TypeSetAntialiasing = 265,
+    #[def("UI_ACTION_TYPE_SET_TEXTURE_DETAIL")]
+    TypeSetTextureDetail = 266,
+    #[def("UI_ACTION_TYPE_SET_MESH_RESOLUTION")]
+    TypeSetMeshResolution = 267,
+    #[def("UI_ACTION_TYPE_SET_WATER_REFLECTION")]
+    TypeSetWaterReflection = 268,
+    #[def("UI_ACTION_TYPE_SET_LANDSCAPE_DETAIL")]
+    TypeSetLandscapeDetail = 269,
+    #[def("UI_ACTION_TYPE_SET_PARTICLE_DETAIL")]
+    TypeSetParticleDetail = 270,
+    #[def("UI_ACTION_TYPE_ADD_OBSERVER")]
+    TypeAddObserver = 271,
+    #[def("UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_UNTIL_CHILD_CONTAINING")]
+    TypeScrollActiveListUntilChildContaining = 272,
+    #[def("UI_ACTION_TYPE_GO_BACK")]
+    TypeGoBack = 273,
+    #[def("UI_ACTION_TYPE_CLOSE_ACTIVE_MENU")]
+    TypeCloseActiveMenu = 274,
+    #[def("UI_ACTION_TYPE_REMOVE_OBSERVER")]
+    TypeRemoveObserver = 275,
+    #[def("UI_ACTION_TYPE_TAVERN_GAME_BET_DOWN")]
+    TypeTavernGameBetDown = 276,
+    #[def("UI_ACTION_TYPE_TAVERN_GAME_BET_UP")]
+    TypeTavernGameBetUp = 277,
+    #[def("UI_ACTION_TYPE_RESPAWN")]
+    TypeRespawn = 278,
+    #[def("UI_ACTION_TYPE_CONTINUE")]
+    TypeContinue = 279,
+    #[def("UI_ACTION_TYPE_OPEN_PC_SELL_TRADING_GOODS_LIST")]
+    TypeOpenPcSellTradingGoodsList = 280,
+    #[def("UI_ACTION_TYPE_OPEN_PC_WANTED_TRADING_GOODS_LIST")]
+    TypeOpenPcWantedTradingGoodsList = 281,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_PC_EXPERIENCE_LIST")]
+    TypeConstructPcExperienceList = 282,
+    #[def("UI_ACTION_TYPE_GO_TO_REDEFINE_KEYS_MENU")]
+    TypeGoToRedefineKeysMenu = 283,
+    #[def("UI_ACTION_TYPE_RESET_KEYS")]
+    TypeResetKeys = 284,
+    #[def("UI_ACTION_TYPE_ASSIGN_SPELL_TO_ITEM_SLOT_PC")]
+    TypeAssignSpellToItemSlotPc = 285,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_STYLE_CARDS_LIST")]
+    TypeConstructStyleCardsList = 286,
+    #[def("UI_ACTION_TYPE_SCROLL_DESCRIPTION_DOWN")]
+    TypeScrollDescriptionDown = 287,
+    #[def("UI_ACTION_TYPE_SCROLL_DESCRIPTION_UP")]
+    TypeScrollDescriptionUp = 288,
+    #[def("UI_ACTION_TYPE_CONSTRUCT_PC_PERSONALITY_LIST")]
+    TypeConstructPcPersonalityList = 289,
+    #[def("UI_ACTION_TYPE_SEND_OWNED_EVENT_FORCE_OBSERVATION")]
+    TypeSendOwnedEventForceObservation = 291,
+    #[def("UI_ACTION_TYPE_GO_TO_MAIN_MENU_FROM_PROFILE_LIST")]
+    TypeGoToMainMenuFromProfileList = 292,
+    #[def("UI_ACTION_TYPE_NEW_PROFILE")]
+    TypeNewProfile = 293,
+    #[def("UI_ACTION_TYPE_NEW_PROFILE_RETURN_PRESSED")]
+    TypeNewProfileReturnPressed = 294,
+    #[def("UI_ACTION_TYPE_NEW_PROFILE_ESCAPE_PRESSED")]
+    TypeNewProfileEscapePressed = 295,
+    #[def("UI_ACTION_TYPE_QUIT_GAME")]
+    TypeQuitGame = 296,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_OPTIONS_SUB_MENU")]
+    TypeNextScreenOptionsSubMenu = 297,
+    #[def("UI_ACTION_TYPE_SET_MESH_DETAIL")]
+    TypeSetMeshDetail = 298,
+    #[def("UI_ACTION_TYPE_SET_EFFECTS_DETAIL")]
+    TypeSetEffectsDetail = 299,
+    #[def("UI_ACTION_TYPE_SET_SCREEN_ASPECT_RATIO")]
+    TypeSetScreenAspectRatio = 300,
+    #[def("UI_ACTION_TYPE_APPLY_PROFILE_VALUES")]
+    TypeApplyProfileValues = 301,
+    #[def("UI_ACTION_TYPE_CLOSE_ACTIVE_TRADE_MENU")]
+    TypeCloseActiveTradeMenu = 302,
+    #[def("UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_DOWN_MAX")]
+    TypeScrollActiveListDownMax = 303,
+    #[def("UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_UP_MAX")]
+    TypeScrollActiveListUpMax = 304,
+    #[def("UI_ACTION_TYPE_SCROLL_DESCRIPTION_DOWN_MAX")]
+    TypeScrollDescriptionDownMax = 305,
+    #[def("UI_ACTION_TYPE_SCROLL_DESCRIPTION_UP_MAX")]
+    TypeScrollDescriptionUpMax = 306,
+    #[def("UI_ACTION_TYPE_SCROLL_DESCRIPTION_DOWN_ONE_PIXEL")]
+    TypeScrollDescriptionDownOnePixel = 307,
+    #[def("UI_ACTION_TYPE_SCROLL_DESCRIPTION_UP_ONE_PIXEL")]
+    TypeScrollDescriptionUpOnePixel = 308,
+    #[def("UI_ACTION_TYPE_CLOSE_TRADE_MENU_IF_LEAF")]
+    TypeCloseTradeMenuIfLeaf = 309,
+    #[def("UI_ACTION_TYPE_EXIT_LIVE_GUI_IF_LEAF")]
+    TypeExitLiveGuiIfLeaf = 310,
+    #[def("UI_ACTION_TYPE_RESET_KEYS_WASD")]
+    TypeResetKeysWasd = 311,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_OPTIONS_SCOREBOARD")]
+    TypeNextScreenOptionsScoreboard = 312,
+    #[def("UI_ACTION_TYPE_SET_CONTROL_METHOD")]
+    TypeSetControlMethod = 313,
+    #[def("UI_ACTION_TYPE_GOTO_QUIT_PROMPT")]
+    TypeGotoQuitPrompt = 314,
+    #[def("UI_ACTION_TYPE_PC_QUIT_TO_FRONT_END")]
+    TypePcQuitToFrontEnd = 315,
+    #[def("UI_ACTION_TYPE_PC_ACCEPT_VIDEO_CHANGES")]
+    TypePcAcceptVideoChanges = 316,
+    #[def("UI_ACTION_TYPE_SET_REFRESH_RATE")]
+    TypeSetRefreshRate = 317,
+    #[def("UI_ACTION_TYPE_SET_CAMERA_SENSITIVITY")]
+    TypeSetCameraSensitivity = 318,
+    #[def("UI_ACTION_TYPE_SET_BOW_CAMERA")]
+    TypeSetBowCamera = 319,
+    #[def("UI_ACTION_TYPE_SET_CAMERA_RESETTING")]
+    TypeSetCameraResetting = 320,
+    #[def("UI_ACTION_TYPE_GOTO_ABOUT_SCREEN")]
+    TypeGotoAboutScreen = 321,
+    #[def("UI_ACTION_TYPE_CLOSE_FRAME")]
+    TypeCloseFrame = 322,
+    #[def("UI_ACTION_TYPE_SET_SHOW_TARGETING_STATUS")]
+    TypeSetShowTargetingStatus = 323,
+    #[def("UI_ACTION_TYPE_RESTORE_DEFAULTS_GAMEPLAY")]
+    TypeRestoreDefaultsGameplay = 324,
+    #[def("UI_ACTION_TYPE_RESTORE_DEFAULTS_VIDEO")]
+    TypeRestoreDefaultsVideo = 325,
+    #[def("UI_ACTION_TYPE_RESTORE_DEFAULTS_AUDIO")]
+    TypeRestoreDefaultsAudio = 326,
+    #[def("UI_ACTION_TYPE_SET_EXPRESSION_ITEM_TO_ASSIGN_SWAPPING_PC")]
+    TypeSetExpressionItemToAssignSwappingPc = 327,
+    #[def("UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN_SWAPPING_PC")]
+    TypeSetSpellToAssignSwappingPc = 328,
+    #[def("UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN_IN_ITEMS_SWAPPING_PC")]
+    TypeSetSpellToAssignInItemsSwappingPc = 329,
+    #[def("UI_ACTION_ADD_MESH_CHILD")]
+    AddMeshChild = 2000,
+    #[def("UI_ACTION_LOAD_WEAPON_DESC")]
+    LoadWeaponDesc = 2001,
+    #[def("UI_ACTION_LOAD_CLOTHING_DESC")]
+    LoadClothingDesc = 2002,
+    #[def("UI_ACTION_LOAD_ITEM_DESC")]
+    LoadItemDesc = 2003,
+    #[def("UI_ACTION_LOAD_WEAPON_MENU_ENTRY_NAME")]
+    LoadWeaponMenuEntryName = 2004,
+    #[def("UI_ACTION_LOAD_CLOTHING_MENU_ENTRY_NAME")]
+    LoadClothingMenuEntryName = 2005,
+    #[def("UI_ACTION_LOAD_ITEM_MENU_ENTRY_NAME")]
+    LoadItemMenuEntryName = 2006,
+    #[def("UI_ACTION_LOAD_SELL_ITEM_DESC")]
+    LoadSellItemDesc = 2007,
+    #[def("UI_ACTION_LOAD_SELL_ACTION_MENU")]
+    LoadSellActionMenu = 2008,
+    #[def("UI_ACTION_LOAD_BUY_ITEM_DESC")]
+    LoadBuyItemDesc = 2009,
+    #[def("UI_ACTION_LOAD_BUY_ACTION_MENU")]
+    LoadBuyActionMenu = 2010,
+    #[def("UI_ACTION_LOAD_WANTED_ITEM_DESC")]
+    LoadWantedItemDesc = 2011,
+    #[def("UI_ACTION_LOAD_QUICK_MENU_EXPRESSIONS_ICON")]
+    LoadQuickMenuExpressionsIcon = 2012,
+    #[def("UI_ACTION_LOAD_FILE_DESC")]
+    LoadFileDesc = 2013,
+    #[def("UI_ACTION_LOAD_FILE_SAVEGAME_MINIMAP")]
+    LoadFileSavegameMinimap = 2014,
+    #[def("UI_ACTION_REMOVE_MESH_CHILD")]
+    RemoveMeshChild = 2015,
+    #[def("UI_ACTION_UNLOAD_WEAPON_DESC")]
+    UnloadWeaponDesc = 2016,
+    #[def("UI_ACTION_UNLOAD_CLOTHING_DESC")]
+    UnloadClothingDesc = 2017,
+    #[def("UI_ACTION_UNLOAD_ITEM_DESC")]
+    UnloadItemDesc = 2018,
+    #[def("UI_ACTION_UNLOAD_SELL_ITEM_DESC")]
+    UnloadSellItemDesc = 2019,
+    #[def("UI_ACTION_UNLOAD_SELL_ACTION_MENU")]
+    UnloadSellActionMenu = 2020,
+    #[def("UI_ACTION_UNLOAD_BUY_ITEM_DESC")]
+    UnloadBuyItemDesc = 2021,
+    #[def("UI_ACTION_UNLOAD_BUY_ACTION_MENU")]
+    UnloadBuyActionMenu = 2022,
+    #[def("UI_ACTION_UNLOAD_WANTED_ITEM_DESC")]
+    UnloadWantedItemDesc = 2023,
+    #[def("UI_ACTION_TYPE_CHEAT_MORALITY")]
+    TypeCheatMorality = 3000,
+    #[def("UI_ACTION_TYPE_CHEAT_RENOWN")]
+    TypeCheatRenown = 3001,
+    #[def("UI_ACTION_TYPE_CLOSE_BOAST_MENU")]
+    TypeCloseBoastMenu = 3002,
+    #[def("UI_ACTION_TYPE_PLAY_SOUND")]
+    TypePlaySound = 3003,
+    #[def("UI_ACTION_TYPE_TAKE_QUEST_FOR_BOAST")]
+    TypeTakeQuestForBoast = 3004,
+    #[def("UI_ACTION_TYPE_OPEN_PC_MSN_CHAT")]
+    TypeOpenPcMsnChat = 3005,
+    #[def("UI_ACTION_TYPE_ACTIVATE_MSN_CONVERSATION")]
+    TypeActivateMsnConversation = 3006,
+    #[def("UI_ACTION_TYPE_SEND_MESSAGE")]
+    TypeSendMessage = 3007,
+    #[def("UI_ACTION_TYPE_SELECT_CONTACT")]
+    TypeSelectContact = 3008,
+    #[def("UI_ACTION_TYPE_SCROLL_VIEWPORT_UP")]
+    TypeScrollViewportUp = 3009,
+    #[def("UI_ACTION_TYPE_SCROLL_VIEWPORT_DOWN")]
+    TypeScrollViewportDown = 3010,
+    #[def("UI_ACTION_TYPE_SCROLL_LIST_DOWN")]
+    TypeScrollListDown = 3011,
+    #[def("UI_ACTION_TYPE_SCROLL_LIST_UP")]
+    TypeScrollListUp = 3012,
+    #[def("UI_ACTION_TYPE_OPEN_SCOREBOARD")]
+    TypeOpenScoreboard = 3013,
+    #[def("UI_ACTION_TYPE_CHOOSE_CLAN")]
+    TypeChooseClan = 3014,
+    #[def("UI_ACTION_TYPE_PHOTO_CAPTION")]
+    TypePhotoCaption = 3015,
+    #[def("UI_ACTION_TYPE_DISCARD_PHOTO")]
+    TypeDiscardPhoto = 3016,
+    #[def("UI_ACTION_TYPE_GO_TO_SCOREBOARD_SCREEN")]
+    TypeGoToScoreboardScreen = 3017,
+    #[def("UI_ACTION_TYPE_ACTIVATE_EDITBOX")]
+    TypeActivateEditbox = 3018,
+    #[def("UI_ACTION_TYPE_DEACTIVATE_EDITBOX")]
+    TypeDeactivateEditbox = 3019,
+    #[def("UI_ACTION_TYPE_SET_EDITBOX_VALUES")]
+    TypeSetEditboxValues = 3020,
+    #[def("UI_ACTION_TYPE_SCOREBOARD_OK")]
+    TypeScoreboardOk = 3021,
+    #[def("UI_ACTION_TYPE_LOAD_PHOTO")]
+    TypeLoadPhoto = 3022,
+    #[def("UI_ACTION_TYPE_SCROLL_PHOTO_DOWN")]
+    TypeScrollPhotoDown = 3023,
+    #[def("UI_ACTION_TYPE_SCROLL_PHOTO_UP")]
+    TypeScrollPhotoUp = 3024,
+    #[def("UI_ACTION_TYPE_NEXT_SCREEN_START")]
+    TypeNextScreenStart = 3025,
+    #[def("UI_ACTION_TYPE_OPEN_PHOTOJOURNAL")]
+    TypeOpenPhotojournal = 4000,
+    #[def("UI_ACTION_TYPE_OPEN_PHOTO")]
+    TypeOpenPhoto = 4001,
+    #[def("UI_ACTION_TYPE_EXIT_PHOTOJOURNAL_CAPTURE")]
+    TypeExitPhotojournalCapture = 4002,
 }
 
-def_enum! {
-    /// Text alignment.
-    ///
-    /// C++ `NUISystem::ETextAlignement`.
-    pub enum TextAlignment: i32 {
-        Left = 0 => "LEFT",
-        Center = 1 => "CENTER",
-        Right = 2 => "RIGHT",
-    }
+/// Sprite slot of a UI table (key of `UiDef::sprites`).
+///
+/// C++ `NUISystem::ETableSprites`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum TableSprites {
+    #[def("TABLE_SPRITES_TOP_LEFT")]
+    TopLeft = 0,
+    #[def("TABLE_SPRITES_TOP_RIGHT")]
+    TopRight = 1,
+    #[def("TABLE_SPRITES_BOTTOM_LEFT")]
+    BottomLeft = 2,
+    #[def("TABLE_SPRITES_BOTTOM_RIGHT")]
+    BottomRight = 3,
+    #[def("TABLE_SPRITES_TOP_MIDDLE")]
+    TopMiddle = 4,
+    #[def("TABLE_SPRITES_BOTTOM_MIDDLE")]
+    BottomMiddle = 5,
+    #[def("TABLE_SPRITES_MIDDLE_LEFT")]
+    MiddleLeft = 6,
+    #[def("TABLE_SPRITES_MIDDLE_RIGHT")]
+    MiddleRight = 7,
+    #[def("TABLE_SPRITES_SEPARATION_BOTTOM")]
+    SeparationBottom = 8,
+    #[def("TABLE_SPRITES_SEPARATION_TOP")]
+    SeparationTop = 9,
+    #[def("TABLE_SPRITES_SEPARATION_LEFT")]
+    SeparationLeft = 10,
+    #[def("TABLE_SPRITES_SEPARATION_RIGHT")]
+    SeparationRight = 11,
+    #[def("TABLE_SPRITES_CROSS")]
+    Cross = 12,
+    #[def("TABLE_SPRITES_AMOUNT")]
+    Amount = 13,
 }
 
-def_enum! {
-    /// Order in which a UI state change propagates.
-    ///
-    /// C++ `NUISystem::EStateChangeType`.
-    pub enum StateChangeType: i32 {
-        Simultaneous = 0 => "STATE_CHANGE_SIMULTANEOUS",
-        ParentFirst = 1 => "STATE_CHANGE_PARENT_FIRST",
-        ChildrenFirst = 2 => "STATE_CHANGE_CHILDREN_FIRST",
-        ParentOnly = 3 => "STATE_CHANGE_PARENT_ONLY",
-        ChildrenOnly = 4 => "STATE_CHANGE_CHILDREN_ONLY",
-    }
+/// Engine graphic/mesh kind.
+///
+/// C++ `EEngineGraphicType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum EngineGraphicType {
+    #[def("ENGINE_GRAPHIC_NULL")]
+    EngineGraphicNull = 0,
+    #[def("ENGINE_GRAPHIC_SPRITE")]
+    EngineGraphicSprite = 1,
+    #[def("ENGINE_GRAPHIC_3DSPRITE")]
+    EngineGraphic3dsprite = 2,
+    #[def("ENGINE_GRAPHIC_GENERATED_EFFECT")]
+    EngineGraphicGeneratedEffect = 3,
+    #[def("ENGINE_GRAPHIC_ANIMATING_MESH")]
+    EngineGraphicAnimatingMesh = 4,
+    #[def("ENGINE_GRAPHIC_STATIC_MESH")]
+    EngineGraphicStaticMesh = 5,
+    #[def("MAX_NO_ENGINE_GRAPHIC_TYPES")]
+    MaxNoEngineGraphicTypes = 6,
 }
 
-def_enum! {
-    /// UI action fired by buttons and menu entries.
-    ///
-    /// C++ `NUISystem::EActionType`.
-    pub enum ActionType: i32 {
-        TypeNone = 0 => "UI_ACTION_TYPE_NONE",
-        TypeWield = 1 => "UI_ACTION_TYPE_WIELD",
-        TypeAugment = 2 => "UI_ACTION_TYPE_AUGMENT",
-        TypeChangestate = 3 => "UI_ACTION_TYPE_CHANGESTATE",
-        TypeTakeBoast = 4 => "UI_ACTION_TYPE_TAKE_BOAST",
-        TypeTeleport = 5 => "UI_ACTION_TYPE_TELEPORT",
-        TypeTakeQuest = 6 => "UI_ACTION_TYPE_TAKE_QUEST",
-        TypeBuyStat = 7 => "UI_ACTION_TYPE_BUY_STAT",
-        TypeBuyAbility = 8 => "UI_ACTION_TYPE_BUY_ABILITY",
-        TypeNextScreenOptions = 9 => "UI_ACTION_TYPE_NEXT_SCREEN_OPTIONS",
-        TypeNextScreenLiveAware = 10 => "UI_ACTION_TYPE_NEXT_SCREEN_LIVE_AWARE",
-        TypeNextScreenExtras = 11 => "UI_ACTION_TYPE_NEXT_SCREEN_EXTRAS",
-        TypeNextScreenAudioOptions = 12 => "UI_ACTION_TYPE_NEXT_SCREEN_AUDIO_OPTIONS",
-        TypeNextScreenVideoOptions = 13 => "UI_ACTION_TYPE_NEXT_SCREEN_VIDEO_OPTIONS",
-        TypeNextScreenCameraOptions = 14 => "UI_ACTION_TYPE_NEXT_SCREEN_CAMERA_OPTIONS",
-        TypeNewGame = 15 => "UI_ACTION_TYPE_NEW_GAME",
-        TypeNextScreenProfiles = 16 => "UI_ACTION_TYPE_NEXT_SCREEN_PROFILES",
-        TypeLoadGame = 17 => "UI_ACTION_TYPE_LOAD_GAME",
-        TypeLogin = 18 => "UI_ACTION_TYPE_LOGIN",
-        TypeFriends = 19 => "UI_ACTION_TYPE_FRIENDS",
-        TypeAppearOffline = 20 => "UI_ACTION_TYPE_APPEAR_OFFLINE",
-        TypeDelete = 21 => "UI_ACTION_TYPE_DELETE",
-        TypeAddChild = 22 => "UI_ACTION_TYPE_ADD_CHILD",
-        TypeAddChildAugmentation = 23 => "UI_ACTION_TYPE_ADD_CHILD_AUGMENTATION",
-        TypeDeleteAll = 24 => "UI_ACTION_TYPE_DELETE_ALL",
-        TypeUseItem = 25 => "UI_ACTION_TYPE_USE_ITEM",
-        TypeItemAssignLeft = 26 => "UI_ACTION_TYPE_ITEM_ASSIGN_LEFT",
-        TypeItemAssignRight = 27 => "UI_ACTION_TYPE_ITEM_ASSIGN_RIGHT",
-        TypeItemAssignDown = 28 => "UI_ACTION_TYPE_ITEM_ASSIGN_DOWN",
-        TypeItemAssignUp = 29 => "UI_ACTION_TYPE_ITEM_ASSIGN_UP",
-        TypeClothingWear = 30 => "UI_ACTION_TYPE_CLOTHING_WEAR",
-        TypeUpdateMannequinClothing = 31 => "UI_ACTION_TYPE_UPDATE_MANNEQUIN_CLOTHING",
-        TypeBuy = 36 => "UI_ACTION_TYPE_BUY",
-        TypeSell = 37 => "UI_ACTION_TYPE_SELL",
-        TypeDeletePrevious = 38 => "UI_ACTION_TYPE_DELETE_PREVIOUS",
-        TypeResetClothingMannequin = 39 => "UI_ACTION_TYPE_RESET_CLOTHING_MANNEQUIN",
-        TypeSetBrightness = 40 => "UI_ACTION_TYPE_SET_BRIGHTNESS",
-        TypeSetSound = 41 => "UI_ACTION_TYPE_SET_SOUND",
-        TypeSetMusic = 42 => "UI_ACTION_TYPE_SET_MUSIC",
-        TypeSetCameraRotation = 43 => "UI_ACTION_TYPE_SET_CAMERA_ROTATION",
-        TypeSetCameraUpDown = 44 => "UI_ACTION_TYPE_SET_CAMERA_UP_DOWN",
-        TypeSetVibration = 45 => "UI_ACTION_TYPE_SET_VIBRATION",
-        TypeSetHeadphones = 46 => "UI_ACTION_TYPE_SET_HEADPHONES",
-        TypeSetSubtitles = 47 => "UI_ACTION_TYPE_SET_SUBTITLES",
-        TypeOpenMap = 48 => "UI_ACTION_TYPE_OPEN_MAP",
-        TypeOpenAbilities = 49 => "UI_ACTION_TYPE_OPEN_ABILITIES",
-        TypeOpenWeapons = 50 => "UI_ACTION_TYPE_OPEN_WEAPONS",
-        TypeOpenStats = 51 => "UI_ACTION_TYPE_OPEN_STATS",
-        TypeOpenClothing = 52 => "UI_ACTION_TYPE_OPEN_CLOTHING",
-        TypeOpenItems = 53 => "UI_ACTION_TYPE_OPEN_ITEMS",
-        TypeCloseMap = 54 => "UI_ACTION_TYPE_CLOSE_MAP",
-        TypeCloseAbilities = 55 => "UI_ACTION_TYPE_CLOSE_ABILITIES",
-        TypeCloseWeapons = 56 => "UI_ACTION_TYPE_CLOSE_WEAPONS",
-        TypeCloseStats = 57 => "UI_ACTION_TYPE_CLOSE_STATS",
-        TypeCloseClothing = 58 => "UI_ACTION_TYPE_CLOSE_CLOTHING",
-        TypeCloseItems = 59 => "UI_ACTION_TYPE_CLOSE_ITEMS",
-        TypeCloseMenu = 60 => "UI_ACTION_TYPE_CLOSE_MENU",
-        TypeGuildSealRecall = 61 => "UI_ACTION_TYPE_GUILD_SEAL_RECALL",
-        TypeLoad = 62 => "UI_ACTION_TYPE_LOAD",
-        TypeSave = 63 => "UI_ACTION_TYPE_SAVE",
-        TypeClosePauseMenu = 64 => "UI_ACTION_TYPE_CLOSE_PAUSE_MENU",
-        TypePlayMovie = 65 => "UI_ACTION_TYPE_PLAY_MOVIE",
-        TypeNextScreenProfilesSavedGames = 66 => "UI_ACTION_TYPE_NEXT_SCREEN_PROFILES_SAVED_GAMES",
-        TypeNextScreenCredits = 67 => "UI_ACTION_TYPE_NEXT_SCREEN_CREDITS",
-        TypeConstructWeaponsList = 68 => "UI_ACTION_TYPE_CONSTRUCT_WEAPONS_LIST",
-        TypeConstructClothingList = 69 => "UI_ACTION_TYPE_CONSTRUCT_CLOTHING_LIST",
-        TypeConstructItemsList = 70 => "UI_ACTION_TYPE_CONSTRUCT_ITEMS_LIST",
-        TypeConstructSkillsList = 71 => "UI_ACTION_TYPE_CONSTRUCT_SKILLS_LIST",
-        TypeConstructQuestsList = 72 => "UI_ACTION_TYPE_CONSTRUCT_QUESTS_LIST",
-        TypeConstructMapList = 73 => "UI_ACTION_TYPE_CONSTRUCT_MAP_LIST",
-        TypeConstructStatsList = 74 => "UI_ACTION_TYPE_CONSTRUCT_STATS_LIST",
-        TypeChangeChildState = 75 => "UI_ACTION_TYPE_CHANGE_CHILD_STATE",
-        TypeConstructExperienceList = 76 => "UI_ACTION_TYPE_CONSTRUCT_EXPERIENCE_LIST",
-        TypeConstructPersonalityList = 77 => "UI_ACTION_TYPE_CONSTRUCT_PERSONALITY_LIST",
-        TypeSetHud = 78 => "UI_ACTION_TYPE_SET_HUD",
-        TypeCloseQuickAccessMenu = 79 => "UI_ACTION_TYPE_CLOSE_QUICK_ACCESS_MENU",
-        TypeCloseTeleportMenu = 80 => "UI_ACTION_TYPE_CLOSE_TELEPORT_MENU",
-        TypeBuyBulk = 81 => "UI_ACTION_TYPE_BUY_BULK",
-        TypeSellBulk = 82 => "UI_ACTION_TYPE_SELL_BULK",
-        TypeSetTutorials = 83 => "UI_ACTION_TYPE_SET_TUTORIALS",
-        TypeSetShowBuddyNames = 84 => "UI_ACTION_TYPE_SET_SHOW_BUDDY_NAMES",
-        TypeQuitToFrontEnd = 85 => "UI_ACTION_TYPE_QUIT_TO_FRONT_END",
-        TypePreviousScreen = 86 => "UI_ACTION_TYPE_PREVIOUS_SCREEN",
-        TypeAcceptChanges = 87 => "UI_ACTION_TYPE_ACCEPT_CHANGES",
-        TypeSetDialogue = 88 => "UI_ACTION_TYPE_SET_DIALOGUE",
-        TypeXlive = 89 => "UI_ACTION_TYPE_XLIVE",
-        TypeXliveBack = 90 => "UI_ACTION_TYPE_XLIVE_BACK",
-        TypeLogout = 91 => "UI_ACTION_TYPE_LOGOUT",
-        TypeDemos = 92 => "UI_ACTION_TYPE_DEMOS",
-        TypeSetGuildMaster = 93 => "UI_ACTION_TYPE_SET_GUILD_MASTER",
-        TypeSetHudTooltips = 94 => "UI_ACTION_TYPE_SET_HUD_TOOLTIPS",
-        TypeUndoBuyAbility = 200 => "UI_ACTION_TYPE_UNDO_BUY_ABILITY",
-        TypeUndoBuyStat = 201 => "UI_ACTION_TYPE_UNDO_BUY_STAT",
-        TypeGiveExclusiveInput = 202 => "UI_ACTION_TYPE_GIVE_EXCLUSIVE_INPUT",
-        TypeRemoveExclusiveInput = 203 => "UI_ACTION_TYPE_REMOVE_EXCLUSIVE_INPUT",
-        TypeSendBackEvent = 204 => "UI_ACTION_TYPE_SEND_BACK_EVENT",
-        TypeShowSpellSelection = 205 => "UI_ACTION_TYPE_SHOW_SPELL_SELECTION",
-        TypeSetSpellToAssign = 206 => "UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN",
-        TypeTeleportToBoast = 207 => "UI_ACTION_TYPE_TELEPORT_TO_BOAST",
-        TypeDropQuest = 208 => "UI_ACTION_TYPE_DROP_QUEST",
-        TypeAssignSpell = 209 => "UI_ACTION_TYPE_ASSIGN_SPELL",
-        TypeUnassignSpell = 210 => "UI_ACTION_TYPE_UNASSIGN_SPELL",
-        TypeResetAssignedSpells = 211 => "UI_ACTION_TYPE_RESET_ASSIGNED_SPELLS",
-        TypeChangeAlpha = 212 => "UI_ACTION_TYPE_CHANGE_ALPHA",
-        TypeChangeNumber = 213 => "UI_ACTION_TYPE_CHANGE_NUMBER",
-        TypeDeleteProfile = 214 => "UI_ACTION_TYPE_DELETE_PROFILE",
-        TypeGoToDeleteProfileScreen = 215 => "UI_ACTION_TYPE_GO_TO_DELETE_PROFILE_SCREEN",
-        TypePopMapState = 216 => "UI_ACTION_TYPE_POP_MAP_STATE",
-        TypeNextScreenInvalidProfile = 219 => "UI_ACTION_TYPE_NEXT_SCREEN_INVALID_PROFILE",
-        TypeNextScreenInvalidSave = 220 => "UI_ACTION_TYPE_NEXT_SCREEN_INVALID_SAVE",
-        TypeFreeSpaceOnT = 221 => "UI_ACTION_TYPE_FREE_SPACE_ON_T",
-        TypeFreeSpaceOnU = 222 => "UI_ACTION_TYPE_FREE_SPACE_ON_U",
-        TypeFlashDpadDown = 223 => "UI_ACTION_TYPE_FLASH_DPAD_DOWN",
-        TypeFlashDpadUp = 224 => "UI_ACTION_TYPE_FLASH_DPAD_UP",
-        TypeFlashDpadLeft = 225 => "UI_ACTION_TYPE_FLASH_DPAD_LEFT",
-        TypeFlashDpadRight = 226 => "UI_ACTION_TYPE_FLASH_DPAD_RIGHT",
-        TypeStopDpadFlashing = 227 => "UI_ACTION_TYPE_STOP_DPAD_FLASHING",
-        TypeConstructLogbookList = 228 => "UI_ACTION_TYPE_CONSTRUCT_LOGBOOK_LIST",
-        TypeGoToMainMenuFromStart = 229 => "UI_ACTION_TYPE_GO_TO_MAIN_MENU_FROM_START",
-        TypeSendOwnedEvent = 230 => "UI_ACTION_TYPE_SEND_OWNED_EVENT",
-        TypeSendEvent = 231 => "UI_ACTION_TYPE_SEND_EVENT",
-        TypeMoveComponent = 232 => "UI_ACTION_TYPE_MOVE_COMPONENT",
-        TypeExitLiveGui = 233 => "UI_ACTION_TYPE_EXIT_LIVE_GUI",
-        TypeOpenPcSkillsMenu = 234 => "UI_ACTION_TYPE_OPEN_PC_SKILLS_MENU",
-        TypeConstructExpressionsList = 235 => "UI_ACTION_TYPE_CONSTRUCT_EXPRESSIONS_LIST",
-        TypeScrollActiveListUp = 236 => "UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_UP",
-        TypeScrollActiveListDown = 237 => "UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_DOWN",
-        TypeOpenPcInventoryMenu = 238 => "UI_ACTION_TYPE_OPEN_PC_INVENTORY_MENU",
-        TypeOpenPcOptionsMenu = 239 => "UI_ACTION_TYPE_OPEN_PC_OPTIONS_MENU",
-        TypeConstructPcStyleCardsList = 240 => "UI_ACTION_TYPE_CONSTRUCT_PC_STYLE_CARDS_LIST",
-        TypeOpenPcBuyTradingGoodsList = 241 => "UI_ACTION_TYPE_OPEN_PC_BUY_TRADING_GOODS_LIST",
-        TypeClosePcBuyTradingGoodsList = 242 => "UI_ACTION_TYPE_CLOSE_PC_BUY_TRADING_GOODS_LIST",
-        TypeConstructMagicListPc = 243 => "UI_ACTION_TYPE_CONSTRUCT_MAGIC_LIST_PC",
-        TypeAssignSpellPc = 244 => "UI_ACTION_TYPE_ASSIGN_SPELL_PC",
-        TypeObserveEvent = 245 => "UI_ACTION_TYPE_OBSERVE_EVENT",
-        TypeSetSpellToAssignPc = 246 => "UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN_PC",
-        TypeResetAssignedSpellsPc = 247 => "UI_ACTION_TYPE_RESET_ASSIGNED_SPELLS_PC",
-        TypeUnassignSpellPc = 248 => "UI_ACTION_TYPE_UNASSIGN_SPELL_PC",
-        TypeIgnoreEvent = 249 => "UI_ACTION_TYPE_IGNORE_EVENT",
-        TypeNextScreenProfilesForDelete = 250 => "UI_ACTION_TYPE_NEXT_SCREEN_PROFILES_FOR_DELETE",
-        TypeAssignExpressionItemPc = 251 => "UI_ACTION_TYPE_ASSIGN_EXPRESSION_ITEM_PC",
-        TypeUnassignExpressionItemPc = 252 => "UI_ACTION_TYPE_UNASSIGN_EXPRESSION_ITEM_PC",
-        TypeSetExpressionItemToAssignPc = 253 => "UI_ACTION_TYPE_SET_EXPRESSION_ITEM_TO_ASSIGN_PC",
-        TypeOpenPcMapMenu = 254 => "UI_ACTION_TYPE_OPEN_PC_MAP_MENU",
-        TypeOpenPcStatusMenu = 255 => "UI_ACTION_TYPE_OPEN_PC_STATUS_MENU",
-        TypeOpenPcLogBook = 256 => "UI_ACTION_TYPE_OPEN_PC_LOG_BOOK",
-        TypeConstructPcQuestsList = 257 => "UI_ACTION_TYPE_CONSTRUCT_PC_QUESTS_LIST",
-        TypeSetResolution = 258 => "UI_ACTION_TYPE_SET_RESOLUTION",
-        TypeSetShadowDetail = 259 => "UI_ACTION_TYPE_SET_SHADOW_DETAIL",
-        TypeSetDecals = 260 => "UI_ACTION_TYPE_SET_DECALS",
-        TypeSetWeatherEffects = 261 => "UI_ACTION_TYPE_SET_WEATHER_EFFECTS",
-        TypeSetVerticalSync = 262 => "UI_ACTION_TYPE_SET_VERTICAL_SYNC",
-        TypeSetGlowEffects = 263 => "UI_ACTION_TYPE_SET_GLOW_EFFECTS",
-        TypeSetReverseStereo = 264 => "UI_ACTION_TYPE_SET_REVERSE_STEREO",
-        TypeSetAntialiasing = 265 => "UI_ACTION_TYPE_SET_ANTIALIASING",
-        TypeSetTextureDetail = 266 => "UI_ACTION_TYPE_SET_TEXTURE_DETAIL",
-        TypeSetMeshResolution = 267 => "UI_ACTION_TYPE_SET_MESH_RESOLUTION",
-        TypeSetWaterReflection = 268 => "UI_ACTION_TYPE_SET_WATER_REFLECTION",
-        TypeSetLandscapeDetail = 269 => "UI_ACTION_TYPE_SET_LANDSCAPE_DETAIL",
-        TypeSetParticleDetail = 270 => "UI_ACTION_TYPE_SET_PARTICLE_DETAIL",
-        TypeAddObserver = 271 => "UI_ACTION_TYPE_ADD_OBSERVER",
-        TypeScrollActiveListUntilChildContaining = 272 => "UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_UNTIL_CHILD_CONTAINING",
-        TypeGoBack = 273 => "UI_ACTION_TYPE_GO_BACK",
-        TypeCloseActiveMenu = 274 => "UI_ACTION_TYPE_CLOSE_ACTIVE_MENU",
-        TypeRemoveObserver = 275 => "UI_ACTION_TYPE_REMOVE_OBSERVER",
-        TypeTavernGameBetDown = 276 => "UI_ACTION_TYPE_TAVERN_GAME_BET_DOWN",
-        TypeTavernGameBetUp = 277 => "UI_ACTION_TYPE_TAVERN_GAME_BET_UP",
-        TypeRespawn = 278 => "UI_ACTION_TYPE_RESPAWN",
-        TypeContinue = 279 => "UI_ACTION_TYPE_CONTINUE",
-        TypeOpenPcSellTradingGoodsList = 280 => "UI_ACTION_TYPE_OPEN_PC_SELL_TRADING_GOODS_LIST",
-        TypeOpenPcWantedTradingGoodsList = 281 => "UI_ACTION_TYPE_OPEN_PC_WANTED_TRADING_GOODS_LIST",
-        TypeConstructPcExperienceList = 282 => "UI_ACTION_TYPE_CONSTRUCT_PC_EXPERIENCE_LIST",
-        TypeGoToRedefineKeysMenu = 283 => "UI_ACTION_TYPE_GO_TO_REDEFINE_KEYS_MENU",
-        TypeResetKeys = 284 => "UI_ACTION_TYPE_RESET_KEYS",
-        TypeAssignSpellToItemSlotPc = 285 => "UI_ACTION_TYPE_ASSIGN_SPELL_TO_ITEM_SLOT_PC",
-        TypeConstructStyleCardsList = 286 => "UI_ACTION_TYPE_CONSTRUCT_STYLE_CARDS_LIST",
-        TypeScrollDescriptionDown = 287 => "UI_ACTION_TYPE_SCROLL_DESCRIPTION_DOWN",
-        TypeScrollDescriptionUp = 288 => "UI_ACTION_TYPE_SCROLL_DESCRIPTION_UP",
-        TypeConstructPcPersonalityList = 289 => "UI_ACTION_TYPE_CONSTRUCT_PC_PERSONALITY_LIST",
-        TypeSendOwnedEventForceObservation = 291 => "UI_ACTION_TYPE_SEND_OWNED_EVENT_FORCE_OBSERVATION",
-        TypeGoToMainMenuFromProfileList = 292 => "UI_ACTION_TYPE_GO_TO_MAIN_MENU_FROM_PROFILE_LIST",
-        TypeNewProfile = 293 => "UI_ACTION_TYPE_NEW_PROFILE",
-        TypeNewProfileReturnPressed = 294 => "UI_ACTION_TYPE_NEW_PROFILE_RETURN_PRESSED",
-        TypeNewProfileEscapePressed = 295 => "UI_ACTION_TYPE_NEW_PROFILE_ESCAPE_PRESSED",
-        TypeQuitGame = 296 => "UI_ACTION_TYPE_QUIT_GAME",
-        TypeNextScreenOptionsSubMenu = 297 => "UI_ACTION_TYPE_NEXT_SCREEN_OPTIONS_SUB_MENU",
-        TypeSetMeshDetail = 298 => "UI_ACTION_TYPE_SET_MESH_DETAIL",
-        TypeSetEffectsDetail = 299 => "UI_ACTION_TYPE_SET_EFFECTS_DETAIL",
-        TypeSetScreenAspectRatio = 300 => "UI_ACTION_TYPE_SET_SCREEN_ASPECT_RATIO",
-        TypeApplyProfileValues = 301 => "UI_ACTION_TYPE_APPLY_PROFILE_VALUES",
-        TypeCloseActiveTradeMenu = 302 => "UI_ACTION_TYPE_CLOSE_ACTIVE_TRADE_MENU",
-        TypeScrollActiveListDownMax = 303 => "UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_DOWN_MAX",
-        TypeScrollActiveListUpMax = 304 => "UI_ACTION_TYPE_SCROLL_ACTIVE_LIST_UP_MAX",
-        TypeScrollDescriptionDownMax = 305 => "UI_ACTION_TYPE_SCROLL_DESCRIPTION_DOWN_MAX",
-        TypeScrollDescriptionUpMax = 306 => "UI_ACTION_TYPE_SCROLL_DESCRIPTION_UP_MAX",
-        TypeScrollDescriptionDownOnePixel = 307 => "UI_ACTION_TYPE_SCROLL_DESCRIPTION_DOWN_ONE_PIXEL",
-        TypeScrollDescriptionUpOnePixel = 308 => "UI_ACTION_TYPE_SCROLL_DESCRIPTION_UP_ONE_PIXEL",
-        TypeCloseTradeMenuIfLeaf = 309 => "UI_ACTION_TYPE_CLOSE_TRADE_MENU_IF_LEAF",
-        TypeExitLiveGuiIfLeaf = 310 => "UI_ACTION_TYPE_EXIT_LIVE_GUI_IF_LEAF",
-        TypeResetKeysWasd = 311 => "UI_ACTION_TYPE_RESET_KEYS_WASD",
-        TypeNextScreenOptionsScoreboard = 312 => "UI_ACTION_TYPE_NEXT_SCREEN_OPTIONS_SCOREBOARD",
-        TypeSetControlMethod = 313 => "UI_ACTION_TYPE_SET_CONTROL_METHOD",
-        TypeGotoQuitPrompt = 314 => "UI_ACTION_TYPE_GOTO_QUIT_PROMPT",
-        TypePcQuitToFrontEnd = 315 => "UI_ACTION_TYPE_PC_QUIT_TO_FRONT_END",
-        TypePcAcceptVideoChanges = 316 => "UI_ACTION_TYPE_PC_ACCEPT_VIDEO_CHANGES",
-        TypeSetRefreshRate = 317 => "UI_ACTION_TYPE_SET_REFRESH_RATE",
-        TypeSetCameraSensitivity = 318 => "UI_ACTION_TYPE_SET_CAMERA_SENSITIVITY",
-        TypeSetBowCamera = 319 => "UI_ACTION_TYPE_SET_BOW_CAMERA",
-        TypeSetCameraResetting = 320 => "UI_ACTION_TYPE_SET_CAMERA_RESETTING",
-        TypeGotoAboutScreen = 321 => "UI_ACTION_TYPE_GOTO_ABOUT_SCREEN",
-        TypeCloseFrame = 322 => "UI_ACTION_TYPE_CLOSE_FRAME",
-        TypeSetShowTargetingStatus = 323 => "UI_ACTION_TYPE_SET_SHOW_TARGETING_STATUS",
-        TypeRestoreDefaultsGameplay = 324 => "UI_ACTION_TYPE_RESTORE_DEFAULTS_GAMEPLAY",
-        TypeRestoreDefaultsVideo = 325 => "UI_ACTION_TYPE_RESTORE_DEFAULTS_VIDEO",
-        TypeRestoreDefaultsAudio = 326 => "UI_ACTION_TYPE_RESTORE_DEFAULTS_AUDIO",
-        TypeSetExpressionItemToAssignSwappingPc = 327 => "UI_ACTION_TYPE_SET_EXPRESSION_ITEM_TO_ASSIGN_SWAPPING_PC",
-        TypeSetSpellToAssignSwappingPc = 328 => "UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN_SWAPPING_PC",
-        TypeSetSpellToAssignInItemsSwappingPc = 329 => "UI_ACTION_TYPE_SET_SPELL_TO_ASSIGN_IN_ITEMS_SWAPPING_PC",
-        AddMeshChild = 2000 => "UI_ACTION_ADD_MESH_CHILD",
-        LoadWeaponDesc = 2001 => "UI_ACTION_LOAD_WEAPON_DESC",
-        LoadClothingDesc = 2002 => "UI_ACTION_LOAD_CLOTHING_DESC",
-        LoadItemDesc = 2003 => "UI_ACTION_LOAD_ITEM_DESC",
-        LoadWeaponMenuEntryName = 2004 => "UI_ACTION_LOAD_WEAPON_MENU_ENTRY_NAME",
-        LoadClothingMenuEntryName = 2005 => "UI_ACTION_LOAD_CLOTHING_MENU_ENTRY_NAME",
-        LoadItemMenuEntryName = 2006 => "UI_ACTION_LOAD_ITEM_MENU_ENTRY_NAME",
-        LoadSellItemDesc = 2007 => "UI_ACTION_LOAD_SELL_ITEM_DESC",
-        LoadSellActionMenu = 2008 => "UI_ACTION_LOAD_SELL_ACTION_MENU",
-        LoadBuyItemDesc = 2009 => "UI_ACTION_LOAD_BUY_ITEM_DESC",
-        LoadBuyActionMenu = 2010 => "UI_ACTION_LOAD_BUY_ACTION_MENU",
-        LoadWantedItemDesc = 2011 => "UI_ACTION_LOAD_WANTED_ITEM_DESC",
-        LoadQuickMenuExpressionsIcon = 2012 => "UI_ACTION_LOAD_QUICK_MENU_EXPRESSIONS_ICON",
-        LoadFileDesc = 2013 => "UI_ACTION_LOAD_FILE_DESC",
-        LoadFileSavegameMinimap = 2014 => "UI_ACTION_LOAD_FILE_SAVEGAME_MINIMAP",
-        RemoveMeshChild = 2015 => "UI_ACTION_REMOVE_MESH_CHILD",
-        UnloadWeaponDesc = 2016 => "UI_ACTION_UNLOAD_WEAPON_DESC",
-        UnloadClothingDesc = 2017 => "UI_ACTION_UNLOAD_CLOTHING_DESC",
-        UnloadItemDesc = 2018 => "UI_ACTION_UNLOAD_ITEM_DESC",
-        UnloadSellItemDesc = 2019 => "UI_ACTION_UNLOAD_SELL_ITEM_DESC",
-        UnloadSellActionMenu = 2020 => "UI_ACTION_UNLOAD_SELL_ACTION_MENU",
-        UnloadBuyItemDesc = 2021 => "UI_ACTION_UNLOAD_BUY_ITEM_DESC",
-        UnloadBuyActionMenu = 2022 => "UI_ACTION_UNLOAD_BUY_ACTION_MENU",
-        UnloadWantedItemDesc = 2023 => "UI_ACTION_UNLOAD_WANTED_ITEM_DESC",
-        TypeCheatMorality = 3000 => "UI_ACTION_TYPE_CHEAT_MORALITY",
-        TypeCheatRenown = 3001 => "UI_ACTION_TYPE_CHEAT_RENOWN",
-        TypeCloseBoastMenu = 3002 => "UI_ACTION_TYPE_CLOSE_BOAST_MENU",
-        TypePlaySound = 3003 => "UI_ACTION_TYPE_PLAY_SOUND",
-        TypeTakeQuestForBoast = 3004 => "UI_ACTION_TYPE_TAKE_QUEST_FOR_BOAST",
-        TypeOpenPcMsnChat = 3005 => "UI_ACTION_TYPE_OPEN_PC_MSN_CHAT",
-        TypeActivateMsnConversation = 3006 => "UI_ACTION_TYPE_ACTIVATE_MSN_CONVERSATION",
-        TypeSendMessage = 3007 => "UI_ACTION_TYPE_SEND_MESSAGE",
-        TypeSelectContact = 3008 => "UI_ACTION_TYPE_SELECT_CONTACT",
-        TypeScrollViewportUp = 3009 => "UI_ACTION_TYPE_SCROLL_VIEWPORT_UP",
-        TypeScrollViewportDown = 3010 => "UI_ACTION_TYPE_SCROLL_VIEWPORT_DOWN",
-        TypeScrollListDown = 3011 => "UI_ACTION_TYPE_SCROLL_LIST_DOWN",
-        TypeScrollListUp = 3012 => "UI_ACTION_TYPE_SCROLL_LIST_UP",
-        TypeOpenScoreboard = 3013 => "UI_ACTION_TYPE_OPEN_SCOREBOARD",
-        TypeChooseClan = 3014 => "UI_ACTION_TYPE_CHOOSE_CLAN",
-        TypePhotoCaption = 3015 => "UI_ACTION_TYPE_PHOTO_CAPTION",
-        TypeDiscardPhoto = 3016 => "UI_ACTION_TYPE_DISCARD_PHOTO",
-        TypeGoToScoreboardScreen = 3017 => "UI_ACTION_TYPE_GO_TO_SCOREBOARD_SCREEN",
-        TypeActivateEditbox = 3018 => "UI_ACTION_TYPE_ACTIVATE_EDITBOX",
-        TypeDeactivateEditbox = 3019 => "UI_ACTION_TYPE_DEACTIVATE_EDITBOX",
-        TypeSetEditboxValues = 3020 => "UI_ACTION_TYPE_SET_EDITBOX_VALUES",
-        TypeScoreboardOk = 3021 => "UI_ACTION_TYPE_SCOREBOARD_OK",
-        TypeLoadPhoto = 3022 => "UI_ACTION_TYPE_LOAD_PHOTO",
-        TypeScrollPhotoDown = 3023 => "UI_ACTION_TYPE_SCROLL_PHOTO_DOWN",
-        TypeScrollPhotoUp = 3024 => "UI_ACTION_TYPE_SCROLL_PHOTO_UP",
-        TypeNextScreenStart = 3025 => "UI_ACTION_TYPE_NEXT_SCREEN_START",
-        TypeOpenPhotojournal = 4000 => "UI_ACTION_TYPE_OPEN_PHOTOJOURNAL",
-        TypeOpenPhoto = 4001 => "UI_ACTION_TYPE_OPEN_PHOTO",
-        TypeExitPhotojournalCapture = 4002 => "UI_ACTION_TYPE_EXIT_PHOTOJOURNAL_CAPTURE",
-    }
+/// 2D sprite render flags. `0` (no flags) occurs in real data.
+///
+/// C++ `EEngineSprite2DFlag`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    CENTRE_ON_POS = 1 => "ENGINE_2D_SPRITE_CENTRE_ON_POS",
+    ENABLE_FILTERING = 2 => "ENGINE_2D_SPRITE_ENABLE_FILTERING",
+)]
+pub struct Sprite2dFlags(pub i32);
+
+/// Bindable game action.
+///
+/// C++ `EGameAction`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum GameAction {
+    #[def("GAME_ACTION_NULL")]
+    Null = 0,
+    #[def("GAME_ACTION_LOCK_TARGET")]
+    LockTarget = 1,
+    #[def("GAME_ACTION_OPEN_INVENTORY")]
+    OpenInventory = 2,
+    #[def("GAME_ACTION_OPEN_IN_GAME_MENU")]
+    OpenInGameMenu = 3,
+    #[def("GAME_ACTION_TOGGLE_MINI_MAP")]
+    ToggleMiniMap = 4,
+    #[def("GAME_ACTION_PAUSE")]
+    Pause = 5,
+    #[def("GAME_ACTION_INTERACT")]
+    Interact = 6,
+    #[def("GAME_ACTION_BLOCK")]
+    Block = 7,
+    #[def("GAME_ACTION_SPECIAL_ATTACK")]
+    SpecialAttack = 8,
+    #[def("GAME_ACTION_ATTACK")]
+    Attack = 9,
+    #[def("GAME_ACTION_FIRE_RANGED_WEAPON")]
+    FireRangedWeapon = 10,
+    #[def("GAME_ACTION_UNARMED_ATTACK")]
+    UnarmedAttack = 11,
+    #[def("GAME_ACTION_ARMED_MELEE_ATTACK")]
+    ArmedMeleeAttack = 12,
+    #[def("GAME_ACTION_UNSHEATHE_MELEE_WEAPON")]
+    UnsheatheMeleeWeapon = 13,
+    #[def("GAME_ACTION_UNSHEATHE_RANGED_WEAPON")]
+    UnsheatheRangedWeapon = 14,
+    #[def("GAME_ACTION_SHEATHE_MELEE_WEAPON")]
+    SheatheMeleeWeapon = 15,
+    #[def("GAME_ACTION_SHEATHE_RANGED_WEAPON")]
+    SheatheRangedWeapon = 16,
+    #[def("GAME_ACTION_TOGGLE_SILENT_MOVE")]
+    ToggleSilentMove = 17,
+    #[def("GAME_ACTION_TOGGLE_CINEMATIC_AND_USER_CAMERA")]
+    ToggleCinematicAndUserCamera = 18,
+    #[def("GAME_ACTION_TOGGLE_FIRST_PERSON_VIEW")]
+    ToggleFirstPersonView = 19,
+    #[def("GAME_ACTION_SKIP_PAST_TEXT")]
+    SkipPastText = 20,
+    #[def("GAME_ACTION_SKIP_CUT_SCENE")]
+    SkipCutScene = 21,
+    #[def("GAME_ACTION_ANSWER_QUESTION_YES")]
+    AnswerQuestionYes = 22,
+    #[def("GAME_ACTION_ANSWER_QUESTION_NO")]
+    AnswerQuestionNo = 23,
+    #[def("GAME_ACTION_ANSWER_QUESTION_THIRD")]
+    AnswerQuestionThird = 24,
+    #[def("GAME_ACTION_INVENTORY_SELECT")]
+    InventorySelect = 25,
+    #[def("GAME_ACTION_ATTRACT_EXPERIENCE_ORBS")]
+    AttractExperienceOrbs = 26,
+    #[def("GAME_ACTION_ROTATE_GUI_SCREENS_LEFT")]
+    RotateGuiScreensLeft = 27,
+    #[def("GAME_ACTION_ROTATE_GUI_SCREENS_RIGHT")]
+    RotateGuiScreensRight = 28,
+    #[def("GAME_ACTION_JUMP")]
+    Jump = 29,
+    #[def("GAME_ACTION_SPRINT")]
+    Sprint = 30,
+    #[def("GAME_ACTION_RUN")]
+    Run = 31,
+    #[def("GAME_ACTION_SNEAK")]
+    Sneak = 32,
+    #[def("GAME_ACTION_INVENTORY_A")]
+    InventoryA = 33,
+    #[def("GAME_ACTION_INVENTORY_B")]
+    InventoryB = 34,
+    #[def("GAME_ACTION_INVENTORY_X")]
+    InventoryX = 35,
+    #[def("GAME_ACTION_INVENTORY_Y")]
+    InventoryY = 36,
+    #[def("GAME_ACTION_INVENTORY_UP")]
+    InventoryUp = 37,
+    #[def("GAME_ACTION_INVENTORY_DOWN")]
+    InventoryDown = 38,
+    #[def("GAME_ACTION_INVENTORY_LEFT")]
+    InventoryLeft = 39,
+    #[def("GAME_ACTION_INVENTORY_RIGHT")]
+    InventoryRight = 40,
+    #[def("GAME_ACTION_INVENTORY_WHITE")]
+    InventoryWhite = 41,
+    #[def("GAME_ACTION_TAVERN_GAMES_INSTRUCTIONS")]
+    TavernGamesInstructions = 42,
+    #[def("GAME_ACTION_FISHING_REEL_IN")]
+    FishingReelIn = 43,
+    #[def("GAME_ACTION_FISHING_CANCEL")]
+    FishingCancel = 44,
+    #[def("GAME_ACTION_TOGGLE_FIRST_PERSON_TARGETING")]
+    ToggleFirstPersonTargeting = 45,
+    #[def("GAME_ACTION_FIRST_PERSON_TARGET_LOCK")]
+    FirstPersonTargetLock = 46,
+    #[def("GAME_ACTION_FIRST_PERSON_ZOOM_IN")]
+    FirstPersonZoomIn = 47,
+    #[def("GAME_ACTION_GENERAL_LEAVE_PLAYER_MODE")]
+    GeneralLeavePlayerMode = 48,
+    #[def("GAME_ACTION_DEBUG_JUMP_1")]
+    DebugJump1 = 49,
+    #[def("GAME_ACTION_DEBUG_JUMP_2")]
+    DebugJump2 = 50,
+    #[def("GAME_ACTION_DEBUG_CAMERA")]
+    DebugCamera = 51,
+    #[def("GAME_ACTION_DEBUG_SHIFT")]
+    DebugShift = 52,
+    #[def("GAME_ACTION_TAKE_PHOTO_FOR_PHOTOJOURNAL")]
+    TakePhotoForPhotojournal = 53,
+    #[def("GAME_ACTION_ASSIGNABLE_SPECIAL_MOVE")]
+    AssignableSpecialMove = 54,
+    #[def("GAME_ACTION_QUICK_ACCESS_ITEM")]
+    QuickAccessItem = 55,
+    #[def("GAME_ACTION_CONTEXT_SENSITIVE_ITEM")]
+    ContextSensitiveItem = 56,
+    #[def("GAME_ACTION_CYCLE_THROUGH_SPELLS")]
+    CycleThroughSpells = 57,
+    #[def("GAME_ACTION_COIN_GOLF_CANCEL_AIM")]
+    CoinGolfCancelAim = 58,
+    #[def("GAME_ACTION_CONFIRM_RESET_TO_FRONT_END")]
+    ConfirmResetToFrontEnd = 59,
+    #[def("GAME_ACTION_MOVEMENT")]
+    Movement = 60,
+    #[def("GAME_ACTION_CAMERA_ROTATE")]
+    CameraRotate = 61,
+    #[def("GAME_ACTION_CAMERA_ROTATE_LEFT")]
+    CameraRotateLeft = 62,
+    #[def("GAME_ACTION_CAMERA_ROTATE_RIGHT")]
+    CameraRotateRight = 63,
+    #[def("GAME_ACTION_CAMERA_ZOOM_IN")]
+    CameraZoomIn = 64,
+    #[def("GAME_ACTION_CAMERA_ZOOM_OUT")]
+    CameraZoomOut = 65,
+    #[def("GAME_ACTION_ORACLE_MINIGAME_UP")]
+    OracleMinigameUp = 66,
+    #[def("GAME_ACTION_ORACLE_MINIGAME_DOWN")]
+    OracleMinigameDown = 67,
+    #[def("GAME_ACTION_ORACLE_MINIGAME_LEFT")]
+    OracleMinigameLeft = 68,
+    #[def("GAME_ACTION_ORACLE_MINIGAME_RIGHT")]
+    OracleMinigameRight = 69,
+    #[def("GAME_ACTION_ORACLE_MINIGAME_QUIT")]
+    OracleMinigameQuit = 70,
+    #[def("GAME_ACTION_MOVE_MOUSE_ON_GUI")]
+    MoveMouseOnGui = 71,
+    #[def("GAME_ACTION_TOGGLE_LIVE_GUI")]
+    ToggleLiveGui = 72,
+    #[def("GAME_ACTION_OPEN_EXPRESSION_MENU")]
+    OpenExpressionMenu = 73,
+    #[def("GAME_ACTION_TOGGLE_DEACTIVATE_LOCK_TARGET")]
+    ToggleDeactivateLockTarget = 74,
+    #[def("GAME_ACTION_FIRST_PERSON_LOOKAROUND")]
+    FirstPersonLookaround = 75,
+    #[def("GAME_ACTION_INVENTORY_UNSELECT")]
+    InventoryUnselect = 76,
+    #[def("GAME_ACTION_CAMERA_MOVE_DOUBLE_AXIS")]
+    CameraMoveDoubleAxis = 77,
+    #[def("GAME_ACTION_CHARGE_GUILD_SEAL")]
+    ChargeGuildSeal = 78,
+    #[def("GAME_ACTION_TAVERN_GAME_MOVEMENT")]
+    TavernGameMovement = 79,
+    #[def("GAME_ACTION_TAVERN_GAME_CAMERA")]
+    TavernGameCamera = 80,
+    #[def("GAME_ACTION_TAVERN_GAME_ACTION_BUTTON")]
+    TavernGameActionButton = 81,
+    #[def("GAME_ACTION_TAVERN_GAME_ALTERNATE_BUTTON")]
+    TavernGameAlternateButton = 82,
+    #[def("GAME_ACTION_TAVERN_GAME_QUIT")]
+    TavernGameQuit = 83,
+    #[def("GAME_ACTION_PROJECTILE_TARGETING_ANALOGUE_ZOOM")]
+    ProjectileTargetingAnalogueZoom = 84,
+    #[def("GAME_ACTION_TOGGLE_PASSIVE_AGGRESSIVE_MODE")]
+    TogglePassiveAggressiveMode = 85,
+    #[def("GAME_ACTION_ACTIVATE_SPELL_MODE")]
+    ActivateSpellMode = 86,
+    #[def("GAME_ACTION_EXPRESSION_SHIFT")]
+    ExpressionShift = 87,
+    #[def("GAME_ACTION_SCROLL_DESCRIPTION_UP")]
+    ScrollDescriptionUp = 88,
+    #[def("GAME_ACTION_SCROLL_DESCRIPTION_DOWN")]
+    ScrollDescriptionDown = 89,
+    #[def("GAME_ACTION_OPEN_WEAPONS_MENU")]
+    OpenWeaponsMenu = 90,
+    #[def("GAME_ACTION_OPEN_CLOTHING_MENU")]
+    OpenClothingMenu = 91,
+    #[def("GAME_ACTION_OPEN_ITEMS_MENU")]
+    OpenItemsMenu = 92,
+    #[def("GAME_ACTION_OPEN_CURRENT_QUESTS_MENU")]
+    OpenCurrentQuestsMenu = 93,
+    #[def("GAME_ACTION_CYCLE_THROUGH_SPELLS_KEYBOARD")]
+    CycleThroughSpellsKeyboard = 94,
+    #[def("GAME_ACTION_TOGGLE_KILL_EVERYTHING_MODE")]
+    ToggleKillEverythingMode = 95,
+    #[def("GAME_ACTION_OPEN_MAGIC_MENU")]
+    OpenMagicMenu = 96,
+    #[def("GAME_ACTION_OPEN_EXPRESSIONS_MENU")]
+    OpenExpressionsMenu = 97,
+    #[def("GAME_ACTION_OPEN_PERSONALITY_MENU")]
+    OpenPersonalityMenu = 98,
+    #[def("GAME_ACTION_OPEN_LOGBOOK_MENU")]
+    OpenLogbookMenu = 99,
+    #[def("GAME_ACTION_OPEN_MAP_MENU")]
+    OpenMapMenu = 100,
+    #[def("GAME_ACTION_SCROLL_MENU")]
+    ScrollMenu = 101,
+    #[def("GAME_ACTION_ZOOM_MAP_OUT")]
+    ZoomMapOut = 102,
+    #[def("GAME_ACTION_ZOOM_MAP_IN")]
+    ZoomMapIn = 103,
+    #[def("GAME_ACTION_SCROLL_MAP_LEFT")]
+    ScrollMapLeft = 104,
+    #[def("GAME_ACTION_SCROLL_MAP_RIGHT")]
+    ScrollMapRight = 105,
+    #[def("GAME_ACTION_SCROLL_MAP_DOWN")]
+    ScrollMapDown = 106,
+    #[def("GAME_ACTION_SCROLL_MAP_UP")]
+    ScrollMapUp = 107,
+    #[def("GAME_ACTION_OPTIONS_SLIDER_LEFT")]
+    OptionsSliderLeft = 108,
+    #[def("GAME_ACTION_OPTIONS_SLIDER_RIGHT")]
+    OptionsSliderRight = 109,
+    #[def("GAME_ACTION_DIGITAL_ANALOGUE_ZOOM_IN")]
+    DigitalAnalogueZoomIn = 110,
+    #[def("GAME_ACTION_DIGITAL_ANALOGUE_ZOOM_OUT")]
+    DigitalAnalogueZoomOut = 111,
+    #[def("GAME_ACTION_TOGGLE_VIEW_HERO_MODE")]
+    ToggleViewHeroMode = 112,
+    #[def("GAME_ACTION_CENTRE_CAMERA")]
+    CentreCamera = 113,
+    #[def("GAME_ACTION_BETTING")]
+    Betting = 114,
+    #[def("GAME_ACTION_COUNT")]
+    Count = 115,
+    // Anniversary retail additions (values 116-127, names not recovered)
+    #[def("GAME_ACTION_116")]
+    GameAction116 = 116,
+    #[def("GAME_ACTION_117")]
+    GameAction117 = 117,
+    #[def("GAME_ACTION_118")]
+    GameAction118 = 118,
+    #[def("GAME_ACTION_119")]
+    GameAction119 = 119,
+    #[def("GAME_ACTION_120")]
+    GameAction120 = 120,
+    #[def("GAME_ACTION_121")]
+    GameAction121 = 121,
+    #[def("GAME_ACTION_122")]
+    GameAction122 = 122,
+    #[def("GAME_ACTION_123")]
+    GameAction123 = 123,
+    #[def("GAME_ACTION_124")]
+    GameAction124 = 124,
+    #[def("GAME_ACTION_125")]
+    GameAction125 = 125,
+    #[def("GAME_ACTION_126")]
+    GameAction126 = 126,
+    #[def("GAME_ACTION_127")]
+    GameAction127 = 127,
 }
 
-def_enum! {
-    /// Sprite slot of a UI table (key of `UiDef::sprites`).
-    ///
-    /// C++ `NUISystem::ETableSprites`.
-    pub enum TableSprites: i32 {
-        TopLeft = 0 => "TABLE_SPRITES_TOP_LEFT",
-        TopRight = 1 => "TABLE_SPRITES_TOP_RIGHT",
-        BottomLeft = 2 => "TABLE_SPRITES_BOTTOM_LEFT",
-        BottomRight = 3 => "TABLE_SPRITES_BOTTOM_RIGHT",
-        TopMiddle = 4 => "TABLE_SPRITES_TOP_MIDDLE",
-        BottomMiddle = 5 => "TABLE_SPRITES_BOTTOM_MIDDLE",
-        MiddleLeft = 6 => "TABLE_SPRITES_MIDDLE_LEFT",
-        MiddleRight = 7 => "TABLE_SPRITES_MIDDLE_RIGHT",
-        SeparationBottom = 8 => "TABLE_SPRITES_SEPARATION_BOTTOM",
-        SeparationTop = 9 => "TABLE_SPRITES_SEPARATION_TOP",
-        SeparationLeft = 10 => "TABLE_SPRITES_SEPARATION_LEFT",
-        SeparationRight = 11 => "TABLE_SPRITES_SEPARATION_RIGHT",
-        Cross = 12 => "TABLE_SPRITES_CROSS",
-        Amount = 13 => "TABLE_SPRITES_AMOUNT",
-    }
+/// Input controller kind.
+///
+/// C++ `EControllerType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ControllerType {
+    #[def("CONTROLLER_NONE")]
+    None = 0,
+    #[def("CONTROLLER_XBOX_PAD")]
+    XboxPad = 1,
+    #[def("CONTROLLER_KEYBOARD")]
+    Keyboard = 2,
+    #[def("CONTROLLER_MOUSE")]
+    Mouse = 3,
 }
 
-def_enum! {
-    /// Engine graphic/mesh kind.
-    ///
-    /// C++ `EEngineGraphicType`.
-    pub enum EngineGraphicType: i32 {
-        EngineGraphicNull = 0 => "ENGINE_GRAPHIC_NULL",
-        EngineGraphicSprite = 1 => "ENGINE_GRAPHIC_SPRITE",
-        EngineGraphic3dsprite = 2 => "ENGINE_GRAPHIC_3DSPRITE",
-        EngineGraphicGeneratedEffect = 3 => "ENGINE_GRAPHIC_GENERATED_EFFECT",
-        EngineGraphicAnimatingMesh = 4 => "ENGINE_GRAPHIC_ANIMATING_MESH",
-        EngineGraphicStaticMesh = 5 => "ENGINE_GRAPHIC_STATIC_MESH",
-        MaxNoEngineGraphicTypes = 6 => "MAX_NO_ENGINE_GRAPHIC_TYPES",
-    }
+/// Xbox pad button.
+///
+/// C++ `EXboxControllerButton`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum XboxControllerButton {
+    #[def("XBOX_PAD_UNDEFINED_BUTTON")]
+    UndefinedButton = 0,
+    #[def("XBOX_PAD_X_BUTTON")]
+    XButton = 1,
+    #[def("XBOX_PAD_Y_BUTTON")]
+    YButton = 2,
+    #[def("XBOX_PAD_BLACK_BUTTON")]
+    BlackButton = 3,
+    #[def("XBOX_PAD_A_BUTTON")]
+    AButton = 4,
+    #[def("XBOX_PAD_B_BUTTON")]
+    BButton = 5,
+    #[def("XBOX_PAD_WHITE_BUTTON")]
+    WhiteButton = 6,
+    #[def("XBOX_PAD_LEFT_TRIGGER")]
+    LeftTrigger = 7,
+    #[def("XBOX_PAD_RIGHT_TRIGGER")]
+    RightTrigger = 8,
+    #[def("XBOX_PAD_LEFT_STICK_BUTTON")]
+    LeftStickButton = 9,
+    #[def("XBOX_PAD_RIGHT_STICK_BUTTON")]
+    RightStickButton = 10,
+    #[def("XBOX_PAD_START_BUTTON")]
+    StartButton = 11,
+    #[def("XBOX_PAD_BACK_BUTTON")]
+    BackButton = 12,
+    #[def("XBOX_PAD_DPAD_UP_BUTTON")]
+    DpadUpButton = 13,
+    #[def("XBOX_PAD_DPAD_DOWN_BUTTON")]
+    DpadDownButton = 14,
+    #[def("XBOX_PAD_DPAD_LEFT_BUTTON")]
+    DpadLeftButton = 15,
+    #[def("XBOX_PAD_DPAD_RIGHT_BUTTON")]
+    DpadRightButton = 16,
+    #[def("XBOX_PAD_LEFT_ANALOGUE_STICK")]
+    LeftAnalogueStick = 17,
+    #[def("XBOX_PAD_RIGHT_ANALOGUE_STICK")]
+    RightAnalogueStick = 18,
 }
 
-def_flags! {
-    /// 2D sprite render flags. `0` (no flags) occurs in real data.
-    ///
-    /// C++ `EEngineSprite2DFlag`.
-    pub struct Sprite2dFlags: i32 {
-        CENTRE_ON_POS = 1 => "ENGINE_2D_SPRITE_CENTRE_ON_POS",
-        ENABLE_FILTERING = 2 => "ENGINE_2D_SPRITE_ENABLE_FILTERING",
-    }
+/// Mouse button or movement binding.
+///
+/// C++ `EMouseButtonControl`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum MouseButtonControl {
+    #[def("MOUSE_BUTTON_NULL_CONTROL")]
+    ButtonNullControl = 0,
+    #[def("MOUSE_BUTTON_LEFT_CONTROL")]
+    ButtonLeftControl = 1,
+    #[def("MOUSE_BUTTON_RIGHT_CONTROL")]
+    ButtonRightControl = 2,
+    #[def("MOUSE_BUTTON_MIDDLE_CONTROL")]
+    ButtonMiddleControl = 3,
+    #[def("MOUSE_MOVEMENT")]
+    Movement = 4,
+    #[def("MOUSE_WHEEL_MOVEMENT")]
+    WheelMovement = 5,
+    #[def("MOUSE_WHEEL_MOVEMENT_UP")]
+    WheelMovementUp = 6,
+    #[def("MOUSE_WHEEL_MOVEMENT_DOWN")]
+    WheelMovementDown = 7,
+    #[def("MOUSE_BUTTON_4_CONTROL")]
+    Button4Control = 8,
+    #[def("MOUSE_BUTTON_5_CONTROL")]
+    Button5Control = 9,
+    #[def("MOUSE_BUTTON_6_CONTROL")]
+    Button6Control = 10,
+    #[def("MOUSE_BUTTON_7_CONTROL")]
+    Button7Control = 11,
+    #[def("MOUSE_BUTTON_8_CONTROL")]
+    Button8Control = 12,
 }
 
-def_enum! {
-    /// Bindable game action.
-    ///
-    /// C++ `EGameAction`.
-    pub enum GameAction: i32 {
-        Null = 0 => "GAME_ACTION_NULL",
-        LockTarget = 1 => "GAME_ACTION_LOCK_TARGET",
-        OpenInventory = 2 => "GAME_ACTION_OPEN_INVENTORY",
-        OpenInGameMenu = 3 => "GAME_ACTION_OPEN_IN_GAME_MENU",
-        ToggleMiniMap = 4 => "GAME_ACTION_TOGGLE_MINI_MAP",
-        Pause = 5 => "GAME_ACTION_PAUSE",
-        Interact = 6 => "GAME_ACTION_INTERACT",
-        Block = 7 => "GAME_ACTION_BLOCK",
-        SpecialAttack = 8 => "GAME_ACTION_SPECIAL_ATTACK",
-        Attack = 9 => "GAME_ACTION_ATTACK",
-        FireRangedWeapon = 10 => "GAME_ACTION_FIRE_RANGED_WEAPON",
-        UnarmedAttack = 11 => "GAME_ACTION_UNARMED_ATTACK",
-        ArmedMeleeAttack = 12 => "GAME_ACTION_ARMED_MELEE_ATTACK",
-        UnsheatheMeleeWeapon = 13 => "GAME_ACTION_UNSHEATHE_MELEE_WEAPON",
-        UnsheatheRangedWeapon = 14 => "GAME_ACTION_UNSHEATHE_RANGED_WEAPON",
-        SheatheMeleeWeapon = 15 => "GAME_ACTION_SHEATHE_MELEE_WEAPON",
-        SheatheRangedWeapon = 16 => "GAME_ACTION_SHEATHE_RANGED_WEAPON",
-        ToggleSilentMove = 17 => "GAME_ACTION_TOGGLE_SILENT_MOVE",
-        ToggleCinematicAndUserCamera = 18 => "GAME_ACTION_TOGGLE_CINEMATIC_AND_USER_CAMERA",
-        ToggleFirstPersonView = 19 => "GAME_ACTION_TOGGLE_FIRST_PERSON_VIEW",
-        SkipPastText = 20 => "GAME_ACTION_SKIP_PAST_TEXT",
-        SkipCutScene = 21 => "GAME_ACTION_SKIP_CUT_SCENE",
-        AnswerQuestionYes = 22 => "GAME_ACTION_ANSWER_QUESTION_YES",
-        AnswerQuestionNo = 23 => "GAME_ACTION_ANSWER_QUESTION_NO",
-        AnswerQuestionThird = 24 => "GAME_ACTION_ANSWER_QUESTION_THIRD",
-        InventorySelect = 25 => "GAME_ACTION_INVENTORY_SELECT",
-        AttractExperienceOrbs = 26 => "GAME_ACTION_ATTRACT_EXPERIENCE_ORBS",
-        RotateGuiScreensLeft = 27 => "GAME_ACTION_ROTATE_GUI_SCREENS_LEFT",
-        RotateGuiScreensRight = 28 => "GAME_ACTION_ROTATE_GUI_SCREENS_RIGHT",
-        Jump = 29 => "GAME_ACTION_JUMP",
-        Sprint = 30 => "GAME_ACTION_SPRINT",
-        Run = 31 => "GAME_ACTION_RUN",
-        Sneak = 32 => "GAME_ACTION_SNEAK",
-        InventoryA = 33 => "GAME_ACTION_INVENTORY_A",
-        InventoryB = 34 => "GAME_ACTION_INVENTORY_B",
-        InventoryX = 35 => "GAME_ACTION_INVENTORY_X",
-        InventoryY = 36 => "GAME_ACTION_INVENTORY_Y",
-        InventoryUp = 37 => "GAME_ACTION_INVENTORY_UP",
-        InventoryDown = 38 => "GAME_ACTION_INVENTORY_DOWN",
-        InventoryLeft = 39 => "GAME_ACTION_INVENTORY_LEFT",
-        InventoryRight = 40 => "GAME_ACTION_INVENTORY_RIGHT",
-        InventoryWhite = 41 => "GAME_ACTION_INVENTORY_WHITE",
-        TavernGamesInstructions = 42 => "GAME_ACTION_TAVERN_GAMES_INSTRUCTIONS",
-        FishingReelIn = 43 => "GAME_ACTION_FISHING_REEL_IN",
-        FishingCancel = 44 => "GAME_ACTION_FISHING_CANCEL",
-        ToggleFirstPersonTargeting = 45 => "GAME_ACTION_TOGGLE_FIRST_PERSON_TARGETING",
-        FirstPersonTargetLock = 46 => "GAME_ACTION_FIRST_PERSON_TARGET_LOCK",
-        FirstPersonZoomIn = 47 => "GAME_ACTION_FIRST_PERSON_ZOOM_IN",
-        GeneralLeavePlayerMode = 48 => "GAME_ACTION_GENERAL_LEAVE_PLAYER_MODE",
-        DebugJump1 = 49 => "GAME_ACTION_DEBUG_JUMP_1",
-        DebugJump2 = 50 => "GAME_ACTION_DEBUG_JUMP_2",
-        DebugCamera = 51 => "GAME_ACTION_DEBUG_CAMERA",
-        DebugShift = 52 => "GAME_ACTION_DEBUG_SHIFT",
-        TakePhotoForPhotojournal = 53 => "GAME_ACTION_TAKE_PHOTO_FOR_PHOTOJOURNAL",
-        AssignableSpecialMove = 54 => "GAME_ACTION_ASSIGNABLE_SPECIAL_MOVE",
-        QuickAccessItem = 55 => "GAME_ACTION_QUICK_ACCESS_ITEM",
-        ContextSensitiveItem = 56 => "GAME_ACTION_CONTEXT_SENSITIVE_ITEM",
-        CycleThroughSpells = 57 => "GAME_ACTION_CYCLE_THROUGH_SPELLS",
-        CoinGolfCancelAim = 58 => "GAME_ACTION_COIN_GOLF_CANCEL_AIM",
-        ConfirmResetToFrontEnd = 59 => "GAME_ACTION_CONFIRM_RESET_TO_FRONT_END",
-        Movement = 60 => "GAME_ACTION_MOVEMENT",
-        CameraRotate = 61 => "GAME_ACTION_CAMERA_ROTATE",
-        CameraRotateLeft = 62 => "GAME_ACTION_CAMERA_ROTATE_LEFT",
-        CameraRotateRight = 63 => "GAME_ACTION_CAMERA_ROTATE_RIGHT",
-        CameraZoomIn = 64 => "GAME_ACTION_CAMERA_ZOOM_IN",
-        CameraZoomOut = 65 => "GAME_ACTION_CAMERA_ZOOM_OUT",
-        OracleMinigameUp = 66 => "GAME_ACTION_ORACLE_MINIGAME_UP",
-        OracleMinigameDown = 67 => "GAME_ACTION_ORACLE_MINIGAME_DOWN",
-        OracleMinigameLeft = 68 => "GAME_ACTION_ORACLE_MINIGAME_LEFT",
-        OracleMinigameRight = 69 => "GAME_ACTION_ORACLE_MINIGAME_RIGHT",
-        OracleMinigameQuit = 70 => "GAME_ACTION_ORACLE_MINIGAME_QUIT",
-        MoveMouseOnGui = 71 => "GAME_ACTION_MOVE_MOUSE_ON_GUI",
-        ToggleLiveGui = 72 => "GAME_ACTION_TOGGLE_LIVE_GUI",
-        OpenExpressionMenu = 73 => "GAME_ACTION_OPEN_EXPRESSION_MENU",
-        ToggleDeactivateLockTarget = 74 => "GAME_ACTION_TOGGLE_DEACTIVATE_LOCK_TARGET",
-        FirstPersonLookaround = 75 => "GAME_ACTION_FIRST_PERSON_LOOKAROUND",
-        InventoryUnselect = 76 => "GAME_ACTION_INVENTORY_UNSELECT",
-        CameraMoveDoubleAxis = 77 => "GAME_ACTION_CAMERA_MOVE_DOUBLE_AXIS",
-        ChargeGuildSeal = 78 => "GAME_ACTION_CHARGE_GUILD_SEAL",
-        TavernGameMovement = 79 => "GAME_ACTION_TAVERN_GAME_MOVEMENT",
-        TavernGameCamera = 80 => "GAME_ACTION_TAVERN_GAME_CAMERA",
-        TavernGameActionButton = 81 => "GAME_ACTION_TAVERN_GAME_ACTION_BUTTON",
-        TavernGameAlternateButton = 82 => "GAME_ACTION_TAVERN_GAME_ALTERNATE_BUTTON",
-        TavernGameQuit = 83 => "GAME_ACTION_TAVERN_GAME_QUIT",
-        ProjectileTargetingAnalogueZoom = 84 => "GAME_ACTION_PROJECTILE_TARGETING_ANALOGUE_ZOOM",
-        TogglePassiveAggressiveMode = 85 => "GAME_ACTION_TOGGLE_PASSIVE_AGGRESSIVE_MODE",
-        ActivateSpellMode = 86 => "GAME_ACTION_ACTIVATE_SPELL_MODE",
-        ExpressionShift = 87 => "GAME_ACTION_EXPRESSION_SHIFT",
-        ScrollDescriptionUp = 88 => "GAME_ACTION_SCROLL_DESCRIPTION_UP",
-        ScrollDescriptionDown = 89 => "GAME_ACTION_SCROLL_DESCRIPTION_DOWN",
-        OpenWeaponsMenu = 90 => "GAME_ACTION_OPEN_WEAPONS_MENU",
-        OpenClothingMenu = 91 => "GAME_ACTION_OPEN_CLOTHING_MENU",
-        OpenItemsMenu = 92 => "GAME_ACTION_OPEN_ITEMS_MENU",
-        OpenCurrentQuestsMenu = 93 => "GAME_ACTION_OPEN_CURRENT_QUESTS_MENU",
-        CycleThroughSpellsKeyboard = 94 => "GAME_ACTION_CYCLE_THROUGH_SPELLS_KEYBOARD",
-        ToggleKillEverythingMode = 95 => "GAME_ACTION_TOGGLE_KILL_EVERYTHING_MODE",
-        OpenMagicMenu = 96 => "GAME_ACTION_OPEN_MAGIC_MENU",
-        OpenExpressionsMenu = 97 => "GAME_ACTION_OPEN_EXPRESSIONS_MENU",
-        OpenPersonalityMenu = 98 => "GAME_ACTION_OPEN_PERSONALITY_MENU",
-        OpenLogbookMenu = 99 => "GAME_ACTION_OPEN_LOGBOOK_MENU",
-        OpenMapMenu = 100 => "GAME_ACTION_OPEN_MAP_MENU",
-        ScrollMenu = 101 => "GAME_ACTION_SCROLL_MENU",
-        ZoomMapOut = 102 => "GAME_ACTION_ZOOM_MAP_OUT",
-        ZoomMapIn = 103 => "GAME_ACTION_ZOOM_MAP_IN",
-        ScrollMapLeft = 104 => "GAME_ACTION_SCROLL_MAP_LEFT",
-        ScrollMapRight = 105 => "GAME_ACTION_SCROLL_MAP_RIGHT",
-        ScrollMapDown = 106 => "GAME_ACTION_SCROLL_MAP_DOWN",
-        ScrollMapUp = 107 => "GAME_ACTION_SCROLL_MAP_UP",
-        OptionsSliderLeft = 108 => "GAME_ACTION_OPTIONS_SLIDER_LEFT",
-        OptionsSliderRight = 109 => "GAME_ACTION_OPTIONS_SLIDER_RIGHT",
-        DigitalAnalogueZoomIn = 110 => "GAME_ACTION_DIGITAL_ANALOGUE_ZOOM_IN",
-        DigitalAnalogueZoomOut = 111 => "GAME_ACTION_DIGITAL_ANALOGUE_ZOOM_OUT",
-        ToggleViewHeroMode = 112 => "GAME_ACTION_TOGGLE_VIEW_HERO_MODE",
-        CentreCamera = 113 => "GAME_ACTION_CENTRE_CAMERA",
-        Betting = 114 => "GAME_ACTION_BETTING",
-        Count = 115 => "GAME_ACTION_COUNT",
-        // Anniversary retail additions (values 116-127, names not recovered)
-        GameAction116 = 116 => "GAME_ACTION_116",
-        GameAction117 = 117 => "GAME_ACTION_117",
-        GameAction118 = 118 => "GAME_ACTION_118",
-        GameAction119 = 119 => "GAME_ACTION_119",
-        GameAction120 = 120 => "GAME_ACTION_120",
-        GameAction121 = 121 => "GAME_ACTION_121",
-        GameAction122 = 122 => "GAME_ACTION_122",
-        GameAction123 = 123 => "GAME_ACTION_123",
-        GameAction124 = 124 => "GAME_ACTION_124",
-        GameAction125 = 125 => "GAME_ACTION_125",
-        GameAction126 = 126 => "GAME_ACTION_126",
-        GameAction127 = 127 => "GAME_ACTION_127",
-    }
-}
-
-def_enum! {
-    /// Input controller kind.
-    ///
-    /// C++ `EControllerType`.
-    pub enum ControllerType: i32 {
-        None = 0 => "CONTROLLER_NONE",
-        XboxPad = 1 => "CONTROLLER_XBOX_PAD",
-        Keyboard = 2 => "CONTROLLER_KEYBOARD",
-        Mouse = 3 => "CONTROLLER_MOUSE",
-    }
-}
-
-def_enum! {
-    /// Xbox pad button.
-    ///
-    /// C++ `EXboxControllerButton`.
-    pub enum XboxControllerButton: i32 {
-        UndefinedButton = 0 => "XBOX_PAD_UNDEFINED_BUTTON",
-        XButton = 1 => "XBOX_PAD_X_BUTTON",
-        YButton = 2 => "XBOX_PAD_Y_BUTTON",
-        BlackButton = 3 => "XBOX_PAD_BLACK_BUTTON",
-        AButton = 4 => "XBOX_PAD_A_BUTTON",
-        BButton = 5 => "XBOX_PAD_B_BUTTON",
-        WhiteButton = 6 => "XBOX_PAD_WHITE_BUTTON",
-        LeftTrigger = 7 => "XBOX_PAD_LEFT_TRIGGER",
-        RightTrigger = 8 => "XBOX_PAD_RIGHT_TRIGGER",
-        LeftStickButton = 9 => "XBOX_PAD_LEFT_STICK_BUTTON",
-        RightStickButton = 10 => "XBOX_PAD_RIGHT_STICK_BUTTON",
-        StartButton = 11 => "XBOX_PAD_START_BUTTON",
-        BackButton = 12 => "XBOX_PAD_BACK_BUTTON",
-        DpadUpButton = 13 => "XBOX_PAD_DPAD_UP_BUTTON",
-        DpadDownButton = 14 => "XBOX_PAD_DPAD_DOWN_BUTTON",
-        DpadLeftButton = 15 => "XBOX_PAD_DPAD_LEFT_BUTTON",
-        DpadRightButton = 16 => "XBOX_PAD_DPAD_RIGHT_BUTTON",
-        LeftAnalogueStick = 17 => "XBOX_PAD_LEFT_ANALOGUE_STICK",
-        RightAnalogueStick = 18 => "XBOX_PAD_RIGHT_ANALOGUE_STICK",
-    }
-}
-
-def_enum! {
-    /// Mouse button or movement binding.
-    ///
-    /// C++ `EMouseButtonControl`.
-    pub enum MouseButtonControl: i32 {
-        ButtonNullControl = 0 => "MOUSE_BUTTON_NULL_CONTROL",
-        ButtonLeftControl = 1 => "MOUSE_BUTTON_LEFT_CONTROL",
-        ButtonRightControl = 2 => "MOUSE_BUTTON_RIGHT_CONTROL",
-        ButtonMiddleControl = 3 => "MOUSE_BUTTON_MIDDLE_CONTROL",
-        Movement = 4 => "MOUSE_MOVEMENT",
-        WheelMovement = 5 => "MOUSE_WHEEL_MOVEMENT",
-        WheelMovementUp = 6 => "MOUSE_WHEEL_MOVEMENT_UP",
-        WheelMovementDown = 7 => "MOUSE_WHEEL_MOVEMENT_DOWN",
-        Button4Control = 8 => "MOUSE_BUTTON_4_CONTROL",
-        Button5Control = 9 => "MOUSE_BUTTON_5_CONTROL",
-        Button6Control = 10 => "MOUSE_BUTTON_6_CONTROL",
-        Button7Control = 11 => "MOUSE_BUTTON_7_CONTROL",
-        Button8Control = 12 => "MOUSE_BUTTON_8_CONTROL",
-    }
-}
-
-def_enum! {
-    /// Keyboard key binding.
-    ///
-    /// C++ `EInputKey` (`Data/Defs/keyboard_keys.h`). The `NO_INPUT_KEYS` count
-    /// enumerator is omitted.
-    pub enum InputKey: i32 {
-        Null = 0 => "KB_NULL",
-        Esc = 1 => "KB_ESC",
-        Num1 = 2 => "KB_1",
-        Num2 = 3 => "KB_2",
-        Num3 = 4 => "KB_3",
-        Num4 = 5 => "KB_4",
-        Num5 = 6 => "KB_5",
-        Num6 = 7 => "KB_6",
-        Num7 = 8 => "KB_7",
-        Num8 = 9 => "KB_8",
-        Num9 = 10 => "KB_9",
-        Num0 = 11 => "KB_0",
-        Minus = 12 => "KB_MINUS",
-        Equals = 13 => "KB_EQUALS",
-        Backspace = 14 => "KB_BACKSPACE",
-        Tab = 15 => "KB_TAB",
-        Q = 16 => "KB_Q",
-        W = 17 => "KB_W",
-        E = 18 => "KB_E",
-        R = 19 => "KB_R",
-        T = 20 => "KB_T",
-        Y = 21 => "KB_Y",
-        U = 22 => "KB_U",
-        I = 23 => "KB_I",
-        O = 24 => "KB_O",
-        P = 25 => "KB_P",
-        Lbracket = 26 => "KB_LBRACKET",
-        Rbracket = 27 => "KB_RBRACKET",
-        Return = 28 => "KB_RETURN",
-        Lcontrol = 29 => "KB_LCONTROL",
-        A = 30 => "KB_A",
-        S = 31 => "KB_S",
-        D = 32 => "KB_D",
-        F = 33 => "KB_F",
-        G = 34 => "KB_G",
-        H = 35 => "KB_H",
-        J = 36 => "KB_J",
-        K = 37 => "KB_K",
-        L = 38 => "KB_L",
-        Semicolon = 39 => "KB_SEMICOLON",
-        Apostrophe = 40 => "KB_APOSTROPHE",
-        Hash = 41 => "KB_HASH",
-        Lshift = 42 => "KB_LSHIFT",
-        Backslash = 43 => "KB_BACKSLASH",
-        Z = 44 => "KB_Z",
-        X = 45 => "KB_X",
-        C = 46 => "KB_C",
-        V = 47 => "KB_V",
-        B = 48 => "KB_B",
-        N = 49 => "KB_N",
-        M = 50 => "KB_M",
-        Comma = 51 => "KB_COMMA",
-        Fullstop = 52 => "KB_FULLSTOP",
-        Slash = 53 => "KB_SLASH",
-        Rshift = 54 => "KB_RSHIFT",
-        Pmultiply = 55 => "KB_PMULTIPLY",
-        Lalt = 56 => "KB_LALT",
-        Space = 57 => "KB_SPACE",
-        Capslock = 58 => "KB_CAPSLOCK",
-        F1 = 59 => "KB_F1",
-        F2 = 60 => "KB_F2",
-        F3 = 61 => "KB_F3",
-        F4 = 62 => "KB_F4",
-        F5 = 63 => "KB_F5",
-        F6 = 64 => "KB_F6",
-        F7 = 65 => "KB_F7",
-        F8 = 66 => "KB_F8",
-        F9 = 67 => "KB_F9",
-        F10 = 68 => "KB_F10",
-        Numlock = 69 => "KB_NUMLOCK",
-        Scrolllock = 70 => "KB_SCROLLLOCK",
-        P7 = 71 => "KB_P7",
-        P8 = 72 => "KB_P8",
-        P9 = 73 => "KB_P9",
-        Pminus = 74 => "KB_PMINUS",
-        P4 = 75 => "KB_P4",
-        P5 = 76 => "KB_P5",
-        P6 = 77 => "KB_P6",
-        Pplus = 78 => "KB_PPLUS",
-        P1 = 79 => "KB_P1",
-        P2 = 80 => "KB_P2",
-        P3 = 81 => "KB_P3",
-        P0 = 82 => "KB_P0",
-        Pfullstop = 83 => "KB_PFULLSTOP",
-        F11 = 84 => "KB_F11",
-        F12 = 85 => "KB_F12",
-        F13 = 86 => "KB_F13",
-        F14 = 87 => "KB_F14",
-        F15 = 88 => "KB_F15",
-        Kana = 89 => "KB_KANA",
-        Convert = 90 => "KB_CONVERT",
-        Noconvert = 91 => "KB_NOCONVERT",
-        Yen = 92 => "KB_YEN",
-        Pequals = 93 => "KB_PEQUALS",
-        Circumflex = 94 => "KB_CIRCUMFLEX",
-        At = 95 => "KB_AT",
-        Colon = 96 => "KB_COLON",
-        Underline = 97 => "KB_UNDERLINE",
-        Kanji = 98 => "KB_KANJI",
-        Stop = 99 => "KB_STOP",
-        Ax = 100 => "KB_AX",
-        Unlabeled = 101 => "KB_UNLABELED",
-        Penter = 102 => "KB_PENTER",
-        Rcontrol = 103 => "KB_RCONTROL",
-        Pcomma = 104 => "KB_PCOMMA",
-        Pdivide = 105 => "KB_PDIVIDE",
-        Sysrq = 106 => "KB_SYSRQ",
-        Ralt = 107 => "KB_RALT",
-        Home = 108 => "KB_HOME",
-        Up = 109 => "KB_UP",
-        Pageup = 110 => "KB_PAGEUP",
-        Left = 111 => "KB_LEFT",
-        Right = 112 => "KB_RIGHT",
-        End = 113 => "KB_END",
-        Down = 114 => "KB_DOWN",
-        Pagedown = 115 => "KB_PAGEDOWN",
-        Insert = 116 => "KB_INSERT",
-        Delete = 117 => "KB_DELETE",
-        Lwin = 118 => "KB_LWIN",
-        Rwin = 119 => "KB_RWIN",
-        Apps = 120 => "KB_APPS",
-    }
+/// Keyboard key binding.
+///
+/// C++ `EInputKey` (`Data/Defs/keyboard_keys.h`). The `NO_INPUT_KEYS` count
+/// enumerator is omitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum InputKey {
+    #[def("KB_NULL")]
+    Null = 0,
+    #[def("KB_ESC")]
+    Esc = 1,
+    #[def("KB_1")]
+    Num1 = 2,
+    #[def("KB_2")]
+    Num2 = 3,
+    #[def("KB_3")]
+    Num3 = 4,
+    #[def("KB_4")]
+    Num4 = 5,
+    #[def("KB_5")]
+    Num5 = 6,
+    #[def("KB_6")]
+    Num6 = 7,
+    #[def("KB_7")]
+    Num7 = 8,
+    #[def("KB_8")]
+    Num8 = 9,
+    #[def("KB_9")]
+    Num9 = 10,
+    #[def("KB_0")]
+    Num0 = 11,
+    #[def("KB_MINUS")]
+    Minus = 12,
+    #[def("KB_EQUALS")]
+    Equals = 13,
+    #[def("KB_BACKSPACE")]
+    Backspace = 14,
+    #[def("KB_TAB")]
+    Tab = 15,
+    #[def("KB_Q")]
+    Q = 16,
+    #[def("KB_W")]
+    W = 17,
+    #[def("KB_E")]
+    E = 18,
+    #[def("KB_R")]
+    R = 19,
+    #[def("KB_T")]
+    T = 20,
+    #[def("KB_Y")]
+    Y = 21,
+    #[def("KB_U")]
+    U = 22,
+    #[def("KB_I")]
+    I = 23,
+    #[def("KB_O")]
+    O = 24,
+    #[def("KB_P")]
+    P = 25,
+    #[def("KB_LBRACKET")]
+    Lbracket = 26,
+    #[def("KB_RBRACKET")]
+    Rbracket = 27,
+    #[def("KB_RETURN")]
+    Return = 28,
+    #[def("KB_LCONTROL")]
+    Lcontrol = 29,
+    #[def("KB_A")]
+    A = 30,
+    #[def("KB_S")]
+    S = 31,
+    #[def("KB_D")]
+    D = 32,
+    #[def("KB_F")]
+    F = 33,
+    #[def("KB_G")]
+    G = 34,
+    #[def("KB_H")]
+    H = 35,
+    #[def("KB_J")]
+    J = 36,
+    #[def("KB_K")]
+    K = 37,
+    #[def("KB_L")]
+    L = 38,
+    #[def("KB_SEMICOLON")]
+    Semicolon = 39,
+    #[def("KB_APOSTROPHE")]
+    Apostrophe = 40,
+    #[def("KB_HASH")]
+    Hash = 41,
+    #[def("KB_LSHIFT")]
+    Lshift = 42,
+    #[def("KB_BACKSLASH")]
+    Backslash = 43,
+    #[def("KB_Z")]
+    Z = 44,
+    #[def("KB_X")]
+    X = 45,
+    #[def("KB_C")]
+    C = 46,
+    #[def("KB_V")]
+    V = 47,
+    #[def("KB_B")]
+    B = 48,
+    #[def("KB_N")]
+    N = 49,
+    #[def("KB_M")]
+    M = 50,
+    #[def("KB_COMMA")]
+    Comma = 51,
+    #[def("KB_FULLSTOP")]
+    Fullstop = 52,
+    #[def("KB_SLASH")]
+    Slash = 53,
+    #[def("KB_RSHIFT")]
+    Rshift = 54,
+    #[def("KB_PMULTIPLY")]
+    Pmultiply = 55,
+    #[def("KB_LALT")]
+    Lalt = 56,
+    #[def("KB_SPACE")]
+    Space = 57,
+    #[def("KB_CAPSLOCK")]
+    Capslock = 58,
+    #[def("KB_F1")]
+    F1 = 59,
+    #[def("KB_F2")]
+    F2 = 60,
+    #[def("KB_F3")]
+    F3 = 61,
+    #[def("KB_F4")]
+    F4 = 62,
+    #[def("KB_F5")]
+    F5 = 63,
+    #[def("KB_F6")]
+    F6 = 64,
+    #[def("KB_F7")]
+    F7 = 65,
+    #[def("KB_F8")]
+    F8 = 66,
+    #[def("KB_F9")]
+    F9 = 67,
+    #[def("KB_F10")]
+    F10 = 68,
+    #[def("KB_NUMLOCK")]
+    Numlock = 69,
+    #[def("KB_SCROLLLOCK")]
+    Scrolllock = 70,
+    #[def("KB_P7")]
+    P7 = 71,
+    #[def("KB_P8")]
+    P8 = 72,
+    #[def("KB_P9")]
+    P9 = 73,
+    #[def("KB_PMINUS")]
+    Pminus = 74,
+    #[def("KB_P4")]
+    P4 = 75,
+    #[def("KB_P5")]
+    P5 = 76,
+    #[def("KB_P6")]
+    P6 = 77,
+    #[def("KB_PPLUS")]
+    Pplus = 78,
+    #[def("KB_P1")]
+    P1 = 79,
+    #[def("KB_P2")]
+    P2 = 80,
+    #[def("KB_P3")]
+    P3 = 81,
+    #[def("KB_P0")]
+    P0 = 82,
+    #[def("KB_PFULLSTOP")]
+    Pfullstop = 83,
+    #[def("KB_F11")]
+    F11 = 84,
+    #[def("KB_F12")]
+    F12 = 85,
+    #[def("KB_F13")]
+    F13 = 86,
+    #[def("KB_F14")]
+    F14 = 87,
+    #[def("KB_F15")]
+    F15 = 88,
+    #[def("KB_KANA")]
+    Kana = 89,
+    #[def("KB_CONVERT")]
+    Convert = 90,
+    #[def("KB_NOCONVERT")]
+    Noconvert = 91,
+    #[def("KB_YEN")]
+    Yen = 92,
+    #[def("KB_PEQUALS")]
+    Pequals = 93,
+    #[def("KB_CIRCUMFLEX")]
+    Circumflex = 94,
+    #[def("KB_AT")]
+    At = 95,
+    #[def("KB_COLON")]
+    Colon = 96,
+    #[def("KB_UNDERLINE")]
+    Underline = 97,
+    #[def("KB_KANJI")]
+    Kanji = 98,
+    #[def("KB_STOP")]
+    Stop = 99,
+    #[def("KB_AX")]
+    Ax = 100,
+    #[def("KB_UNLABELED")]
+    Unlabeled = 101,
+    #[def("KB_PENTER")]
+    Penter = 102,
+    #[def("KB_RCONTROL")]
+    Rcontrol = 103,
+    #[def("KB_PCOMMA")]
+    Pcomma = 104,
+    #[def("KB_PDIVIDE")]
+    Pdivide = 105,
+    #[def("KB_SYSRQ")]
+    Sysrq = 106,
+    #[def("KB_RALT")]
+    Ralt = 107,
+    #[def("KB_HOME")]
+    Home = 108,
+    #[def("KB_UP")]
+    Up = 109,
+    #[def("KB_PAGEUP")]
+    Pageup = 110,
+    #[def("KB_LEFT")]
+    Left = 111,
+    #[def("KB_RIGHT")]
+    Right = 112,
+    #[def("KB_END")]
+    End = 113,
+    #[def("KB_DOWN")]
+    Down = 114,
+    #[def("KB_PAGEDOWN")]
+    Pagedown = 115,
+    #[def("KB_INSERT")]
+    Insert = 116,
+    #[def("KB_DELETE")]
+    Delete = 117,
+    #[def("KB_LWIN")]
+    Lwin = 118,
+    #[def("KB_RWIN")]
+    Rwin = 119,
+    #[def("KB_APPS")]
+    Apps = 120,
 }
 
 #[cfg(test)]
@@ -1005,1318 +1437,1966 @@ mod tests {
 
 // ── generated game.bin enums ──────────────────────────────────
 
-def_enum! {
-    /// C++ `EActionRegisteredType`.
-    pub enum ActionRegisteredType: i32 {
-        NULL = 0 => "ACTION_NULL",
-        JACKOFBLADESHITRESPONSE = 1 => "ACTION_JACK_OF_BLADES_HIT_RESPONSE",
-        SCORPIONKINGHITRESPONSE = 2 => "ACTION_SCORPION_KING_HIT_RESPONSE",
-        MAZECAUSEFORCEPUSHHITRESPONSE = 3 => "ACTION_MAZE_CAUSE_FORCE_PUSH_HIT_RESPONSE",
-        ROCKTROLLDEATH = 4 => "ACTION_ROCK_TROLL_DEATH",
-        KINGSCORPIONDEATH = 5 => "ACTION_KING_SCORPION_DEATH",
-        WASPQUEENDEATH = 6 => "ACTION_WASP_QUEEN_DEATH",
-        COMBATGENERICPROJECTILEWEAPONAIM = 7 => "ACTION_COMBAT_GENERIC_PROJECTILE_WEAPON_AIM",
-        COMBATGENERICPROJECTILEWEAPONFIRE = 8 => "ACTION_COMBAT_GENERIC_PROJECTILE_WEAPON_FIRE",
-        COMBATGENERICPROJECTILEWEAPONLOAD = 9 => "ACTION_COMBAT_GENERIC_PROJECTILE_WEAPON_LOAD",
-        COMBATGENERICLEADERCOMMAND = 10 => "ACTION_COMBAT_GENERIC_LEADER_COMMAND",
-        COMBATGENERICBOAST = 11 => "ACTION_COMBAT_GENERIC_BOAST",
-        COMBATUNBLOCKABLEATTACK = 12 => "ACTION_COMBAT_UNBLOCKABLE_ATTACK",
-        COMBATHOPBACK = 13 => "ACTION_COMBAT_HOP_BACK",
-        COMBATSTRAFEFORWARD = 14 => "ACTION_COMBAT_STRAFE_FORWARD",
-        COMBATSTRAFEBACKWARD = 15 => "ACTION_COMBAT_STRAFE_BACKWARD",
-        COMBATSTRAFELEFT = 16 => "ACTION_COMBAT_STRAFE_LEFT",
-        COMBATSTRAFERIGHT = 17 => "ACTION_COMBAT_STRAFE_RIGHT",
-        COMBATSTRAFEBACKLEFT = 18 => "ACTION_COMBAT_STRAFE_BACK_LEFT",
-        COMBATSTRAFEBACKRIGHT = 19 => "ACTION_COMBAT_STRAFE_BACK_RIGHT",
-        COMBATCHARGE = 20 => "ACTION_COMBAT_CHARGE",
-        COMBATIDLE = 21 => "ACTION_COMBAT_IDLE",
-        BREAKINTOMELEE = 22 => "ACTION_BREAK_INTO_MELEE",
-        COMBATSUMMONCREATURES = 23 => "ACTION_COMBAT_SUMMON_CREATURES",
-        COMBATATTACKLUNGE = 24 => "ACTION_COMBAT_ATTACK_LUNGE",
-        COMBATATTACKMAIN = 25 => "ACTION_COMBAT_ATTACK_MAIN",
-        COMBATATTACKKNOCKDOWN = 26 => "ACTION_COMBAT_ATTACK_KNOCKDOWN",
-        COMBATATTACKSIDE = 27 => "ACTION_COMBAT_ATTACK_SIDE",
-        COMBATATTACKSHORTRANGE = 28 => "ACTION_COMBAT_ATTACK_SHORT_RANGE",
-        BANDITKINGHITRESPONSE = 29 => "ACTION_BANDIT_KING_HIT_RESPONSE",
-        BANDITKINGSTUCKHITRESPONSE = 30 => "ACTION_BANDIT_KING_STUCK_HIT_RESPONSE",
-        HOBBESPELLCASTERAIM = 31 => "ACTION_HOBBE_SPELLCASTER_AIM",
-        HOBBESPELLCASTERFIRE = 32 => "ACTION_HOBBE_SPELLCASTER_FIRE",
-        HOBBELUNGE = 33 => "ACTION_HOBBE_LUNGE",
-        TENTACLEHITRESPONSE = 34 => "ACTION_TENTACLE_HIT_RESPONSE",
-        SCREAMERDIE = 35 => "ACTION_SCREAMER_DIE",
-        SCREAMERDRAINATTACK = 36 => "ACTION_SCREAMER_DRAIN_ATTACK",
-        SCREAMERDRAINOUTOF = 37 => "ACTION_SCREAMER_DRAIN_OUT_OF",
-        SCREAMERADVANCE = 38 => "ACTION_SCREAMER_ADVANCE",
-        SCREAMERBACKOFF = 39 => "ACTION_SCREAMER_BACK_OFF",
-        SCREAMERIDLE = 40 => "ACTION_SCREAMER_IDLE",
-        COMBATBODGESIDEATTACK = 41 => "ACTION_COMBAT_BODGE_SIDE_ATTACK",
-        COMBATTURNSTRIKELEFT = 42 => "ACTION_COMBAT_TURN_STRIKE_LEFT",
-        COMBATTURNSTRIKERIGHT = 43 => "ACTION_COMBAT_TURN_STRIKE_RIGHT",
-        COMBATCHARGESTRIKE = 44 => "ACTION_COMBAT_CHARGE_STRIKE",
-        NYMPHGETHIT = 45 => "ACTION_NYMPH_GET_HIT",
-        NYMPHGETHITDIE = 46 => "ACTION_NYMPH_GET_HIT_DIE",
-        BALVERINELUNGEATTACK = 47 => "ACTION_BALVERINE_LUNGE_ATTACK",
-        BALVERINEBREAKOFFFROMCOMBAT = 48 => "ACTION_BALVERINE_BREAK_OFF_FROM_COMBAT",
-        BALVERINEBREAKOFFFROMCOMBATLONG = 49 => "ACTION_BALVERINE_BREAK_OFF_FROM_COMBAT_LONG",
-        SUMMONERFLAMESLICE = 50 => "ACTION_SUMMONER_FLAME_SLICE",
-        SUMMONERUNSHEATHESTRIKE = 51 => "ACTION_SUMMONER_UNSHEATHE_STRIKE",
-        SUMMONERSTRIKE = 52 => "ACTION_SUMMONER_STRIKE",
-        BATTLECHARGE = 53 => "ACTION_BATTLE_CHARGE",
-        SUMMONERDIE = 54 => "ACTION_SUMMONER_DIE",
-    }
+/// C++ `EActionRegisteredType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ActionRegisteredType {
+    #[def("ACTION_NULL")]
+    NULL = 0,
+    #[def("ACTION_JACK_OF_BLADES_HIT_RESPONSE")]
+    JACKOFBLADESHITRESPONSE = 1,
+    #[def("ACTION_SCORPION_KING_HIT_RESPONSE")]
+    SCORPIONKINGHITRESPONSE = 2,
+    #[def("ACTION_MAZE_CAUSE_FORCE_PUSH_HIT_RESPONSE")]
+    MAZECAUSEFORCEPUSHHITRESPONSE = 3,
+    #[def("ACTION_ROCK_TROLL_DEATH")]
+    ROCKTROLLDEATH = 4,
+    #[def("ACTION_KING_SCORPION_DEATH")]
+    KINGSCORPIONDEATH = 5,
+    #[def("ACTION_WASP_QUEEN_DEATH")]
+    WASPQUEENDEATH = 6,
+    #[def("ACTION_COMBAT_GENERIC_PROJECTILE_WEAPON_AIM")]
+    COMBATGENERICPROJECTILEWEAPONAIM = 7,
+    #[def("ACTION_COMBAT_GENERIC_PROJECTILE_WEAPON_FIRE")]
+    COMBATGENERICPROJECTILEWEAPONFIRE = 8,
+    #[def("ACTION_COMBAT_GENERIC_PROJECTILE_WEAPON_LOAD")]
+    COMBATGENERICPROJECTILEWEAPONLOAD = 9,
+    #[def("ACTION_COMBAT_GENERIC_LEADER_COMMAND")]
+    COMBATGENERICLEADERCOMMAND = 10,
+    #[def("ACTION_COMBAT_GENERIC_BOAST")]
+    COMBATGENERICBOAST = 11,
+    #[def("ACTION_COMBAT_UNBLOCKABLE_ATTACK")]
+    COMBATUNBLOCKABLEATTACK = 12,
+    #[def("ACTION_COMBAT_HOP_BACK")]
+    COMBATHOPBACK = 13,
+    #[def("ACTION_COMBAT_STRAFE_FORWARD")]
+    COMBATSTRAFEFORWARD = 14,
+    #[def("ACTION_COMBAT_STRAFE_BACKWARD")]
+    COMBATSTRAFEBACKWARD = 15,
+    #[def("ACTION_COMBAT_STRAFE_LEFT")]
+    COMBATSTRAFELEFT = 16,
+    #[def("ACTION_COMBAT_STRAFE_RIGHT")]
+    COMBATSTRAFERIGHT = 17,
+    #[def("ACTION_COMBAT_STRAFE_BACK_LEFT")]
+    COMBATSTRAFEBACKLEFT = 18,
+    #[def("ACTION_COMBAT_STRAFE_BACK_RIGHT")]
+    COMBATSTRAFEBACKRIGHT = 19,
+    #[def("ACTION_COMBAT_CHARGE")]
+    COMBATCHARGE = 20,
+    #[def("ACTION_COMBAT_IDLE")]
+    COMBATIDLE = 21,
+    #[def("ACTION_BREAK_INTO_MELEE")]
+    BREAKINTOMELEE = 22,
+    #[def("ACTION_COMBAT_SUMMON_CREATURES")]
+    COMBATSUMMONCREATURES = 23,
+    #[def("ACTION_COMBAT_ATTACK_LUNGE")]
+    COMBATATTACKLUNGE = 24,
+    #[def("ACTION_COMBAT_ATTACK_MAIN")]
+    COMBATATTACKMAIN = 25,
+    #[def("ACTION_COMBAT_ATTACK_KNOCKDOWN")]
+    COMBATATTACKKNOCKDOWN = 26,
+    #[def("ACTION_COMBAT_ATTACK_SIDE")]
+    COMBATATTACKSIDE = 27,
+    #[def("ACTION_COMBAT_ATTACK_SHORT_RANGE")]
+    COMBATATTACKSHORTRANGE = 28,
+    #[def("ACTION_BANDIT_KING_HIT_RESPONSE")]
+    BANDITKINGHITRESPONSE = 29,
+    #[def("ACTION_BANDIT_KING_STUCK_HIT_RESPONSE")]
+    BANDITKINGSTUCKHITRESPONSE = 30,
+    #[def("ACTION_HOBBE_SPELLCASTER_AIM")]
+    HOBBESPELLCASTERAIM = 31,
+    #[def("ACTION_HOBBE_SPELLCASTER_FIRE")]
+    HOBBESPELLCASTERFIRE = 32,
+    #[def("ACTION_HOBBE_LUNGE")]
+    HOBBELUNGE = 33,
+    #[def("ACTION_TENTACLE_HIT_RESPONSE")]
+    TENTACLEHITRESPONSE = 34,
+    #[def("ACTION_SCREAMER_DIE")]
+    SCREAMERDIE = 35,
+    #[def("ACTION_SCREAMER_DRAIN_ATTACK")]
+    SCREAMERDRAINATTACK = 36,
+    #[def("ACTION_SCREAMER_DRAIN_OUT_OF")]
+    SCREAMERDRAINOUTOF = 37,
+    #[def("ACTION_SCREAMER_ADVANCE")]
+    SCREAMERADVANCE = 38,
+    #[def("ACTION_SCREAMER_BACK_OFF")]
+    SCREAMERBACKOFF = 39,
+    #[def("ACTION_SCREAMER_IDLE")]
+    SCREAMERIDLE = 40,
+    #[def("ACTION_COMBAT_BODGE_SIDE_ATTACK")]
+    COMBATBODGESIDEATTACK = 41,
+    #[def("ACTION_COMBAT_TURN_STRIKE_LEFT")]
+    COMBATTURNSTRIKELEFT = 42,
+    #[def("ACTION_COMBAT_TURN_STRIKE_RIGHT")]
+    COMBATTURNSTRIKERIGHT = 43,
+    #[def("ACTION_COMBAT_CHARGE_STRIKE")]
+    COMBATCHARGESTRIKE = 44,
+    #[def("ACTION_NYMPH_GET_HIT")]
+    NYMPHGETHIT = 45,
+    #[def("ACTION_NYMPH_GET_HIT_DIE")]
+    NYMPHGETHITDIE = 46,
+    #[def("ACTION_BALVERINE_LUNGE_ATTACK")]
+    BALVERINELUNGEATTACK = 47,
+    #[def("ACTION_BALVERINE_BREAK_OFF_FROM_COMBAT")]
+    BALVERINEBREAKOFFFROMCOMBAT = 48,
+    #[def("ACTION_BALVERINE_BREAK_OFF_FROM_COMBAT_LONG")]
+    BALVERINEBREAKOFFFROMCOMBATLONG = 49,
+    #[def("ACTION_SUMMONER_FLAME_SLICE")]
+    SUMMONERFLAMESLICE = 50,
+    #[def("ACTION_SUMMONER_UNSHEATHE_STRIKE")]
+    SUMMONERUNSHEATHESTRIKE = 51,
+    #[def("ACTION_SUMMONER_STRIKE")]
+    SUMMONERSTRIKE = 52,
+    #[def("ACTION_BATTLE_CHARGE")]
+    BATTLECHARGE = 53,
+    #[def("ACTION_SUMMONER_DIE")]
+    SUMMONERDIE = 54,
 }
 
-def_enum! {
-    /// C++ `EClockHandType`.
-    pub enum ClockHandType: i32 {
-        SECOND = 0 => "CLOCKHAND_SECOND",
-        MINUTE = 1 => "CLOCKHAND_MINUTE",
-        HOUR = 2 => "CLOCKHAND_HOUR",
-    }
+/// C++ `EClockHandType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ClockHandType {
+    #[def("CLOCKHAND_SECOND")]
+    SECOND = 0,
+    #[def("CLOCKHAND_MINUTE")]
+    MINUTE = 1,
+    #[def("CLOCKHAND_HOUR")]
+    HOUR = 2,
 }
 
-def_enum! {
-    /// C++ `EClothingSuitPart`.
-    pub enum ClothingSuitPart: i32 {
-        NULL = 0 => "CLOTHING_SUIT_NULL",
-        HEAD = 1 => "CLOTHING_SUIT_HEAD",
-        BODY = 2 => "CLOTHING_SUIT_BODY",
-        HANDS = 3 => "CLOTHING_SUIT_HANDS",
-        LEGS = 4 => "CLOTHING_SUIT_LEGS",
-        FEET = 5 => "CLOTHING_SUIT_FEET",
-    }
+/// C++ `EClothingSuitPart`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ClothingSuitPart {
+    #[def("CLOTHING_SUIT_NULL")]
+    NULL = 0,
+    #[def("CLOTHING_SUIT_HEAD")]
+    HEAD = 1,
+    #[def("CLOTHING_SUIT_BODY")]
+    BODY = 2,
+    #[def("CLOTHING_SUIT_HANDS")]
+    HANDS = 3,
+    #[def("CLOTHING_SUIT_LEGS")]
+    LEGS = 4,
+    #[def("CLOTHING_SUIT_FEET")]
+    FEET = 5,
 }
 
-def_enum! {
-    /// C++ `ECombatCreatureType`.
-    pub enum CombatCreatureType: i32 {
-        HERO = 0 => "CREATURE_TYPE_HERO",
-        RIVALHERO = 1 => "CREATURE_TYPE_RIVAL_HERO",
-        FODDERCREATURE = 2 => "CREATURE_TYPE_FODDER_CREATURE",
-        COMBATHUMANOID = 3 => "CREATURE_TYPE_COMBAT_HUMANOID",
-        COMBATANIMAL = 4 => "CREATURE_TYPE_COMBAT_ANIMAL",
-        VILLAGERMALE = 5 => "CREATURE_TYPE_VILLAGER_MALE",
-        VILLAGERFEMALE = 6 => "CREATURE_TYPE_VILLAGER_FEMALE",
-        VILLAGERCHILD = 7 => "CREATURE_TYPE_VILLAGER_CHILD",
-        GUARD = 8 => "CREATURE_TYPE_GUARD",
-    }
+/// C++ `ECombatCreatureType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CombatCreatureType {
+    #[def("CREATURE_TYPE_HERO")]
+    HERO = 0,
+    #[def("CREATURE_TYPE_RIVAL_HERO")]
+    RIVALHERO = 1,
+    #[def("CREATURE_TYPE_FODDER_CREATURE")]
+    FODDERCREATURE = 2,
+    #[def("CREATURE_TYPE_COMBAT_HUMANOID")]
+    COMBATHUMANOID = 3,
+    #[def("CREATURE_TYPE_COMBAT_ANIMAL")]
+    COMBATANIMAL = 4,
+    #[def("CREATURE_TYPE_VILLAGER_MALE")]
+    VILLAGERMALE = 5,
+    #[def("CREATURE_TYPE_VILLAGER_FEMALE")]
+    VILLAGERFEMALE = 6,
+    #[def("CREATURE_TYPE_VILLAGER_CHILD")]
+    VILLAGERCHILD = 7,
+    #[def("CREATURE_TYPE_GUARD")]
+    GUARD = 8,
 }
 
-def_enum! {
-    /// C++ `ECombatSequenceInterruptionType`.
-    pub enum CombatSequenceInterruptionType: i32 {
-        INTERRUPTNULL = 0 => "COMBAT_SEQUENCE_INTERRUPT_NULL",
-        INTERRUPTABLE = 1 => "COMBAT_SEQUENCE_INTERRUPTABLE",
-        INTERRUPTABLEDUETOZONECHANGE = 2 => "COMBAT_SEQUENCE_INTERRUPTABLE_DUE_TO_ZONE_CHANGE",
-    }
+/// C++ `ECombatSequenceInterruptionType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CombatSequenceInterruptionType {
+    #[def("COMBAT_SEQUENCE_INTERRUPT_NULL")]
+    INTERRUPTNULL = 0,
+    #[def("COMBAT_SEQUENCE_INTERRUPTABLE")]
+    INTERRUPTABLE = 1,
+    #[def("COMBAT_SEQUENCE_INTERRUPTABLE_DUE_TO_ZONE_CHANGE")]
+    INTERRUPTABLEDUETOZONECHANGE = 2,
 }
 
-def_enum! {
-    /// C++ `ECombatSequenceIsValidType`.
-    pub enum CombatSequenceIsValidType: i32 {
-        VALIDNULL = 0 => "COMBAT_SEQUENCE_IS_VALID_NULL",
-        VALIDTARGETBLOCKING = 1 => "COMBAT_SEQUENCE_IS_VALID_TARGET_BLOCKING",
-        VALIDLOADRANGEDWEAPON = 2 => "COMBAT_SEQUENCE_IS_VALID_LOAD_RANGED_WEAPON",
-        VALIDFIREATTARGET = 3 => "COMBAT_SEQUENCE_IS_VALID_FIRE_AT_TARGET",
-        VALIDISTARGETHEALTHOVER75 = 4 => "COMBAT_SEQUENCE_IS_VALID_IS_TARGET_HEALTH_OVER_75",
-        VALIDISMYHEALTHBELOW30 = 5 => "COMBAT_SEQUENCE_IS_VALID_IS_MY_HEALTH_BELOW_30",
-        VALIDISBALVERINEABLETOLUNGE = 6 => "COMBAT_SEQUENCE_IS_VALID_IS_BALVERINE_ABLE_TO_LUNGE",
-        VALIDABLETOSUMMON = 7 => "COMBAT_SEQUENCE_IS_VALID_ABLE_TO_SUMMON",
-        TARGETINLINEOFSIGHT = 8 => "COMBAT_SEQUENCE_IS_TARGET_IN_LINE_OF_SIGHT",
-    }
+/// C++ `ECombatSequenceIsValidType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CombatSequenceIsValidType {
+    #[def("COMBAT_SEQUENCE_IS_VALID_NULL")]
+    VALIDNULL = 0,
+    #[def("COMBAT_SEQUENCE_IS_VALID_TARGET_BLOCKING")]
+    VALIDTARGETBLOCKING = 1,
+    #[def("COMBAT_SEQUENCE_IS_VALID_LOAD_RANGED_WEAPON")]
+    VALIDLOADRANGEDWEAPON = 2,
+    #[def("COMBAT_SEQUENCE_IS_VALID_FIRE_AT_TARGET")]
+    VALIDFIREATTARGET = 3,
+    #[def("COMBAT_SEQUENCE_IS_VALID_IS_TARGET_HEALTH_OVER_75")]
+    VALIDISTARGETHEALTHOVER75 = 4,
+    #[def("COMBAT_SEQUENCE_IS_VALID_IS_MY_HEALTH_BELOW_30")]
+    VALIDISMYHEALTHBELOW30 = 5,
+    #[def("COMBAT_SEQUENCE_IS_VALID_IS_BALVERINE_ABLE_TO_LUNGE")]
+    VALIDISBALVERINEABLETOLUNGE = 6,
+    #[def("COMBAT_SEQUENCE_IS_VALID_ABLE_TO_SUMMON")]
+    VALIDABLETOSUMMON = 7,
+    #[def("COMBAT_SEQUENCE_IS_TARGET_IN_LINE_OF_SIGHT")]
+    TARGETINLINEOFSIGHT = 8,
 }
 
-def_enum! {
-    /// C++ `ECombatSequenceOnStartModuleType`.
-    pub enum CombatSequenceOnStartModuleType: i32 {
-        NULL = 0 => "COMBAT_SEQUENCE_ON_START_NULL",
-        CONTINUEAIMING = 1 => "COMBAT_SEQUENCE_ON_START_CONTINUE_AIMING",
-    }
+/// C++ `ECombatSequenceOnStartModuleType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CombatSequenceOnStartModuleType {
+    #[def("COMBAT_SEQUENCE_ON_START_NULL")]
+    NULL = 0,
+    #[def("COMBAT_SEQUENCE_ON_START_CONTINUE_AIMING")]
+    CONTINUEAIMING = 1,
 }
 
-def_enum! {
-    /// C++ `ECombatSequenceOnStopModuleType`.
-    pub enum CombatSequenceOnStopModuleType: i32 {
-        NULL = 0 => "COMBAT_SEQUENCE_ON_STOP_NULL",
-    }
+/// C++ `ECombatSequenceOnStopModuleType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CombatSequenceOnStopModuleType {
+    #[def("COMBAT_SEQUENCE_ON_STOP_NULL")]
+    NULL = 0,
 }
 
-def_enum! {
-    /// C++ `ECombatSequenceType`.
-    pub enum CombatSequenceType: i32 {
-        NULL = 0 => "COMBAT_SEQUENCE_NULL",
-        MELEE = 1 => "COMBAT_SEQUENCE_MELEE",
-        BREAKINTOMELEE = 2 => "COMBAT_SEQUENCE_BREAK_INTO_MELEE",
-        BOAST = 3 => "COMBAT_SEQUENCE_BOAST",
-        LEADER = 4 => "COMBAT_SEQUENCE_LEADER",
-    }
+/// C++ `ECombatSequenceType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CombatSequenceType {
+    #[def("COMBAT_SEQUENCE_NULL")]
+    NULL = 0,
+    #[def("COMBAT_SEQUENCE_MELEE")]
+    MELEE = 1,
+    #[def("COMBAT_SEQUENCE_BREAK_INTO_MELEE")]
+    BREAKINTOMELEE = 2,
+    #[def("COMBAT_SEQUENCE_BOAST")]
+    BOAST = 3,
+    #[def("COMBAT_SEQUENCE_LEADER")]
+    LEADER = 4,
 }
 
-def_enum! {
-    /// C++ `ECombatStrikeRecoilStyle`.
-    pub enum CombatStrikeRecoilStyle: i32 {
-        RECOILBREAKHANDEDNESS = 0 => "RECOIL_BREAK_HANDEDNESS",
-        RECOILMAINTATINHANDEDNESS = 1 => "RECOIL_MAINTATIN_HANDEDNESS",
-        RECOILNONE = 2 => "RECOIL_NONE",
-        MAXNUMBEROFRECOILTYPES = 3 => "MAX_NUMBER_OF_RECOIL_TYPES",
-    }
+/// C++ `ECombatStrikeRecoilStyle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CombatStrikeRecoilStyle {
+    #[def("RECOIL_BREAK_HANDEDNESS")]
+    RECOILBREAKHANDEDNESS = 0,
+    #[def("RECOIL_MAINTATIN_HANDEDNESS")]
+    RECOILMAINTATINHANDEDNESS = 1,
+    #[def("RECOIL_NONE")]
+    RECOILNONE = 2,
+    #[def("MAX_NUMBER_OF_RECOIL_TYPES")]
+    MAXNUMBEROFRECOILTYPES = 3,
 }
 
-def_enum! {
-    /// C++ `ECompositeBlendType`.
-    pub enum CompositeBlendType: i32 {
-        NULL = 0 => "COMPOSITE_BLEND_NULL",
-        ADDITIVE = 1 => "COMPOSITE_BLEND_ADDITIVE",
-        ALPHA = 2 => "COMPOSITE_BLEND_ALPHA",
-        SOLID = 3 => "COMPOSITE_BLEND_SOLID",
-        MULTIPLY = 4 => "COMPOSITE_BLEND_MULTIPLY",
-    }
+/// C++ `ECompositeBlendType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CompositeBlendType {
+    #[def("COMPOSITE_BLEND_NULL")]
+    NULL = 0,
+    #[def("COMPOSITE_BLEND_ADDITIVE")]
+    ADDITIVE = 1,
+    #[def("COMPOSITE_BLEND_ALPHA")]
+    ALPHA = 2,
+    #[def("COMPOSITE_BLEND_SOLID")]
+    SOLID = 3,
+    #[def("COMPOSITE_BLEND_MULTIPLY")]
+    MULTIPLY = 4,
 }
 
-def_enum! {
-    /// C++ `EContextSensitiveType`.
-    pub enum ContextSensitiveType: i32 {
-        NULL = 0 => "CONTEXT_SENSITIVE_NULL",
-        GUILDSEAL = 1 => "CONTEXT_SENSITIVE_GUILD_SEAL",
-        LAMP = 2 => "CONTEXT_SENSITIVE_LAMP",
-        HEALTH = 3 => "CONTEXT_SENSITIVE_HEALTH",
-        MANA = 4 => "CONTEXT_SENSITIVE_MANA",
-        EXPRESSION = 5 => "CONTEXT_SENSITIVE_EXPRESSION",
-        OPINIONEXPRESSION = 6 => "CONTEXT_SENSITIVE_OPINION_EXPRESSION",
-        GIFT = 7 => "CONTEXT_SENSITIVE_GIFT",
-        MARKER = 8 => "CONTEXT_SENSITIVE_MARKER",
-        TROPHY = 9 => "CONTEXT_SENSITIVE_TROPHY",
-        SCRIPT = 10 => "CONTEXT_SENSITIVE_SCRIPT",
-    }
+/// C++ `EContextSensitiveType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ContextSensitiveType {
+    #[def("CONTEXT_SENSITIVE_NULL")]
+    NULL = 0,
+    #[def("CONTEXT_SENSITIVE_GUILD_SEAL")]
+    GUILDSEAL = 1,
+    #[def("CONTEXT_SENSITIVE_LAMP")]
+    LAMP = 2,
+    #[def("CONTEXT_SENSITIVE_HEALTH")]
+    HEALTH = 3,
+    #[def("CONTEXT_SENSITIVE_MANA")]
+    MANA = 4,
+    #[def("CONTEXT_SENSITIVE_EXPRESSION")]
+    EXPRESSION = 5,
+    #[def("CONTEXT_SENSITIVE_OPINION_EXPRESSION")]
+    OPINIONEXPRESSION = 6,
+    #[def("CONTEXT_SENSITIVE_GIFT")]
+    GIFT = 7,
+    #[def("CONTEXT_SENSITIVE_MARKER")]
+    MARKER = 8,
+    #[def("CONTEXT_SENSITIVE_TROPHY")]
+    TROPHY = 9,
+    #[def("CONTEXT_SENSITIVE_SCRIPT")]
+    SCRIPT = 10,
 }
 
-def_enum! {
-    /// C++ `EControlledMovementType`.
-    pub enum ControlledMovementType: i32 {
-        NULL = 0 => "CONTROLLED_MOVEMENT_NULL",
-        WALKING = 1 => "CONTROLLED_MOVEMENT_WALKING",
-        FLYING = 2 => "CONTROLLED_MOVEMENT_FLYING",
-        FIRSTPERSON = 3 => "CONTROLLED_MOVEMENT_FIRST_PERSON",
-    }
+/// C++ `EControlledMovementType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ControlledMovementType {
+    #[def("CONTROLLED_MOVEMENT_NULL")]
+    NULL = 0,
+    #[def("CONTROLLED_MOVEMENT_WALKING")]
+    WALKING = 1,
+    #[def("CONTROLLED_MOVEMENT_FLYING")]
+    FLYING = 2,
+    #[def("CONTROLLED_MOVEMENT_FIRST_PERSON")]
+    FIRSTPERSON = 3,
 }
 
-def_enum! {
-    /// C++ `ECreatureAbility`.
-    pub enum CreatureAbility: i32 {
-        CREATUREABILITYTYPEATTACK = 0 => "CREATURE_ABILITY_TYPE_ATTACK",
-        CREATUREABILITYTYPEFLOURISH = 1 => "CREATURE_ABILITY_TYPE_FLOURISH",
-        CREATUREABILITYTYPEFLOURISH360CW = 2 => "CREATURE_ABILITY_TYPE_FLOURISH_360_CW",
-        CREATUREABILITYTYPEFLOURISH360ACW = 3 => "CREATURE_ABILITY_TYPE_FLOURISH_360_ACW",
-        CREATUREABILITYTYPEFLOURISHUPTHRUSTLEFT = 4 => "CREATURE_ABILITY_TYPE_FLOURISH_UPTHRUST_LEFT",
-        CREATUREABILITYTYPEFLOURISHUPTHRUSTRIGHT = 5 => "CREATURE_ABILITY_TYPE_FLOURISH_UPTHRUST_RIGHT",
-        CREATUREABILITYTYPEFLOURISHMAXIMUMDAMAGE = 6 => "CREATURE_ABILITY_TYPE_FLOURISH_MAXIMUM_DAMAGE",
-        CREATUREABILITYTYPEBREAKBLOCK = 7 => "CREATURE_ABILITY_TYPE_BREAK_BLOCK",
-        MAXNUMBEROFCREATUREABILITIES = 8 => "MAX_NUMBER_OF_CREATURE_ABILITIES",
-    }
+/// C++ `ECreatureAbility`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CreatureAbility {
+    #[def("CREATURE_ABILITY_TYPE_ATTACK")]
+    CREATUREABILITYTYPEATTACK = 0,
+    #[def("CREATURE_ABILITY_TYPE_FLOURISH")]
+    CREATUREABILITYTYPEFLOURISH = 1,
+    #[def("CREATURE_ABILITY_TYPE_FLOURISH_360_CW")]
+    CREATUREABILITYTYPEFLOURISH360CW = 2,
+    #[def("CREATURE_ABILITY_TYPE_FLOURISH_360_ACW")]
+    CREATUREABILITYTYPEFLOURISH360ACW = 3,
+    #[def("CREATURE_ABILITY_TYPE_FLOURISH_UPTHRUST_LEFT")]
+    CREATUREABILITYTYPEFLOURISHUPTHRUSTLEFT = 4,
+    #[def("CREATURE_ABILITY_TYPE_FLOURISH_UPTHRUST_RIGHT")]
+    CREATUREABILITYTYPEFLOURISHUPTHRUSTRIGHT = 5,
+    #[def("CREATURE_ABILITY_TYPE_FLOURISH_MAXIMUM_DAMAGE")]
+    CREATUREABILITYTYPEFLOURISHMAXIMUMDAMAGE = 6,
+    #[def("CREATURE_ABILITY_TYPE_BREAK_BLOCK")]
+    CREATUREABILITYTYPEBREAKBLOCK = 7,
+    #[def("MAX_NUMBER_OF_CREATURE_ABILITIES")]
+    MAXNUMBEROFCREATUREABILITIES = 8,
 }
 
-def_enum! {
-    /// C++ `ECreatureGeneratorGenerateType`.
-    pub enum CreatureGeneratorGenerateType: i32 {
-        NORMAL = 0 => "GENERATE_NORMAL",
-        AMBUSHDROPIN = 1 => "GENERATE_AMBUSH_DROP_IN",
-        AMBUSHJUMPOUT = 2 => "GENERATE_AMBUSH_JUMP_OUT",
-        GENERATORANIMATION = 3 => "GENERATE_GENERATOR_ANIMATION",
-        UNDEAD = 4 => "GENERATE_UNDEAD",
-    }
+/// C++ `ECreatureGeneratorGenerateType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CreatureGeneratorGenerateType {
+    #[def("GENERATE_NORMAL")]
+    NORMAL = 0,
+    #[def("GENERATE_AMBUSH_DROP_IN")]
+    AMBUSHDROPIN = 1,
+    #[def("GENERATE_AMBUSH_JUMP_OUT")]
+    AMBUSHJUMPOUT = 2,
+    #[def("GENERATE_GENERATOR_ANIMATION")]
+    GENERATORANIMATION = 3,
+    #[def("GENERATE_UNDEAD")]
+    UNDEAD = 4,
 }
 
-def_flags! {
-    /// C++ `ECreatureInteractionType`.
-    pub struct CreatureInteractionType: i32 {
-        NULL = 0 => "CREATURE_INTERACTION_NULL",
-        CONVERSATION = 1 => "CREATURE_INTERACTION_CONVERSATION",
-        TAG = 2 => "CREATURE_INTERACTION_TAG",
-        MULTI_TAG = 4 => "CREATURE_INTERACTION_MULTI_TAG",
-        PURCHASING = 8 => "CREATURE_INTERACTION_PURCHASING",
-    }
+/// C++ `ECreatureInteractionType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    NULL = 0 => "CREATURE_INTERACTION_NULL",
+    CONVERSATION = 1 => "CREATURE_INTERACTION_CONVERSATION",
+    TAG = 2 => "CREATURE_INTERACTION_TAG",
+    MULTI_TAG = 4 => "CREATURE_INTERACTION_MULTI_TAG",
+    PURCHASING = 8 => "CREATURE_INTERACTION_PURCHASING",
+)]
+pub struct CreatureInteractionType(pub i32);
+
+/// C++ `ECreatureType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CreatureType {
+    #[def("NOT_HUMAN")]
+    NOTHUMAN = 0,
+    #[def("HUMAN_CHILD")]
+    HUMANCHILD = 1,
+    #[def("HUMAN_ADULT")]
+    HUMANADULT = 2,
+    #[def("HUMAN_ELDERLY")]
+    HUMANELDERLY = 3,
 }
 
-def_enum! {
-    /// C++ `ECreatureType`.
-    pub enum CreatureType: i32 {
-        NOTHUMAN = 0 => "NOT_HUMAN",
-        HUMANCHILD = 1 => "HUMAN_CHILD",
-        HUMANADULT = 2 => "HUMAN_ADULT",
-        HUMANELDERLY = 3 => "HUMAN_ELDERLY",
-    }
+/// C++ `ECrimeSeverity`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum CrimeSeverity {
+    #[def("CRIME_SEVERITY_NONE")]
+    NONE = 0,
+    #[def("CRIME_SEVERITY_MINOR")]
+    MINOR = 1,
+    #[def("CRIME_SEVERITY_MODERATE")]
+    MODERATE = 2,
+    #[def("CRIME_SEVERITY_SERIOUS")]
+    SERIOUS = 3,
 }
 
-def_enum! {
-    /// C++ `ECrimeSeverity`.
-    pub enum CrimeSeverity: i32 {
-        NONE = 0 => "CRIME_SEVERITY_NONE",
-        MINOR = 1 => "CRIME_SEVERITY_MINOR",
-        MODERATE = 2 => "CRIME_SEVERITY_MODERATE",
-        SERIOUS = 3 => "CRIME_SEVERITY_SERIOUS",
-    }
+/// C++ `EDamageAttribute`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum DamageAttribute {
+    #[def("DAMAGE_NULL")]
+    NULL = -1,
+    #[def("DAMAGE_MELEE")]
+    MELEE = 0,
+    #[def("DAMAGE_MELEE_UNARMED")]
+    MELEEUNARMED = 1,
+    #[def("DAMAGE_LIGHTNING")]
+    LIGHTNING = 2,
+    #[def("DAMAGE_FIRE")]
+    FIRE = 3,
+    #[def("DAMAGE_PROJECTILE")]
+    PROJECTILE = 4,
+    #[def("DAMAGE_EXPLOSION")]
+    EXPLOSION = 5,
+    #[def("DAMAGE_DRAIN")]
+    DRAIN = 6,
+    #[def("DAMAGE_DRAIN_HEAL")]
+    DRAINHEAL = 7,
+    #[def("DAMAGE_GENERIC_WILL")]
+    GENERICWILL = 8,
+    #[def("DAMAGE_DIVINE_WRATH")]
+    DIVINEWRATH = 9,
+    #[def("DAMAGE_UNHOLY_POWER")]
+    UNHOLYPOWER = 10,
 }
 
-def_enum! {
-    /// C++ `EDamageAttribute`.
-    pub enum DamageAttribute: i32 {
-        NULL = -1 => "DAMAGE_NULL",
-        MELEE = 0 => "DAMAGE_MELEE",
-        MELEEUNARMED = 1 => "DAMAGE_MELEE_UNARMED",
-        LIGHTNING = 2 => "DAMAGE_LIGHTNING",
-        FIRE = 3 => "DAMAGE_FIRE",
-        PROJECTILE = 4 => "DAMAGE_PROJECTILE",
-        EXPLOSION = 5 => "DAMAGE_EXPLOSION",
-        DRAIN = 6 => "DAMAGE_DRAIN",
-        DRAINHEAL = 7 => "DAMAGE_DRAIN_HEAL",
-        GENERICWILL = 8 => "DAMAGE_GENERIC_WILL",
-        DIVINEWRATH = 9 => "DAMAGE_DIVINE_WRATH",
-        UNHOLYPOWER = 10 => "DAMAGE_UNHOLY_POWER",
-    }
+/// C++ `EDoorTriggerType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum DoorTriggerType {
+    #[def("DOOR_TRIGGER_ON_PERSON")]
+    ONPERSON = 0,
+    #[def("DOOR_TRIGGER_MANUAL")]
+    MANUAL = 1,
 }
 
-def_enum! {
-    /// C++ `EDoorTriggerType`.
-    pub enum DoorTriggerType: i32 {
-        ONPERSON = 0 => "DOOR_TRIGGER_ON_PERSON",
-        MANUAL = 1 => "DOOR_TRIGGER_MANUAL",
-    }
+/// C++ `EExpressionInventoryType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ExpressionInventoryType {
+    #[def("EXPRESSION_INVENTORY_SOCIAL")]
+    EXPRESSIONINVENTORYSOCIAL = 0,
+    #[def("EXPRESSION_INVENTORY_RENOWN")]
+    EXPRESSIONINVENTORYRENOWN = 1,
+    #[def("EXPRESSION_INVENTORY_ALIGNMENT")]
+    EXPRESSIONINVENTORYALIGNMENT = 2,
+    #[def("EXPRESSION_INVENTORY_STEALTH")]
+    EXPRESSIONINVENTORYSTEALTH = 3,
+    #[def("NUM_INVENTORY_EXPRESSIONS")]
+    NUMINVENTORYEXPRESSIONS = 4,
 }
 
-def_enum! {
-    /// C++ `EExpressionInventoryType`.
-    pub enum ExpressionInventoryType: i32 {
-        EXPRESSIONINVENTORYSOCIAL = 0 => "EXPRESSION_INVENTORY_SOCIAL",
-        EXPRESSIONINVENTORYRENOWN = 1 => "EXPRESSION_INVENTORY_RENOWN",
-        EXPRESSIONINVENTORYALIGNMENT = 2 => "EXPRESSION_INVENTORY_ALIGNMENT",
-        EXPRESSIONINVENTORYSTEALTH = 3 => "EXPRESSION_INVENTORY_STEALTH",
-        NUMINVENTORYEXPRESSIONS = 4 => "NUM_INVENTORY_EXPRESSIONS",
-    }
+/// C++ `EFeatAttackType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum FeatAttackType {
+    #[def("FAT_ATTACK_ANY")]
+    ANY = 0,
+    #[def("FAT_ATTACK_SWORD")]
+    SWORD = 1,
+    #[def("FAT_ATTACK_BOW")]
+    BOW = 2,
+    #[def("FAT_ATTACK_HANDS")]
+    HANDS = 3,
+    #[def("FAT_ATTACK_WILL")]
+    WILL = 4,
 }
 
-def_enum! {
-    /// C++ `EFeatAttackType`.
-    pub enum FeatAttackType: i32 {
-        ANY = 0 => "FAT_ATTACK_ANY",
-        SWORD = 1 => "FAT_ATTACK_SWORD",
-        BOW = 2 => "FAT_ATTACK_BOW",
-        HANDS = 3 => "FAT_ATTACK_HANDS",
-        WILL = 4 => "FAT_ATTACK_WILL",
-    }
+/// C++ `EGameEventType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum GameEventType {
+    #[def("GAME_EVENT_NULL")]
+    GAMEEVENTNULL = 0,
+    #[def("GAME_EVENT_UPDATE_FRAME")]
+    GAMEEVENTUPDATEFRAME = 1,
+    #[def("GAME_EVENT_QUIT")]
+    GAMEEVENTQUIT = 2,
+    #[def("GAME_EVENT_SET_EXCLUSIVE_MODE")]
+    GAMEEVENTSETEXCLUSIVEMODE = 3,
+    #[def("GAME_EVENT_SET_DISPLAY_MODE")]
+    GAMEEVENTSETDISPLAYMODE = 4,
+    #[def("GAME_EVENT_SET_EDITOR_MODE")]
+    GAMEEVENTSETEDITORMODE = 5,
+    #[def("GAME_EVENT_FIRST_PERSON_VIEW_START")]
+    GAMEEVENTFIRSTPERSONVIEWSTART = 6,
+    #[def("GAME_EVENT_CREATURE_CHEAT")]
+    GAMEEVENTCREATURECHEAT = 7,
+    #[def("GAME_EVENT_PLAYER_RESPAWN")]
+    GAMEEVENTPLAYERRESPAWN = 8,
+    #[def("GAME_EVENT_SET_PAUSE_MODE")]
+    GAMEEVENTSETPAUSEMODE = 9,
+    #[def("GAME_EVENT_SET_SLOW_MOTION")]
+    GAMEEVENTSETSLOWMOTION = 10,
+    #[def("GAME_EVENT_SET_FREE_CAMERA_MODE")]
+    GAMEEVENTSETFREECAMERAMODE = 11,
+    #[def("GAME_EVENT_USE_FREE_CAMERA")]
+    GAMEEVENTUSEFREECAMERA = 12,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_BLOCK")]
+    GAMEEVENTCONTROLLEDCREATUREBLOCK = 13,
+    #[def("GAME_EVENT_TEMP_WORLD_EVENT")]
+    GAMEEVENTTEMPWORLDEVENT = 14,
+    #[def("GAME_EVENT_APPLY_SCRIPTED_MAP_BRUSHES")]
+    GAMEEVENTAPPLYSCRIPTEDMAPBRUSHES = 15,
+    #[def("GAME_EVENT_CREATURE_MOVEMENT")]
+    GAMEEVENTCREATUREMOVEMENT = 16,
+    #[def("GAME_EVENT_CREATURE_USE_OBJECT")]
+    GAMEEVENTCREATUREUSEOBJECT = 17,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_TALK")]
+    GAMEEVENTCONTROLLEDCREATURETALK = 18,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_LEARN_EXPRESSION")]
+    GAMEEVENTCONTROLLEDCREATURELEARNEXPRESSION = 19,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_DROP_OBJECT")]
+    GAMEEVENTCONTROLLEDCREATUREDROPOBJECT = 20,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_ZTARGET")]
+    GAMEEVENTCONTROLLEDCREATUREZTARGET = 21,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_USE_ABILITY")]
+    GAMEEVENTCONTROLLEDCREATUREUSEABILITY = 22,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_START_SNEAK")]
+    GAMEEVENTCONTROLLEDCREATURESTARTSNEAK = 23,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_STOP_SNEAK")]
+    GAMEEVENTCONTROLLEDCREATURESTOPSNEAK = 24,
+    #[def("GAME_EVENT_CLICK_PAST_TEXT")]
+    GAMEEVENTCLICKPASTTEXT = 25,
+    #[def("GAME_EVENT_OPEN_HERO_INFO_SCREEN")]
+    GAMEEVENTOPENHEROINFOSCREEN = 26,
+    #[def("GAME_EVENT_CLOSE_HERO_INFO_SCREEN")]
+    GAMEEVENTCLOSEHEROINFOSCREEN = 27,
+    #[def("GAME_EVENT_CLOSE_IN_GAME_MENU")]
+    GAMEEVENTCLOSEINGAMEMENU = 28,
+    #[def("GAME_EVENT_QUESTION_ANSWERED")]
+    GAMEEVENTQUESTIONANSWERED = 29,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_START_THROW_OBJECT")]
+    GAMEEVENTCONTROLLEDCREATURESTARTTHROWOBJECT = 30,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_END_THROW_OBJECT")]
+    GAMEEVENTCONTROLLEDCREATUREENDTHROWOBJECT = 31,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_SHEATHE_WEAPON")]
+    GAMEEVENTCONTROLLEDCREATURESHEATHEWEAPON = 32,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_UNSHEATHE_MELEE_WEAPON")]
+    GAMEEVENTCONTROLLEDCREATUREUNSHEATHEMELEEWEAPON = 33,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_UNSHEATHE_RANGED_WEAPON")]
+    GAMEEVENTCONTROLLEDCREATUREUNSHEATHERANGEDWEAPON = 34,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_PLAYER_INTERACTION")]
+    GAMEEVENTCONTROLLEDCREATUREPLAYERINTERACTION = 35,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_GIVE_ITEM_TO_TARGET")]
+    GAMEEVENTCONTROLLEDCREATUREGIVEITEMTOTARGET = 36,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_UNFREEZE_CONTROLS")]
+    GAMEEVENTCONTROLLEDCREATUREUNFREEZECONTROLS = 37,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_ROLL")]
+    GAMEEVENTCONTROLLEDCREATUREROLL = 38,
+    #[def("GAME_EVENT_USE_QUICK_ACCESS_ITEM")]
+    GAMEEVENTUSEQUICKACCESSITEM = 39,
+    #[def("GAME_EVENT_USE_QUICK_ACCESS_ITEM_IN_CUTSCENE")]
+    GAMEEVENTUSEQUICKACCESSITEMINCUTSCENE = 40,
+    #[def("GAME_EVENT_CHARGE_QUICK_ACCESS_ITEM")]
+    GAMEEVENTCHARGEQUICKACCESSITEM = 41,
+    #[def("GAME_EVENT_PUT_AWAY")]
+    GAMEEVENTPUTAWAY = 42,
+    #[def("GAME_EVENT_CREATURE_STRAFE")]
+    GAMEEVENTCREATURESTRAFE = 43,
+    #[def("GAME_EVENT_MOVE_HERO_TO_REGION")]
+    GAMEEVENTMOVEHEROTOREGION = 44,
+    #[def("GAME_EVENT_FIRST_PERSON_TARGETING")]
+    GAMEEVENTFIRSTPERSONTARGETING = 45,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_DEFAULT")]
+    GAMEEVENTCONTROLLEDCREATUREDEFAULT = 46,
+    #[def("GAME_EVENT_EXPRESSION_FOLLOW")]
+    GAMEEVENTEXPRESSIONFOLLOW = 47,
+    #[def("GAME_EVENT_EXPRESSION_WAIT")]
+    GAMEEVENTEXPRESSIONWAIT = 48,
+    #[def("GAME_EVENT_USE_PROJECTILE_WEAPON")]
+    GAMEEVENTUSEPROJECTILEWEAPON = 49,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_JUMP")]
+    GAMEEVENTCONTROLLEDCREATUREJUMP = 50,
+    #[def("GAME_EVENT_SPIRIT_MOVEMENT")]
+    GAMEEVENTSPIRITMOVEMENT = 51,
+    #[def("GAME_EVENT_OPEN_HERO_CENTRE_DOOR")]
+    GAMEEVENTOPENHEROCENTREDOOR = 52,
+    #[def("GAME_EVENT_CLOSE_HERO_CENTRE_DOOR")]
+    GAMEEVENTCLOSEHEROCENTREDOOR = 53,
+    #[def("GAME_EVENT_SPIRIT_ATTACK")]
+    GAMEEVENTSPIRITATTACK = 54,
+    #[def("GAME_EVENT_CREATURE_SPRINT")]
+    GAMEEVENTCREATURESPRINT = 55,
+    #[def("GAME_EVENT_SPIRIT_RETURN_TO_HERO")]
+    GAMEEVENTSPIRITRETURNTOHERO = 56,
+    #[def("GAME_EVENT_SKIP_CUT_SCENE")]
+    GAMEEVENTSKIPCUTSCENE = 57,
+    #[def("GAME_EVENT_USE_PROJECTILE_WEAPON_THIRD_PERSON")]
+    GAMEEVENTUSEPROJECTILEWEAPONTHIRDPERSON = 58,
+    #[def("GAME_EVENT_CHARGE_UP_WILL_SPELL")]
+    GAMEEVENTCHARGEUPWILLSPELL = 59,
+    #[def("GAME_EVENT_LOAD_GAME_FROM_IN_GAME_MENU")]
+    GAMEEVENTLOADGAMEFROMINGAMEMENU = 60,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_BLOCK_END")]
+    GAMEEVENTCONTROLLEDCREATUREBLOCKEND = 61,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_DEACTIVATE_ZTARGET")]
+    GAMEEVENTCONTROLLEDCREATUREDEACTIVATEZTARGET = 62,
+    #[def("GAME_EVENT_REMOVE_CURRENT_MODE")]
+    GAMEEVENTREMOVECURRENTMODE = 63,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_LIGHTNING")]
+    GAMEEVENTCONTROLLEDCREATURELIGHTNING = 64,
+    #[def("GAME_EVENT_CONTROLLED_CREATURE_DEACTIVATE_LIGHTNING")]
+    GAMEEVENTCONTROLLEDCREATUREDEACTIVATELIGHTNING = 65,
+    #[def("GAME_EVENT_CLOSE_LIVE_GUI")]
+    GAMEEVENTCLOSELIVEGUI = 66,
+    #[def("GAME_EVENT_CLOSE_PHOTO_CAPTURE")]
+    GAMEEVENTCLOSEPHOTOCAPTURE = 67,
+    #[def("GAME_EVENT_TAKE_THE_BLOODY_SCREENSHOT")]
+    GAMEEVENTTAKETHEBLOODYSCREENSHOT = 68,
+    #[def("GAME_EVENT_TOGGLE_CONSOLE")]
+    GAMEEVENTTOGGLECONSOLE = 69,
+    #[def("GAME_EVENT_OPEN_PC_SKILLS_MENU")]
+    GAMEEVENTOPENPCSKILLSMENU = 70,
+    #[def("GAME_EVENT_OPEN_PC_MSN_CHAT_MENU")]
+    GAMEEVENTOPENPCMSNCHATMENU = 71,
+    #[def("GAME_EVENT_OPEN_PC_INVENTORY_MENU")]
+    GAMEEVENTOPENPCINVENTORYMENU = 72,
+    #[def("GAME_EVENT_OPEN_PC_OPTIONS_MENU")]
+    GAMEEVENTOPENPCOPTIONSMENU = 73,
+    #[def("GAME_EVENT_OPEN_PC_PHOTO_JOURNAL_MENU")]
+    GAMEEVENTOPENPCPHOTOJOURNALMENU = 74,
+    #[def("GAME_EVENT_OPEN_PC_MAP_MENU")]
+    GAMEEVENTOPENPCMAPMENU = 75,
+    #[def("GAME_EVENT_OPEN_PC_BUY_TRADING_MENU")]
+    GAMEEVENTOPENPCBUYTRADINGMENU = 76,
+    #[def("GAME_EVENT_OPEN_PC_SELL_TRADING_MENU")]
+    GAMEEVENTOPENPCSELLTRADINGMENU = 77,
+    #[def("GAME_EVENT_OPEN_PC_WANTED_TRADING_MENU")]
+    GAMEEVENTOPENPCWANTEDTRADINGMENU = 78,
+    #[def("GAME_EVENT_OPEN_PC_STATUS_MENU")]
+    GAMEEVENTOPENPCSTATUSMENU = 79,
+    #[def("GAME_EVENT_OPEN_PC_SCOREBOARD")]
+    GAMEEVENTOPENPCSCOREBOARD = 80,
+    #[def("GAME_EVENT_DELETE_MENU_COMPONENTS")]
+    GAMEEVENTDELETEMENUCOMPONENTS = 81,
+    #[def("GAME_EVENT_TOGGLE_PASSIVE_AGGRESSIVE_MODE")]
+    GAMEEVENTTOGGLEPASSIVEAGGRESSIVEMODE = 82,
+    #[def("GAME_EVENT_DELETE_TRADE_ACTIVE_MENU")]
+    GAMEEVENTDELETETRADEACTIVEMENU = 83,
+    #[def("GAME_EVENT_TOGGLE_KILL_EVERYTHING_MODE")]
+    GAMEEVENTTOGGLEKILLEVERYTHINGMODE = 84,
+    #[def("GAME_EVENT_TOGGLE_VIEW_HERO_MODE")]
+    GAMEEVENTTOGGLEVIEWHEROMODE = 85,
+    #[def("GAME_EVENT_CENTRE_CAMERA")]
+    GAMEEVENTCENTRECAMERA = 86,
+    #[def("NO_GAME_EVENTS")]
+    NOGAMEEVENTS = 87,
 }
 
-def_enum! {
-    /// C++ `EGameEventType`.
-    pub enum GameEventType: i32 {
-        GAMEEVENTNULL = 0 => "GAME_EVENT_NULL",
-        GAMEEVENTUPDATEFRAME = 1 => "GAME_EVENT_UPDATE_FRAME",
-        GAMEEVENTQUIT = 2 => "GAME_EVENT_QUIT",
-        GAMEEVENTSETEXCLUSIVEMODE = 3 => "GAME_EVENT_SET_EXCLUSIVE_MODE",
-        GAMEEVENTSETDISPLAYMODE = 4 => "GAME_EVENT_SET_DISPLAY_MODE",
-        GAMEEVENTSETEDITORMODE = 5 => "GAME_EVENT_SET_EDITOR_MODE",
-        GAMEEVENTFIRSTPERSONVIEWSTART = 6 => "GAME_EVENT_FIRST_PERSON_VIEW_START",
-        GAMEEVENTCREATURECHEAT = 7 => "GAME_EVENT_CREATURE_CHEAT",
-        GAMEEVENTPLAYERRESPAWN = 8 => "GAME_EVENT_PLAYER_RESPAWN",
-        GAMEEVENTSETPAUSEMODE = 9 => "GAME_EVENT_SET_PAUSE_MODE",
-        GAMEEVENTSETSLOWMOTION = 10 => "GAME_EVENT_SET_SLOW_MOTION",
-        GAMEEVENTSETFREECAMERAMODE = 11 => "GAME_EVENT_SET_FREE_CAMERA_MODE",
-        GAMEEVENTUSEFREECAMERA = 12 => "GAME_EVENT_USE_FREE_CAMERA",
-        GAMEEVENTCONTROLLEDCREATUREBLOCK = 13 => "GAME_EVENT_CONTROLLED_CREATURE_BLOCK",
-        GAMEEVENTTEMPWORLDEVENT = 14 => "GAME_EVENT_TEMP_WORLD_EVENT",
-        GAMEEVENTAPPLYSCRIPTEDMAPBRUSHES = 15 => "GAME_EVENT_APPLY_SCRIPTED_MAP_BRUSHES",
-        GAMEEVENTCREATUREMOVEMENT = 16 => "GAME_EVENT_CREATURE_MOVEMENT",
-        GAMEEVENTCREATUREUSEOBJECT = 17 => "GAME_EVENT_CREATURE_USE_OBJECT",
-        GAMEEVENTCONTROLLEDCREATURETALK = 18 => "GAME_EVENT_CONTROLLED_CREATURE_TALK",
-        GAMEEVENTCONTROLLEDCREATURELEARNEXPRESSION = 19 => "GAME_EVENT_CONTROLLED_CREATURE_LEARN_EXPRESSION",
-        GAMEEVENTCONTROLLEDCREATUREDROPOBJECT = 20 => "GAME_EVENT_CONTROLLED_CREATURE_DROP_OBJECT",
-        GAMEEVENTCONTROLLEDCREATUREZTARGET = 21 => "GAME_EVENT_CONTROLLED_CREATURE_ZTARGET",
-        GAMEEVENTCONTROLLEDCREATUREUSEABILITY = 22 => "GAME_EVENT_CONTROLLED_CREATURE_USE_ABILITY",
-        GAMEEVENTCONTROLLEDCREATURESTARTSNEAK = 23 => "GAME_EVENT_CONTROLLED_CREATURE_START_SNEAK",
-        GAMEEVENTCONTROLLEDCREATURESTOPSNEAK = 24 => "GAME_EVENT_CONTROLLED_CREATURE_STOP_SNEAK",
-        GAMEEVENTCLICKPASTTEXT = 25 => "GAME_EVENT_CLICK_PAST_TEXT",
-        GAMEEVENTOPENHEROINFOSCREEN = 26 => "GAME_EVENT_OPEN_HERO_INFO_SCREEN",
-        GAMEEVENTCLOSEHEROINFOSCREEN = 27 => "GAME_EVENT_CLOSE_HERO_INFO_SCREEN",
-        GAMEEVENTCLOSEINGAMEMENU = 28 => "GAME_EVENT_CLOSE_IN_GAME_MENU",
-        GAMEEVENTQUESTIONANSWERED = 29 => "GAME_EVENT_QUESTION_ANSWERED",
-        GAMEEVENTCONTROLLEDCREATURESTARTTHROWOBJECT = 30 => "GAME_EVENT_CONTROLLED_CREATURE_START_THROW_OBJECT",
-        GAMEEVENTCONTROLLEDCREATUREENDTHROWOBJECT = 31 => "GAME_EVENT_CONTROLLED_CREATURE_END_THROW_OBJECT",
-        GAMEEVENTCONTROLLEDCREATURESHEATHEWEAPON = 32 => "GAME_EVENT_CONTROLLED_CREATURE_SHEATHE_WEAPON",
-        GAMEEVENTCONTROLLEDCREATUREUNSHEATHEMELEEWEAPON = 33 => "GAME_EVENT_CONTROLLED_CREATURE_UNSHEATHE_MELEE_WEAPON",
-        GAMEEVENTCONTROLLEDCREATUREUNSHEATHERANGEDWEAPON = 34 => "GAME_EVENT_CONTROLLED_CREATURE_UNSHEATHE_RANGED_WEAPON",
-        GAMEEVENTCONTROLLEDCREATUREPLAYERINTERACTION = 35 => "GAME_EVENT_CONTROLLED_CREATURE_PLAYER_INTERACTION",
-        GAMEEVENTCONTROLLEDCREATUREGIVEITEMTOTARGET = 36 => "GAME_EVENT_CONTROLLED_CREATURE_GIVE_ITEM_TO_TARGET",
-        GAMEEVENTCONTROLLEDCREATUREUNFREEZECONTROLS = 37 => "GAME_EVENT_CONTROLLED_CREATURE_UNFREEZE_CONTROLS",
-        GAMEEVENTCONTROLLEDCREATUREROLL = 38 => "GAME_EVENT_CONTROLLED_CREATURE_ROLL",
-        GAMEEVENTUSEQUICKACCESSITEM = 39 => "GAME_EVENT_USE_QUICK_ACCESS_ITEM",
-        GAMEEVENTUSEQUICKACCESSITEMINCUTSCENE = 40 => "GAME_EVENT_USE_QUICK_ACCESS_ITEM_IN_CUTSCENE",
-        GAMEEVENTCHARGEQUICKACCESSITEM = 41 => "GAME_EVENT_CHARGE_QUICK_ACCESS_ITEM",
-        GAMEEVENTPUTAWAY = 42 => "GAME_EVENT_PUT_AWAY",
-        GAMEEVENTCREATURESTRAFE = 43 => "GAME_EVENT_CREATURE_STRAFE",
-        GAMEEVENTMOVEHEROTOREGION = 44 => "GAME_EVENT_MOVE_HERO_TO_REGION",
-        GAMEEVENTFIRSTPERSONTARGETING = 45 => "GAME_EVENT_FIRST_PERSON_TARGETING",
-        GAMEEVENTCONTROLLEDCREATUREDEFAULT = 46 => "GAME_EVENT_CONTROLLED_CREATURE_DEFAULT",
-        GAMEEVENTEXPRESSIONFOLLOW = 47 => "GAME_EVENT_EXPRESSION_FOLLOW",
-        GAMEEVENTEXPRESSIONWAIT = 48 => "GAME_EVENT_EXPRESSION_WAIT",
-        GAMEEVENTUSEPROJECTILEWEAPON = 49 => "GAME_EVENT_USE_PROJECTILE_WEAPON",
-        GAMEEVENTCONTROLLEDCREATUREJUMP = 50 => "GAME_EVENT_CONTROLLED_CREATURE_JUMP",
-        GAMEEVENTSPIRITMOVEMENT = 51 => "GAME_EVENT_SPIRIT_MOVEMENT",
-        GAMEEVENTOPENHEROCENTREDOOR = 52 => "GAME_EVENT_OPEN_HERO_CENTRE_DOOR",
-        GAMEEVENTCLOSEHEROCENTREDOOR = 53 => "GAME_EVENT_CLOSE_HERO_CENTRE_DOOR",
-        GAMEEVENTSPIRITATTACK = 54 => "GAME_EVENT_SPIRIT_ATTACK",
-        GAMEEVENTCREATURESPRINT = 55 => "GAME_EVENT_CREATURE_SPRINT",
-        GAMEEVENTSPIRITRETURNTOHERO = 56 => "GAME_EVENT_SPIRIT_RETURN_TO_HERO",
-        GAMEEVENTSKIPCUTSCENE = 57 => "GAME_EVENT_SKIP_CUT_SCENE",
-        GAMEEVENTUSEPROJECTILEWEAPONTHIRDPERSON = 58 => "GAME_EVENT_USE_PROJECTILE_WEAPON_THIRD_PERSON",
-        GAMEEVENTCHARGEUPWILLSPELL = 59 => "GAME_EVENT_CHARGE_UP_WILL_SPELL",
-        GAMEEVENTLOADGAMEFROMINGAMEMENU = 60 => "GAME_EVENT_LOAD_GAME_FROM_IN_GAME_MENU",
-        GAMEEVENTCONTROLLEDCREATUREBLOCKEND = 61 => "GAME_EVENT_CONTROLLED_CREATURE_BLOCK_END",
-        GAMEEVENTCONTROLLEDCREATUREDEACTIVATEZTARGET = 62 => "GAME_EVENT_CONTROLLED_CREATURE_DEACTIVATE_ZTARGET",
-        GAMEEVENTREMOVECURRENTMODE = 63 => "GAME_EVENT_REMOVE_CURRENT_MODE",
-        GAMEEVENTCONTROLLEDCREATURELIGHTNING = 64 => "GAME_EVENT_CONTROLLED_CREATURE_LIGHTNING",
-        GAMEEVENTCONTROLLEDCREATUREDEACTIVATELIGHTNING = 65 => "GAME_EVENT_CONTROLLED_CREATURE_DEACTIVATE_LIGHTNING",
-        GAMEEVENTCLOSELIVEGUI = 66 => "GAME_EVENT_CLOSE_LIVE_GUI",
-        GAMEEVENTCLOSEPHOTOCAPTURE = 67 => "GAME_EVENT_CLOSE_PHOTO_CAPTURE",
-        GAMEEVENTTAKETHEBLOODYSCREENSHOT = 68 => "GAME_EVENT_TAKE_THE_BLOODY_SCREENSHOT",
-        GAMEEVENTTOGGLECONSOLE = 69 => "GAME_EVENT_TOGGLE_CONSOLE",
-        GAMEEVENTOPENPCSKILLSMENU = 70 => "GAME_EVENT_OPEN_PC_SKILLS_MENU",
-        GAMEEVENTOPENPCMSNCHATMENU = 71 => "GAME_EVENT_OPEN_PC_MSN_CHAT_MENU",
-        GAMEEVENTOPENPCINVENTORYMENU = 72 => "GAME_EVENT_OPEN_PC_INVENTORY_MENU",
-        GAMEEVENTOPENPCOPTIONSMENU = 73 => "GAME_EVENT_OPEN_PC_OPTIONS_MENU",
-        GAMEEVENTOPENPCPHOTOJOURNALMENU = 74 => "GAME_EVENT_OPEN_PC_PHOTO_JOURNAL_MENU",
-        GAMEEVENTOPENPCMAPMENU = 75 => "GAME_EVENT_OPEN_PC_MAP_MENU",
-        GAMEEVENTOPENPCBUYTRADINGMENU = 76 => "GAME_EVENT_OPEN_PC_BUY_TRADING_MENU",
-        GAMEEVENTOPENPCSELLTRADINGMENU = 77 => "GAME_EVENT_OPEN_PC_SELL_TRADING_MENU",
-        GAMEEVENTOPENPCWANTEDTRADINGMENU = 78 => "GAME_EVENT_OPEN_PC_WANTED_TRADING_MENU",
-        GAMEEVENTOPENPCSTATUSMENU = 79 => "GAME_EVENT_OPEN_PC_STATUS_MENU",
-        GAMEEVENTOPENPCSCOREBOARD = 80 => "GAME_EVENT_OPEN_PC_SCOREBOARD",
-        GAMEEVENTDELETEMENUCOMPONENTS = 81 => "GAME_EVENT_DELETE_MENU_COMPONENTS",
-        GAMEEVENTTOGGLEPASSIVEAGGRESSIVEMODE = 82 => "GAME_EVENT_TOGGLE_PASSIVE_AGGRESSIVE_MODE",
-        GAMEEVENTDELETETRADEACTIVEMENU = 83 => "GAME_EVENT_DELETE_TRADE_ACTIVE_MENU",
-        GAMEEVENTTOGGLEKILLEVERYTHINGMODE = 84 => "GAME_EVENT_TOGGLE_KILL_EVERYTHING_MODE",
-        GAMEEVENTTOGGLEVIEWHEROMODE = 85 => "GAME_EVENT_TOGGLE_VIEW_HERO_MODE",
-        GAMEEVENTCENTRECAMERA = 86 => "GAME_EVENT_CENTRE_CAMERA",
-        NOGAMEEVENTS = 87 => "NO_GAME_EVENTS",
-    }
+/// C++ `EGiftType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum GiftType {
+    #[def("GIFT_TYPE_FRIENDLY")]
+    FRIENDLY = 0,
+    #[def("GIFT_TYPE_ROMANTIC")]
+    ROMANTIC = 1,
+    #[def("GIFT_TYPE_OFFENSIVE")]
+    OFFENSIVE = 2,
 }
 
-def_enum! {
-    /// C++ `EGiftType`.
-    pub enum GiftType: i32 {
-        FRIENDLY = 0 => "GIFT_TYPE_FRIENDLY",
-        ROMANTIC = 1 => "GIFT_TYPE_ROMANTIC",
-        OFFENSIVE = 2 => "GIFT_TYPE_OFFENSIVE",
-    }
+/// C++ `EHeroAbility`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum HeroAbility {
+    #[def("HERO_ABILITY_NULL")]
+    HEROABILITYNULL = 0,
+    #[def("HERO_ABILITY_FORCE_PUSH")]
+    HEROABILITYFORCEPUSH = 1,
+    #[def("HERO_ABILITY_TIME_SPELL")]
+    HEROABILITYTIMESPELL = 2,
+    #[def("HERO_ABILITY_ENFLAME_SPELL")]
+    HEROABILITYENFLAMESPELL = 3,
+    #[def("HERO_ABILITY_PHYSICAL_SHIELD_SPELL")]
+    HEROABILITYPHYSICALSHIELDSPELL = 4,
+    #[def("HERO_ABILITY_TURNCOAT_SPELL")]
+    HEROABILITYTURNCOATSPELL = 5,
+    #[def("HERO_ABILITY_DRAIN_LIFE_SPELL")]
+    HEROABILITYDRAINLIFESPELL = 6,
+    #[def("HERO_ABILITY_RAISE_DEAD_SPELL")]
+    HEROABILITYRAISEDEADSPELL = 7,
+    #[def("HERO_ABILITY_BERSERK")]
+    HEROABILITYBERSERK = 8,
+    #[def("HERO_ABILITY_DOUBLE_STRIKE")]
+    HEROABILITYDOUBLESTRIKE = 9,
+    #[def("HERO_ABILITY_SUMMON_SPELL")]
+    HEROABILITYSUMMONSPELL = 10,
+    #[def("HERO_ABILITY_LIGHTNING_SPELL")]
+    HEROABILITYLIGHTNINGSPELL = 11,
+    #[def("HERO_ABILITY_BATTLE_CHARGE")]
+    HEROABILITYBATTLECHARGE = 12,
+    #[def("HERO_ABILITY_ASSASSIN_RUSH")]
+    HEROABILITYASSASSINRUSH = 13,
+    #[def("HERO_ABILITY_HEAL_LIFE_SPELL")]
+    HEROABILITYHEALLIFESPELL = 14,
+    #[def("HERO_ABILITY_GHOST_SWORD_SPELL")]
+    HEROABILITYGHOSTSWORDSPELL = 15,
+    #[def("HERO_ABILITY_FIREBALL_SPELL")]
+    HEROABILITYFIREBALLSPELL = 16,
+    #[def("HERO_ABILITY_MULTI_ARROW")]
+    HEROABILITYMULTIARROW = 17,
+    #[def("HERO_ABILITY_DIVINE_WRATH_SPELL")]
+    HEROABILITYDIVINEWRATHSPELL = 18,
+    #[def("HERO_ABILITY_UNHOLY_POWER_SPELL")]
+    HEROABILITYUNHOLYPOWERSPELL = 19,
+    #[def("MAX_NUMBER_OF_HERO_ABILITIES")]
+    MAXNUMBEROFHEROABILITIES = 20,
 }
 
-def_enum! {
-    /// C++ `EHeroAbility`.
-    pub enum HeroAbility: i32 {
-        HEROABILITYNULL = 0 => "HERO_ABILITY_NULL",
-        HEROABILITYFORCEPUSH = 1 => "HERO_ABILITY_FORCE_PUSH",
-        HEROABILITYTIMESPELL = 2 => "HERO_ABILITY_TIME_SPELL",
-        HEROABILITYENFLAMESPELL = 3 => "HERO_ABILITY_ENFLAME_SPELL",
-        HEROABILITYPHYSICALSHIELDSPELL = 4 => "HERO_ABILITY_PHYSICAL_SHIELD_SPELL",
-        HEROABILITYTURNCOATSPELL = 5 => "HERO_ABILITY_TURNCOAT_SPELL",
-        HEROABILITYDRAINLIFESPELL = 6 => "HERO_ABILITY_DRAIN_LIFE_SPELL",
-        HEROABILITYRAISEDEADSPELL = 7 => "HERO_ABILITY_RAISE_DEAD_SPELL",
-        HEROABILITYBERSERK = 8 => "HERO_ABILITY_BERSERK",
-        HEROABILITYDOUBLESTRIKE = 9 => "HERO_ABILITY_DOUBLE_STRIKE",
-        HEROABILITYSUMMONSPELL = 10 => "HERO_ABILITY_SUMMON_SPELL",
-        HEROABILITYLIGHTNINGSPELL = 11 => "HERO_ABILITY_LIGHTNING_SPELL",
-        HEROABILITYBATTLECHARGE = 12 => "HERO_ABILITY_BATTLE_CHARGE",
-        HEROABILITYASSASSINRUSH = 13 => "HERO_ABILITY_ASSASSIN_RUSH",
-        HEROABILITYHEALLIFESPELL = 14 => "HERO_ABILITY_HEAL_LIFE_SPELL",
-        HEROABILITYGHOSTSWORDSPELL = 15 => "HERO_ABILITY_GHOST_SWORD_SPELL",
-        HEROABILITYFIREBALLSPELL = 16 => "HERO_ABILITY_FIREBALL_SPELL",
-        HEROABILITYMULTIARROW = 17 => "HERO_ABILITY_MULTI_ARROW",
-        HEROABILITYDIVINEWRATHSPELL = 18 => "HERO_ABILITY_DIVINE_WRATH_SPELL",
-        HEROABILITYUNHOLYPOWERSPELL = 19 => "HERO_ABILITY_UNHOLY_POWER_SPELL",
-        MAXNUMBEROFHEROABILITIES = 20 => "MAX_NUMBER_OF_HERO_ABILITIES",
-    }
+/// C++ `EHeroAttachableAppearanceModifierType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum HeroAttachableAppearanceModifierType {
+    #[def("APPEARANCE_HAIR")]
+    APPEARANCEHAIR = 0,
+    #[def("APPEARANCE_HORN")]
+    APPEARANCEHORN = 1,
+    #[def("APPEARANCE_CLOTHING")]
+    APPEARANCECLOTHING = 2,
+    #[def("NO_OF_APPEARANCE_MODIFIER_TYPES")]
+    NOOFAPPEARANCEMODIFIERTYPES = 3,
 }
 
-def_enum! {
-    /// C++ `EHeroAttachableAppearanceModifierType`.
-    pub enum HeroAttachableAppearanceModifierType: i32 {
-        APPEARANCEHAIR = 0 => "APPEARANCE_HAIR",
-        APPEARANCEHORN = 1 => "APPEARANCE_HORN",
-        APPEARANCECLOTHING = 2 => "APPEARANCE_CLOTHING",
-        NOOFAPPEARANCEMODIFIERTYPES = 3 => "NO_OF_APPEARANCE_MODIFIER_TYPES",
-    }
+/// C++ `EHeroExperienceStatCategory`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum HeroExperienceStatCategory {
+    #[def("HERO_STAT_STRENGTH")]
+    HEROSTATSTRENGTH = 0,
+    #[def("HERO_STAT_SKILL")]
+    HEROSTATSKILL = 1,
+    #[def("HERO_STAT_WILL")]
+    HEROSTATWILL = 2,
+    #[def("NUMBER_OF_HERO_STAT_CATEGORIES")]
+    NUMBEROFHEROSTATCATEGORIES = 3,
 }
 
-def_enum! {
-    /// C++ `EHeroExperienceStatCategory`.
-    pub enum HeroExperienceStatCategory: i32 {
-        HEROSTATSTRENGTH = 0 => "HERO_STAT_STRENGTH",
-        HEROSTATSKILL = 1 => "HERO_STAT_SKILL",
-        HEROSTATWILL = 2 => "HERO_STAT_WILL",
-        NUMBEROFHEROSTATCATEGORIES = 3 => "NUMBER_OF_HERO_STAT_CATEGORIES",
-    }
+/// C++ `EHeroTitle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum HeroTitle {
+    #[def("TITLE_NONE")]
+    NONE = 0,
+    #[def("TITLE_REAPER")]
+    REAPER = 1,
+    #[def("TITLE_SHADOWHUNTER")]
+    SHADOWHUNTER = 2,
+    #[def("TITLE_MALEFICUS")]
+    MALEFICUS = 3,
+    #[def("TITLE_DEATHBRINGER")]
+    DEATHBRINGER = 4,
+    #[def("TITLE_ASSASSIN")]
+    ASSASSIN = 5,
+    #[def("TITLE_NECROMANCER")]
+    NECROMANCER = 6,
+    #[def("TITLE_AVATAR")]
+    AVATAR = 7,
+    #[def("TITLE_PILGRIM")]
+    PILGRIM = 8,
+    #[def("TITLE_LIBERATOR")]
+    LIBERATOR = 9,
+    #[def("TITLE_PALADIN")]
+    PALADIN = 10,
+    #[def("TITLE_DRUID")]
+    DRUID = 11,
+    #[def("TITLE_RANGER")]
+    RANGER = 12,
+    #[def("TITLE_RUNEMASTER")]
+    RUNEMASTER = 13,
+    #[def("TITLE_HOOD")]
+    HOOD = 14,
+    #[def("TITLE_GLADIATOR")]
+    GLADIATOR = 15,
+    #[def("TITLE_SABRE")]
+    SABRE = 16,
+    #[def("TITLE_ARROWDODGER")]
+    ARROWDODGER = 17,
+    #[def("TITLE_PIEMASTER")]
+    PIEMASTER = 18,
+    #[def("TITLE_CHICKEN_CHASER")]
+    CHICKENCHASER = 19,
+    #[def("TITLE_ARSEFACE")]
+    ARSEFACE = 20,
+    #[def("TITLE_JACK")]
+    JACK = 21,
+    #[def("TITLE_MAZE")]
+    MAZE = 22,
+    #[def("TITLE_SCARLET_ROBE")]
+    SCARLETROBE = 23,
+    #[def("TITLE_SCYTHE")]
+    SCYTHE = 24,
+    #[def("TITLE_THUNDER")]
+    THUNDER = 25,
+    #[def("TITLE_WHISPER")]
+    WHISPER = 26,
+    #[def("TITLE_TWINBLADE")]
+    TWINBLADE = 27,
+    #[def("TITLE_BRIAR_ROSE")]
+    BRIARROSE = 28,
+    #[def("TITLE_LADY_GREY")]
+    LADYGREY = 29,
+    #[def("TITLE_GUILDMASTER")]
+    GUILDMASTER = 30,
+    #[def("TITLE_SCORPION_SLAYER")]
+    SCORPIONSLAYER = 31,
+    #[def("TITLE_DEATH_BRINGER")]
+    DEATHBRINGER_ = 32,
 }
 
-def_enum! {
-    /// C++ `EHeroTitle`.
-    pub enum HeroTitle: i32 {
-        NONE = 0 => "TITLE_NONE",
-        REAPER = 1 => "TITLE_REAPER",
-        SHADOWHUNTER = 2 => "TITLE_SHADOWHUNTER",
-        MALEFICUS = 3 => "TITLE_MALEFICUS",
-        DEATHBRINGER = 4 => "TITLE_DEATHBRINGER",
-        ASSASSIN = 5 => "TITLE_ASSASSIN",
-        NECROMANCER = 6 => "TITLE_NECROMANCER",
-        AVATAR = 7 => "TITLE_AVATAR",
-        PILGRIM = 8 => "TITLE_PILGRIM",
-        LIBERATOR = 9 => "TITLE_LIBERATOR",
-        PALADIN = 10 => "TITLE_PALADIN",
-        DRUID = 11 => "TITLE_DRUID",
-        RANGER = 12 => "TITLE_RANGER",
-        RUNEMASTER = 13 => "TITLE_RUNEMASTER",
-        HOOD = 14 => "TITLE_HOOD",
-        GLADIATOR = 15 => "TITLE_GLADIATOR",
-        SABRE = 16 => "TITLE_SABRE",
-        ARROWDODGER = 17 => "TITLE_ARROWDODGER",
-        PIEMASTER = 18 => "TITLE_PIEMASTER",
-        CHICKENCHASER = 19 => "TITLE_CHICKEN_CHASER",
-        ARSEFACE = 20 => "TITLE_ARSEFACE",
-        JACK = 21 => "TITLE_JACK",
-        MAZE = 22 => "TITLE_MAZE",
-        SCARLETROBE = 23 => "TITLE_SCARLET_ROBE",
-        SCYTHE = 24 => "TITLE_SCYTHE",
-        THUNDER = 25 => "TITLE_THUNDER",
-        WHISPER = 26 => "TITLE_WHISPER",
-        TWINBLADE = 27 => "TITLE_TWINBLADE",
-        BRIARROSE = 28 => "TITLE_BRIAR_ROSE",
-        LADYGREY = 29 => "TITLE_LADY_GREY",
-        GUILDMASTER = 30 => "TITLE_GUILDMASTER",
-        SCORPIONSLAYER = 31 => "TITLE_SCORPION_SLAYER",
-        DEATHBRINGER_ = 32 => "TITLE_DEATH_BRINGER",
-    }
+/// C++ `EHeroTrainingStatus`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum HeroTrainingStatus {
+    #[def("TRAINING_STATUS_GRADUATED")]
+    GRADUATED = 0,
+    #[def("TRAINING_STATUS_APPRENTICE")]
+    APPRENTICE = 1,
+    #[def("TRAINING_STATUS_BOY")]
+    BOY = 2,
 }
 
-def_enum! {
-    /// C++ `EHeroTrainingStatus`.
-    pub enum HeroTrainingStatus: i32 {
-        GRADUATED = 0 => "TRAINING_STATUS_GRADUATED",
-        APPRENTICE = 1 => "TRAINING_STATUS_APPRENTICE",
-        BOY = 2 => "TRAINING_STATUS_BOY",
-    }
+/// C++ `EIdleStateGroup`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    NULL = 0 => "ISG_NULL",
+    NOT_BOTHERED = 1 => "ISG_NOT_BOTHERED",
+    CLEAN_HOME = 2 => "ISG_CLEAN_HOME",
+    SIT_HOME = 3 => "ISG_SIT_HOME",
+    SIT_OUTSIDE = 4 => "ISG_SIT_OUTSIDE",
+    SIT_AROUND_FIRE = 5 => "ISG_SIT_AROUND_FIRE",
+    WATCH_FIRE = 6 => "ISG_WATCH_FIRE",
+    GAZE_HOME = 7 => "ISG_GAZE_HOME",
+    GAZE_OUTSIDE = 8 => "ISG_GAZE_OUTSIDE",
+    LOOK_AT_INTERESTING_THINGS = 9 => "ISG_LOOK_AT_INTERESTING_THINGS",
+    WANDER_AROUND_SHOPS = 10 => "ISG_WANDER_AROUND_SHOPS",
+    KID_WANDER_NEAR_KIDS = 11 => "ISG_KID_WANDER_NEAR_KIDS",
+)]
+pub struct IdleStateGroup(pub i32);
+
+/// C++ `ELightingChannel`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum LightingChannel {
+    #[def("LIGHTING_CHANNEL_MAIN")]
+    MAIN = 0,
+    #[def("LIGHTING_CHANNEL_INDOORS")]
+    INDOORS = 1,
+    #[def("LIGHTING_CHANNEL_INDOORS_2")]
+    INDOORS2 = 2,
+    #[def("LIGHTING_CHANNEL_INDOORS_3")]
+    INDOORS3 = 3,
+    #[def("LIGHTING_CHANNEL_INDOORS_4")]
+    INDOORS4 = 4,
+    #[def("LIGHTING_CHANNEL_EPIC_SPELL")]
+    EPICSPELL = 5,
+    #[def("LIGHTING_CHANNEL_COUNT")]
+    COUNT = 6,
 }
 
-def_flags! {
-    /// C++ `EIdleStateGroup`.
-    pub struct IdleStateGroup: i32 {
-        NULL = 0 => "ISG_NULL",
-        NOT_BOTHERED = 1 => "ISG_NOT_BOTHERED",
-        CLEAN_HOME = 2 => "ISG_CLEAN_HOME",
-        SIT_HOME = 3 => "ISG_SIT_HOME",
-        SIT_OUTSIDE = 4 => "ISG_SIT_OUTSIDE",
-        SIT_AROUND_FIRE = 5 => "ISG_SIT_AROUND_FIRE",
-        WATCH_FIRE = 6 => "ISG_WATCH_FIRE",
-        GAZE_HOME = 7 => "ISG_GAZE_HOME",
-        GAZE_OUTSIDE = 8 => "ISG_GAZE_OUTSIDE",
-        LOOK_AT_INTERESTING_THINGS = 9 => "ISG_LOOK_AT_INTERESTING_THINGS",
-        WANDER_AROUND_SHOPS = 10 => "ISG_WANDER_AROUND_SHOPS",
-        KID_WANDER_NEAR_KIDS = 11 => "ISG_KID_WANDER_NEAR_KIDS",
-    }
+/// C++ `EMessageEventType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum MessageEventType {
+    #[def("MESSAGE_EVENT_PLAYER_GIVE_ITEM")]
+    PLAYERGIVEITEM = 0,
+    #[def("MESSAGE_EVENT_CALL_CHILDREN_HOME")]
+    CALLCHILDRENHOME = 1,
+    #[def("MESSAGE_EVENT_CALL_SPOUSE_HOME")]
+    CALLSPOUSEHOME = 2,
+    #[def("MESSAGE_EVENT_PLAYER_ARSON")]
+    PLAYERARSON = 3,
+    #[def("MESSAGE_EVENT_ATTACK")]
+    ATTACK = 4,
+    #[def("MESSAGE_EVENT_MURDER")]
+    MURDER = 5,
+    #[def("MESSAGE_EVENT_PLAYER_ARSON_EMOTIONAL_REACTION")]
+    PLAYERARSONEMOTIONALREACTION = 6,
+    #[def("MESSAGE_EVENT_PLAYER_ATTACK_EMOTIONAL_REACTION")]
+    PLAYERATTACKEMOTIONALREACTION = 7,
+    #[def("MESSAGE_EVENT_PLAYER_MURDER_EMOTIONAL_REACTION")]
+    PLAYERMURDEREMOTIONALREACTION = 8,
+    #[def("MESSAGE_EVENT_DEATH")]
+    DEATH = 9,
+    #[def("MESSAGE_EVENT_GOING_FOR_HELP")]
+    GOINGFORHELP = 10,
+    #[def("MESSAGE_EVENT_YELL_FOR_HELP")]
+    YELLFORHELP = 11,
+    #[def("MESSAGE_EVENT_YELL_I_SEE_HIM")]
+    YELLISEEHIM = 12,
+    #[def("MESSAGE_EVENT_CONVERSATION_START")]
+    CONVERSATIONSTART = 13,
+    #[def("MESSAGE_EVENT_CONVERSATION_JOIN")]
+    CONVERSATIONJOIN = 14,
+    #[def("MESSAGE_EVENT_CONVERSATION_END")]
+    CONVERSATIONEND = 15,
+    #[def("MESSAGE_EVENT_CONVERSATION_ANSWER_YES_OR_NO")]
+    CONVERSATIONANSWERYESORNO = 16,
+    #[def("MESSAGE_EVENT_CONVERSATION_CLICK_PAST")]
+    CONVERSATIONCLICKPAST = 17,
+    #[def("MESSAGE_EVENT_GAME_INFO_CLICK_PAST")]
+    GAMEINFOCLICKPAST = 18,
+    #[def("MESSAGE_EVENT_BUY_ITEM")]
+    BUYITEM = 19,
+    #[def("MESSAGE_EVENT_PLAYER_INTERACTION")]
+    PLAYERINTERACTION = 20,
+    #[def("MESSAGE_EVENT_GAME_OF_TAG_START")]
+    GAMEOFTAGSTART = 21,
+    #[def("MESSAGE_EVENT_GAME_OF_TAG_JOIN")]
+    GAMEOFTAGJOIN = 22,
+    #[def("MESSAGE_EVENT_GAME_OF_TAG_SOMEONE_TAGGED")]
+    GAMEOFTAGSOMEONETAGGED = 23,
+    #[def("MESSAGE_EVENT_HOPSCOTCH_PLAYING")]
+    HOPSCOTCHPLAYING = 24,
+    #[def("MESSAGE_EVENT_FOUND_CORPSE")]
+    FOUNDCORPSE = 25,
+    #[def("MESSAGE_EVENT_FOUND_UNCONSCIOUS_PERSON")]
+    FOUNDUNCONSCIOUSPERSON = 26,
+    #[def("MESSAGE_EVENT_GUARD_SEEN_PLAYER_SWORD")]
+    GUARDSEENPLAYERSWORD = 27,
+    #[def("MESSAGE_EVENT_THEFT")]
+    THEFT = 28,
+    #[def("MESSAGE_EVENT_TRESPASS")]
+    TRESPASS = 29,
+    #[def("MESSAGE_EVENT_DEALING_WITH_TRESPASS")]
+    DEALINGWITHTRESPASS = 30,
+    #[def("MESSAGE_EVENT_DEALING_WITH_NOISE_IN_HOUSE")]
+    DEALINGWITHNOISEINHOUSE = 31,
+    #[def("MESSAGE_EVENT_HERO_REPUTATION_EVENT")]
+    HEROREPUTATIONEVENT = 32,
+    #[def("MESSAGE_EVENT_CROWD_FORMING")]
+    CROWDFORMING = 33,
+    #[def("MESSAGE_EVENT_CROWD_DISPERSING")]
+    CROWDDISPERSING = 34,
+    #[def("MESSAGE_EVENT_HERO_PODIUM")]
+    HEROPODIUM = 35,
+    #[def("MESSAGE_EVENT_LEVEL_LOADED")]
+    LEVELLOADED = 36,
+    #[def("MESSAGE_EVENT_LEVEL_UNLOADED")]
+    LEVELUNLOADED = 37,
+    #[def("MESSAGE_EVENT_REGION_LOADED")]
+    REGIONLOADED = 38,
+    #[def("MESSAGE_EVENT_REGION_UNLOADED")]
+    REGIONUNLOADED = 39,
+    #[def("MESSAGE_EVENT_REGION_PREUNLOAD")]
+    REGIONPREUNLOAD = 40,
+    #[def("MESSAGE_EVENT_BOAST_MADE")]
+    BOASTMADE = 41,
+    #[def("MESSAGE_EVENT_EXPRESSION_PERFORMED")]
+    EXPRESSIONPERFORMED = 42,
+    #[def("MESSAGE_EVENT_SCRIPTED_CAMERA_EVENT")]
+    SCRIPTEDCAMERAEVENT = 43,
+    #[def("MESSAGE_EVENT_REQUEST_GOSSIP")]
+    REQUESTGOSSIP = 44,
+    #[def("MESSAGE_EVENT_REQUEST_GOSSIP_REQUEST")]
+    REQUESTGOSSIPREQUEST = 45,
+    #[def("MESSAGE_EVENT_REQUEST_GAME_OF_TAG")]
+    REQUESTGAMEOFTAG = 46,
+    #[def("MESSAGE_EVENT_APPRENTICE_PRACTICE")]
+    APPRENTICEPRACTICE = 47,
+    #[def("MESSAGE_EVENT_PAYMENT_REQUEST")]
+    PAYMENTREQUEST = 48,
+    #[def("MESSAGE_EVENT_PAYMENT_CANCELLED")]
+    PAYMENTCANCELLED = 49,
+    #[def("MESSAGE_EVENT_SKIP_CUT_SCENE")]
+    SKIPCUTSCENE = 50,
+    #[def("MESSAGE_EVENT_QUEST_COMPLETED")]
+    QUESTCOMPLETED = 51,
+    #[def("MESSAGE_EVENT_QUEST_FAILED")]
+    QUESTFAILED = 52,
+    #[def("MESSAGE_EVENT_QUEST_COMPLETED_BEFORE_SCREEN_SHOWN")]
+    QUESTCOMPLETEDBEFORESCREENSHOWN = 53,
+    #[def("MESSAGE_EVENT_QUEST_FAILED_BEFORE_SCREEN_SHOWN")]
+    QUESTFAILEDBEFORESCREENSHOWN = 54,
+    #[def("MESSAGE_EVENT_QUEST_ACCEPTED")]
+    QUESTACCEPTED = 55,
+    #[def("MESSAGE_EVENT_FEAT_ACCEPTED")]
+    FEATACCEPTED = 56,
+    #[def("MESSAGE_EVENT_HAIR_TYPE_CHANGED")]
+    HAIRTYPECHANGED = 57,
+    #[def("MESSAGE_EVENT_BEARD_TYPE_CHANGED")]
+    BEARDTYPECHANGED = 58,
+    #[def("MESSAGE_EVENT_MOUSTACHE_TYPE_CHANGED")]
+    MOUSTACHETYPECHANGED = 59,
+    #[def("MESSAGE_EVENT_TELEPORTER_USED")]
+    TELEPORTERUSED = 60,
+    #[def("MESSAGE_EVENT_GUILD_SEAL_USED")]
+    GUILDSEALUSED = 61,
+    #[def("MESSAGE_EVENT_GAME_SAVED_MANUALLY")]
+    GAMESAVEDMANUALLY = 62,
+    #[def("MESSAGE_EVENT_FISHING_GAME_FINISHED")]
+    FISHINGGAMEFINISHED = 63,
+    #[def("MESSAGE_EVENT_TAVERN_GAME_FINISHED")]
+    TAVERNGAMEFINISHED = 64,
+    #[def("MESSAGE_EVENT_HERO_REWARDED_FROM_CONTAINER")]
+    HEROREWARDEDFROMCONTAINER = 65,
+    #[def("MESSAGE_EVENT_HERO_SLEPT")]
+    HEROSLEPT = 66,
+    #[def("MESSAGE_EVENT_HERO_FIRED_RANGED_WEAPON")]
+    HEROFIREDRANGEDWEAPON = 67,
+    #[def("MESSAGE_EVENT_HERO_CAST_SPELL")]
+    HEROCASTSPELL = 68,
+    #[def("MESSAGE_EVENT_HERO_PICKED_POCKET")]
+    HEROPICKEDPOCKET = 69,
+    #[def("MESSAGE_EVENT_HERO_PICKED_LOCK")]
+    HEROPICKEDLOCK = 70,
+    #[def("MESSAGE_EVENT_HERO_STOLEN_OBJECT")]
+    HEROSTOLENOBJECT = 71,
+    #[def("MESSAGE_EVENT_CHEST_OPENING_CANCELLED")]
+    CHESTOPENINGCANCELLED = 72,
+    #[def("MESSAGE_EVENT_LEAVING_QUEST_START_SCREEN")]
+    LEAVINGQUESTSTARTSCREEN = 73,
+    #[def("MESSAGE_EVENT_LEAVING_EXPERIENCE_SPEND_SCREEN")]
+    LEAVINGEXPERIENCESPENDSCREEN = 74,
+    #[def("MESSAGE_EVENT_ACTION_MODE_BUTTON_PRESSED")]
+    ACTIONMODEBUTTONPRESSED = 75,
 }
 
-def_enum! {
-    /// C++ `ELightingChannel`.
-    pub enum LightingChannel: i32 {
-        MAIN = 0 => "LIGHTING_CHANNEL_MAIN",
-        INDOORS = 1 => "LIGHTING_CHANNEL_INDOORS",
-        INDOORS2 = 2 => "LIGHTING_CHANNEL_INDOORS_2",
-        INDOORS3 = 3 => "LIGHTING_CHANNEL_INDOORS_3",
-        INDOORS4 = 4 => "LIGHTING_CHANNEL_INDOORS_4",
-        EPICSPELL = 5 => "LIGHTING_CHANNEL_EPIC_SPELL",
-        COUNT = 6 => "LIGHTING_CHANNEL_COUNT",
-    }
+/// C++ `EMinimapThemeType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum MinimapThemeType {
+    #[def("MINIMAP_THEME_TYPE_NONE")]
+    NONE = 0,
+    #[def("MINIMAP_THEME_TYPE_GRASS")]
+    GRASS = 1,
+    #[def("MINIMAP_THEME_TYPE_WATER")]
+    WATER = 2,
+    #[def("MINIMAP_THEME_TYPE_SNOW")]
+    SNOW = 3,
+    #[def("MINIMAP_THEME_TYPE_CLIFF")]
+    CLIFF = 4,
+    #[def("MINIMAP_THEME_TYPE_EARTH")]
+    EARTH = 5,
+    #[def("MINIMAP_THEME_TYPE_FOLIAGE")]
+    FOLIAGE = 6,
+    #[def("MINIMAP_THEME_TYPE_WOOD")]
+    WOOD = 7,
+    #[def("MINIMAP_THEME_TYPE_BUILDING")]
+    BUILDING = 8,
 }
 
-def_enum! {
-    /// C++ `EMessageEventType`.
-    pub enum MessageEventType: i32 {
-        PLAYERGIVEITEM = 0 => "MESSAGE_EVENT_PLAYER_GIVE_ITEM",
-        CALLCHILDRENHOME = 1 => "MESSAGE_EVENT_CALL_CHILDREN_HOME",
-        CALLSPOUSEHOME = 2 => "MESSAGE_EVENT_CALL_SPOUSE_HOME",
-        PLAYERARSON = 3 => "MESSAGE_EVENT_PLAYER_ARSON",
-        ATTACK = 4 => "MESSAGE_EVENT_ATTACK",
-        MURDER = 5 => "MESSAGE_EVENT_MURDER",
-        PLAYERARSONEMOTIONALREACTION = 6 => "MESSAGE_EVENT_PLAYER_ARSON_EMOTIONAL_REACTION",
-        PLAYERATTACKEMOTIONALREACTION = 7 => "MESSAGE_EVENT_PLAYER_ATTACK_EMOTIONAL_REACTION",
-        PLAYERMURDEREMOTIONALREACTION = 8 => "MESSAGE_EVENT_PLAYER_MURDER_EMOTIONAL_REACTION",
-        DEATH = 9 => "MESSAGE_EVENT_DEATH",
-        GOINGFORHELP = 10 => "MESSAGE_EVENT_GOING_FOR_HELP",
-        YELLFORHELP = 11 => "MESSAGE_EVENT_YELL_FOR_HELP",
-        YELLISEEHIM = 12 => "MESSAGE_EVENT_YELL_I_SEE_HIM",
-        CONVERSATIONSTART = 13 => "MESSAGE_EVENT_CONVERSATION_START",
-        CONVERSATIONJOIN = 14 => "MESSAGE_EVENT_CONVERSATION_JOIN",
-        CONVERSATIONEND = 15 => "MESSAGE_EVENT_CONVERSATION_END",
-        CONVERSATIONANSWERYESORNO = 16 => "MESSAGE_EVENT_CONVERSATION_ANSWER_YES_OR_NO",
-        CONVERSATIONCLICKPAST = 17 => "MESSAGE_EVENT_CONVERSATION_CLICK_PAST",
-        GAMEINFOCLICKPAST = 18 => "MESSAGE_EVENT_GAME_INFO_CLICK_PAST",
-        BUYITEM = 19 => "MESSAGE_EVENT_BUY_ITEM",
-        PLAYERINTERACTION = 20 => "MESSAGE_EVENT_PLAYER_INTERACTION",
-        GAMEOFTAGSTART = 21 => "MESSAGE_EVENT_GAME_OF_TAG_START",
-        GAMEOFTAGJOIN = 22 => "MESSAGE_EVENT_GAME_OF_TAG_JOIN",
-        GAMEOFTAGSOMEONETAGGED = 23 => "MESSAGE_EVENT_GAME_OF_TAG_SOMEONE_TAGGED",
-        HOPSCOTCHPLAYING = 24 => "MESSAGE_EVENT_HOPSCOTCH_PLAYING",
-        FOUNDCORPSE = 25 => "MESSAGE_EVENT_FOUND_CORPSE",
-        FOUNDUNCONSCIOUSPERSON = 26 => "MESSAGE_EVENT_FOUND_UNCONSCIOUS_PERSON",
-        GUARDSEENPLAYERSWORD = 27 => "MESSAGE_EVENT_GUARD_SEEN_PLAYER_SWORD",
-        THEFT = 28 => "MESSAGE_EVENT_THEFT",
-        TRESPASS = 29 => "MESSAGE_EVENT_TRESPASS",
-        DEALINGWITHTRESPASS = 30 => "MESSAGE_EVENT_DEALING_WITH_TRESPASS",
-        DEALINGWITHNOISEINHOUSE = 31 => "MESSAGE_EVENT_DEALING_WITH_NOISE_IN_HOUSE",
-        HEROREPUTATIONEVENT = 32 => "MESSAGE_EVENT_HERO_REPUTATION_EVENT",
-        CROWDFORMING = 33 => "MESSAGE_EVENT_CROWD_FORMING",
-        CROWDDISPERSING = 34 => "MESSAGE_EVENT_CROWD_DISPERSING",
-        HEROPODIUM = 35 => "MESSAGE_EVENT_HERO_PODIUM",
-        LEVELLOADED = 36 => "MESSAGE_EVENT_LEVEL_LOADED",
-        LEVELUNLOADED = 37 => "MESSAGE_EVENT_LEVEL_UNLOADED",
-        REGIONLOADED = 38 => "MESSAGE_EVENT_REGION_LOADED",
-        REGIONUNLOADED = 39 => "MESSAGE_EVENT_REGION_UNLOADED",
-        REGIONPREUNLOAD = 40 => "MESSAGE_EVENT_REGION_PREUNLOAD",
-        BOASTMADE = 41 => "MESSAGE_EVENT_BOAST_MADE",
-        EXPRESSIONPERFORMED = 42 => "MESSAGE_EVENT_EXPRESSION_PERFORMED",
-        SCRIPTEDCAMERAEVENT = 43 => "MESSAGE_EVENT_SCRIPTED_CAMERA_EVENT",
-        REQUESTGOSSIP = 44 => "MESSAGE_EVENT_REQUEST_GOSSIP",
-        REQUESTGOSSIPREQUEST = 45 => "MESSAGE_EVENT_REQUEST_GOSSIP_REQUEST",
-        REQUESTGAMEOFTAG = 46 => "MESSAGE_EVENT_REQUEST_GAME_OF_TAG",
-        APPRENTICEPRACTICE = 47 => "MESSAGE_EVENT_APPRENTICE_PRACTICE",
-        PAYMENTREQUEST = 48 => "MESSAGE_EVENT_PAYMENT_REQUEST",
-        PAYMENTCANCELLED = 49 => "MESSAGE_EVENT_PAYMENT_CANCELLED",
-        SKIPCUTSCENE = 50 => "MESSAGE_EVENT_SKIP_CUT_SCENE",
-        QUESTCOMPLETED = 51 => "MESSAGE_EVENT_QUEST_COMPLETED",
-        QUESTFAILED = 52 => "MESSAGE_EVENT_QUEST_FAILED",
-        QUESTCOMPLETEDBEFORESCREENSHOWN = 53 => "MESSAGE_EVENT_QUEST_COMPLETED_BEFORE_SCREEN_SHOWN",
-        QUESTFAILEDBEFORESCREENSHOWN = 54 => "MESSAGE_EVENT_QUEST_FAILED_BEFORE_SCREEN_SHOWN",
-        QUESTACCEPTED = 55 => "MESSAGE_EVENT_QUEST_ACCEPTED",
-        FEATACCEPTED = 56 => "MESSAGE_EVENT_FEAT_ACCEPTED",
-        HAIRTYPECHANGED = 57 => "MESSAGE_EVENT_HAIR_TYPE_CHANGED",
-        BEARDTYPECHANGED = 58 => "MESSAGE_EVENT_BEARD_TYPE_CHANGED",
-        MOUSTACHETYPECHANGED = 59 => "MESSAGE_EVENT_MOUSTACHE_TYPE_CHANGED",
-        TELEPORTERUSED = 60 => "MESSAGE_EVENT_TELEPORTER_USED",
-        GUILDSEALUSED = 61 => "MESSAGE_EVENT_GUILD_SEAL_USED",
-        GAMESAVEDMANUALLY = 62 => "MESSAGE_EVENT_GAME_SAVED_MANUALLY",
-        FISHINGGAMEFINISHED = 63 => "MESSAGE_EVENT_FISHING_GAME_FINISHED",
-        TAVERNGAMEFINISHED = 64 => "MESSAGE_EVENT_TAVERN_GAME_FINISHED",
-        HEROREWARDEDFROMCONTAINER = 65 => "MESSAGE_EVENT_HERO_REWARDED_FROM_CONTAINER",
-        HEROSLEPT = 66 => "MESSAGE_EVENT_HERO_SLEPT",
-        HEROFIREDRANGEDWEAPON = 67 => "MESSAGE_EVENT_HERO_FIRED_RANGED_WEAPON",
-        HEROCASTSPELL = 68 => "MESSAGE_EVENT_HERO_CAST_SPELL",
-        HEROPICKEDPOCKET = 69 => "MESSAGE_EVENT_HERO_PICKED_POCKET",
-        HEROPICKEDLOCK = 70 => "MESSAGE_EVENT_HERO_PICKED_LOCK",
-        HEROSTOLENOBJECT = 71 => "MESSAGE_EVENT_HERO_STOLEN_OBJECT",
-        CHESTOPENINGCANCELLED = 72 => "MESSAGE_EVENT_CHEST_OPENING_CANCELLED",
-        LEAVINGQUESTSTARTSCREEN = 73 => "MESSAGE_EVENT_LEAVING_QUEST_START_SCREEN",
-        LEAVINGEXPERIENCESPENDSCREEN = 74 => "MESSAGE_EVENT_LEAVING_EXPERIENCE_SPEND_SCREEN",
-        ACTIONMODEBUTTONPRESSED = 75 => "MESSAGE_EVENT_ACTION_MODE_BUTTON_PRESSED",
-    }
+/// C++ `ENavigatorType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum NavigatorType {
+    #[def("NAV_INIT_GROUND")]
+    GROUND = 1,
+    #[def("NAV_INIT_FLYER")]
+    FLYER = 2,
 }
 
-def_enum! {
-    /// C++ `EMinimapThemeType`.
-    pub enum MinimapThemeType: i32 {
-        NONE = 0 => "MINIMAP_THEME_TYPE_NONE",
-        GRASS = 1 => "MINIMAP_THEME_TYPE_GRASS",
-        WATER = 2 => "MINIMAP_THEME_TYPE_WATER",
-        SNOW = 3 => "MINIMAP_THEME_TYPE_SNOW",
-        CLIFF = 4 => "MINIMAP_THEME_TYPE_CLIFF",
-        EARTH = 5 => "MINIMAP_THEME_TYPE_EARTH",
-        FOLIAGE = 6 => "MINIMAP_THEME_TYPE_FOLIAGE",
-        WOOD = 7 => "MINIMAP_THEME_TYPE_WOOD",
-        BUILDING = 8 => "MINIMAP_THEME_TYPE_BUILDING",
-    }
+/// C++ `ENoiseType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum NoiseType {
+    #[def("NOISE_TYPE_CONTINUOUS")]
+    CONTINUOUS = 0,
+    #[def("NOISE_TYPE_ONCE_ONLY")]
+    ONCEONLY = 1,
 }
 
-def_enum! {
-    /// C++ `ENavigatorType`.
-    pub enum NavigatorType: i32 {
-        GROUND = 1 => "NAV_INIT_GROUND",
-        FLYER = 2 => "NAV_INIT_FLYER",
-    }
+/// C++ `EObjectAugmentationType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    NULL = 0 => "AUGMENTATION_NULL",
+    EXTRA_DAMAGE = 1 => "AUGMENTATION_EXTRA_DAMAGE",
+    SILVER = 2 => "AUGMENTATION_SILVER",
+    FLAME = 4 => "AUGMENTATION_FLAME",
+    LIGHTNING = 8 => "AUGMENTATION_LIGHTNING",
+    DIAMOND = 16 => "AUGMENTATION_DIAMOND",
+    HEALTH_REGENERATION = 32 => "AUGMENTATION_HEALTH_REGENERATION",
+    STAMINA_REGENERATION = 64 => "AUGMENTATION_STAMINA_REGENERATION",
+    EXPERIENCE_INCREASE = 128 => "AUGMENTATION_EXPERIENCE_INCREASE",
+    HOBBE_KILLER = 256 => "AUGMENTATION_HOBBE_KILLER",
+    BANDIT_KILLER = 512 => "AUGMENTATION_BANDIT_KILLER",
+)]
+pub struct ObjectAugmentationType(pub i32);
+
+/// C++ `EOpinion`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    MORALITY = 0 => "OPINION_MORALITY",
+    RENOWN = 1 => "OPINION_RENOWN",
+    SCARINESS = 2 => "OPINION_SCARINESS",
+    AGREEABLENESS = 3 => "OPINION_AGREEABLENESS",
+    ATTRACTIVENESS = 4 => "OPINION_ATTRACTIVENESS",
+    LAST = 5 => "OPINION_LAST",
+)]
+pub struct Opinion(pub i32);
+
+/// C++ `EOpinionAttitudeType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    NONE = 0 => "OPINION_ATTITUDE_TYPE_NONE",
+    RESPECT = 1 => "OPINION_ATTITUDE_TYPE_RESPECT",
+    AWE = 2 => "OPINION_ATTITUDE_TYPE_AWE",
+    DISDAIN = 3 => "OPINION_ATTITUDE_TYPE_DISDAIN",
+    FEAR = 4 => "OPINION_ATTITUDE_TYPE_FEAR",
+    FRIENDLINESS = 5 => "OPINION_ATTITUDE_TYPE_FRIENDLINESS",
+    WORSHIP = 6 => "OPINION_ATTITUDE_TYPE_WORSHIP",
+    RIDICULOUS = 7 => "OPINION_ATTITUDE_TYPE_RIDICULOUS",
+    OFFENSIVE = 8 => "OPINION_ATTITUDE_TYPE_OFFENSIVE",
+    AGREEABLE = 9 => "OPINION_ATTITUDE_TYPE_AGREEABLE",
+    UGLY = 10 => "OPINION_ATTITUDE_TYPE_UGLY",
+    ATTRACTED = 11 => "OPINION_ATTITUDE_TYPE_ATTRACTED",
+    LOVE = 12 => "OPINION_ATTITUDE_TYPE_LOVE",
+    WIFE_FIRST = 13 => "OPINION_ATTITUDE_TYPE_WIFE_FIRST",
+    WIFE_LOVE = 13 => "OPINION_ATTITUDE_TYPE_WIFE_LOVE",
+    WIFE_LIKE = 14 => "OPINION_ATTITUDE_TYPE_WIFE_LIKE",
+    WIFE_NEUTRAL = 15 => "OPINION_ATTITUDE_TYPE_WIFE_NEUTRAL",
+    WIFE_DISLIKE = 16 => "OPINION_ATTITUDE_TYPE_WIFE_DISLIKE",
+    WIFE_HATE = 17 => "OPINION_ATTITUDE_TYPE_WIFE_HATE",
+    LAST = 18 => "OPINION_ATTITUDE_TYPE_LAST",
+)]
+pub struct OpinionAttitudeType(pub i32);
+
+/// C++ `EOpinionDeedType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    NONE = 0 => "OPINION_DEED_TYPE_NONE",
+    CRIME_WEAPON_OUT = 1 => "OPINION_DEED_TYPE_CRIME_WEAPON_OUT",
+    CRIME_TRESPASS_THIRD = 2 => "OPINION_DEED_TYPE_CRIME_TRESPASS_THIRD",
+    CRIME_VANDALISM = 3 => "OPINION_DEED_TYPE_CRIME_VANDALISM",
+    CRIME_LOCKPICKING = 4 => "OPINION_DEED_TYPE_CRIME_LOCKPICKING",
+    CRIME_PICK_POCKETS = 5 => "OPINION_DEED_TYPE_CRIME_PICK_POCKETS",
+    CRIME_THEFT = 6 => "OPINION_DEED_TYPE_CRIME_THEFT",
+    CRIME_ASSAULT = 7 => "OPINION_DEED_TYPE_CRIME_ASSAULT",
+    CRIME_GBH = 8 => "OPINION_DEED_TYPE_CRIME_GBH",
+    CRIME_MURDER = 9 => "OPINION_DEED_TYPE_CRIME_MURDER",
+    CRIME_TRESPASS_FIRST = 10 => "OPINION_DEED_TYPE_CRIME_TRESPASS_FIRST",
+    CRIME_TRESPASS_SECOND = 11 => "OPINION_DEED_TYPE_CRIME_TRESPASS_SECOND",
+    EXPRESSION_HEROIC_STANCE = 12 => "OPINION_DEED_TYPE_EXPRESSION_HEROIC_STANCE",
+    EXPRESSION_FLIRT = 13 => "OPINION_DEED_TYPE_EXPRESSION_FLIRT",
+    EXPRESSION_APOLOGY_NO_CRIME = 14 => "OPINION_DEED_TYPE_EXPRESSION_APOLOGY_NO_CRIME",
+    EXPRESSION_SNEER = 15 => "OPINION_DEED_TYPE_EXPRESSION_SNEER",
+    EXPRESSION_EVIL_LAUGH = 16 => "OPINION_DEED_TYPE_EXPRESSION_EVIL_LAUGH",
+    EXPRESSION_BATTLE_CRY = 17 => "OPINION_DEED_TYPE_EXPRESSION_BATTLE_CRY",
+    EXPRESSION_PELVIC_THRUST = 18 => "OPINION_DEED_TYPE_EXPRESSION_PELVIC_THRUST",
+    EXPRESSION_MIDDLE_FINGER = 19 => "OPINION_DEED_TYPE_EXPRESSION_MIDDLE_FINGER",
+    EXPRESSION_BELCH = 20 => "OPINION_DEED_TYPE_EXPRESSION_BELCH",
+    EXPRESSION_FART = 21 => "OPINION_DEED_TYPE_EXPRESSION_FART",
+    EXPRESSION_VICTORY_PUMP = 22 => "OPINION_DEED_TYPE_EXPRESSION_VICTORY_PUMP",
+    EXPRESSION_CLAP = 23 => "OPINION_DEED_TYPE_EXPRESSION_CLAP",
+    EXPRESSION_GIGGLE = 24 => "OPINION_DEED_TYPE_EXPRESSION_GIGGLE",
+    EXPRESSION_SHIT = 25 => "OPINION_DEED_TYPE_EXPRESSION_SHIT",
+    EXPRESSION_THANKS = 26 => "OPINION_DEED_TYPE_EXPRESSION_THANKS",
+    EXPRESSION_COCK_A_DOODLE_DO = 27 => "OPINION_DEED_TYPE_EXPRESSION_COCK_A_DOODLE_DO",
+    EXPRESSION_CROTCH_GRAB = 28 => "OPINION_DEED_TYPE_EXPRESSION_CROTCH_GRAB",
+    EXPRESSION_KISS_MY_ASS = 29 => "OPINION_DEED_TYPE_EXPRESSION_KISS_MY_ASS",
+    EXPRESSION_FLAMENCO = 30 => "OPINION_DEED_TYPE_EXPRESSION_FLAMENCO",
+    EXPRESSION_COSSACK = 31 => "OPINION_DEED_TYPE_EXPRESSION_COSSACK",
+    EXPRESSION_AIR_GUITAR = 32 => "OPINION_DEED_TYPE_EXPRESSION_AIR_GUITAR",
+    EXPRESSION_BALLET = 33 => "OPINION_DEED_TYPE_EXPRESSION_BALLET",
+    EXPRESSION_SATURDAY_NIGHT_FEVER = 34 => "OPINION_DEED_TYPE_EXPRESSION_SATURDAY_NIGHT_FEVER",
+    EXPRESSION_TAP = 35 => "OPINION_DEED_TYPE_EXPRESSION_TAP",
+    EXPRESSION_Y = 36 => "OPINION_DEED_TYPE_EXPRESSION_Y",
+    EXPRESSION_M = 37 => "OPINION_DEED_TYPE_EXPRESSION_M",
+    EXPRESSION_C = 38 => "OPINION_DEED_TYPE_EXPRESSION_C",
+    EXPRESSION_A = 39 => "OPINION_DEED_TYPE_EXPRESSION_A",
+    EXPRESSION_THREATEN_SMALL = 40 => "OPINION_DEED_TYPE_EXPRESSION_THREATEN_SMALL",
+    EXPRESSION_THREATEN_LARGE = 41 => "OPINION_DEED_TYPE_EXPRESSION_THREATEN_LARGE",
+    SCRIPT_ACTION_ANNOYING_SMALL = 42 => "OPINION_DEED_TYPE_SCRIPT_ACTION_ANNOYING_SMALL",
+    SCRIPT_ACTION_ANNOYING_LARGE = 43 => "OPINION_DEED_TYPE_SCRIPT_ACTION_ANNOYING_LARGE",
+    SCRIPT_ACTION_NICE_SMALL = 44 => "OPINION_DEED_TYPE_SCRIPT_ACTION_NICE_SMALL",
+    SCRIPT_ACTION_NICE_LARGE = 45 => "OPINION_DEED_TYPE_SCRIPT_ACTION_NICE_LARGE",
+    FOLLOWER_ACCEPT = 46 => "OPINION_DEED_TYPE_FOLLOWER_ACCEPT",
+    FOLLOWER_REFUSE = 47 => "OPINION_DEED_TYPE_FOLLOWER_REFUSE",
+    FOLLOWER_DISMISSED = 48 => "OPINION_DEED_TYPE_FOLLOWER_DISMISSED",
+    FOLLOWER_QUIT = 49 => "OPINION_DEED_TYPE_FOLLOWER_QUIT",
+    FOLLOWER_ENEMYSPOTTED = 50 => "OPINION_DEED_TYPE_FOLLOWER_ENEMYSPOTTED",
+    FOLLOWER_IDLEEXCITED = 51 => "OPINION_DEED_TYPE_FOLLOWER_IDLEEXCITED",
+    FOLLOWER_IDLEBORED = 52 => "OPINION_DEED_TYPE_FOLLOWER_IDLEBORED",
+    WITNESSED_ASSAULT_OR_GBH = 53 => "OPINION_DEED_TYPE_WITNESSED_ASSAULT_OR_GBH",
+    TOO_FREQUENT_OTHER_DEED = 54 => "OPINION_DEED_TYPE_TOO_FREQUENT_OTHER_DEED",
+    SHOW_TROPHY_EVIL = 55 => "OPINION_DEED_TYPE_SHOW_TROPHY_EVIL",
+    SHOW_TROPHY_GOOD = 56 => "OPINION_DEED_TYPE_SHOW_TROPHY_GOOD",
+    SHOW_TROPHY_BORED = 57 => "OPINION_DEED_TYPE_SHOW_TROPHY_BORED",
+    KILL_BAD_GUY = 58 => "OPINION_DEED_TYPE_KILL_BAD_GUY",
+    MURDER_SPOUSE = 59 => "OPINION_DEED_TYPE_MURDER_SPOUSE",
+    RECEIVE_GIFT_ROMANTIC = 60 => "OPINION_DEED_TYPE_RECEIVE_GIFT_ROMANTIC",
+    RECEIVE_GIFT_FRIENDLY = 61 => "OPINION_DEED_TYPE_RECEIVE_GIFT_FRIENDLY",
+    RECEIVE_GIFT_OFFENSIVE = 62 => "OPINION_DEED_TYPE_RECEIVE_GIFT_OFFENSIVE",
+    RECEIVE_WEDDING_RING = 63 => "OPINION_DEED_TYPE_RECEIVE_WEDDING_RING",
+    BOAST_ANTICIPATION = 64 => "OPINION_DEED_TYPE_BOAST_ANTICIPATION",
+    BOAST_ENCOURAGE_FIRST = 65 => "OPINION_DEED_TYPE_BOAST_ENCOURAGE_FIRST",
+    BOAST_ENCOURAGE_MIDDLE = 66 => "OPINION_DEED_TYPE_BOAST_ENCOURAGE_MIDDLE",
+    BOAST_ENCOURAGE_FINAL = 67 => "OPINION_DEED_TYPE_BOAST_ENCOURAGE_FINAL",
+    BOAST_WELL_WISHES = 68 => "OPINION_DEED_TYPE_BOAST_WELL_WISHES",
+    BOAST_ANNOYED_NO_BOASTING = 69 => "OPINION_DEED_TYPE_BOAST_ANNOYED_NO_BOASTING",
+    COMMENT_AT_HERO = 70 => "OPINION_DEED_TYPE_COMMENT_AT_HERO",
+    COMMENT_TO_SELF = 71 => "OPINION_DEED_TYPE_COMMENT_TO_SELF",
+    COMMENT_ABOUT_HERO = 72 => "OPINION_DEED_TYPE_COMMENT_ABOUT_HERO",
+    GENERIC_INCOMPREHENSION = 73 => "OPINION_DEED_TYPE_GENERIC_INCOMPREHENSION",
+    HIGH_PRIORITY_INCOMPREHENSION = 74 => "OPINION_DEED_TYPE_HIGH_PRIORITY_INCOMPREHENSION",
+    HUSBAND_RAGE = 75 => "OPINION_DEED_TYPE_HUSBAND_RAGE",
+    TAVERN_GAME_WIN = 76 => "OPINION_DEED_TYPE_TAVERN_GAME_WIN",
+    INDOORS_GREETING = 77 => "OPINION_DEED_TYPE_INDOORS_GREETING",
+    APOLOGY_ACCEPTED = 78 => "OPINION_DEED_TYPE_APOLOGY_ACCEPTED",
+    APOLOGY_REFUSED = 79 => "OPINION_DEED_TYPE_APOLOGY_REFUSED",
+    WIFE_GREETED = 80 => "OPINION_DEED_TYPE_WIFE_GREETED",
+    WIFE_TIME_SINCE_SEEING = 81 => "OPINION_DEED_TYPE_WIFE_TIME_SINCE_SEEING",
+    WIFE_GIFT_RECEIVE_ALREADY_GOT = 82 => "OPINION_DEED_TYPE_WIFE_GIFT_RECEIVE_ALREADY_GOT",
+    WIFE_JUSTMARRIED = 83 => "OPINION_DEED_TYPE_WIFE_JUSTMARRIED",
+    WIFE_GIFT_WANTED = 84 => "OPINION_DEED_TYPE_WIFE_GIFT_WANTED",
+    WIFE_WITNESSED_FLIRT = 85 => "OPINION_DEED_TYPE_WIFE_WITNESSED_FLIRT",
+    WIFE_HOUSE_DRESSING_GOOD = 86 => "OPINION_DEED_TYPE_WIFE_HOUSE_DRESSING_GOOD",
+    WIFE_HOUSE_DRESSING_BAD = 87 => "OPINION_DEED_TYPE_WIFE_HOUSE_DRESSING_BAD",
+    WIFE_DIVORCE_WARNING = 88 => "OPINION_DEED_TYPE_WIFE_DIVORCE_WARNING",
+    WIFE_DIVORCE_OCCURRED = 89 => "OPINION_DEED_TYPE_WIFE_DIVORCE_OCCURRED",
+    WIFE_SEX_OFFER_TO_GO_TO_BED = 90 => "OPINION_DEED_TYPE_WIFE_SEX_OFFER_TO_GO_TO_BED",
+    WIFE_SEX_COMMENT_AFTERWARDS = 91 => "OPINION_DEED_TYPE_WIFE_SEX_COMMENT_AFTERWARDS",
+    LAST = 92 => "OPINION_DEED_TYPE_LAST",
+)]
+pub struct OpinionDeedType(pub i32);
+
+/// C++ `EOpinionReactionType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    NONE = 0 => "OPINION_REACTION_TYPE_NONE",
+    ATTITUDE_RESPECT = 1 => "OPINION_REACTION_TYPE_ATTITUDE_RESPECT",
+    ATTITUDE_AWE = 2 => "OPINION_REACTION_TYPE_ATTITUDE_AWE",
+    ATTITUDE_DISDAIN = 3 => "OPINION_REACTION_TYPE_ATTITUDE_DISDAIN",
+    ATTITUDE_FEAR = 4 => "OPINION_REACTION_TYPE_ATTITUDE_FEAR",
+    ATTITUDE_FRIENDLINESS = 5 => "OPINION_REACTION_TYPE_ATTITUDE_FRIENDLINESS",
+    ATTITUDE_WORSHIP = 6 => "OPINION_REACTION_TYPE_ATTITUDE_WORSHIP",
+    ATTITUDE_RIDICULOUS = 7 => "OPINION_REACTION_TYPE_ATTITUDE_RIDICULOUS",
+    ATTITUDE_OFFENSIVE = 8 => "OPINION_REACTION_TYPE_ATTITUDE_OFFENSIVE",
+    ATTITUDE_AGREEABLE = 9 => "OPINION_REACTION_TYPE_ATTITUDE_AGREEABLE",
+    ATTITUDE_UGLY = 10 => "OPINION_REACTION_TYPE_ATTITUDE_UGLY",
+    ATTITUDE_ATTRACTED = 11 => "OPINION_REACTION_TYPE_ATTITUDE_ATTRACTED",
+    ATTITUDE_LOVE = 12 => "OPINION_REACTION_TYPE_ATTITUDE_LOVE",
+    ATTITUDE_WIFE_LOVE = 13 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_LOVE",
+    ATTITUDE_WIFE_LIKE = 14 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_LIKE",
+    ATTITUDE_WIFE_NEUTRAL = 15 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_NEUTRAL",
+    ATTITUDE_WIFE_DISLIKE = 16 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_DISLIKE",
+    ATTITUDE_WIFE_HATE = 17 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_HATE",
+    ANGRY_POINT = 18 => "OPINION_REACTION_TYPE_ANGRY_POINT",
+    BACK_AWAY = 19 => "OPINION_REACTION_TYPE_BACK_AWAY",
+    BELLY_LAUGH = 20 => "OPINION_REACTION_TYPE_BELLY_LAUGH",
+    BOO = 21 => "OPINION_REACTION_TYPE_BOO",
+    BOWING_LARGE = 22 => "OPINION_REACTION_TYPE_BOWING_LARGE",
+    BOWING_SMALL = 23 => "OPINION_REACTION_TYPE_BOWING_SMALL",
+    CALLING_CHILDREN = 24 => "OPINION_REACTION_TYPE_CALLING_CHILDREN",
+    CHEER_LARGE = 25 => "OPINION_REACTION_TYPE_CHEER_LARGE",
+    CHEER_SMALL = 26 => "OPINION_REACTION_TYPE_CHEER_SMALL",
+    CLAP_LARGE = 27 => "OPINION_REACTION_TYPE_CLAP_LARGE",
+    CLAP_SMALL = 28 => "OPINION_REACTION_TYPE_CLAP_SMALL",
+    COMMENT_ABOUT_HERO = 29 => "OPINION_REACTION_TYPE_COMMENT_ABOUT_HERO",
+    COMMENT_AT_HERO = 30 => "OPINION_REACTION_TYPE_COMMENT_AT_HERO",
+    COMMENT_TO_SELF = 31 => "OPINION_REACTION_TYPE_COMMENT_TO_SELF",
+    COWER = 32 => "OPINION_REACTION_TYPE_COWER",
+    DISMISS = 33 => "OPINION_REACTION_TYPE_DISMISS",
+    FLEE = 34 => "OPINION_REACTION_TYPE_FLEE",
+    FOLLOW_CLOSE = 35 => "OPINION_REACTION_TYPE_FOLLOW_CLOSE",
+    FOLLOW_FAR = 36 => "OPINION_REACTION_TYPE_FOLLOW_FAR",
+    FRIENDLY_GREET = 37 => "OPINION_REACTION_TYPE_FRIENDLY_GREET",
+    GET_OUT = 38 => "OPINION_REACTION_TYPE_GET_OUT",
+    GROVEL_LARGE = 39 => "OPINION_REACTION_TYPE_GROVEL_LARGE",
+    GROVEL_SMALL = 40 => "OPINION_REACTION_TYPE_GROVEL_SMALL",
+    HERO_IMITATION_PLAY = 41 => "OPINION_REACTION_TYPE_HERO_IMITATION_PLAY",
+    HEROTITLE_AT_HERO = 42 => "OPINION_REACTION_TYPE_HEROTITLE_AT_HERO",
+    HEROTITLE_TO_SELF = 43 => "OPINION_REACTION_TYPE_HEROTITLE_TO_SELF",
+    HIDE = 44 => "OPINION_REACTION_TYPE_HIDE",
+    MARRIAGE_COMMENT = 45 => "OPINION_REACTION_TYPE_MARRIAGE_COMMENT",
+    OFFER_GIFT_FRIENDLY = 46 => "OPINION_REACTION_TYPE_OFFER_GIFT_FRIENDLY",
+    OFFER_GIFT_WORSHIP = 47 => "OPINION_REACTION_TYPE_OFFER_GIFT_WORSHIP",
+    PICK_FIGHT = 48 => "OPINION_REACTION_TYPE_PICK_FIGHT",
+    POINT = 49 => "OPINION_REACTION_TYPE_POINT",
+    POINT_LAUGH = 50 => "OPINION_REACTION_TYPE_POINT_LAUGH",
+    RESPECTFUL_GREET = 51 => "OPINION_REACTION_TYPE_RESPECTFUL_GREET",
+    SHAKE_FIST = 52 => "OPINION_REACTION_TYPE_SHAKE_FIST",
+    SHOUT_AWE = 53 => "OPINION_REACTION_TYPE_SHOUT_AWE",
+    SNIGGER = 54 => "OPINION_REACTION_TYPE_SNIGGER",
+    THUMBS_DOWN = 55 => "OPINION_REACTION_TYPE_THUMBS_DOWN",
+    WATCH = 56 => "OPINION_REACTION_TYPE_WATCH",
+    WIFE_FEELING_LOVE = 57 => "OPINION_REACTION_TYPE_WIFE_FEELING_LOVE",
+    WIFE_FIRST = 57 => "OPINION_REACTION_TYPE_WIFE_FIRST",
+    WIFE_GENERAL_LOVE = 58 => "OPINION_REACTION_TYPE_WIFE_GENERAL_LOVE",
+    WIFE_TOHERSELF_LOVE = 59 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_LOVE",
+    WIFE_CLOTHING_LOVE = 60 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_LOVE",
+    WIFE_FEELING_LIKE = 61 => "OPINION_REACTION_TYPE_WIFE_FEELING_LIKE",
+    WIFE_GENERAL_LIKE = 62 => "OPINION_REACTION_TYPE_WIFE_GENERAL_LIKE",
+    WIFE_TOHERSELF_LIKE = 63 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_LIKE",
+    WIFE_CLOTHING_LIKE = 64 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_LIKE",
+    WIFE_FEELING_NEUTRAL = 65 => "OPINION_REACTION_TYPE_WIFE_FEELING_NEUTRAL",
+    WIFE_GENERAL_NEUTRAL = 66 => "OPINION_REACTION_TYPE_WIFE_GENERAL_NEUTRAL",
+    WIFE_TOHERSELF_NEUTRAL = 67 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_NEUTRAL",
+    WIFE_CLOTHING_NEUTRAL = 68 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_NEUTRAL",
+    WIFE_FEELING_DISLIKE = 69 => "OPINION_REACTION_TYPE_WIFE_FEELING_DISLIKE",
+    WIFE_GENERAL_DISLIKE = 70 => "OPINION_REACTION_TYPE_WIFE_GENERAL_DISLIKE",
+    WIFE_TOHERSELF_DISLIKE = 71 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_DISLIKE",
+    WIFE_CLOTHING_DISLIKE = 72 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_DISLIKE",
+    WIFE_FEELING_HATE = 73 => "OPINION_REACTION_TYPE_WIFE_FEELING_HATE",
+    WIFE_GENERAL_HATE = 74 => "OPINION_REACTION_TYPE_WIFE_GENERAL_HATE",
+    WIFE_TOHERSELF_HATE = 75 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_HATE",
+    WIFE_CLOTHING_HATE = 76 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_HATE",
+    WIFE_JUSTMARRIED = 77 => "OPINION_REACTION_TYPE_WIFE_JUSTMARRIED",
+    WIFE_GIFT_WANTED = 78 => "OPINION_REACTION_TYPE_WIFE_GIFT_WANTED",
+    LAST = 79 => "OPINION_REACTION_TYPE_LAST",
+    WIFE_LAST = 79 => "OPINION_REACTION_TYPE_WIFE_LAST",
+)]
+pub struct OpinionReactionType(pub i32);
+
+/// C++ `EOpinionTargetingConditionType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    NONE = 0 => "OPINION_TARGETING_CONDITION_TYPE_NONE",
+    NOT_TARGETED = 1 => "OPINION_TARGETING_CONDITION_TYPE_NOT_TARGETED",
+    TARGETED_BUT_NOT_Z = 2 => "OPINION_TARGETING_CONDITION_TYPE_TARGETED_BUT_NOT_Z",
+    NOT_Z_TARGETED = 3 => "OPINION_TARGETING_CONDITION_TYPE_NOT_Z_TARGETED",
+    Z_TARGETED = 4 => "OPINION_TARGETING_CONDITION_TYPE_Z_TARGETED",
+    ANY_TARGETED = 5 => "OPINION_TARGETING_CONDITION_TYPE_ANY_TARGETED",
+)]
+pub struct OpinionTargetingConditionType(pub i32);
+
+/// C++ `EPSwitchTriggerType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    PSWITCH_TRIGGER_ON_PLAYER = 1 => "PSWITCH_TRIGGER_ON_PLAYER",
+    USE = 2 => "PSWITCH_TRIGGER_ON_PLAYER_USE",
+)]
+pub struct PSwitchTriggerType(pub i32);
+
+/// C++ `EPerceivedThingType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum PerceivedThingType {
+    #[def("PERCEIVED_THING_FIND_PLAYER")]
+    PERCEIVEDTHINGFINDPLAYER = 0,
+    #[def("MAX_NO_PERCEIVED_THING_TYPES")]
+    MAXNOPERCEIVEDTHINGTYPES = 1,
 }
 
-def_enum! {
-    /// C++ `ENoiseType`.
-    pub enum NoiseType: i32 {
-        CONTINUOUS = 0 => "NOISE_TYPE_CONTINUOUS",
-        ONCEONLY = 1 => "NOISE_TYPE_ONCE_ONLY",
-    }
+/// C++ `EPointLightChannelEffect`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum PointLightChannelEffect {
+    #[def("POINT_LIGHT_EFFECT_LOCAL_CHANNEL")]
+    LOCALCHANNEL = 0,
+    #[def("POINT_LIGHT_EFFECT_ALL_INTERNALS")]
+    ALLINTERNALS = 1,
+    #[def("POINT_LIGHT_EFFECT_EXTERNALS")]
+    EXTERNALS = 2,
+    #[def("POINT_LIGHT_EFFECT_ALL")]
+    ALL = 3,
 }
 
-def_flags! {
-    /// C++ `EObjectAugmentationType`.
-    pub struct ObjectAugmentationType: i32 {
-        NULL = 0 => "AUGMENTATION_NULL",
-        EXTRA_DAMAGE = 1 => "AUGMENTATION_EXTRA_DAMAGE",
-        SILVER = 2 => "AUGMENTATION_SILVER",
-        FLAME = 4 => "AUGMENTATION_FLAME",
-        LIGHTNING = 8 => "AUGMENTATION_LIGHTNING",
-        DIAMOND = 16 => "AUGMENTATION_DIAMOND",
-        HEALTH_REGENERATION = 32 => "AUGMENTATION_HEALTH_REGENERATION",
-        STAMINA_REGENERATION = 64 => "AUGMENTATION_STAMINA_REGENERATION",
-        EXPERIENCE_INCREASE = 128 => "AUGMENTATION_EXPERIENCE_INCREASE",
-        HOBBE_KILLER = 256 => "AUGMENTATION_HOBBE_KILLER",
-        BANDIT_KILLER = 512 => "AUGMENTATION_BANDIT_KILLER",
-    }
+/// C++ `EQuakeLength`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum QuakeLength {
+    #[def("QUAKE_LENGTH_SHORT")]
+    SHORT = 0,
+    #[def("QUAKE_LENGTH_MEDIUM")]
+    MEDIUM = 1,
+    #[def("QUAKE_LENGTH_LONG")]
+    LONG = 2,
+    #[def("QUAKE_LENGTH_CONTINUOUS")]
+    CONTINUOUS = 3,
 }
 
-def_flags! {
-    /// C++ `EOpinion`.
-    pub struct Opinion: i32 {
-        MORALITY = 0 => "OPINION_MORALITY",
-        RENOWN = 1 => "OPINION_RENOWN",
-        SCARINESS = 2 => "OPINION_SCARINESS",
-        AGREEABLENESS = 3 => "OPINION_AGREEABLENESS",
-        ATTRACTIVENESS = 4 => "OPINION_ATTRACTIVENESS",
-        LAST = 5 => "OPINION_LAST",
-    }
+/// C++ `EQuakeStrength`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum QuakeStrength {
+    #[def("QUAKE_STRENGTH_WEAK")]
+    WEAK = 0,
+    #[def("QUAKE_STRENGTH_MEDIUM")]
+    MEDIUM = 1,
+    #[def("QUAKE_STRENGTH_STRONG")]
+    STRONG = 2,
+    #[def("QUAKE_STRENGTH_MADNESS")]
+    MADNESS = 3,
 }
 
-def_flags! {
-    /// C++ `EOpinionAttitudeType`.
-    pub struct OpinionAttitudeType: i32 {
-        NONE = 0 => "OPINION_ATTITUDE_TYPE_NONE",
-        RESPECT = 1 => "OPINION_ATTITUDE_TYPE_RESPECT",
-        AWE = 2 => "OPINION_ATTITUDE_TYPE_AWE",
-        DISDAIN = 3 => "OPINION_ATTITUDE_TYPE_DISDAIN",
-        FEAR = 4 => "OPINION_ATTITUDE_TYPE_FEAR",
-        FRIENDLINESS = 5 => "OPINION_ATTITUDE_TYPE_FRIENDLINESS",
-        WORSHIP = 6 => "OPINION_ATTITUDE_TYPE_WORSHIP",
-        RIDICULOUS = 7 => "OPINION_ATTITUDE_TYPE_RIDICULOUS",
-        OFFENSIVE = 8 => "OPINION_ATTITUDE_TYPE_OFFENSIVE",
-        AGREEABLE = 9 => "OPINION_ATTITUDE_TYPE_AGREEABLE",
-        UGLY = 10 => "OPINION_ATTITUDE_TYPE_UGLY",
-        ATTRACTED = 11 => "OPINION_ATTITUDE_TYPE_ATTRACTED",
-        LOVE = 12 => "OPINION_ATTITUDE_TYPE_LOVE",
-        WIFE_FIRST = 13 => "OPINION_ATTITUDE_TYPE_WIFE_FIRST",
-        WIFE_LOVE = 13 => "OPINION_ATTITUDE_TYPE_WIFE_LOVE",
-        WIFE_LIKE = 14 => "OPINION_ATTITUDE_TYPE_WIFE_LIKE",
-        WIFE_NEUTRAL = 15 => "OPINION_ATTITUDE_TYPE_WIFE_NEUTRAL",
-        WIFE_DISLIKE = 16 => "OPINION_ATTITUDE_TYPE_WIFE_DISLIKE",
-        WIFE_HATE = 17 => "OPINION_ATTITUDE_TYPE_WIFE_HATE",
-        LAST = 18 => "OPINION_ATTITUDE_TYPE_LAST",
-    }
+/// C++ `EReactionSpeechType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ReactionSpeechType {
+    #[def("REACTION_SPEECH_NULL")]
+    REACTIONSPEECHNULL = 0,
+    #[def("REACTION_SPEECH_CALL_OVER_HERE")]
+    REACTIONSPEECHCALLOVERHERE = 1,
+    #[def("REACTION_SPEECH_FAWNING_GREETING")]
+    REACTIONSPEECHFAWNINGGREETING = 2,
+    #[def("REACTION_SPEECH_FRIENDLY_GREETING")]
+    REACTIONSPEECHFRIENDLYGREETING = 3,
+    #[def("REACTION_SPEECH_STRANGERS_GREETING")]
+    REACTIONSPEECHSTRANGERSGREETING = 4,
+    #[def("REACTION_SPEECH_NERVOUS")]
+    REACTIONSPEECHNERVOUS = 5,
+    #[def("REACTION_SPEECH_SCARED")]
+    REACTIONSPEECHSCARED = 6,
+    #[def("REACTION_SPEECH_TERRIFIED")]
+    REACTIONSPEECHTERRIFIED = 7,
+    #[def("REACTION_SPEECH_INSULTED")]
+    REACTIONSPEECHINSULTED = 8,
+    #[def("REACTION_SPEECH_ANGRY")]
+    REACTIONSPEECHANGRY = 9,
+    #[def("REACTION_SPEECH_HATEFUL")]
+    REACTIONSPEECHHATEFUL = 10,
+    #[def("REACTION_SPEECH_THREAT_OF_RETRIBUTION")]
+    REACTIONSPEECHTHREATOFRETRIBUTION = 11,
+    #[def("REACTION_SPEECH_PROMISE_OF_RETRIBUTION")]
+    REACTIONSPEECHPROMISEOFRETRIBUTION = 12,
+    #[def("REACTION_SPEECH_DISMISSIVE")]
+    REACTIONSPEECHDISMISSIVE = 13,
+    #[def("REACTION_SPEECH_BOTHERED")]
+    REACTIONSPEECHBOTHERED = 14,
+    #[def("REACTION_SPEECH_HARASSED")]
+    REACTIONSPEECHHARASSED = 15,
+    #[def("REACTION_SPEECH_RIDICULING")]
+    REACTIONSPEECHRIDICULING = 16,
+    #[def("REACTION_SPEECH_INSULTS")]
+    REACTIONSPEECHINSULTS = 17,
+    #[def("REACTION_SPEECH_ATTRACTED")]
+    REACTIONSPEECHATTRACTED = 18,
+    #[def("REACTION_SPEECH_LOVING")]
+    REACTIONSPEECHLOVING = 19,
+    #[def("REACTION_SPEECH_SURPRISED_AT_ABUSE")]
+    REACTIONSPEECHSURPRISEDATABUSE = 20,
+    #[def("REACTION_SPEECH_LOVING_AND_SHOCKED_AT_ABUSE")]
+    REACTIONSPEECHLOVINGANDSHOCKEDATABUSE = 21,
+    #[def("REACTION_SPEECH_UNIMPRESSED_RESPONSE_TO_THREAT")]
+    REACTIONSPEECHUNIMPRESSEDRESPONSETOTHREAT = 22,
+    #[def("REACTION_SPEECH_RIDICULING_RESPONSE_TO_THREAT")]
+    REACTIONSPEECHRIDICULINGRESPONSETOTHREAT = 23,
+    #[def("REACTION_SPEECH_LOVING_RESPONSE_TO_FLIRT")]
+    REACTIONSPEECHLOVINGRESPONSETOFLIRT = 24,
+    #[def("REACTION_SPEECH_ATTRACTED_RESPONSE_TO_FLIRT")]
+    REACTIONSPEECHATTRACTEDRESPONSETOFLIRT = 25,
+    #[def("REACTION_SPEECH_NEUTRAL_REFUSAL_OF_FLIRT")]
+    REACTIONSPEECHNEUTRALREFUSALOFFLIRT = 26,
+    #[def("REACTION_SPEECH_NEGATIVE_RESPONSE_TO_FLIRT")]
+    REACTIONSPEECHNEGATIVERESPONSETOFLIRT = 27,
+    #[def("REACTION_SPEECH_FEARFUL_REFUSAL_OF_FLIRT")]
+    REACTIONSPEECHFEARFULREFUSALOFFLIRT = 28,
+    #[def("REACTION_SPEECH_GRATEFUL_ACCEPTANCE_OF_BRIBE")]
+    REACTIONSPEECHGRATEFULACCEPTANCEOFBRIBE = 29,
+    #[def("REACTION_SPEECH_PACIFIED_ACCEPTANCE_OF_BRIBE")]
+    REACTIONSPEECHPACIFIEDACCEPTANCEOFBRIBE = 30,
+    #[def("REACTION_SPEECH_FRIENDLY_REJECTION_OF_BRIBE")]
+    REACTIONSPEECHFRIENDLYREJECTIONOFBRIBE = 31,
+    #[def("REACTION_SPEECH_UNFRIENDLY_REJECTION_OF_BRIBE")]
+    REACTIONSPEECHUNFRIENDLYREJECTIONOFBRIBE = 32,
+    #[def("REACTION_SPEECH_WARN_AWAY")]
+    REACTIONSPEECHWARNAWAY = 33,
+    #[def("REACTION_SPEECH_GIVE_AWAY")]
+    REACTIONSPEECHGIVEAWAY = 34,
+    #[def("REACTION_SPEECH_REPORT_CRIME")]
+    REACTIONSPEECHREPORTCRIME = 35,
+    #[def("REACTION_SPEECH_BODY_FOUND")]
+    REACTIONSPEECHBODYFOUND = 36,
+    #[def("REACTION_SPEECH_REPORT_BODY_FOUND")]
+    REACTIONSPEECHREPORTBODYFOUND = 37,
+    #[def("REACTION_SPEECH_GOSSIP")]
+    REACTIONSPEECHGOSSIP = 38,
+    #[def("REACTION_SPEECH_YAWN")]
+    REACTIONSPEECHYAWN = 39,
+    #[def("REACTION_SPEECH_SNORE")]
+    REACTIONSPEECHSNORE = 40,
+    #[def("REACTION_SPEECH_CHEER")]
+    REACTIONSPEECHCHEER = 41,
+    #[def("REACTION_SPEECH_SOB")]
+    REACTIONSPEECHSOB = 42,
+    #[def("REACTION_SPEECH_CRY_OUT")]
+    REACTIONSPEECHCRYOUT = 43,
+    #[def("REACTION_SPEECH_BATTLE_CRY")]
+    REACTIONSPEECHBATTLECRY = 44,
+    #[def("REACTION_SPEECH_LYNCH_CRY")]
+    REACTIONSPEECHLYNCHCRY = 45,
+    #[def("REACTION_SPEECH_WOUNDED")]
+    REACTIONSPEECHWOUNDED = 46,
+    #[def("REACTION_SPEECH_DIE")]
+    REACTIONSPEECHDIE = 47,
+    #[def("REACTION_SPEECH_GUARD_KILL")]
+    REACTIONSPEECHGUARDKILL = 48,
+    #[def("REACTION_SPEECH_GUARD_ARREST")]
+    REACTIONSPEECHGUARDARREST = 49,
+    #[def("REACTION_SPEECH_GUARD_SECURITY_SWEEP")]
+    REACTIONSPEECHGUARDSECURITYSWEEP = 50,
+    #[def("REACTION_SPEECH_GUARD_WARNING_1")]
+    REACTIONSPEECHGUARDWARNING1 = 51,
+    #[def("REACTION_SPEECH_GUARD_WARNING_2")]
+    REACTIONSPEECHGUARDWARNING2 = 52,
+    #[def("REACTION_SPEECH_GUARD_WARNING_3")]
+    REACTIONSPEECHGUARDWARNING3 = 53,
+    #[def("REACTION_SPEECH_GUARD_WARNING_END_AND_THANKS")]
+    REACTIONSPEECHGUARDWARNINGENDANDTHANKS = 54,
+    #[def("REACTION_SPEECH_NO_RESPECT")]
+    REACTIONSPEECHNORESPECT = 55,
+    #[def("MAX_NO_REACTION_SPEECH_TYPES")]
+    MAXNOREACTIONSPEECHTYPES = 56,
 }
 
-def_flags! {
-    /// C++ `EOpinionDeedType`.
-    pub struct OpinionDeedType: i32 {
-        NONE = 0 => "OPINION_DEED_TYPE_NONE",
-        CRIME_WEAPON_OUT = 1 => "OPINION_DEED_TYPE_CRIME_WEAPON_OUT",
-        CRIME_TRESPASS_THIRD = 2 => "OPINION_DEED_TYPE_CRIME_TRESPASS_THIRD",
-        CRIME_VANDALISM = 3 => "OPINION_DEED_TYPE_CRIME_VANDALISM",
-        CRIME_LOCKPICKING = 4 => "OPINION_DEED_TYPE_CRIME_LOCKPICKING",
-        CRIME_PICK_POCKETS = 5 => "OPINION_DEED_TYPE_CRIME_PICK_POCKETS",
-        CRIME_THEFT = 6 => "OPINION_DEED_TYPE_CRIME_THEFT",
-        CRIME_ASSAULT = 7 => "OPINION_DEED_TYPE_CRIME_ASSAULT",
-        CRIME_GBH = 8 => "OPINION_DEED_TYPE_CRIME_GBH",
-        CRIME_MURDER = 9 => "OPINION_DEED_TYPE_CRIME_MURDER",
-        CRIME_TRESPASS_FIRST = 10 => "OPINION_DEED_TYPE_CRIME_TRESPASS_FIRST",
-        CRIME_TRESPASS_SECOND = 11 => "OPINION_DEED_TYPE_CRIME_TRESPASS_SECOND",
-        EXPRESSION_HEROIC_STANCE = 12 => "OPINION_DEED_TYPE_EXPRESSION_HEROIC_STANCE",
-        EXPRESSION_FLIRT = 13 => "OPINION_DEED_TYPE_EXPRESSION_FLIRT",
-        EXPRESSION_APOLOGY_NO_CRIME = 14 => "OPINION_DEED_TYPE_EXPRESSION_APOLOGY_NO_CRIME",
-        EXPRESSION_SNEER = 15 => "OPINION_DEED_TYPE_EXPRESSION_SNEER",
-        EXPRESSION_EVIL_LAUGH = 16 => "OPINION_DEED_TYPE_EXPRESSION_EVIL_LAUGH",
-        EXPRESSION_BATTLE_CRY = 17 => "OPINION_DEED_TYPE_EXPRESSION_BATTLE_CRY",
-        EXPRESSION_PELVIC_THRUST = 18 => "OPINION_DEED_TYPE_EXPRESSION_PELVIC_THRUST",
-        EXPRESSION_MIDDLE_FINGER = 19 => "OPINION_DEED_TYPE_EXPRESSION_MIDDLE_FINGER",
-        EXPRESSION_BELCH = 20 => "OPINION_DEED_TYPE_EXPRESSION_BELCH",
-        EXPRESSION_FART = 21 => "OPINION_DEED_TYPE_EXPRESSION_FART",
-        EXPRESSION_VICTORY_PUMP = 22 => "OPINION_DEED_TYPE_EXPRESSION_VICTORY_PUMP",
-        EXPRESSION_CLAP = 23 => "OPINION_DEED_TYPE_EXPRESSION_CLAP",
-        EXPRESSION_GIGGLE = 24 => "OPINION_DEED_TYPE_EXPRESSION_GIGGLE",
-        EXPRESSION_SHIT = 25 => "OPINION_DEED_TYPE_EXPRESSION_SHIT",
-        EXPRESSION_THANKS = 26 => "OPINION_DEED_TYPE_EXPRESSION_THANKS",
-        EXPRESSION_COCK_A_DOODLE_DO = 27 => "OPINION_DEED_TYPE_EXPRESSION_COCK_A_DOODLE_DO",
-        EXPRESSION_CROTCH_GRAB = 28 => "OPINION_DEED_TYPE_EXPRESSION_CROTCH_GRAB",
-        EXPRESSION_KISS_MY_ASS = 29 => "OPINION_DEED_TYPE_EXPRESSION_KISS_MY_ASS",
-        EXPRESSION_FLAMENCO = 30 => "OPINION_DEED_TYPE_EXPRESSION_FLAMENCO",
-        EXPRESSION_COSSACK = 31 => "OPINION_DEED_TYPE_EXPRESSION_COSSACK",
-        EXPRESSION_AIR_GUITAR = 32 => "OPINION_DEED_TYPE_EXPRESSION_AIR_GUITAR",
-        EXPRESSION_BALLET = 33 => "OPINION_DEED_TYPE_EXPRESSION_BALLET",
-        EXPRESSION_SATURDAY_NIGHT_FEVER = 34 => "OPINION_DEED_TYPE_EXPRESSION_SATURDAY_NIGHT_FEVER",
-        EXPRESSION_TAP = 35 => "OPINION_DEED_TYPE_EXPRESSION_TAP",
-        EXPRESSION_Y = 36 => "OPINION_DEED_TYPE_EXPRESSION_Y",
-        EXPRESSION_M = 37 => "OPINION_DEED_TYPE_EXPRESSION_M",
-        EXPRESSION_C = 38 => "OPINION_DEED_TYPE_EXPRESSION_C",
-        EXPRESSION_A = 39 => "OPINION_DEED_TYPE_EXPRESSION_A",
-        EXPRESSION_THREATEN_SMALL = 40 => "OPINION_DEED_TYPE_EXPRESSION_THREATEN_SMALL",
-        EXPRESSION_THREATEN_LARGE = 41 => "OPINION_DEED_TYPE_EXPRESSION_THREATEN_LARGE",
-        SCRIPT_ACTION_ANNOYING_SMALL = 42 => "OPINION_DEED_TYPE_SCRIPT_ACTION_ANNOYING_SMALL",
-        SCRIPT_ACTION_ANNOYING_LARGE = 43 => "OPINION_DEED_TYPE_SCRIPT_ACTION_ANNOYING_LARGE",
-        SCRIPT_ACTION_NICE_SMALL = 44 => "OPINION_DEED_TYPE_SCRIPT_ACTION_NICE_SMALL",
-        SCRIPT_ACTION_NICE_LARGE = 45 => "OPINION_DEED_TYPE_SCRIPT_ACTION_NICE_LARGE",
-        FOLLOWER_ACCEPT = 46 => "OPINION_DEED_TYPE_FOLLOWER_ACCEPT",
-        FOLLOWER_REFUSE = 47 => "OPINION_DEED_TYPE_FOLLOWER_REFUSE",
-        FOLLOWER_DISMISSED = 48 => "OPINION_DEED_TYPE_FOLLOWER_DISMISSED",
-        FOLLOWER_QUIT = 49 => "OPINION_DEED_TYPE_FOLLOWER_QUIT",
-        FOLLOWER_ENEMYSPOTTED = 50 => "OPINION_DEED_TYPE_FOLLOWER_ENEMYSPOTTED",
-        FOLLOWER_IDLEEXCITED = 51 => "OPINION_DEED_TYPE_FOLLOWER_IDLEEXCITED",
-        FOLLOWER_IDLEBORED = 52 => "OPINION_DEED_TYPE_FOLLOWER_IDLEBORED",
-        WITNESSED_ASSAULT_OR_GBH = 53 => "OPINION_DEED_TYPE_WITNESSED_ASSAULT_OR_GBH",
-        TOO_FREQUENT_OTHER_DEED = 54 => "OPINION_DEED_TYPE_TOO_FREQUENT_OTHER_DEED",
-        SHOW_TROPHY_EVIL = 55 => "OPINION_DEED_TYPE_SHOW_TROPHY_EVIL",
-        SHOW_TROPHY_GOOD = 56 => "OPINION_DEED_TYPE_SHOW_TROPHY_GOOD",
-        SHOW_TROPHY_BORED = 57 => "OPINION_DEED_TYPE_SHOW_TROPHY_BORED",
-        KILL_BAD_GUY = 58 => "OPINION_DEED_TYPE_KILL_BAD_GUY",
-        MURDER_SPOUSE = 59 => "OPINION_DEED_TYPE_MURDER_SPOUSE",
-        RECEIVE_GIFT_ROMANTIC = 60 => "OPINION_DEED_TYPE_RECEIVE_GIFT_ROMANTIC",
-        RECEIVE_GIFT_FRIENDLY = 61 => "OPINION_DEED_TYPE_RECEIVE_GIFT_FRIENDLY",
-        RECEIVE_GIFT_OFFENSIVE = 62 => "OPINION_DEED_TYPE_RECEIVE_GIFT_OFFENSIVE",
-        RECEIVE_WEDDING_RING = 63 => "OPINION_DEED_TYPE_RECEIVE_WEDDING_RING",
-        BOAST_ANTICIPATION = 64 => "OPINION_DEED_TYPE_BOAST_ANTICIPATION",
-        BOAST_ENCOURAGE_FIRST = 65 => "OPINION_DEED_TYPE_BOAST_ENCOURAGE_FIRST",
-        BOAST_ENCOURAGE_MIDDLE = 66 => "OPINION_DEED_TYPE_BOAST_ENCOURAGE_MIDDLE",
-        BOAST_ENCOURAGE_FINAL = 67 => "OPINION_DEED_TYPE_BOAST_ENCOURAGE_FINAL",
-        BOAST_WELL_WISHES = 68 => "OPINION_DEED_TYPE_BOAST_WELL_WISHES",
-        BOAST_ANNOYED_NO_BOASTING = 69 => "OPINION_DEED_TYPE_BOAST_ANNOYED_NO_BOASTING",
-        COMMENT_AT_HERO = 70 => "OPINION_DEED_TYPE_COMMENT_AT_HERO",
-        COMMENT_TO_SELF = 71 => "OPINION_DEED_TYPE_COMMENT_TO_SELF",
-        COMMENT_ABOUT_HERO = 72 => "OPINION_DEED_TYPE_COMMENT_ABOUT_HERO",
-        GENERIC_INCOMPREHENSION = 73 => "OPINION_DEED_TYPE_GENERIC_INCOMPREHENSION",
-        HIGH_PRIORITY_INCOMPREHENSION = 74 => "OPINION_DEED_TYPE_HIGH_PRIORITY_INCOMPREHENSION",
-        HUSBAND_RAGE = 75 => "OPINION_DEED_TYPE_HUSBAND_RAGE",
-        TAVERN_GAME_WIN = 76 => "OPINION_DEED_TYPE_TAVERN_GAME_WIN",
-        INDOORS_GREETING = 77 => "OPINION_DEED_TYPE_INDOORS_GREETING",
-        APOLOGY_ACCEPTED = 78 => "OPINION_DEED_TYPE_APOLOGY_ACCEPTED",
-        APOLOGY_REFUSED = 79 => "OPINION_DEED_TYPE_APOLOGY_REFUSED",
-        WIFE_GREETED = 80 => "OPINION_DEED_TYPE_WIFE_GREETED",
-        WIFE_TIME_SINCE_SEEING = 81 => "OPINION_DEED_TYPE_WIFE_TIME_SINCE_SEEING",
-        WIFE_GIFT_RECEIVE_ALREADY_GOT = 82 => "OPINION_DEED_TYPE_WIFE_GIFT_RECEIVE_ALREADY_GOT",
-        WIFE_JUSTMARRIED = 83 => "OPINION_DEED_TYPE_WIFE_JUSTMARRIED",
-        WIFE_GIFT_WANTED = 84 => "OPINION_DEED_TYPE_WIFE_GIFT_WANTED",
-        WIFE_WITNESSED_FLIRT = 85 => "OPINION_DEED_TYPE_WIFE_WITNESSED_FLIRT",
-        WIFE_HOUSE_DRESSING_GOOD = 86 => "OPINION_DEED_TYPE_WIFE_HOUSE_DRESSING_GOOD",
-        WIFE_HOUSE_DRESSING_BAD = 87 => "OPINION_DEED_TYPE_WIFE_HOUSE_DRESSING_BAD",
-        WIFE_DIVORCE_WARNING = 88 => "OPINION_DEED_TYPE_WIFE_DIVORCE_WARNING",
-        WIFE_DIVORCE_OCCURRED = 89 => "OPINION_DEED_TYPE_WIFE_DIVORCE_OCCURRED",
-        WIFE_SEX_OFFER_TO_GO_TO_BED = 90 => "OPINION_DEED_TYPE_WIFE_SEX_OFFER_TO_GO_TO_BED",
-        WIFE_SEX_COMMENT_AFTERWARDS = 91 => "OPINION_DEED_TYPE_WIFE_SEX_COMMENT_AFTERWARDS",
-        LAST = 92 => "OPINION_DEED_TYPE_LAST",
-    }
+/// C++ `EReverbEnvironmentType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ReverbEnvironmentType {
+    #[def("REVERB_ENVIRONMENT_NULL")]
+    NULL = 0,
+    #[def("REVERB_ENVIRONMENT_EXTERNAL")]
+    EXTERNAL = 1,
+    #[def("REVERB_ENVIRONMENT_CAVE")]
+    CAVE = 2,
+    #[def("REVERB_ENVIRONMENT_HALL")]
+    HALL = 3,
+    #[def("REVERB_ENVIRONMENT_GUILD")]
+    GUILD = 4,
+    #[def("REVERB_ENVIRONMENT_GUILD_SMALL")]
+    GUILDSMALL = 5,
+    #[def("REVERB_ENVIRONMENT_SMALL_ROOM")]
+    SMALLROOM = 6,
+    #[def("REVERB_ENVIRONMENT_SCHOOL")]
+    SCHOOL = 7,
 }
 
-def_flags! {
-    /// C++ `EOpinionReactionType`.
-    pub struct OpinionReactionType: i32 {
-        NONE = 0 => "OPINION_REACTION_TYPE_NONE",
-        ATTITUDE_RESPECT = 1 => "OPINION_REACTION_TYPE_ATTITUDE_RESPECT",
-        ATTITUDE_AWE = 2 => "OPINION_REACTION_TYPE_ATTITUDE_AWE",
-        ATTITUDE_DISDAIN = 3 => "OPINION_REACTION_TYPE_ATTITUDE_DISDAIN",
-        ATTITUDE_FEAR = 4 => "OPINION_REACTION_TYPE_ATTITUDE_FEAR",
-        ATTITUDE_FRIENDLINESS = 5 => "OPINION_REACTION_TYPE_ATTITUDE_FRIENDLINESS",
-        ATTITUDE_WORSHIP = 6 => "OPINION_REACTION_TYPE_ATTITUDE_WORSHIP",
-        ATTITUDE_RIDICULOUS = 7 => "OPINION_REACTION_TYPE_ATTITUDE_RIDICULOUS",
-        ATTITUDE_OFFENSIVE = 8 => "OPINION_REACTION_TYPE_ATTITUDE_OFFENSIVE",
-        ATTITUDE_AGREEABLE = 9 => "OPINION_REACTION_TYPE_ATTITUDE_AGREEABLE",
-        ATTITUDE_UGLY = 10 => "OPINION_REACTION_TYPE_ATTITUDE_UGLY",
-        ATTITUDE_ATTRACTED = 11 => "OPINION_REACTION_TYPE_ATTITUDE_ATTRACTED",
-        ATTITUDE_LOVE = 12 => "OPINION_REACTION_TYPE_ATTITUDE_LOVE",
-        ATTITUDE_WIFE_LOVE = 13 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_LOVE",
-        ATTITUDE_WIFE_LIKE = 14 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_LIKE",
-        ATTITUDE_WIFE_NEUTRAL = 15 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_NEUTRAL",
-        ATTITUDE_WIFE_DISLIKE = 16 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_DISLIKE",
-        ATTITUDE_WIFE_HATE = 17 => "OPINION_REACTION_TYPE_ATTITUDE_WIFE_HATE",
-        ANGRY_POINT = 18 => "OPINION_REACTION_TYPE_ANGRY_POINT",
-        BACK_AWAY = 19 => "OPINION_REACTION_TYPE_BACK_AWAY",
-        BELLY_LAUGH = 20 => "OPINION_REACTION_TYPE_BELLY_LAUGH",
-        BOO = 21 => "OPINION_REACTION_TYPE_BOO",
-        BOWING_LARGE = 22 => "OPINION_REACTION_TYPE_BOWING_LARGE",
-        BOWING_SMALL = 23 => "OPINION_REACTION_TYPE_BOWING_SMALL",
-        CALLING_CHILDREN = 24 => "OPINION_REACTION_TYPE_CALLING_CHILDREN",
-        CHEER_LARGE = 25 => "OPINION_REACTION_TYPE_CHEER_LARGE",
-        CHEER_SMALL = 26 => "OPINION_REACTION_TYPE_CHEER_SMALL",
-        CLAP_LARGE = 27 => "OPINION_REACTION_TYPE_CLAP_LARGE",
-        CLAP_SMALL = 28 => "OPINION_REACTION_TYPE_CLAP_SMALL",
-        COMMENT_ABOUT_HERO = 29 => "OPINION_REACTION_TYPE_COMMENT_ABOUT_HERO",
-        COMMENT_AT_HERO = 30 => "OPINION_REACTION_TYPE_COMMENT_AT_HERO",
-        COMMENT_TO_SELF = 31 => "OPINION_REACTION_TYPE_COMMENT_TO_SELF",
-        COWER = 32 => "OPINION_REACTION_TYPE_COWER",
-        DISMISS = 33 => "OPINION_REACTION_TYPE_DISMISS",
-        FLEE = 34 => "OPINION_REACTION_TYPE_FLEE",
-        FOLLOW_CLOSE = 35 => "OPINION_REACTION_TYPE_FOLLOW_CLOSE",
-        FOLLOW_FAR = 36 => "OPINION_REACTION_TYPE_FOLLOW_FAR",
-        FRIENDLY_GREET = 37 => "OPINION_REACTION_TYPE_FRIENDLY_GREET",
-        GET_OUT = 38 => "OPINION_REACTION_TYPE_GET_OUT",
-        GROVEL_LARGE = 39 => "OPINION_REACTION_TYPE_GROVEL_LARGE",
-        GROVEL_SMALL = 40 => "OPINION_REACTION_TYPE_GROVEL_SMALL",
-        HERO_IMITATION_PLAY = 41 => "OPINION_REACTION_TYPE_HERO_IMITATION_PLAY",
-        HEROTITLE_AT_HERO = 42 => "OPINION_REACTION_TYPE_HEROTITLE_AT_HERO",
-        HEROTITLE_TO_SELF = 43 => "OPINION_REACTION_TYPE_HEROTITLE_TO_SELF",
-        HIDE = 44 => "OPINION_REACTION_TYPE_HIDE",
-        MARRIAGE_COMMENT = 45 => "OPINION_REACTION_TYPE_MARRIAGE_COMMENT",
-        OFFER_GIFT_FRIENDLY = 46 => "OPINION_REACTION_TYPE_OFFER_GIFT_FRIENDLY",
-        OFFER_GIFT_WORSHIP = 47 => "OPINION_REACTION_TYPE_OFFER_GIFT_WORSHIP",
-        PICK_FIGHT = 48 => "OPINION_REACTION_TYPE_PICK_FIGHT",
-        POINT = 49 => "OPINION_REACTION_TYPE_POINT",
-        POINT_LAUGH = 50 => "OPINION_REACTION_TYPE_POINT_LAUGH",
-        RESPECTFUL_GREET = 51 => "OPINION_REACTION_TYPE_RESPECTFUL_GREET",
-        SHAKE_FIST = 52 => "OPINION_REACTION_TYPE_SHAKE_FIST",
-        SHOUT_AWE = 53 => "OPINION_REACTION_TYPE_SHOUT_AWE",
-        SNIGGER = 54 => "OPINION_REACTION_TYPE_SNIGGER",
-        THUMBS_DOWN = 55 => "OPINION_REACTION_TYPE_THUMBS_DOWN",
-        WATCH = 56 => "OPINION_REACTION_TYPE_WATCH",
-        WIFE_FEELING_LOVE = 57 => "OPINION_REACTION_TYPE_WIFE_FEELING_LOVE",
-        WIFE_FIRST = 57 => "OPINION_REACTION_TYPE_WIFE_FIRST",
-        WIFE_GENERAL_LOVE = 58 => "OPINION_REACTION_TYPE_WIFE_GENERAL_LOVE",
-        WIFE_TOHERSELF_LOVE = 59 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_LOVE",
-        WIFE_CLOTHING_LOVE = 60 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_LOVE",
-        WIFE_FEELING_LIKE = 61 => "OPINION_REACTION_TYPE_WIFE_FEELING_LIKE",
-        WIFE_GENERAL_LIKE = 62 => "OPINION_REACTION_TYPE_WIFE_GENERAL_LIKE",
-        WIFE_TOHERSELF_LIKE = 63 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_LIKE",
-        WIFE_CLOTHING_LIKE = 64 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_LIKE",
-        WIFE_FEELING_NEUTRAL = 65 => "OPINION_REACTION_TYPE_WIFE_FEELING_NEUTRAL",
-        WIFE_GENERAL_NEUTRAL = 66 => "OPINION_REACTION_TYPE_WIFE_GENERAL_NEUTRAL",
-        WIFE_TOHERSELF_NEUTRAL = 67 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_NEUTRAL",
-        WIFE_CLOTHING_NEUTRAL = 68 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_NEUTRAL",
-        WIFE_FEELING_DISLIKE = 69 => "OPINION_REACTION_TYPE_WIFE_FEELING_DISLIKE",
-        WIFE_GENERAL_DISLIKE = 70 => "OPINION_REACTION_TYPE_WIFE_GENERAL_DISLIKE",
-        WIFE_TOHERSELF_DISLIKE = 71 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_DISLIKE",
-        WIFE_CLOTHING_DISLIKE = 72 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_DISLIKE",
-        WIFE_FEELING_HATE = 73 => "OPINION_REACTION_TYPE_WIFE_FEELING_HATE",
-        WIFE_GENERAL_HATE = 74 => "OPINION_REACTION_TYPE_WIFE_GENERAL_HATE",
-        WIFE_TOHERSELF_HATE = 75 => "OPINION_REACTION_TYPE_WIFE_TOHERSELF_HATE",
-        WIFE_CLOTHING_HATE = 76 => "OPINION_REACTION_TYPE_WIFE_CLOTHING_HATE",
-        WIFE_JUSTMARRIED = 77 => "OPINION_REACTION_TYPE_WIFE_JUSTMARRIED",
-        WIFE_GIFT_WANTED = 78 => "OPINION_REACTION_TYPE_WIFE_GIFT_WANTED",
-        LAST = 79 => "OPINION_REACTION_TYPE_LAST",
-        WIFE_LAST = 79 => "OPINION_REACTION_TYPE_WIFE_LAST",
-    }
+/// C++ `EScriptingStateGroups`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ScriptingStateGroups {
+    #[def("ESSG_NONE")]
+    NONE = 0,
+    #[def("ESSG_PERFORM_ACTION_PHYSICAL")]
+    PERFORMACTIONPHYSICAL = 1,
+    #[def("ESSG_PERFORM_ACTION_VERBAL")]
+    PERFORMACTIONVERBAL = 2,
+    #[def("ESSG_PERFORM_ACTION_AURAL")]
+    PERFORMACTIONAURAL = 3,
+    #[def("ESSG_WANDER_NEAR")]
+    WANDERNEAR = 4,
+    #[def("ESSG_FOLLOW_PATH")]
+    FOLLOWPATH = 5,
+    #[def("ESSG_FOLLOW_RANDOM")]
+    FOLLOWRANDOM = 6,
+    #[def("ESSG_FOLLOW_NEAREST")]
+    FOLLOWNEAREST = 7,
+    #[def("ESSG_WALK_TO_RANDOM")]
+    WALKTORANDOM = 8,
+    #[def("ESSG_WALK_TO_NEAREST_DIFFERENT")]
+    WALKTONEARESTDIFFERENT = 9,
+    #[def("ESSG_RUN_AT_HERO_AND_ATTACK_UNTIL_DEAD")]
+    RUNATHEROANDATTACKUNTILDEAD = 10,
 }
 
-def_flags! {
-    /// C++ `EOpinionTargetingConditionType`.
-    pub struct OpinionTargetingConditionType: i32 {
-        NONE = 0 => "OPINION_TARGETING_CONDITION_TYPE_NONE",
-        NOT_TARGETED = 1 => "OPINION_TARGETING_CONDITION_TYPE_NOT_TARGETED",
-        TARGETED_BUT_NOT_Z = 2 => "OPINION_TARGETING_CONDITION_TYPE_TARGETED_BUT_NOT_Z",
-        NOT_Z_TARGETED = 3 => "OPINION_TARGETING_CONDITION_TYPE_NOT_Z_TARGETED",
-        Z_TARGETED = 4 => "OPINION_TARGETING_CONDITION_TYPE_Z_TARGETED",
-        ANY_TARGETED = 5 => "OPINION_TARGETING_CONDITION_TYPE_ANY_TARGETED",
-    }
+/// C++ `ESex`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum Sex {
+    #[def("SEX_NULL")]
+    SEXNULL = 0,
+    #[def("SEX_MALE")]
+    SEXMALE = 1,
+    #[def("SEX_FEMALE")]
+    SEXFEMALE = 2,
+    #[def("NO_OF_SEXES")]
+    NOOFSEXES = 3,
 }
 
-def_flags! {
-    /// C++ `EPSwitchTriggerType`.
-    pub struct PSwitchTriggerType: i32 {
-        PSWITCH_TRIGGER_ON_PLAYER = 1 => "PSWITCH_TRIGGER_ON_PLAYER",
-        USE = 2 => "PSWITCH_TRIGGER_ON_PLAYER_USE",
-    }
+/// C++ `ESwitchTriggerType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    PLAYER_ONLY_ONCE_IN_AREA = 1 => "SWITCH_TRIGGER_PLAYER_ONLY_ONCE_IN_AREA",
+    PLAYER_ONLY_MULTIPLE_TIMES_IN_AREA = 2 => "SWITCH_TRIGGER_PLAYER_ONLY_MULTIPLE_TIMES_IN_AREA",
+    PLAYER_ONLY_RESET_WHEN_LEAVES = 3 => "SWITCH_TRIGGER_PLAYER_ONLY_RESET_WHEN_LEAVES",
+    PLAYER_SHOW_AREA_NAME = 4 => "SWITCH_TRIGGER_PLAYER_SHOW_AREA_NAME",
+    PLAYER_CHANGE_ENVIRONMENT_THEME = 5 => "SWITCH_TRIGGER_PLAYER_CHANGE_ENVIRONMENT_THEME",
+    ONCE_ON_ITEM_APPLICATION = 6 => "SWITCH_TRIGGER_ONCE_ON_ITEM_APPLICATION",
+)]
+pub struct SwitchTriggerType(pub i32);
+
+/// C++ `ETavernGameControlType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum TavernGameControlType {
+    #[def("ETGCT_RELATIVE")]
+    RELATIVE = 0,
+    #[def("ETGCT_ABSOLUTE")]
+    ABSOLUTE = 1,
 }
 
-def_enum! {
-    /// C++ `EPerceivedThingType`.
-    pub enum PerceivedThingType: i32 {
-        PERCEIVEDTHINGFINDPLAYER = 0 => "PERCEIVED_THING_FIND_PLAYER",
-        MAXNOPERCEIVEDTHINGTYPES = 1 => "MAX_NO_PERCEIVED_THING_TYPES",
-    }
+/// C++ `EThingCreatureProperty`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum ThingCreatureProperty {
+    #[def("THING_CREATURE_PROPERTY_NULL")]
+    NULL = 0,
+    #[def("THING_CREATURE_PROPERTY_IS_MINION")]
+    ISMINION = 1,
+    #[def("THING_CREATURE_PROPERTY_ANNOYABLE_BY_KIDS")]
+    ANNOYABLEBYKIDS = 2,
+    #[def("THING_CREATURE_PROPERTY_GUARD")]
+    GUARD = 3,
+    #[def("THING_CREATURE_PROPERTY_FIREFLY")]
+    FIREFLY = 4,
 }
 
-def_enum! {
-    /// C++ `EPointLightChannelEffect`.
-    pub enum PointLightChannelEffect: i32 {
-        LOCALCHANNEL = 0 => "POINT_LIGHT_EFFECT_LOCAL_CHANNEL",
-        ALLINTERNALS = 1 => "POINT_LIGHT_EFFECT_ALL_INTERNALS",
-        EXTERNALS = 2 => "POINT_LIGHT_EFFECT_EXTERNALS",
-        ALL = 3 => "POINT_LIGHT_EFFECT_ALL",
-    }
+/// C++ `ETrapTriggerType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum TrapTriggerType {
+    #[def("TRAP_TRIGGER_MANUAL")]
+    MANUAL = 0,
+    #[def("TRAP_TRIGGER_PROXIMITY")]
+    PROXIMITY = 1,
 }
 
-def_enum! {
-    /// C++ `EQuakeLength`.
-    pub enum QuakeLength: i32 {
-        SHORT = 0 => "QUAKE_LENGTH_SHORT",
-        MEDIUM = 1 => "QUAKE_LENGTH_MEDIUM",
-        LONG = 2 => "QUAKE_LENGTH_LONG",
-        CONTINUOUS = 3 => "QUAKE_LENGTH_CONTINUOUS",
-    }
+/// C++ `ETrapType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum TrapType {
+    #[def("TRAP_TYPE_TRIGGER_ONCE_ONLY")]
+    TRIGGERONCEONLY = 0,
+    #[def("TRAP_TYPE_TRIGGER_AND_RESET")]
+    TRIGGERANDRESET = 1,
+    #[def("TRAP_TYPE_TRIGGER_AND_PLAY_CONTINUOUS")]
+    TRIGGERANDPLAYCONTINUOUS = 2,
+    #[def("TRAP_TYPE_PLAY_CONTINUOUS")]
+    PLAYCONTINUOUS = 3,
+    #[def("TRAP_TYPE_TRIGGER_AND_DIE")]
+    TRIGGERANDDIE = 4,
 }
 
-def_enum! {
-    /// C++ `EQuakeStrength`.
-    pub enum QuakeStrength: i32 {
-        WEAK = 0 => "QUAKE_STRENGTH_WEAK",
-        MEDIUM = 1 => "QUAKE_STRENGTH_MEDIUM",
-        STRONG = 2 => "QUAKE_STRENGTH_STRONG",
-        MADNESS = 3 => "QUAKE_STRENGTH_MADNESS",
-    }
+/// C++ `ETutorialCategory`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum TutorialCategory {
+    #[def("TUTORIAL_CATEGORY_NONE")]
+    NONE = 0,
+    #[def("TUTORIAL_CATEGORY_ABILITY_ASSIGNING")]
+    ABILITYASSIGNING = 1,
+    #[def("TUTORIAL_CATEGORY_ABILITY_CYCLING")]
+    ABILITYCYCLING = 2,
+    #[def("TUTORIAL_CATEGORY_BASIC_OBJECTS")]
+    BASICOBJECTS = 3,
+    #[def("TUTORIAL_CATEGORY_BED")]
+    BED = 4,
+    #[def("TUTORIAL_CATEGORY_BOASTING")]
+    BOASTING = 5,
+    #[def("TUTORIAL_CATEGORY_CAMERA")]
+    CAMERA = 6,
+    #[def("TUTORIAL_CATEGORY_CHARITY_SHOP")]
+    CHARITYSHOP = 7,
+    #[def("TUTORIAL_CATEGORY_CHEST")]
+    CHEST = 8,
+    #[def("TUTORIAL_CATEGORY_COMBAT_MULTIPLIER")]
+    COMBATMULTIPLIER = 9,
+    #[def("TUTORIAL_CATEGORY_CREATURE_DROP")]
+    CREATUREDROP = 10,
+    #[def("TUTORIAL_CATEGORY_DYING")]
+    DYING = 11,
+    #[def("TUTORIAL_CATEGORY_DEMON_DOOR")]
+    DEMONDOOR = 12,
+    #[def("TUTORIAL_CATEGORY_DOOR")]
+    DOOR = 13,
+    #[def("TUTORIAL_CATEGORY_EXPERIENCE")]
+    EXPERIENCE = 14,
+    #[def("TUTORIAL_CATEGORY_EXPERIENCE_SPENDING")]
+    EXPERIENCESPENDING = 15,
+    #[def("TUTORIAL_CATEGORY_EXPRESSION")]
+    EXPRESSION = 16,
+    #[def("TUTORIAL_CATEGORY_FLIRTING")]
+    FLIRTING = 17,
+    #[def("TUTORIAL_CATEGORY_FLOURISHING_MOVE")]
+    FLOURISHINGMOVE = 18,
+    #[def("TUTORIAL_CATEGORY_GOLDMARKERS")]
+    GOLDMARKERS = 19,
+    #[def("TUTORIAL_CATEGORY_GUILD_SEAL")]
+    GUILDSEAL = 20,
+    #[def("TUTORIAL_CATEGORY_INTERACTING")]
+    INTERACTING = 21,
+    #[def("TUTORIAL_CATEGORY_INVENTORY")]
+    INVENTORY = 22,
+    #[def("TUTORIAL_CATEGORY_INVENTORY_ASSIGNING")]
+    INVENTORYASSIGNING = 23,
+    #[def("TUTORIAL_CATEGORY_LEVELLING_UP")]
+    LEVELLINGUP = 24,
+    #[def("TUTORIAL_CATEGORY_MORALITY")]
+    MORALITY = 25,
+    #[def("TUTORIAL_CATEGORY_MOVEMENT")]
+    MOVEMENT = 26,
+    #[def("TUTORIAL_CATEGORY_QUEST")]
+    QUEST = 27,
+    #[def("TUTORIAL_CATEGORY_QUEST_CARD")]
+    QUESTCARD = 28,
+    #[def("TUTORIAL_CATEGORY_RENOWN")]
+    RENOWN = 29,
+    #[def("TUTORIAL_CATEGORY_TAKING_QUESTS")]
+    TAKINGQUESTS = 30,
+    #[def("TUTORIAL_CATEGORY_TELEPORTING")]
+    TELEPORTING = 31,
+    #[def("TUTORIAL_CATEGORY_TRADE_ITEM")]
+    TRADEITEM = 32,
+    #[def("TUTORIAL_CATEGORY_SEARCHING")]
+    SEARCHING = 33,
+    #[def("TUTORIAL_CATEGORY_SNEAK")]
+    SNEAK = 34,
+    #[def("TUTORIAL_CATEGORY_BUILDING_OWNERSHIP")]
+    BUILDINGOWNERSHIP = 35,
+    #[def("TUTORIAL_CATEGORY_FISHING_GAME")]
+    FISHINGGAME = 36,
+    #[def("TUTORIAL_CATEGORY_ORACLE_GAME")]
+    ORACLEGAME = 37,
+    #[def("TUTORIAL_CATEGORY_WORLD_MAP")]
+    WORLDMAP = 38,
+    #[def("TUTORIAL_CATEGORY_ALCOHOL")]
+    ALCOHOL = 39,
+    #[def("TUTORIAL_CATEGORY_AUGMENTATION")]
+    AUGMENTATION = 40,
+    #[def("TUTORIAL_CATEGORY_ARMOUR")]
+    ARMOUR = 41,
+    #[def("TUTORIAL_CATEGORY_BOMB")]
+    BOMB = 42,
+    #[def("TUTORIAL_CATEGORY_CLOTHES")]
+    CLOTHES = 43,
+    #[def("TUTORIAL_CATEGORY_FOOD")]
+    FOOD = 44,
+    #[def("TUTORIAL_CATEGORY_FISHING_ROD")]
+    FISHINGROD = 45,
+    #[def("TUTORIAL_CATEGORY_GIFT")]
+    GIFT = 46,
+    #[def("TUTORIAL_CATEGORY_HAIRSTYLE")]
+    HAIRSTYLE = 47,
+    #[def("TUTORIAL_CATEGORY_POTION")]
+    POTION = 48,
+    #[def("TUTORIAL_CATEGORY_RESURRECTION_PHIAL")]
+    RESURRECTIONPHIAL = 49,
+    #[def("TUTORIAL_CATEGORY_SILVER_KEY")]
+    SILVERKEY = 50,
+    #[def("TUTORIAL_CATEGORY_SPADE")]
+    SPADE = 51,
+    #[def("TUTORIAL_CATEGORY_TATTOO")]
+    TATTOO = 52,
+    #[def("TUTORIAL_CATEGORY_TROPHY")]
+    TROPHY = 53,
+    #[def("TUTORIAL_CATEGORY_WEAPON")]
+    WEAPON = 54,
+    #[def("TUTORIAL_CATEGORY_WEAPON_LEGENDARY")]
+    WEAPONLEGENDARY = 55,
+    #[def("TUTORIAL_CATEGORY_APOLOGY")]
+    APOLOGY = 56,
+    #[def("TUTORIAL_CATEGORY_BATTLE_CRY")]
+    BATTLECRY = 57,
+    #[def("TUTORIAL_CATEGORY_BELCH")]
+    BELCH = 58,
+    #[def("TUTORIAL_CATEGORY_EVIL_LAUGH")]
+    EVILLAUGH = 59,
+    #[def("TUTORIAL_CATEGORY_FART")]
+    FART = 60,
+    #[def("TUTORIAL_CATEGORY_FLIRT")]
+    FLIRT = 61,
+    #[def("TUTORIAL_CATEGORY_FOLLOW")]
+    FOLLOW = 62,
+    #[def("TUTORIAL_CATEGORY_GIGGLE")]
+    GIGGLE = 63,
+    #[def("TUTORIAL_CATEGORY_HEROIC_STANCE")]
+    HEROICSTANCE = 64,
+    #[def("TUTORIAL_CATEGORY_MIDDLE_FINGER")]
+    MIDDLEFINGER = 65,
+    #[def("TUTORIAL_CATEGORY_PELVIC_THRUST")]
+    PELVICTHRUST = 66,
+    #[def("TUTORIAL_CATEGORY_PICKLOCK")]
+    PICKLOCK = 67,
+    #[def("TUTORIAL_CATEGORY_PICKPOCKET")]
+    PICKPOCKET = 68,
+    #[def("TUTORIAL_CATEGORY_SHIT")]
+    SHIT = 69,
+    #[def("TUTORIAL_CATEGORY_SNEER")]
+    SNEER = 70,
+    #[def("TUTORIAL_CATEGORY_STEAL")]
+    STEAL = 71,
+    #[def("TUTORIAL_CATEGORY_THANKS")]
+    THANKS = 72,
+    #[def("TUTORIAL_CATEGORY_VICTORY_PUMP")]
+    VICTORYPUMP = 73,
+    #[def("TUTORIAL_CATEGORY_WAIT")]
+    WAIT = 74,
+    #[def("TUTORIAL_CATEGORY_COCK_A_DOODLE_DO")]
+    COCKADOODLEDO = 75,
+    #[def("TUTORIAL_CATEGORY_CROTCH_GRAB")]
+    CROTCHGRAB = 76,
+    #[def("TUTORIAL_CATEGORY_KISS_MY_ASS")]
+    KISSMYASS = 77,
+    #[def("TUTORIAL_CATEGORY_FLAMENCO")]
+    FLAMENCO = 78,
+    #[def("TUTORIAL_CATEGORY_COSSACK")]
+    COSSACK = 79,
+    #[def("TUTORIAL_CATEGORY_AIR_GUITAR")]
+    AIRGUITAR = 80,
+    #[def("TUTORIAL_CATEGORY_BALLET")]
+    BALLET = 81,
+    #[def("TUTORIAL_CATEGORY_SATURDAY_NIGHT_FEVER")]
+    SATURDAYNIGHTFEVER = 82,
+    #[def("TUTORIAL_CATEGORY_TAP")]
+    TAP = 83,
+    #[def("TUTORIAL_CATEGORY_Y")]
+    Y = 84,
+    #[def("TUTORIAL_CATEGORY_M")]
+    M = 85,
+    #[def("TUTORIAL_CATEGORY_C")]
+    C = 86,
+    #[def("TUTORIAL_CATEGORY_A")]
+    A = 87,
+    #[def("TUTORIAL_CATEGORY_CRIME_WEAPONOUT")]
+    CRIMEWEAPONOUT = 88,
+    #[def("TUTORIAL_CATEGORY_CRIME_TRESPASSING")]
+    CRIMETRESPASSING = 89,
+    #[def("TUTORIAL_CATEGORY_CRIME_VANDALISM")]
+    CRIMEVANDALISM = 90,
+    #[def("TUTORIAL_CATEGORY_CRIME_THEFT")]
+    CRIMETHEFT = 91,
+    #[def("TUTORIAL_CATEGORY_CRIME_ASSAULT")]
+    CRIMEASSAULT = 92,
+    #[def("TUTORIAL_CATEGORY_CRIME_GBH")]
+    CRIMEGBH = 93,
+    #[def("TUTORIAL_CATEGORY_CRIME_MURDER")]
+    CRIMEMURDER = 94,
+    #[def("TUTORIAL_CATEGORY_COUNT")]
+    COUNT = 95,
 }
 
-def_enum! {
-    /// C++ `EReactionSpeechType`.
-    pub enum ReactionSpeechType: i32 {
-        REACTIONSPEECHNULL = 0 => "REACTION_SPEECH_NULL",
-        REACTIONSPEECHCALLOVERHERE = 1 => "REACTION_SPEECH_CALL_OVER_HERE",
-        REACTIONSPEECHFAWNINGGREETING = 2 => "REACTION_SPEECH_FAWNING_GREETING",
-        REACTIONSPEECHFRIENDLYGREETING = 3 => "REACTION_SPEECH_FRIENDLY_GREETING",
-        REACTIONSPEECHSTRANGERSGREETING = 4 => "REACTION_SPEECH_STRANGERS_GREETING",
-        REACTIONSPEECHNERVOUS = 5 => "REACTION_SPEECH_NERVOUS",
-        REACTIONSPEECHSCARED = 6 => "REACTION_SPEECH_SCARED",
-        REACTIONSPEECHTERRIFIED = 7 => "REACTION_SPEECH_TERRIFIED",
-        REACTIONSPEECHINSULTED = 8 => "REACTION_SPEECH_INSULTED",
-        REACTIONSPEECHANGRY = 9 => "REACTION_SPEECH_ANGRY",
-        REACTIONSPEECHHATEFUL = 10 => "REACTION_SPEECH_HATEFUL",
-        REACTIONSPEECHTHREATOFRETRIBUTION = 11 => "REACTION_SPEECH_THREAT_OF_RETRIBUTION",
-        REACTIONSPEECHPROMISEOFRETRIBUTION = 12 => "REACTION_SPEECH_PROMISE_OF_RETRIBUTION",
-        REACTIONSPEECHDISMISSIVE = 13 => "REACTION_SPEECH_DISMISSIVE",
-        REACTIONSPEECHBOTHERED = 14 => "REACTION_SPEECH_BOTHERED",
-        REACTIONSPEECHHARASSED = 15 => "REACTION_SPEECH_HARASSED",
-        REACTIONSPEECHRIDICULING = 16 => "REACTION_SPEECH_RIDICULING",
-        REACTIONSPEECHINSULTS = 17 => "REACTION_SPEECH_INSULTS",
-        REACTIONSPEECHATTRACTED = 18 => "REACTION_SPEECH_ATTRACTED",
-        REACTIONSPEECHLOVING = 19 => "REACTION_SPEECH_LOVING",
-        REACTIONSPEECHSURPRISEDATABUSE = 20 => "REACTION_SPEECH_SURPRISED_AT_ABUSE",
-        REACTIONSPEECHLOVINGANDSHOCKEDATABUSE = 21 => "REACTION_SPEECH_LOVING_AND_SHOCKED_AT_ABUSE",
-        REACTIONSPEECHUNIMPRESSEDRESPONSETOTHREAT = 22 => "REACTION_SPEECH_UNIMPRESSED_RESPONSE_TO_THREAT",
-        REACTIONSPEECHRIDICULINGRESPONSETOTHREAT = 23 => "REACTION_SPEECH_RIDICULING_RESPONSE_TO_THREAT",
-        REACTIONSPEECHLOVINGRESPONSETOFLIRT = 24 => "REACTION_SPEECH_LOVING_RESPONSE_TO_FLIRT",
-        REACTIONSPEECHATTRACTEDRESPONSETOFLIRT = 25 => "REACTION_SPEECH_ATTRACTED_RESPONSE_TO_FLIRT",
-        REACTIONSPEECHNEUTRALREFUSALOFFLIRT = 26 => "REACTION_SPEECH_NEUTRAL_REFUSAL_OF_FLIRT",
-        REACTIONSPEECHNEGATIVERESPONSETOFLIRT = 27 => "REACTION_SPEECH_NEGATIVE_RESPONSE_TO_FLIRT",
-        REACTIONSPEECHFEARFULREFUSALOFFLIRT = 28 => "REACTION_SPEECH_FEARFUL_REFUSAL_OF_FLIRT",
-        REACTIONSPEECHGRATEFULACCEPTANCEOFBRIBE = 29 => "REACTION_SPEECH_GRATEFUL_ACCEPTANCE_OF_BRIBE",
-        REACTIONSPEECHPACIFIEDACCEPTANCEOFBRIBE = 30 => "REACTION_SPEECH_PACIFIED_ACCEPTANCE_OF_BRIBE",
-        REACTIONSPEECHFRIENDLYREJECTIONOFBRIBE = 31 => "REACTION_SPEECH_FRIENDLY_REJECTION_OF_BRIBE",
-        REACTIONSPEECHUNFRIENDLYREJECTIONOFBRIBE = 32 => "REACTION_SPEECH_UNFRIENDLY_REJECTION_OF_BRIBE",
-        REACTIONSPEECHWARNAWAY = 33 => "REACTION_SPEECH_WARN_AWAY",
-        REACTIONSPEECHGIVEAWAY = 34 => "REACTION_SPEECH_GIVE_AWAY",
-        REACTIONSPEECHREPORTCRIME = 35 => "REACTION_SPEECH_REPORT_CRIME",
-        REACTIONSPEECHBODYFOUND = 36 => "REACTION_SPEECH_BODY_FOUND",
-        REACTIONSPEECHREPORTBODYFOUND = 37 => "REACTION_SPEECH_REPORT_BODY_FOUND",
-        REACTIONSPEECHGOSSIP = 38 => "REACTION_SPEECH_GOSSIP",
-        REACTIONSPEECHYAWN = 39 => "REACTION_SPEECH_YAWN",
-        REACTIONSPEECHSNORE = 40 => "REACTION_SPEECH_SNORE",
-        REACTIONSPEECHCHEER = 41 => "REACTION_SPEECH_CHEER",
-        REACTIONSPEECHSOB = 42 => "REACTION_SPEECH_SOB",
-        REACTIONSPEECHCRYOUT = 43 => "REACTION_SPEECH_CRY_OUT",
-        REACTIONSPEECHBATTLECRY = 44 => "REACTION_SPEECH_BATTLE_CRY",
-        REACTIONSPEECHLYNCHCRY = 45 => "REACTION_SPEECH_LYNCH_CRY",
-        REACTIONSPEECHWOUNDED = 46 => "REACTION_SPEECH_WOUNDED",
-        REACTIONSPEECHDIE = 47 => "REACTION_SPEECH_DIE",
-        REACTIONSPEECHGUARDKILL = 48 => "REACTION_SPEECH_GUARD_KILL",
-        REACTIONSPEECHGUARDARREST = 49 => "REACTION_SPEECH_GUARD_ARREST",
-        REACTIONSPEECHGUARDSECURITYSWEEP = 50 => "REACTION_SPEECH_GUARD_SECURITY_SWEEP",
-        REACTIONSPEECHGUARDWARNING1 = 51 => "REACTION_SPEECH_GUARD_WARNING_1",
-        REACTIONSPEECHGUARDWARNING2 = 52 => "REACTION_SPEECH_GUARD_WARNING_2",
-        REACTIONSPEECHGUARDWARNING3 = 53 => "REACTION_SPEECH_GUARD_WARNING_3",
-        REACTIONSPEECHGUARDWARNINGENDANDTHANKS = 54 => "REACTION_SPEECH_GUARD_WARNING_END_AND_THANKS",
-        REACTIONSPEECHNORESPECT = 55 => "REACTION_SPEECH_NO_RESPECT",
-        MAXNOREACTIONSPEECHTYPES = 56 => "MAX_NO_REACTION_SPEECH_TYPES",
-    }
+/// C++ `EWallMountEffects`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum WallMountEffects {
+    #[def("WALL_MOUNT_EFFECT_NONE")]
+    NONE = 0,
+    #[def("WALL_MOUNT_EFFECT_TELEPORT")]
+    TELEPORT = 1,
+    #[def("WALL_MOUNT_EFFECT_HEAL")]
+    HEAL = 2,
 }
 
-def_enum! {
-    /// C++ `EReverbEnvironmentType`.
-    pub enum ReverbEnvironmentType: i32 {
-        NULL = 0 => "REVERB_ENVIRONMENT_NULL",
-        EXTERNAL = 1 => "REVERB_ENVIRONMENT_EXTERNAL",
-        CAVE = 2 => "REVERB_ENVIRONMENT_CAVE",
-        HALL = 3 => "REVERB_ENVIRONMENT_HALL",
-        GUILD = 4 => "REVERB_ENVIRONMENT_GUILD",
-        GUILDSMALL = 5 => "REVERB_ENVIRONMENT_GUILD_SMALL",
-        SMALLROOM = 6 => "REVERB_ENVIRONMENT_SMALL_ROOM",
-        SCHOOL = 7 => "REVERB_ENVIRONMENT_SCHOOL",
-    }
+/// C++ `EWaterType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum WaterType {
+    #[def("WATER_TYPE_NULL")]
+    NULL = 0,
+    #[def("WATER_TYPE_LAKE")]
+    LAKE = 1,
+    #[def("WATER_TYPE_RIVER")]
+    RIVER = 2,
+    #[def("WATER_TYPE_SEA")]
+    SEA = 3,
+    #[def("WATER_TYPE_REFLECTIVE_SEA")]
+    REFLECTIVESEA = 4,
+    #[def("WATER_TYPE_NON_REFLECTIVE_SEA")]
+    NONREFLECTIVESEA = 5,
+    #[def("WATER_TYPE_OLD")]
+    OLD = 6,
+    #[def("WATER_TYPE_DUMMY_SHORE_POINT")]
+    DUMMYSHOREPOINT = 7,
+    #[def("WATER_TYPE_ICE")]
+    ICE = 8,
+    #[def("WATER_TYPE_COUNT")]
+    COUNT = 9,
 }
 
-def_enum! {
-    /// C++ `EScriptingStateGroups`.
-    pub enum ScriptingStateGroups: i32 {
-        NONE = 0 => "ESSG_NONE",
-        PERFORMACTIONPHYSICAL = 1 => "ESSG_PERFORM_ACTION_PHYSICAL",
-        PERFORMACTIONVERBAL = 2 => "ESSG_PERFORM_ACTION_VERBAL",
-        PERFORMACTIONAURAL = 3 => "ESSG_PERFORM_ACTION_AURAL",
-        WANDERNEAR = 4 => "ESSG_WANDER_NEAR",
-        FOLLOWPATH = 5 => "ESSG_FOLLOW_PATH",
-        FOLLOWRANDOM = 6 => "ESSG_FOLLOW_RANDOM",
-        FOLLOWNEAREST = 7 => "ESSG_FOLLOW_NEAREST",
-        WALKTORANDOM = 8 => "ESSG_WALK_TO_RANDOM",
-        WALKTONEARESTDIFFERENT = 9 => "ESSG_WALK_TO_NEAREST_DIFFERENT",
-        RUNATHEROANDATTACKUNTILDEAD = 10 => "ESSG_RUN_AT_HERO_AND_ATTACK_UNTIL_DEAD",
-    }
+/// C++ `EWeaponClass`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum WeaponClass {
+    #[def("WC_UNARMED")]
+    UNARMED = 0,
+    #[def("WC_LIGHT")]
+    LIGHT = 1,
+    #[def("WC_HEAVY")]
+    HEAVY = 2,
+    #[def("WC_PROJECTILE")]
+    PROJECTILE = 3,
 }
 
-def_enum! {
-    /// C++ `ESex`.
-    pub enum Sex: i32 {
-        SEXNULL = 0 => "SEX_NULL",
-        SEXMALE = 1 => "SEX_MALE",
-        SEXFEMALE = 2 => "SEX_FEMALE",
-        NOOFSEXES = 3 => "NO_OF_SEXES",
-    }
+/// C++ `EWeaponType`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum WeaponType {
+    #[def("WT_SWORD")]
+    SWORD = 0,
+    #[def("WT_AXE")]
+    AXE = 1,
+    #[def("WT_HAMMER")]
+    HAMMER = 2,
+    #[def("WT_BOW")]
+    BOW = 3,
+    #[def("WT_CROSSBOW")]
+    CROSSBOW = 4,
+    #[def("WT_BOLT")]
+    BOLT = 5,
+    #[def("WT_ARROW")]
+    ARROW = 6,
+    #[def("WT_THROWING")]
+    THROWING = 7,
 }
 
-def_flags! {
-    /// C++ `ESwitchTriggerType`.
-    pub struct SwitchTriggerType: i32 {
-        PLAYER_ONLY_ONCE_IN_AREA = 1 => "SWITCH_TRIGGER_PLAYER_ONLY_ONCE_IN_AREA",
-        PLAYER_ONLY_MULTIPLE_TIMES_IN_AREA = 2 => "SWITCH_TRIGGER_PLAYER_ONLY_MULTIPLE_TIMES_IN_AREA",
-        PLAYER_ONLY_RESET_WHEN_LEAVES = 3 => "SWITCH_TRIGGER_PLAYER_ONLY_RESET_WHEN_LEAVES",
-        PLAYER_SHOW_AREA_NAME = 4 => "SWITCH_TRIGGER_PLAYER_SHOW_AREA_NAME",
-        PLAYER_CHANGE_ENVIRONMENT_THEME = 5 => "SWITCH_TRIGGER_PLAYER_CHANGE_ENVIRONMENT_THEME",
-        ONCE_ON_ITEM_APPLICATION = 6 => "SWITCH_TRIGGER_ONCE_ON_ITEM_APPLICATION",
-    }
-}
+/// C++ `EWorldMapNameGraphic`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, DefFlags)]
+#[flags(
+    BANDIT_CAMP = 0 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP",
+    BANDIT_CAMP_TENT = 1 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_TENT",
+    BANDIT_CAMP_ELITES = 2 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_ELITES",
+    BANDIT_CAMP_PATH = 3 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_PATH",
+    BANDIT_CAMP_GATE = 4 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_GATE",
+    BOWERSTONE = 5 => "WORLD_MAP_NAME_GRAPHIC_BOWERSTONE",
+    DARKWOOD = 6 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD",
+    DARWOOD_SWAMP = 7 => "WORLD_MAP_NAME_GRAPHIC_DARWOOD_SWAMP",
+    DARKWOOD_LAKE = 8 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD_LAKE",
+    DARKWOOD_CAMP = 9 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD_CAMP",
+    CHAPEL_SKORM = 10 => "WORLD_MAP_NAME_GRAPHIC_CHAPEL_SKORM",
+    ANCIENT_CULLIS = 11 => "WORLD_MAP_NAME_GRAPHIC_ANCIENT_CULLIS",
+    DARKWOOD_WEIR = 12 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD_WEIR",
+    FISHER_CREEK = 13 => "WORLD_MAP_NAME_GRAPHIC_FISHER_CREEK",
+    LYCHFIELD_GRAVEYARD = 14 => "WORLD_MAP_NAME_GRAPHIC_LYCHFIELD_GRAVEYARD",
+    HEADMANS_HILL = 15 => "WORLD_MAP_NAME_GRAPHIC_HEADMANS_HILL",
+    PRISON_PATH = 16 => "WORLD_MAP_NAME_GRAPHIC_PRISON_PATH",
+    GIBBET_WOODS = 17 => "WORLD_MAP_NAME_GRAPHIC_GIBBET_WOODS",
+    GRAVEYARD_PATH = 18 => "WORLD_MAP_NAME_GRAPHIC_GRAVEYARD_PATH",
+    CIRCLE_DEAD = 19 => "WORLD_MAP_NAME_GRAPHIC_CIRCLE_DEAD",
+    GREATWOOD_CAVES = 20 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_CAVES",
+    GREATWOOD_LAKE = 21 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_LAKE",
+    GREATWOOD = 22 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD",
+    GUILD = 23 => "WORLD_MAP_NAME_GRAPHIC_GUILD",
+    LOOKOUT_POINT = 24 => "WORLD_MAP_NAME_GRAPHIC_LOOKOUT_POINT",
+    WINDMILL_HILL = 25 => "WORLD_MAP_NAME_GRAPHIC_WINDMILL_HILL",
+    BOWERSTONE_JAIL = 26 => "WORLD_MAP_NAME_GRAPHIC_BOWERSTONE_JAIL",
+    OAKVALE = 27 => "WORLD_MAP_NAME_GRAPHIC_OAKVALE",
+    ORCHARD_FARM = 28 => "WORLD_MAP_NAME_GRAPHIC_ORCHARD_FARM",
+    WITCHWOOD = 29 => "WORLD_MAP_NAME_GRAPHIC_WITCHWOOD",
+    WITCHWOOD_LAKE = 30 => "WORLD_MAP_NAME_GRAPHIC_WITCHWOOD_LAKE",
+    TEMPLE_AVO = 31 => "WORLD_MAP_NAME_GRAPHIC_TEMPLE_AVO",
+    WITCHWOOD_STONES = 32 => "WORLD_MAP_NAME_GRAPHIC_WITCHWOOD_STONES",
+    PICNIC_AREA = 33 => "WORLD_MAP_NAME_GRAPHIC_PICNIC_AREA",
+    ROSE_COTTAGE = 34 => "WORLD_MAP_NAME_GRAPHIC_ROSE_COTTAGE",
+    ARENA = 35 => "WORLD_MAP_NAME_GRAPHIC_ARENA",
+    KNOTHOLE_GLADE = 36 => "WORLD_MAP_NAME_GRAPHIC_KNOTHOLE_GLADE",
+    HOOK_COAST = 37 => "WORLD_MAP_NAME_GRAPHIC_HOOK_COAST",
+    BARROW_FIELDS = 38 => "WORLD_MAP_NAME_GRAPHIC_BARROW_FIELDS",
+    GREY_HOUSE = 39 => "WORLD_MAP_NAME_GRAPHIC_GREY_HOUSE",
+    GREATWOOD_GORGE = 40 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_GORGE",
+    HOBBE_CAVE = 41 => "WORLD_MAP_NAME_GRAPHIC_HOBBE_CAVE",
+    HEADMANS_CAVE = 42 => "WORLD_MAP_NAME_GRAPHIC_HEADMANS_CAVE",
+    GREATWOOD_CULLIS = 43 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_CULLIS",
+    PRISON = 44 => "WORLD_MAP_NAME_GRAPHIC_PRISON",
+    LOST_BAY = 45 => "WORLD_MAP_NAME_GRAPHIC_LOST_BAY",
+    NECROPOLIS = 46 => "WORLD_MAP_NAME_GRAPHIC_NECROPOLIS",
+    ARCHONS_SHRINE = 47 => "WORLD_MAP_NAME_GRAPHIC_ARCHONS_SHRINE",
+    SNOWSPIRE = 48 => "WORLD_MAP_NAME_GRAPHIC_SNOWSPIRE",
+    ARCHONS_FOLLY = 49 => "WORLD_MAP_NAME_GRAPHIC_ARCHONS_FOLLY",
+    NORTHERN_WASTES_FOOTHILLS = 50 => "WORLD_MAP_NAME_GRAPHIC_NORTHERN_WASTES_FOOTHILLS",
+    BORDELLO = 51 => "WORLD_MAP_NAME_GRAPHIC_BORDELLO",
+    NUMBER = 52 => "WORLD_MAP_NAME_GRAPHIC_NUMBER",
+)]
+pub struct WorldMapNameGraphic(pub i32);
 
-def_enum! {
-    /// C++ `ETavernGameControlType`.
-    pub enum TavernGameControlType: i32 {
-        RELATIVE = 0 => "ETGCT_RELATIVE",
-        ABSOLUTE = 1 => "ETGCT_ABSOLUTE",
-    }
-}
-
-def_enum! {
-    /// C++ `EThingCreatureProperty`.
-    pub enum ThingCreatureProperty: i32 {
-        NULL = 0 => "THING_CREATURE_PROPERTY_NULL",
-        ISMINION = 1 => "THING_CREATURE_PROPERTY_IS_MINION",
-        ANNOYABLEBYKIDS = 2 => "THING_CREATURE_PROPERTY_ANNOYABLE_BY_KIDS",
-        GUARD = 3 => "THING_CREATURE_PROPERTY_GUARD",
-        FIREFLY = 4 => "THING_CREATURE_PROPERTY_FIREFLY",
-    }
-}
-
-def_enum! {
-    /// C++ `ETrapTriggerType`.
-    pub enum TrapTriggerType: i32 {
-        MANUAL = 0 => "TRAP_TRIGGER_MANUAL",
-        PROXIMITY = 1 => "TRAP_TRIGGER_PROXIMITY",
-    }
-}
-
-def_enum! {
-    /// C++ `ETrapType`.
-    pub enum TrapType: i32 {
-        TRIGGERONCEONLY = 0 => "TRAP_TYPE_TRIGGER_ONCE_ONLY",
-        TRIGGERANDRESET = 1 => "TRAP_TYPE_TRIGGER_AND_RESET",
-        TRIGGERANDPLAYCONTINUOUS = 2 => "TRAP_TYPE_TRIGGER_AND_PLAY_CONTINUOUS",
-        PLAYCONTINUOUS = 3 => "TRAP_TYPE_PLAY_CONTINUOUS",
-        TRIGGERANDDIE = 4 => "TRAP_TYPE_TRIGGER_AND_DIE",
-    }
-}
-
-def_enum! {
-    /// C++ `ETutorialCategory`.
-    pub enum TutorialCategory: i32 {
-        NONE = 0 => "TUTORIAL_CATEGORY_NONE",
-        ABILITYASSIGNING = 1 => "TUTORIAL_CATEGORY_ABILITY_ASSIGNING",
-        ABILITYCYCLING = 2 => "TUTORIAL_CATEGORY_ABILITY_CYCLING",
-        BASICOBJECTS = 3 => "TUTORIAL_CATEGORY_BASIC_OBJECTS",
-        BED = 4 => "TUTORIAL_CATEGORY_BED",
-        BOASTING = 5 => "TUTORIAL_CATEGORY_BOASTING",
-        CAMERA = 6 => "TUTORIAL_CATEGORY_CAMERA",
-        CHARITYSHOP = 7 => "TUTORIAL_CATEGORY_CHARITY_SHOP",
-        CHEST = 8 => "TUTORIAL_CATEGORY_CHEST",
-        COMBATMULTIPLIER = 9 => "TUTORIAL_CATEGORY_COMBAT_MULTIPLIER",
-        CREATUREDROP = 10 => "TUTORIAL_CATEGORY_CREATURE_DROP",
-        DYING = 11 => "TUTORIAL_CATEGORY_DYING",
-        DEMONDOOR = 12 => "TUTORIAL_CATEGORY_DEMON_DOOR",
-        DOOR = 13 => "TUTORIAL_CATEGORY_DOOR",
-        EXPERIENCE = 14 => "TUTORIAL_CATEGORY_EXPERIENCE",
-        EXPERIENCESPENDING = 15 => "TUTORIAL_CATEGORY_EXPERIENCE_SPENDING",
-        EXPRESSION = 16 => "TUTORIAL_CATEGORY_EXPRESSION",
-        FLIRTING = 17 => "TUTORIAL_CATEGORY_FLIRTING",
-        FLOURISHINGMOVE = 18 => "TUTORIAL_CATEGORY_FLOURISHING_MOVE",
-        GOLDMARKERS = 19 => "TUTORIAL_CATEGORY_GOLDMARKERS",
-        GUILDSEAL = 20 => "TUTORIAL_CATEGORY_GUILD_SEAL",
-        INTERACTING = 21 => "TUTORIAL_CATEGORY_INTERACTING",
-        INVENTORY = 22 => "TUTORIAL_CATEGORY_INVENTORY",
-        INVENTORYASSIGNING = 23 => "TUTORIAL_CATEGORY_INVENTORY_ASSIGNING",
-        LEVELLINGUP = 24 => "TUTORIAL_CATEGORY_LEVELLING_UP",
-        MORALITY = 25 => "TUTORIAL_CATEGORY_MORALITY",
-        MOVEMENT = 26 => "TUTORIAL_CATEGORY_MOVEMENT",
-        QUEST = 27 => "TUTORIAL_CATEGORY_QUEST",
-        QUESTCARD = 28 => "TUTORIAL_CATEGORY_QUEST_CARD",
-        RENOWN = 29 => "TUTORIAL_CATEGORY_RENOWN",
-        TAKINGQUESTS = 30 => "TUTORIAL_CATEGORY_TAKING_QUESTS",
-        TELEPORTING = 31 => "TUTORIAL_CATEGORY_TELEPORTING",
-        TRADEITEM = 32 => "TUTORIAL_CATEGORY_TRADE_ITEM",
-        SEARCHING = 33 => "TUTORIAL_CATEGORY_SEARCHING",
-        SNEAK = 34 => "TUTORIAL_CATEGORY_SNEAK",
-        BUILDINGOWNERSHIP = 35 => "TUTORIAL_CATEGORY_BUILDING_OWNERSHIP",
-        FISHINGGAME = 36 => "TUTORIAL_CATEGORY_FISHING_GAME",
-        ORACLEGAME = 37 => "TUTORIAL_CATEGORY_ORACLE_GAME",
-        WORLDMAP = 38 => "TUTORIAL_CATEGORY_WORLD_MAP",
-        ALCOHOL = 39 => "TUTORIAL_CATEGORY_ALCOHOL",
-        AUGMENTATION = 40 => "TUTORIAL_CATEGORY_AUGMENTATION",
-        ARMOUR = 41 => "TUTORIAL_CATEGORY_ARMOUR",
-        BOMB = 42 => "TUTORIAL_CATEGORY_BOMB",
-        CLOTHES = 43 => "TUTORIAL_CATEGORY_CLOTHES",
-        FOOD = 44 => "TUTORIAL_CATEGORY_FOOD",
-        FISHINGROD = 45 => "TUTORIAL_CATEGORY_FISHING_ROD",
-        GIFT = 46 => "TUTORIAL_CATEGORY_GIFT",
-        HAIRSTYLE = 47 => "TUTORIAL_CATEGORY_HAIRSTYLE",
-        POTION = 48 => "TUTORIAL_CATEGORY_POTION",
-        RESURRECTIONPHIAL = 49 => "TUTORIAL_CATEGORY_RESURRECTION_PHIAL",
-        SILVERKEY = 50 => "TUTORIAL_CATEGORY_SILVER_KEY",
-        SPADE = 51 => "TUTORIAL_CATEGORY_SPADE",
-        TATTOO = 52 => "TUTORIAL_CATEGORY_TATTOO",
-        TROPHY = 53 => "TUTORIAL_CATEGORY_TROPHY",
-        WEAPON = 54 => "TUTORIAL_CATEGORY_WEAPON",
-        WEAPONLEGENDARY = 55 => "TUTORIAL_CATEGORY_WEAPON_LEGENDARY",
-        APOLOGY = 56 => "TUTORIAL_CATEGORY_APOLOGY",
-        BATTLECRY = 57 => "TUTORIAL_CATEGORY_BATTLE_CRY",
-        BELCH = 58 => "TUTORIAL_CATEGORY_BELCH",
-        EVILLAUGH = 59 => "TUTORIAL_CATEGORY_EVIL_LAUGH",
-        FART = 60 => "TUTORIAL_CATEGORY_FART",
-        FLIRT = 61 => "TUTORIAL_CATEGORY_FLIRT",
-        FOLLOW = 62 => "TUTORIAL_CATEGORY_FOLLOW",
-        GIGGLE = 63 => "TUTORIAL_CATEGORY_GIGGLE",
-        HEROICSTANCE = 64 => "TUTORIAL_CATEGORY_HEROIC_STANCE",
-        MIDDLEFINGER = 65 => "TUTORIAL_CATEGORY_MIDDLE_FINGER",
-        PELVICTHRUST = 66 => "TUTORIAL_CATEGORY_PELVIC_THRUST",
-        PICKLOCK = 67 => "TUTORIAL_CATEGORY_PICKLOCK",
-        PICKPOCKET = 68 => "TUTORIAL_CATEGORY_PICKPOCKET",
-        SHIT = 69 => "TUTORIAL_CATEGORY_SHIT",
-        SNEER = 70 => "TUTORIAL_CATEGORY_SNEER",
-        STEAL = 71 => "TUTORIAL_CATEGORY_STEAL",
-        THANKS = 72 => "TUTORIAL_CATEGORY_THANKS",
-        VICTORYPUMP = 73 => "TUTORIAL_CATEGORY_VICTORY_PUMP",
-        WAIT = 74 => "TUTORIAL_CATEGORY_WAIT",
-        COCKADOODLEDO = 75 => "TUTORIAL_CATEGORY_COCK_A_DOODLE_DO",
-        CROTCHGRAB = 76 => "TUTORIAL_CATEGORY_CROTCH_GRAB",
-        KISSMYASS = 77 => "TUTORIAL_CATEGORY_KISS_MY_ASS",
-        FLAMENCO = 78 => "TUTORIAL_CATEGORY_FLAMENCO",
-        COSSACK = 79 => "TUTORIAL_CATEGORY_COSSACK",
-        AIRGUITAR = 80 => "TUTORIAL_CATEGORY_AIR_GUITAR",
-        BALLET = 81 => "TUTORIAL_CATEGORY_BALLET",
-        SATURDAYNIGHTFEVER = 82 => "TUTORIAL_CATEGORY_SATURDAY_NIGHT_FEVER",
-        TAP = 83 => "TUTORIAL_CATEGORY_TAP",
-        Y = 84 => "TUTORIAL_CATEGORY_Y",
-        M = 85 => "TUTORIAL_CATEGORY_M",
-        C = 86 => "TUTORIAL_CATEGORY_C",
-        A = 87 => "TUTORIAL_CATEGORY_A",
-        CRIMEWEAPONOUT = 88 => "TUTORIAL_CATEGORY_CRIME_WEAPONOUT",
-        CRIMETRESPASSING = 89 => "TUTORIAL_CATEGORY_CRIME_TRESPASSING",
-        CRIMEVANDALISM = 90 => "TUTORIAL_CATEGORY_CRIME_VANDALISM",
-        CRIMETHEFT = 91 => "TUTORIAL_CATEGORY_CRIME_THEFT",
-        CRIMEASSAULT = 92 => "TUTORIAL_CATEGORY_CRIME_ASSAULT",
-        CRIMEGBH = 93 => "TUTORIAL_CATEGORY_CRIME_GBH",
-        CRIMEMURDER = 94 => "TUTORIAL_CATEGORY_CRIME_MURDER",
-        COUNT = 95 => "TUTORIAL_CATEGORY_COUNT",
-    }
-}
-
-def_enum! {
-    /// C++ `EWallMountEffects`.
-    pub enum WallMountEffects: i32 {
-        NONE = 0 => "WALL_MOUNT_EFFECT_NONE",
-        TELEPORT = 1 => "WALL_MOUNT_EFFECT_TELEPORT",
-        HEAL = 2 => "WALL_MOUNT_EFFECT_HEAL",
-    }
-}
-
-def_enum! {
-    /// C++ `EWaterType`.
-    pub enum WaterType: i32 {
-        NULL = 0 => "WATER_TYPE_NULL",
-        LAKE = 1 => "WATER_TYPE_LAKE",
-        RIVER = 2 => "WATER_TYPE_RIVER",
-        SEA = 3 => "WATER_TYPE_SEA",
-        REFLECTIVESEA = 4 => "WATER_TYPE_REFLECTIVE_SEA",
-        NONREFLECTIVESEA = 5 => "WATER_TYPE_NON_REFLECTIVE_SEA",
-        OLD = 6 => "WATER_TYPE_OLD",
-        DUMMYSHOREPOINT = 7 => "WATER_TYPE_DUMMY_SHORE_POINT",
-        ICE = 8 => "WATER_TYPE_ICE",
-        COUNT = 9 => "WATER_TYPE_COUNT",
-    }
-}
-
-def_enum! {
-    /// C++ `EWeaponClass`.
-    pub enum WeaponClass: i32 {
-        UNARMED = 0 => "WC_UNARMED",
-        LIGHT = 1 => "WC_LIGHT",
-        HEAVY = 2 => "WC_HEAVY",
-        PROJECTILE = 3 => "WC_PROJECTILE",
-    }
-}
-
-def_enum! {
-    /// C++ `EWeaponType`.
-    pub enum WeaponType: i32 {
-        SWORD = 0 => "WT_SWORD",
-        AXE = 1 => "WT_AXE",
-        HAMMER = 2 => "WT_HAMMER",
-        BOW = 3 => "WT_BOW",
-        CROSSBOW = 4 => "WT_CROSSBOW",
-        BOLT = 5 => "WT_BOLT",
-        ARROW = 6 => "WT_ARROW",
-        THROWING = 7 => "WT_THROWING",
-    }
-}
-
-def_flags! {
-    /// C++ `EWorldMapNameGraphic`.
-    pub struct WorldMapNameGraphic: i32 {
-        BANDIT_CAMP = 0 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP",
-        BANDIT_CAMP_TENT = 1 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_TENT",
-        BANDIT_CAMP_ELITES = 2 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_ELITES",
-        BANDIT_CAMP_PATH = 3 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_PATH",
-        BANDIT_CAMP_GATE = 4 => "WORLD_MAP_NAME_GRAPHIC_BANDIT_CAMP_GATE",
-        BOWERSTONE = 5 => "WORLD_MAP_NAME_GRAPHIC_BOWERSTONE",
-        DARKWOOD = 6 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD",
-        DARWOOD_SWAMP = 7 => "WORLD_MAP_NAME_GRAPHIC_DARWOOD_SWAMP",
-        DARKWOOD_LAKE = 8 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD_LAKE",
-        DARKWOOD_CAMP = 9 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD_CAMP",
-        CHAPEL_SKORM = 10 => "WORLD_MAP_NAME_GRAPHIC_CHAPEL_SKORM",
-        ANCIENT_CULLIS = 11 => "WORLD_MAP_NAME_GRAPHIC_ANCIENT_CULLIS",
-        DARKWOOD_WEIR = 12 => "WORLD_MAP_NAME_GRAPHIC_DARKWOOD_WEIR",
-        FISHER_CREEK = 13 => "WORLD_MAP_NAME_GRAPHIC_FISHER_CREEK",
-        LYCHFIELD_GRAVEYARD = 14 => "WORLD_MAP_NAME_GRAPHIC_LYCHFIELD_GRAVEYARD",
-        HEADMANS_HILL = 15 => "WORLD_MAP_NAME_GRAPHIC_HEADMANS_HILL",
-        PRISON_PATH = 16 => "WORLD_MAP_NAME_GRAPHIC_PRISON_PATH",
-        GIBBET_WOODS = 17 => "WORLD_MAP_NAME_GRAPHIC_GIBBET_WOODS",
-        GRAVEYARD_PATH = 18 => "WORLD_MAP_NAME_GRAPHIC_GRAVEYARD_PATH",
-        CIRCLE_DEAD = 19 => "WORLD_MAP_NAME_GRAPHIC_CIRCLE_DEAD",
-        GREATWOOD_CAVES = 20 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_CAVES",
-        GREATWOOD_LAKE = 21 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_LAKE",
-        GREATWOOD = 22 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD",
-        GUILD = 23 => "WORLD_MAP_NAME_GRAPHIC_GUILD",
-        LOOKOUT_POINT = 24 => "WORLD_MAP_NAME_GRAPHIC_LOOKOUT_POINT",
-        WINDMILL_HILL = 25 => "WORLD_MAP_NAME_GRAPHIC_WINDMILL_HILL",
-        BOWERSTONE_JAIL = 26 => "WORLD_MAP_NAME_GRAPHIC_BOWERSTONE_JAIL",
-        OAKVALE = 27 => "WORLD_MAP_NAME_GRAPHIC_OAKVALE",
-        ORCHARD_FARM = 28 => "WORLD_MAP_NAME_GRAPHIC_ORCHARD_FARM",
-        WITCHWOOD = 29 => "WORLD_MAP_NAME_GRAPHIC_WITCHWOOD",
-        WITCHWOOD_LAKE = 30 => "WORLD_MAP_NAME_GRAPHIC_WITCHWOOD_LAKE",
-        TEMPLE_AVO = 31 => "WORLD_MAP_NAME_GRAPHIC_TEMPLE_AVO",
-        WITCHWOOD_STONES = 32 => "WORLD_MAP_NAME_GRAPHIC_WITCHWOOD_STONES",
-        PICNIC_AREA = 33 => "WORLD_MAP_NAME_GRAPHIC_PICNIC_AREA",
-        ROSE_COTTAGE = 34 => "WORLD_MAP_NAME_GRAPHIC_ROSE_COTTAGE",
-        ARENA = 35 => "WORLD_MAP_NAME_GRAPHIC_ARENA",
-        KNOTHOLE_GLADE = 36 => "WORLD_MAP_NAME_GRAPHIC_KNOTHOLE_GLADE",
-        HOOK_COAST = 37 => "WORLD_MAP_NAME_GRAPHIC_HOOK_COAST",
-        BARROW_FIELDS = 38 => "WORLD_MAP_NAME_GRAPHIC_BARROW_FIELDS",
-        GREY_HOUSE = 39 => "WORLD_MAP_NAME_GRAPHIC_GREY_HOUSE",
-        GREATWOOD_GORGE = 40 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_GORGE",
-        HOBBE_CAVE = 41 => "WORLD_MAP_NAME_GRAPHIC_HOBBE_CAVE",
-        HEADMANS_CAVE = 42 => "WORLD_MAP_NAME_GRAPHIC_HEADMANS_CAVE",
-        GREATWOOD_CULLIS = 43 => "WORLD_MAP_NAME_GRAPHIC_GREATWOOD_CULLIS",
-        PRISON = 44 => "WORLD_MAP_NAME_GRAPHIC_PRISON",
-        LOST_BAY = 45 => "WORLD_MAP_NAME_GRAPHIC_LOST_BAY",
-        NECROPOLIS = 46 => "WORLD_MAP_NAME_GRAPHIC_NECROPOLIS",
-        ARCHONS_SHRINE = 47 => "WORLD_MAP_NAME_GRAPHIC_ARCHONS_SHRINE",
-        SNOWSPIRE = 48 => "WORLD_MAP_NAME_GRAPHIC_SNOWSPIRE",
-        ARCHONS_FOLLY = 49 => "WORLD_MAP_NAME_GRAPHIC_ARCHONS_FOLLY",
-        NORTHERN_WASTES_FOOTHILLS = 50 => "WORLD_MAP_NAME_GRAPHIC_NORTHERN_WASTES_FOOTHILLS",
-        BORDELLO = 51 => "WORLD_MAP_NAME_GRAPHIC_BORDELLO",
-        NUMBER = 52 => "WORLD_MAP_NAME_GRAPHIC_NUMBER",
-    }
-}
-
-def_enum! {
-    /// C++ `NSpeechGainManager::EDialogueLayer`.
-    pub enum DialogueLayer: i32 {
-        FOREGROUND = 0 => "DIALOGUE_LAYER_FOREGROUND",
-        MIDGROUND = 1 => "DIALOGUE_LAYER_MIDGROUND",
-        BACKGROUND = 2 => "DIALOGUE_LAYER_BACKGROUND",
-        LAST = 3 => "DIALOGUE_LAYER_LAST",
-    }
+/// C++ `NSpeechGainManager::EDialogueLayer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, DefEnum)]
+#[repr(i32)]
+pub enum DialogueLayer {
+    #[def("DIALOGUE_LAYER_FOREGROUND")]
+    FOREGROUND = 0,
+    #[def("DIALOGUE_LAYER_MIDGROUND")]
+    MIDGROUND = 1,
+    #[def("DIALOGUE_LAYER_BACKGROUND")]
+    BACKGROUND = 2,
+    #[def("DIALOGUE_LAYER_LAST")]
+    LAST = 3,
 }

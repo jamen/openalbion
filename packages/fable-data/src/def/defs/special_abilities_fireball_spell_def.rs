@@ -1,12 +1,14 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `SPECIAL_ABILITIES_FIREBALL_SPELL_DEF` — C++ `CSpecialAbilitiesFireballSpellDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SpecialAbilitiesFireballSpellDef {
-        "Inclination" => pub inclination: f32,
-        "ReleaseDelay" => pub release_delay: f32,
-        "StaminaCost" => pub stamina_cost: Vec<f32>,
-        "TargettingArcAngle" => pub targetting_arc_angle: f32 = 100.0,
-    }
+/// `SPECIAL_ABILITIES_FIREBALL_SPELL_DEF` — C++ `CSpecialAbilitiesFireballSpellDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SpecialAbilitiesFireballSpellDef {
+    #[def("Inclination")]
+    pub inclination: f32,
+    #[def("ReleaseDelay")]
+    pub release_delay: f32,
+    #[def("StaminaCost")]
+    pub stamina_cost: Vec<f32>,
+    #[def("TargettingArcAngle", default = 100.0)]
+    pub targetting_arc_angle: f32,
 }

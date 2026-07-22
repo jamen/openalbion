@@ -1,16 +1,21 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CONTROL_SCHEME` — `CControlsDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ControlsDef {
-        "Controls" => pub controls: Vec<ActionInputControl>,
-        "ToggleZTarget" => pub toggle_z_target: bool,
-        "ToggleSpells" => pub toggle_spells: bool,
-        "ToggleSneak" => pub toggle_sneak: bool,
-        "ToggleExpressionMenu" => pub toggle_expression_menu: bool,
-        "ToggleExpressionShift" => pub toggle_expression_shift: bool,
-        "FlourishNeedsAttackButtonHeld" => pub flourish_needs_attack_button_held: bool,
-    }
+/// `CONTROL_SCHEME` — `CControlsDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ControlsDef {
+    #[def("Controls")]
+    pub controls: Vec<ActionInputControl>,
+    #[def("ToggleZTarget")]
+    pub toggle_z_target: bool,
+    #[def("ToggleSpells")]
+    pub toggle_spells: bool,
+    #[def("ToggleSneak")]
+    pub toggle_sneak: bool,
+    #[def("ToggleExpressionMenu")]
+    pub toggle_expression_menu: bool,
+    #[def("ToggleExpressionShift")]
+    pub toggle_expression_shift: bool,
+    #[def("FlourishNeedsAttackButtonHeld")]
+    pub flourish_needs_attack_button_held: bool,
 }

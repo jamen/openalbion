@@ -1,15 +1,19 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CAbilityButtonGuiDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct AbilityButtonGuiDef {
-        "ControllerType" => pub controller_type: ControllerType,
-        "ControllerButton" => pub controller_button: XboxControllerButton,
-        "MouseButton" => pub mouse_button: MouseButtonControl,
-        "ButtonGraphic" => pub button_graphic: i32,
-        "Position" => pub position: Vector2D,
-        "Offset" => pub offset: Vector2D,
-    }
+/// C++ `CAbilityButtonGuiDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct AbilityButtonGuiDef {
+    #[def("ControllerType")]
+    pub controller_type: ControllerType,
+    #[def("ControllerButton")]
+    pub controller_button: XboxControllerButton,
+    #[def("MouseButton")]
+    pub mouse_button: MouseButtonControl,
+    #[def("ButtonGraphic")]
+    pub button_graphic: i32,
+    #[def("Position")]
+    pub position: Vector2D,
+    #[def("Offset")]
+    pub offset: Vector2D,
 }

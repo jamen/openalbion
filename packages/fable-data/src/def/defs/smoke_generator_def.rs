@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CSmokeGeneratorDef` — C++ `CSmokeGeneratorDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SmokeGeneratorDef {
-        "GenerationDistance" => pub generation_distance: f32,
-        "ParticleEmitter" => pub particle_emitter: DefIndex,
-    }
+/// `CSmokeGeneratorDef` — C++ `CSmokeGeneratorDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SmokeGeneratorDef {
+    #[def("GenerationDistance")]
+    pub generation_distance: f32,
+    #[def("ParticleEmitter")]
+    pub particle_emitter: DefIndex,
 }

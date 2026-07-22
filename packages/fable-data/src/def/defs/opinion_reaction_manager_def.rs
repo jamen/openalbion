@@ -1,20 +1,29 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `OPINION_REACTION_MANAGER` — C++ `COpinionReactionManagerDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct OpinionReactionManagerDef {
-        "AttitudeBlur" => pub attitude_blur: Vec<BlurredAttitudesDef>,
-        "AttitudeCondition" => pub attitude_condition: VecMap<OpinionAttitudeType, OpinionReactionType>,
-        "TargetingCondition" => pub targeting_condition: VecMap<OpinionTargetingConditionType, OpinionReactionType>,
-        "PreReactionDelay" => pub pre_reaction_delay: VecMap<OpinionReactionType, f32>,
-        "ToleranceToBeingHit" => pub tolerance_to_being_hit: VecMap<OpinionAttitudeType, f32>,
-        "BlockFurtherReactions" => pub block_further_reactions: VecMap<OpinionReactionType, bool>,
-        "AllowSpeechOnNonPureAISpeaker" => pub allow_speech_on_non_pure_ai_speaker: VecMap<OpinionReactionType, bool>,
-        "AllowWhileCarrying" => pub allow_while_carrying: VecMap<OpinionReactionType, bool>,
-        "AllowWhileFollowingPlayer" => pub allow_while_following_player: VecMap<OpinionReactionType, bool>,
-        "Matches" => pub matches: ReactionMatchList,
-        "Frequency" => pub frequency: ReactionFrequencyTraitsArray,
-    }
+/// `OPINION_REACTION_MANAGER` — C++ `COpinionReactionManagerDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct OpinionReactionManagerDef {
+    #[def("AttitudeBlur")]
+    pub attitude_blur: Vec<BlurredAttitudesDef>,
+    #[def("AttitudeCondition")]
+    pub attitude_condition: VecMap<OpinionAttitudeType, OpinionReactionType>,
+    #[def("TargetingCondition")]
+    pub targeting_condition: VecMap<OpinionTargetingConditionType, OpinionReactionType>,
+    #[def("PreReactionDelay")]
+    pub pre_reaction_delay: VecMap<OpinionReactionType, f32>,
+    #[def("ToleranceToBeingHit")]
+    pub tolerance_to_being_hit: VecMap<OpinionAttitudeType, f32>,
+    #[def("BlockFurtherReactions")]
+    pub block_further_reactions: VecMap<OpinionReactionType, bool>,
+    #[def("AllowSpeechOnNonPureAISpeaker")]
+    pub allow_speech_on_non_pure_ai_speaker: VecMap<OpinionReactionType, bool>,
+    #[def("AllowWhileCarrying")]
+    pub allow_while_carrying: VecMap<OpinionReactionType, bool>,
+    #[def("AllowWhileFollowingPlayer")]
+    pub allow_while_following_player: VecMap<OpinionReactionType, bool>,
+    #[def("Matches")]
+    pub matches: ReactionMatchList,
+    #[def("Frequency")]
+    pub frequency: ReactionFrequencyTraitsArray,
 }

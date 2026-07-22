@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CWaspQueenBattleDef` — C++ `CWaspQueenBattleDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct WaspQueenBattleDef {
-        "NumFramesPauseBetweenAttacks" => pub num_frames_pause_between_attacks: i32,
-    }
+/// `CWaspQueenBattleDef` — C++ `CWaspQueenBattleDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct WaspQueenBattleDef {
+    #[def("NumFramesPauseBetweenAttacks")]
+    pub num_frames_pause_between_attacks: i32,
 }

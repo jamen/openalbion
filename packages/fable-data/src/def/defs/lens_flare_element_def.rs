@@ -1,13 +1,15 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CLensFlareElementDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct LensFlareElementDef {
-        "Radius" => pub radius: f32,
-        "Texture" => pub texture: i32,
-        "Position" => pub position: f32,
-        "Colour" => pub colour: RGBColour,
-    }
+/// C++ `CLensFlareElementDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct LensFlareElementDef {
+    #[def("Radius")]
+    pub radius: f32,
+    #[def("Texture")]
+    pub texture: i32,
+    #[def("Position")]
+    pub position: f32,
+    #[def("Colour")]
+    pub colour: RGBColour,
 }

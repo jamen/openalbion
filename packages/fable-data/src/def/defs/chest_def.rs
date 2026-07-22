@@ -1,14 +1,18 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CChestDef` — C++ `CChestDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ChestDef {
-        "OpenParticleEffect" => pub open_particle_effect: i32,
-        "PersistOnOpening" => pub persist_on_opening: bool,
-        "DisplayMessageOnEmpty" => pub display_message_on_empty: bool = true,
-        "OpenAnimationForCreature" => pub open_animation_for_creature: String,
-        "OpenerObject" => pub opener_object: i32,
-        "OpenersRequired" => pub openers_required: i32,
-    }
+/// `CChestDef` — C++ `CChestDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ChestDef {
+    #[def("OpenParticleEffect")]
+    pub open_particle_effect: i32,
+    #[def("PersistOnOpening")]
+    pub persist_on_opening: bool,
+    #[def("DisplayMessageOnEmpty", default = true)]
+    pub display_message_on_empty: bool,
+    #[def("OpenAnimationForCreature")]
+    pub open_animation_for_creature: String,
+    #[def("OpenerObject")]
+    pub opener_object: i32,
+    #[def("OpenersRequired")]
+    pub openers_required: i32,
 }

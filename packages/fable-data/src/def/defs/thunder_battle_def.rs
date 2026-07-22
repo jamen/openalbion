@@ -1,12 +1,14 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CThunderBattleDef` — C++ `CThunderBattleDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ThunderBattleDef {
-        "NumGetHitsBeforeStormAttack" => pub num_get_hits_before_storm_attack: i32,
-        "NumMissesBeforeStormAttack" => pub num_misses_before_storm_attack: i32,
-        "LightningDamage" => pub lightning_damage: f32 = 5.0,
-        "BattleChargeLevel" => pub battle_charge_level: i32,
-    }
+/// `CThunderBattleDef` — C++ `CThunderBattleDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ThunderBattleDef {
+    #[def("NumGetHitsBeforeStormAttack")]
+    pub num_get_hits_before_storm_attack: i32,
+    #[def("NumMissesBeforeStormAttack")]
+    pub num_misses_before_storm_attack: i32,
+    #[def("LightningDamage", default = 5.0)]
+    pub lightning_damage: f32,
+    #[def("BattleChargeLevel")]
+    pub battle_charge_level: i32,
 }

@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// C++ `CFireHeartPatternDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct FireHeartPatternDef {
-        "PadActive" => pub pad_active: Vec<bool>,
-    }
+/// C++ `CFireHeartPatternDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct FireHeartPatternDef {
+    #[def("PadActive")]
+    pub pad_active: Vec<bool>,
 }

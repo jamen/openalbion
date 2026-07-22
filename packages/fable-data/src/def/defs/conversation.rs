@@ -1,13 +1,16 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// C++ `CConversation` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct Conversation {
-        "Lines" => pub lines: i32,
-        "Speaker" => pub speaker: Vec<String>,
-        "Dialogue" => pub dialogue: Vec<String>,
-        "Animation" => pub animation: Vec<String>,
-        "AnimLoop" => pub anim_loop: Vec<String>,
-    }
+/// C++ `CConversation` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct Conversation {
+    #[def("Lines")]
+    pub lines: i32,
+    #[def("Speaker")]
+    pub speaker: Vec<String>,
+    #[def("Dialogue")]
+    pub dialogue: Vec<String>,
+    #[def("Animation")]
+    pub animation: Vec<String>,
+    #[def("AnimLoop")]
+    pub anim_loop: Vec<String>,
 }

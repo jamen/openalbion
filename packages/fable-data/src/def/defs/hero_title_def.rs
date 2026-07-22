@@ -1,20 +1,29 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CHeroTitleDef` — C++ `CHeroTitleDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HeroTitleDef {
-        "Title" => pub title: HeroTitle,
-        "HeroTitleGuiTag" => pub hero_title_gui_tag: i32,
-        "HeroTitleGreetToHeroTag" => pub hero_title_greet_to_hero_tag: i32,
-        "HeroTitleCommentAtHeroTag" => pub hero_title_comment_at_hero_tag: i32,
-        "HeroTitleCommentToSelfTag" => pub hero_title_comment_to_self_tag: i32,
-        "RequiredRenownLevel" => pub required_renown_level: i32,
-        "RequiredStrengthExpLevel" => pub required_strength_exp_level: i32,
-        "RequiredSkillExpLevel" => pub required_skill_exp_level: i32,
-        "RequiredWillExpLevel" => pub required_will_exp_level: i32,
-        "IsBuyable" => pub is_buyable: bool,
-        "IsAutomatic" => pub is_automatic: bool = true,
-    }
+/// `CHeroTitleDef` — C++ `CHeroTitleDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HeroTitleDef {
+    #[def("Title")]
+    pub title: HeroTitle,
+    #[def("HeroTitleGuiTag")]
+    pub hero_title_gui_tag: i32,
+    #[def("HeroTitleGreetToHeroTag")]
+    pub hero_title_greet_to_hero_tag: i32,
+    #[def("HeroTitleCommentAtHeroTag")]
+    pub hero_title_comment_at_hero_tag: i32,
+    #[def("HeroTitleCommentToSelfTag")]
+    pub hero_title_comment_to_self_tag: i32,
+    #[def("RequiredRenownLevel")]
+    pub required_renown_level: i32,
+    #[def("RequiredStrengthExpLevel")]
+    pub required_strength_exp_level: i32,
+    #[def("RequiredSkillExpLevel")]
+    pub required_skill_exp_level: i32,
+    #[def("RequiredWillExpLevel")]
+    pub required_will_exp_level: i32,
+    #[def("IsBuyable")]
+    pub is_buyable: bool,
+    #[def("IsAutomatic", default = true)]
+    pub is_automatic: bool,
 }

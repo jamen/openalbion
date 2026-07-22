@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `OPINION_REACTION_MASK` — C++ `COpinionReactionMaskDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct OpinionReactionMaskDef {
-        "ReactionEnabledDefault" => pub reaction_enabled_default: bool = true,
-        "ReactionEnabled" => pub reaction_enabled: BTreeMap<OpinionDeedType, bool>,
-    }
+/// `OPINION_REACTION_MASK` — C++ `COpinionReactionMaskDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct OpinionReactionMaskDef {
+    #[def("ReactionEnabledDefault", default = true)]
+    pub reaction_enabled_default: bool,
+    #[def("ReactionEnabled")]
+    pub reaction_enabled: BTreeMap<OpinionDeedType, bool>,
 }

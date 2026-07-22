@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CVillageMemberDef` — C++ `CVillageMemberDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct VillageMemberDef {
-        "NeedsVillageToFunctionCorrectly" => pub needs_village_to_function_correctly: bool,
-    }
+/// `CVillageMemberDef` — C++ `CVillageMemberDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct VillageMemberDef {
+    #[def("NeedsVillageToFunctionCorrectly")]
+    pub needs_village_to_function_correctly: bool,
 }

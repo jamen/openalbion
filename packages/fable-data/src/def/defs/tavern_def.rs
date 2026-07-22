@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CTavernDef` — C++ `CTavernDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct TavernDef {
-        "BedCost" => pub bed_cost: DefIndex,
-    }
+/// `CTavernDef` — C++ `CTavernDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct TavernDef {
+    #[def("BedCost")]
+    pub bed_cost: DefIndex,
 }

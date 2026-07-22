@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CDragonActionHoverDef` — C++ `CDragonActionHoverDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct DragonActionHoverDef {
-        "WindSpeed" => pub wind_speed: f32,
-    }
+/// `CDragonActionHoverDef` — C++ `CDragonActionHoverDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct DragonActionHoverDef {
+    #[def("WindSpeed")]
+    pub wind_speed: f32,
 }

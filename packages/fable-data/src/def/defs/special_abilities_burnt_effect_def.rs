@@ -1,12 +1,14 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `SPECIAL_ABILITIES_BURNT_EFFECT_DEF` — C++ `CSpecialAbilitiesBurntEffectDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SpecialAbilitiesBurntEffectDef {
-        "FadeInTimeSecs" => pub fade_in_time_secs: f32,
-        "FadeOutTimeStartSecs" => pub fade_out_time_start_secs: f32,
-        "FadeOutTimeSecs" => pub fade_out_time_secs: f32,
-        "Color" => pub color: Vec<i32>,
-    }
+/// `SPECIAL_ABILITIES_BURNT_EFFECT_DEF` — C++ `CSpecialAbilitiesBurntEffectDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SpecialAbilitiesBurntEffectDef {
+    #[def("FadeInTimeSecs")]
+    pub fade_in_time_secs: f32,
+    #[def("FadeOutTimeStartSecs")]
+    pub fade_out_time_start_secs: f32,
+    #[def("FadeOutTimeSecs")]
+    pub fade_out_time_secs: f32,
+    #[def("Color")]
+    pub color: Vec<i32>,
 }

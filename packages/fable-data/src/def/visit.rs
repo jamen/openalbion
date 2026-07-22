@@ -1,6 +1,6 @@
 //! Generic field walking.
 //!
-//! [`def_struct!`](crate::def_struct) emits a `visit_fields` method that hands
+//! `#[derive(DefStruct)]` emits a `visit_fields` method that hands
 //! each field to a [`FieldVisitor`] as a typed [`FieldRef`]. This lets a
 //! consumer in another crate (the def compiler) drive uniform per-field logic —
 //! e.g. applying text-def overrides — without fable-data depending on it, and
@@ -121,7 +121,7 @@ pub trait AsField {
     fn as_field(&mut self) -> FieldRef<'_>;
 }
 
-/// Receives each field of a def during [`visit_fields`](crate::def_struct).
+/// Receives each field of a def during `visit_fields` (see `#[derive(DefStruct)]`).
 pub trait FieldVisitor {
     fn field(&mut self, name: &'static str, field: FieldRef<'_>);
 }

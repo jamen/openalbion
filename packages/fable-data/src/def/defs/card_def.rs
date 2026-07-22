@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CCardDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CardDef {
-        "CardName" => pub card_name: DefIndex,
-        "CardVal" => pub card_val: DefIndex,
-    }
+/// C++ `CCardDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CardDef {
+    #[def("CardName")]
+    pub card_name: DefIndex,
+    #[def("CardVal")]
+    pub card_val: DefIndex,
 }

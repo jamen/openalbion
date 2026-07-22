@@ -1,15 +1,20 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CShipDef` — C++ `CShipDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ShipDef {
-        "SightingFrequency" => pub sighting_frequency: i32 = 1,
-        "SightingOffset" => pub sighting_offset: i32,
-        "DaysVisible" => pub days_visible: i32 = 1,
-        "Swell" => pub swell: f32,
-        "Pitch" => pub pitch: f32,
-        "Roll" => pub roll: f32,
-        "WaveLength" => pub wave_length: f32 = 1.0,
-    }
+/// `CShipDef` — C++ `CShipDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ShipDef {
+    #[def("SightingFrequency", default = 1)]
+    pub sighting_frequency: i32,
+    #[def("SightingOffset")]
+    pub sighting_offset: i32,
+    #[def("DaysVisible", default = 1)]
+    pub days_visible: i32,
+    #[def("Swell")]
+    pub swell: f32,
+    #[def("Pitch")]
+    pub pitch: f32,
+    #[def("Roll")]
+    pub roll: f32,
+    #[def("WaveLength", default = 1.0)]
+    pub wave_length: f32,
 }

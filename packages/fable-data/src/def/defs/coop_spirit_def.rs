@@ -1,14 +1,17 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CCoopSpiritDef` — C++ `CCoopSpiritDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CoopSpiritDef {
-        "OnHitParticle" => pub on_hit_particle: DefString,
-        "OnStrikeParticle" => pub on_strike_particle: DefString,
-        "DefaultParticle" => pub default_particle: DefString,
-        "MeleeTargetRange" => pub melee_target_range: f32,
-        "AttackTargetParticle" => pub attack_target_particle: DefString,
-    }
+/// `CCoopSpiritDef` — C++ `CCoopSpiritDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CoopSpiritDef {
+    #[def("OnHitParticle")]
+    pub on_hit_particle: DefString,
+    #[def("OnStrikeParticle")]
+    pub on_strike_particle: DefString,
+    #[def("DefaultParticle")]
+    pub default_particle: DefString,
+    #[def("MeleeTargetRange")]
+    pub melee_target_range: f32,
+    #[def("AttackTargetParticle")]
+    pub attack_target_particle: DefString,
 }

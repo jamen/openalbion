@@ -1,12 +1,13 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CWallMountEffectsDef` — C++ `CWallMountEffectsDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct WallMountEffectsDef {
-        "Effect" => pub effect: WallMountEffects,
-        "HealingAmount" => pub healing_amount: f32,
-        "SecondsBetweenEffectUsesAllowed" => pub seconds_between_effect_uses_allowed: DefIndex,
-    }
+/// `CWallMountEffectsDef` — C++ `CWallMountEffectsDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct WallMountEffectsDef {
+    #[def("Effect")]
+    pub effect: WallMountEffects,
+    #[def("HealingAmount")]
+    pub healing_amount: f32,
+    #[def("SecondsBetweenEffectUsesAllowed")]
+    pub seconds_between_effect_uses_allowed: DefIndex,
 }

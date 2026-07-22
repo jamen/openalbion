@@ -1,13 +1,16 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CThingDrainLifeShotDef` — C++ `CThingDrainLifeShotDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ThingDrainLifeShotDef {
-        "MaxAngle" => pub max_angle: f32,
-        "MaxDistance" => pub max_distance: f32,
-        "MaxAngleToTurnDegs" => pub max_angle_to_turn_degs: f32,
-        "InitialSpeed" => pub initial_speed: f32,
-        "SpeedRange" => pub speed_range: f32,
-    }
+/// `CThingDrainLifeShotDef` — C++ `CThingDrainLifeShotDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ThingDrainLifeShotDef {
+    #[def("MaxAngle")]
+    pub max_angle: f32,
+    #[def("MaxDistance")]
+    pub max_distance: f32,
+    #[def("MaxAngleToTurnDegs")]
+    pub max_angle_to_turn_degs: f32,
+    #[def("InitialSpeed")]
+    pub initial_speed: f32,
+    #[def("SpeedRange")]
+    pub speed_range: f32,
 }

@@ -1,12 +1,14 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CTCVolumeContainmentTrackerDef` — C++ `CTCVolumeContainmentTrackerDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct TCVolumeContainmentTrackerDef {
-        "UpdateEveryFrame" => pub update_every_frame: bool,
-        "CalculateBlendedLightingChannel" => pub calculate_blended_lighting_channel: bool,
-        "LightingChannelSphereModelRadius" => pub lighting_channel_sphere_model_radius: f32,
-        "LightingChannelSphereModelZOffset" => pub lighting_channel_sphere_model_z_offset: f32,
-    }
+/// `CTCVolumeContainmentTrackerDef` — C++ `CTCVolumeContainmentTrackerDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct TCVolumeContainmentTrackerDef {
+    #[def("UpdateEveryFrame")]
+    pub update_every_frame: bool,
+    #[def("CalculateBlendedLightingChannel")]
+    pub calculate_blended_lighting_channel: bool,
+    #[def("LightingChannelSphereModelRadius")]
+    pub lighting_channel_sphere_model_radius: f32,
+    #[def("LightingChannelSphereModelZOffset")]
+    pub lighting_channel_sphere_model_z_offset: f32,
 }

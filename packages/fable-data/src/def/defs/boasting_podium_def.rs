@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CBoastingPodiumDef` — C++ `CBoastingPodiumDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct BoastingPodiumDef {
-        "HeroOnPodiumRadius" => pub hero_on_podium_radius: f32 = 1.0,
-    }
+/// `CBoastingPodiumDef` — C++ `CBoastingPodiumDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct BoastingPodiumDef {
+    #[def("HeroOnPodiumRadius", default = 1.0)]
+    pub hero_on_podium_radius: f32,
 }

@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CGoldDef` — C++ `CGoldDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct GoldDef {
-        "Gold" => pub gold: i32,
-    }
+/// `CGoldDef` — C++ `CGoldDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct GoldDef {
+    #[def("Gold")]
+    pub gold: i32,
 }

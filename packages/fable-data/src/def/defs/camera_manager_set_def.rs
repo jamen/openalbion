@@ -1,13 +1,15 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CAMERA_MANAGER_SET` — C++ `CCameraManagerSetDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CameraManagerSetDef {
-        "CameraManagerMain" => pub camera_manager_main: DefIndex,
-        "CameraManagerCombat" => pub camera_manager_combat: DefIndex,
-        "CameraManagerPCMain" => pub camera_manager_pc_main: DefIndex,
-        "CameraManagerPCCombat" => pub camera_manager_pc_combat: DefIndex,
-    }
+/// `CAMERA_MANAGER_SET` — C++ `CCameraManagerSetDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CameraManagerSetDef {
+    #[def("CameraManagerMain")]
+    pub camera_manager_main: DefIndex,
+    #[def("CameraManagerCombat")]
+    pub camera_manager_combat: DefIndex,
+    #[def("CameraManagerPCMain")]
+    pub camera_manager_pc_main: DefIndex,
+    #[def("CameraManagerPCCombat")]
+    pub camera_manager_pc_combat: DefIndex,
 }

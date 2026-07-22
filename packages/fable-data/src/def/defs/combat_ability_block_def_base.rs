@@ -1,14 +1,17 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CCombatAbilityBlockHeavyWeaponAttackDef` | `CCombatAbilityBlockLightWeaponAttackDef` | `CCombatAbilityBlockProjectileWeaponAttackDef` | `CCombatAbilityBlockUnarmedAttackDef` — C++ `CCombatAbilityBlockDefBase`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CombatAbilityBlockDefBase {
-        "BlockAngle" => pub block_angle: f32 = 120.0,
-        "BlockCanBeBroken" => pub block_can_be_broken: bool = true,
-        "ForceRecoilWhenBlocking" => pub force_recoil_when_blocking: bool = true,
-        "CombatAbility" => pub combat_ability: CombatAbilityData,
-        "ValidBlockWeaponTypes" => pub valid_block_weapon_types: Vec<WeaponClass>,
-    }
+/// `CCombatAbilityBlockHeavyWeaponAttackDef` | `CCombatAbilityBlockLightWeaponAttackDef` | `CCombatAbilityBlockProjectileWeaponAttackDef` | `CCombatAbilityBlockUnarmedAttackDef` — C++ `CCombatAbilityBlockDefBase`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CombatAbilityBlockDefBase {
+    #[def("BlockAngle", default = 120.0)]
+    pub block_angle: f32,
+    #[def("BlockCanBeBroken", default = true)]
+    pub block_can_be_broken: bool,
+    #[def("ForceRecoilWhenBlocking", default = true)]
+    pub force_recoil_when_blocking: bool,
+    #[def("CombatAbility")]
+    pub combat_ability: CombatAbilityData,
+    #[def("ValidBlockWeaponTypes")]
+    pub valid_block_weapon_types: Vec<WeaponClass>,
 }

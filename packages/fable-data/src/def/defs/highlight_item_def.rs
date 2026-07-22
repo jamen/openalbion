@@ -1,16 +1,22 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CHighlightItemDef` — C++ `CHighlightItemDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HighlightItemDef {
-        "StartAsRunning" => pub start_as_running: bool,
-        "ParticleEmitter" => pub particle_emitter: i32,
-        "PickupParticleEmitter" => pub pickup_particle_emitter: i32,
-        "RotationSpeed" => pub rotation_speed: f32 = 3.0,
-        "DistanceFromGround" => pub distance_from_ground: f32 = 1.0,
-        "BobTime" => pub bob_time: f32 = 1.0,
-        "BobDistance" => pub bob_distance: f32 = 0.5,
-        "StartAsRunningDelay" => pub start_as_running_delay: f32 = 3.0,
-    }
+/// `CHighlightItemDef` — C++ `CHighlightItemDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HighlightItemDef {
+    #[def("StartAsRunning")]
+    pub start_as_running: bool,
+    #[def("ParticleEmitter")]
+    pub particle_emitter: i32,
+    #[def("PickupParticleEmitter")]
+    pub pickup_particle_emitter: i32,
+    #[def("RotationSpeed", default = 3.0)]
+    pub rotation_speed: f32,
+    #[def("DistanceFromGround", default = 1.0)]
+    pub distance_from_ground: f32,
+    #[def("BobTime", default = 1.0)]
+    pub bob_time: f32,
+    #[def("BobDistance", default = 0.5)]
+    pub bob_distance: f32,
+    #[def("StartAsRunningDelay", default = 3.0)]
+    pub start_as_running_delay: f32,
 }

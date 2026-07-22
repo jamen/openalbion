@@ -1,23 +1,35 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `SPECIAL_ABILITIES_MULTI_STRIKE_DEF` — C++ `CSpecialAbilitiesMultiStrikeDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SpecialAbilitiesMultiStrikeDef {
-        "SoundLevel0" => pub sound_level0: DefString,
-        "SoundLevel1" => pub sound_level1: DefString,
-        "SoundLevel2" => pub sound_level2: DefString,
-        "SoundLevel3" => pub sound_level3: DefString,
-        "AnimationLevel0" => pub animation_level0: DefString,
-        "AnimationLevel1" => pub animation_level1: DefString,
-        "AnimationLevel2" => pub animation_level2: DefString,
-        "AnimationLevel3" => pub animation_level3: DefString,
-        "HighlightWidth" => pub highlight_width: f32,
-        "HighlightColor" => pub highlight_color: Vec<i32>,
-        "DelayTimeSecs" => pub delay_time_secs: Vec<f32>,
-        "NumHits" => pub num_hits: Vec<i32>,
-        "PerHitDamagerMultiplier" => pub per_hit_damager_multiplier: Vec<f32>,
-        "AttachmentPoint" => pub attachment_point: Vec<String>,
-    }
+/// `SPECIAL_ABILITIES_MULTI_STRIKE_DEF` — C++ `CSpecialAbilitiesMultiStrikeDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SpecialAbilitiesMultiStrikeDef {
+    #[def("SoundLevel0")]
+    pub sound_level0: DefString,
+    #[def("SoundLevel1")]
+    pub sound_level1: DefString,
+    #[def("SoundLevel2")]
+    pub sound_level2: DefString,
+    #[def("SoundLevel3")]
+    pub sound_level3: DefString,
+    #[def("AnimationLevel0")]
+    pub animation_level0: DefString,
+    #[def("AnimationLevel1")]
+    pub animation_level1: DefString,
+    #[def("AnimationLevel2")]
+    pub animation_level2: DefString,
+    #[def("AnimationLevel3")]
+    pub animation_level3: DefString,
+    #[def("HighlightWidth")]
+    pub highlight_width: f32,
+    #[def("HighlightColor")]
+    pub highlight_color: Vec<i32>,
+    #[def("DelayTimeSecs")]
+    pub delay_time_secs: Vec<f32>,
+    #[def("NumHits")]
+    pub num_hits: Vec<i32>,
+    #[def("PerHitDamagerMultiplier")]
+    pub per_hit_damager_multiplier: Vec<f32>,
+    #[def("AttachmentPoint")]
+    pub attachment_point: Vec<String>,
 }

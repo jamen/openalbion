@@ -1,13 +1,15 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CARRY_SLOT` — C++ `CCarrySlotDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CarrySlotDef {
-        "DummyPosName" => pub dummy_pos_name: DefString,
-        "DummyPosIndex" => pub dummy_pos_index: i32,
-        "PrimarySlot" => pub primary_slot: bool,
-        "SecondaryDummyPosName" => pub secondary_dummy_pos_name: DefString,
-    }
+/// `CARRY_SLOT` — C++ `CCarrySlotDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CarrySlotDef {
+    #[def("DummyPosName")]
+    pub dummy_pos_name: DefString,
+    #[def("DummyPosIndex")]
+    pub dummy_pos_index: i32,
+    #[def("PrimarySlot")]
+    pub primary_slot: bool,
+    #[def("SecondaryDummyPosName")]
+    pub secondary_dummy_pos_name: DefString,
 }

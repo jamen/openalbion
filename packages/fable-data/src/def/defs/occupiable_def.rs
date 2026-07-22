@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `COccupiableDef` — C++ `COccupiableDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct OccupiableDef {
-        "TypeFlags" => pub type_flags: u32,
-    }
+/// `COccupiableDef` — C++ `COccupiableDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct OccupiableDef {
+    #[def("TypeFlags")]
+    pub type_flags: u32,
 }

@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CCameraCollisionDef` — C++ `CCameraCollisionDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CameraCollisionDef {
-        "CameraCollisionMesh" => pub camera_collision_mesh: i32,
-    }
+/// `CCameraCollisionDef` — C++ `CCameraCollisionDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CameraCollisionDef {
+    #[def("CameraCollisionMesh")]
+    pub camera_collision_mesh: i32,
 }

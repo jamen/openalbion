@@ -1,12 +1,14 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CAreaOfEffectAttackDef` — C++ `CAreaOfEffectAttackDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct AreaOfEffectAttackDef {
-        "TrapIndex" => pub trap_index: i32,
-        "ExplosionIndex" => pub explosion_index: i32,
-        "ObstructionRadius" => pub obstruction_radius: f32,
-        "ObstructionLifeTime" => pub obstruction_life_time: f32,
-    }
+/// `CAreaOfEffectAttackDef` — C++ `CAreaOfEffectAttackDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct AreaOfEffectAttackDef {
+    #[def("TrapIndex")]
+    pub trap_index: i32,
+    #[def("ExplosionIndex")]
+    pub explosion_index: i32,
+    #[def("ObstructionRadius")]
+    pub obstruction_radius: f32,
+    #[def("ObstructionLifeTime")]
+    pub obstruction_life_time: f32,
 }

@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CBlurredAttitudesDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct BlurredAttitudesDef {
-        "Attitudes" => pub attitudes: Vec<OpinionAttitudeType>,
-    }
+/// C++ `CBlurredAttitudesDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct BlurredAttitudesDef {
+    #[def("Attitudes")]
+    pub attitudes: Vec<OpinionAttitudeType>,
 }

@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CAnimatingObjectDef` — C++ `CAnimatingObjectDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct AnimatingObjectDef {
-        "Animation" => pub animation: AnimationSet,
-    }
+/// `CAnimatingObjectDef` — C++ `CAnimatingObjectDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct AnimatingObjectDef {
+    #[def("Animation")]
+    pub animation: AnimationSet,
 }

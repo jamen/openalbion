@@ -1,11 +1,12 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// C++ `CAppearanceModifierScalingDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct AppearanceModifierScalingDef {
-        "Attractiveness" => pub attractiveness: f32,
-        "Scariness" => pub scariness: f32,
-        "Goodstrength" => pub goodstrength: f32,
-    }
+/// C++ `CAppearanceModifierScalingDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct AppearanceModifierScalingDef {
+    #[def("Attractiveness")]
+    pub attractiveness: f32,
+    #[def("Scariness")]
+    pub scariness: f32,
+    #[def("Goodstrength")]
+    pub goodstrength: f32,
 }

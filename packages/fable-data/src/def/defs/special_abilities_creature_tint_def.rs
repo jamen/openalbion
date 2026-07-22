@@ -1,11 +1,12 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `SPECIAL_ABILITIES_CREATURE_TINT_DEF` — C++ `CSpecialAbilitiesCreatureTintDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SpecialAbilitiesCreatureTintDef {
-        "FadeInTimeSecs" => pub fade_in_time_secs: f32,
-        "FadeOutTimeSecs" => pub fade_out_time_secs: f32,
-        "Color" => pub color: Vec<i32>,
-    }
+/// `SPECIAL_ABILITIES_CREATURE_TINT_DEF` — C++ `CSpecialAbilitiesCreatureTintDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SpecialAbilitiesCreatureTintDef {
+    #[def("FadeInTimeSecs")]
+    pub fade_in_time_secs: f32,
+    #[def("FadeOutTimeSecs")]
+    pub fade_out_time_secs: f32,
+    #[def("Color")]
+    pub color: Vec<i32>,
 }

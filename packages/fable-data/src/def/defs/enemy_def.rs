@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CEnemyDef` — C++ `CEnemyDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct EnemyDef {
-        "Faction" => pub faction: i32,
-    }
+/// `CEnemyDef` — C++ `CEnemyDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct EnemyDef {
+    #[def("Faction")]
+    pub faction: i32,
 }

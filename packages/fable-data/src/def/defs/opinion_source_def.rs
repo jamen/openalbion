@@ -1,109 +1,205 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `OPINION_SOURCE` — C++ `COpinionSourceDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct OpinionSourceDef {
-        "ProducedOpinion" => pub produced_opinion: BTreeMap<Opinion, f32>,
-        "AlwaysAwareOf" => pub always_aware_of: bool,
-        "UnknownThreatSource" => pub unknown_threat_source: bool,
-        "ReactNonstop" => pub react_nonstop: bool,
-        "ReactToSelfPermitted" => pub react_to_self_permitted: bool,
-        "ReactionFlagDefault" => pub reaction_flag_default: bool,
-        "ReactionFlag" => pub reaction_flag: BTreeMap<OpinionDeedType, bool>,
-        "UseNavLineOfSight" => pub use_nav_line_of_sight: bool = true,
-        "WitnessesWillNotAttack" => pub witnesses_will_not_attack: bool,
-        "WitnessesWillOverrideFactionEnemy" => pub witnesses_will_override_faction_enemy: bool,
-        "BypassesPersonality" => pub bypasses_personality: bool,
-        "RelativeEffect" => pub relative_effect: bool,
-        "RestrictToFactionAndAllies" => pub restrict_to_faction_and_allies: DefIndex,
-        "RestrictToFactionIsReversed" => pub restrict_to_faction_is_reversed: bool,
-        "BinaryReaction" => pub binary_reaction: bool,
-        "BinaryReaction" => pub binary_reaction2: bool,
-        "BinaryReaction" => pub binary_reaction3: bool,
-        "BinaryReaction" => pub binary_reaction4: bool,
-        "BinaryReaction" => pub binary_reaction5: bool,
-        "BinaryReaction" => pub binary_reaction6: bool,
-        "BinaryReaction" => pub binary_reaction7: bool,
-        "BinaryReaction" => pub binary_reaction8: bool,
-        "BinaryReaction" => pub binary_reaction9: bool,
-        "BinaryReaction" => pub binary_reaction10: bool,
-        "BinaryReaction" => pub binary_reaction11: bool,
-        "BinaryReaction" => pub binary_reaction12: bool,
-        "BinaryReaction" => pub binary_reaction13: bool,
-        "BinaryReaction" => pub binary_reaction14: bool,
-        "BinaryReaction" => pub binary_reaction15: bool,
-        "BinaryReaction" => pub binary_reaction16: bool,
-        "BinaryReaction" => pub binary_reaction17: bool,
-        "BinaryReaction" => pub binary_reaction18: bool,
-        "BinaryReaction" => pub binary_reaction19: bool,
-        "BinaryReaction" => pub binary_reaction20: bool,
-        "BinaryReaction" => pub binary_reaction21: bool,
-        "BinaryReaction" => pub binary_reaction22: bool,
-        "BinaryReaction" => pub binary_reaction23: bool,
-        "BinaryReaction" => pub binary_reaction24: bool,
-        "BinaryReaction" => pub binary_reaction25: bool,
-        "BinaryReaction" => pub binary_reaction26: bool,
-        "BinaryReaction" => pub binary_reaction27: bool,
-        "BinaryReaction" => pub binary_reaction28: bool,
-        "BinaryReaction" => pub binary_reaction29: bool,
-        "BinaryReaction" => pub binary_reaction30: bool,
-        "BinaryReaction" => pub binary_reaction31: bool,
-        "BinaryReaction" => pub binary_reaction32: bool,
-        "BinaryReaction" => pub binary_reaction33: bool,
-        "BinaryReaction" => pub binary_reaction34: bool,
-        "BinaryReaction" => pub binary_reaction35: bool,
-        "BinaryReaction" => pub binary_reaction36: bool,
-        "BinaryReaction" => pub binary_reaction37: bool,
-        "BinaryReaction" => pub binary_reaction38: bool,
-        "BinaryReaction" => pub binary_reaction39: bool,
-        "BinaryReaction" => pub binary_reaction40: bool,
-        "BinaryReaction" => pub binary_reaction41: bool,
-        "BinaryReaction" => pub binary_reaction42: bool,
-        "BinaryReaction" => pub binary_reaction43: bool,
-        "BinaryReaction" => pub binary_reaction44: bool,
-        "BinaryReaction" => pub binary_reaction45: bool,
-        "BinaryReaction" => pub binary_reaction46: bool,
-        "BinaryReaction" => pub binary_reaction47: bool,
-        "BinaryReaction" => pub binary_reaction48: bool,
-        "BinaryReaction" => pub binary_reaction49: bool,
-        "BinaryReaction" => pub binary_reaction50: bool,
-        "BinaryReaction" => pub binary_reaction51: bool,
-        "BinaryReaction" => pub binary_reaction52: bool,
-        "BinaryReaction" => pub binary_reaction53: bool,
-        "BinaryReaction" => pub binary_reaction54: bool,
-        "BinaryReaction" => pub binary_reaction55: bool,
-        "BinaryReaction" => pub binary_reaction56: bool,
-        "BinaryReaction" => pub binary_reaction57: bool,
-        "BinaryReaction" => pub binary_reaction58: bool,
-        "BinaryReaction" => pub binary_reaction59: bool,
-        "BinaryReaction" => pub binary_reaction60: bool,
-        "BinaryReaction" => pub binary_reaction61: bool,
-        "BinaryReaction" => pub binary_reaction62: bool,
-        "BinaryReaction" => pub binary_reaction63: bool,
-        "BinaryReaction" => pub binary_reaction64: bool,
-        "BinaryReaction" => pub binary_reaction65: bool,
-        "BinaryReaction" => pub binary_reaction66: bool,
-        "BinaryReaction" => pub binary_reaction67: bool,
-        "BinaryReaction" => pub binary_reaction68: bool,
-        "BinaryReaction" => pub binary_reaction69: bool,
-        "BinaryReaction" => pub binary_reaction70: bool,
-        "BinaryReaction" => pub binary_reaction71: bool,
-        "BinaryReaction" => pub binary_reaction72: bool,
-        "BinaryReaction" => pub binary_reaction73: bool,
-        "BinaryReaction" => pub binary_reaction74: bool,
-        "BinaryReaction" => pub binary_reaction75: bool,
-        "BinaryReaction" => pub binary_reaction76: bool,
-        "BinaryReaction" => pub binary_reaction77: bool,
-        "BinaryReaction" => pub binary_reaction78: bool,
-        "BinaryReaction" => pub binary_reaction79: bool,
-        "BinaryOpinion" => pub binary_opinion: f32,
-        "BinaryOpinion" => pub binary_opinion2: f32,
-        "BinaryOpinion" => pub binary_opinion3: f32,
-        "BinaryOpinion" => pub binary_opinion4: f32,
-        "BinaryOpinion" => pub binary_opinion5: f32,
-    }
+/// `OPINION_SOURCE` — C++ `COpinionSourceDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct OpinionSourceDef {
+    #[def("ProducedOpinion")]
+    pub produced_opinion: BTreeMap<Opinion, f32>,
+    #[def("AlwaysAwareOf")]
+    pub always_aware_of: bool,
+    #[def("UnknownThreatSource")]
+    pub unknown_threat_source: bool,
+    #[def("ReactNonstop")]
+    pub react_nonstop: bool,
+    #[def("ReactToSelfPermitted")]
+    pub react_to_self_permitted: bool,
+    #[def("ReactionFlagDefault")]
+    pub reaction_flag_default: bool,
+    #[def("ReactionFlag")]
+    pub reaction_flag: BTreeMap<OpinionDeedType, bool>,
+    #[def("UseNavLineOfSight", default = true)]
+    pub use_nav_line_of_sight: bool,
+    #[def("WitnessesWillNotAttack")]
+    pub witnesses_will_not_attack: bool,
+    #[def("WitnessesWillOverrideFactionEnemy")]
+    pub witnesses_will_override_faction_enemy: bool,
+    #[def("BypassesPersonality")]
+    pub bypasses_personality: bool,
+    #[def("RelativeEffect")]
+    pub relative_effect: bool,
+    #[def("RestrictToFactionAndAllies")]
+    pub restrict_to_faction_and_allies: DefIndex,
+    #[def("RestrictToFactionIsReversed")]
+    pub restrict_to_faction_is_reversed: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction2: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction3: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction4: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction5: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction6: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction7: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction8: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction9: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction10: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction11: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction12: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction13: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction14: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction15: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction16: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction17: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction18: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction19: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction20: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction21: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction22: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction23: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction24: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction25: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction26: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction27: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction28: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction29: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction30: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction31: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction32: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction33: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction34: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction35: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction36: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction37: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction38: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction39: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction40: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction41: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction42: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction43: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction44: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction45: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction46: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction47: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction48: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction49: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction50: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction51: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction52: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction53: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction54: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction55: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction56: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction57: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction58: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction59: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction60: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction61: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction62: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction63: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction64: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction65: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction66: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction67: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction68: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction69: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction70: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction71: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction72: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction73: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction74: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction75: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction76: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction77: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction78: bool,
+    #[def("BinaryReaction")]
+    pub binary_reaction79: bool,
+    #[def("BinaryOpinion")]
+    pub binary_opinion: f32,
+    #[def("BinaryOpinion")]
+    pub binary_opinion2: f32,
+    #[def("BinaryOpinion")]
+    pub binary_opinion3: f32,
+    #[def("BinaryOpinion")]
+    pub binary_opinion4: f32,
+    #[def("BinaryOpinion")]
+    pub binary_opinion5: f32,
 }
 
 impl OpinionSourceDef {

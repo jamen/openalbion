@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CSoundAtmospheresDef` — C++ `CSoundAtmospheresDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SoundAtmospheresDef {
-        "SoundAtmospheres" => pub sound_atmospheres: Vec<String>,
-    }
+/// `CSoundAtmospheresDef` — C++ `CSoundAtmospheresDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SoundAtmospheresDef {
+    #[def("SoundAtmospheres")]
+    pub sound_atmospheres: Vec<String>,
 }

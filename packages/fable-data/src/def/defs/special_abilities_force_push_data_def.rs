@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CSpecialAbilitiesDrainLifeDataDef` | `CSpecialAbilitiesForcePushDataDef` — C++ `CSpecialAbilitiesForcePushDataDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SpecialAbilitiesForcePushDataDef {
-        "Damage" => pub damage: f32,
-    }
+/// `CSpecialAbilitiesDrainLifeDataDef` | `CSpecialAbilitiesForcePushDataDef` — C++ `CSpecialAbilitiesForcePushDataDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SpecialAbilitiesForcePushDataDef {
+    #[def("Damage")]
+    pub damage: f32,
 }

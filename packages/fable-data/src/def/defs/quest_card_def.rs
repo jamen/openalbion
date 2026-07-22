@@ -1,27 +1,43 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CQuestCardDef` — C++ `CQuestCardDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct QuestCardDef {
-        "QuestName" => pub quest_name: i32,
-        "QuestSummary" => pub quest_summary: i32,
-        "QuestObjective" => pub quest_objective: i32,
-        "SuccessSummary" => pub success_summary: i32,
-        "RegionName" => pub region_name: DefString,
-        "TeleporterRegionName" => pub teleporter_region_name: DefString,
-        "InventoryCategory" => pub inventory_category: i32,
-        "RenownReward" => pub renown_reward: i32,
-        "GoldReward" => pub gold_reward: i32,
-        "RewardObjects" => pub reward_objects: Vec<i32>,
-        "IsCoreQuest" => pub is_core_quest: bool,
-        "IsVignette" => pub is_vignette: bool,
-        "IsExclusive" => pub is_exclusive: bool,
-        "MakeVignetteRouteAppearOnMinimap" => pub make_vignette_route_appear_on_minimap: bool,
-        "Prerequisites" => pub prerequisites: VecMap<i32, IdleStateGroup>,
-        "NumBoasts" => pub num_boasts: i32 = 1,
-        "CanPlayerCancel" => pub can_player_cancel: bool = true,
-        "QuestEpilogue" => pub quest_epilogue: i32,
-    }
+/// `CQuestCardDef` — C++ `CQuestCardDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct QuestCardDef {
+    #[def("QuestName")]
+    pub quest_name: i32,
+    #[def("QuestSummary")]
+    pub quest_summary: i32,
+    #[def("QuestObjective")]
+    pub quest_objective: i32,
+    #[def("SuccessSummary")]
+    pub success_summary: i32,
+    #[def("RegionName")]
+    pub region_name: DefString,
+    #[def("TeleporterRegionName")]
+    pub teleporter_region_name: DefString,
+    #[def("InventoryCategory")]
+    pub inventory_category: i32,
+    #[def("RenownReward")]
+    pub renown_reward: i32,
+    #[def("GoldReward")]
+    pub gold_reward: i32,
+    #[def("RewardObjects")]
+    pub reward_objects: Vec<i32>,
+    #[def("IsCoreQuest")]
+    pub is_core_quest: bool,
+    #[def("IsVignette")]
+    pub is_vignette: bool,
+    #[def("IsExclusive")]
+    pub is_exclusive: bool,
+    #[def("MakeVignetteRouteAppearOnMinimap")]
+    pub make_vignette_route_appear_on_minimap: bool,
+    #[def("Prerequisites")]
+    pub prerequisites: VecMap<i32, IdleStateGroup>,
+    #[def("NumBoasts", default = 1)]
+    pub num_boasts: i32,
+    #[def("CanPlayerCancel", default = true)]
+    pub can_player_cancel: bool,
+    #[def("QuestEpilogue")]
+    pub quest_epilogue: i32,
 }

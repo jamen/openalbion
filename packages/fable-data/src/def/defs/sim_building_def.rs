@@ -1,11 +1,12 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `SIM_BUILDING` — C++ `CSimBuildingDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SimBuildingDef {
-        "Property" => pub property: i32,
-        "WorkSpaces" => pub work_spaces: i32,
-        "LiveSpaces" => pub live_spaces: i32,
-    }
+/// `SIM_BUILDING` — C++ `CSimBuildingDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SimBuildingDef {
+    #[def("Property")]
+    pub property: i32,
+    #[def("WorkSpaces")]
+    pub work_spaces: i32,
+    #[def("LiveSpaces")]
+    pub live_spaces: i32,
 }

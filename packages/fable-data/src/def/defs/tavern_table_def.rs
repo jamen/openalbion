@@ -1,10 +1,10 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CTavernTableDef` — C++ `CTavernTableDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct TavernTableDef {
-        "AddTankards" => pub add_tankards: bool,
-        "HighQualityTankards" => pub high_quality_tankards: bool,
-    }
+/// `CTavernTableDef` — C++ `CTavernTableDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct TavernTableDef {
+    #[def("AddTankards")]
+    pub add_tankards: bool,
+    #[def("HighQualityTankards")]
+    pub high_quality_tankards: bool,
 }

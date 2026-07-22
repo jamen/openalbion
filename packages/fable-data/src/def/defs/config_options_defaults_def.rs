@@ -1,23 +1,35 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CONFIG_OPTIONS_DEFAULTS_DEF` — C++ `CConfigOptionsDefaultsDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ConfigOptionsDefaultsDef {
-        "Antialiasing" => pub antialiasing: u32,
-        "ResolutionWidth" => pub resolution_width: i32 = 1024,
-        "ResolutionHeight" => pub resolution_height: i32 = 768,
-        "BitDepth" => pub bit_depth: i32 = 16,
-        "TextureDetail" => pub texture_detail: f32 = 1.0,
-        "MaxTextureDetail" => pub max_texture_detail: f32 = 3.0,
-        "ShadowDetail" => pub shadow_detail: f32 = 1.0,
-        "MaxShadowDetail" => pub max_shadow_detail: f32 = 3.0,
-        "MeshDetail" => pub mesh_detail: f32 = 1.0,
-        "MaxMeshDetail" => pub max_mesh_detail: f32 = 3.0,
-        "EffectsDetail" => pub effects_detail: f32 = 1.0,
-        "MaxEffectsDetail" => pub max_effects_detail: f32 = 3.0,
-        "MinResolutionWidth" => pub min_resolution_width: i32 = 1024,
-        "MinResolutionHeight" => pub min_resolution_height: i32 = 768,
-    }
+/// `CONFIG_OPTIONS_DEFAULTS_DEF` — C++ `CConfigOptionsDefaultsDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ConfigOptionsDefaultsDef {
+    #[def("Antialiasing")]
+    pub antialiasing: u32,
+    #[def("ResolutionWidth", default = 1024)]
+    pub resolution_width: i32,
+    #[def("ResolutionHeight", default = 768)]
+    pub resolution_height: i32,
+    #[def("BitDepth", default = 16)]
+    pub bit_depth: i32,
+    #[def("TextureDetail", default = 1.0)]
+    pub texture_detail: f32,
+    #[def("MaxTextureDetail", default = 3.0)]
+    pub max_texture_detail: f32,
+    #[def("ShadowDetail", default = 1.0)]
+    pub shadow_detail: f32,
+    #[def("MaxShadowDetail", default = 3.0)]
+    pub max_shadow_detail: f32,
+    #[def("MeshDetail", default = 1.0)]
+    pub mesh_detail: f32,
+    #[def("MaxMeshDetail", default = 3.0)]
+    pub max_mesh_detail: f32,
+    #[def("EffectsDetail", default = 1.0)]
+    pub effects_detail: f32,
+    #[def("MaxEffectsDetail", default = 3.0)]
+    pub max_effects_detail: f32,
+    #[def("MinResolutionWidth", default = 1024)]
+    pub min_resolution_width: i32,
+    #[def("MinResolutionHeight", default = 768)]
+    pub min_resolution_height: i32,
 }
 

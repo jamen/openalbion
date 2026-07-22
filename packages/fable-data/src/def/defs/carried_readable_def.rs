@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CCarriedReadableDef` — C++ `CCarriedReadableDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CarriedReadableDef {
-        "TitleTextTag" => pub title_text_tag: DefString,
-        "BodyTextTag" => pub body_text_tag: DefString,
-    }
+/// `CCarriedReadableDef` — C++ `CCarriedReadableDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CarriedReadableDef {
+    #[def("TitleTextTag")]
+    pub title_text_tag: DefString,
+    #[def("BodyTextTag")]
+    pub body_text_tag: DefString,
 }

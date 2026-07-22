@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CSpecialEffectsDef` — C++ `CSpecialEffectsDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SpecialEffectsDef {
-        "SpecialEffects" => pub special_effects: SpecialEffectsStringMap,
-    }
+/// `CSpecialEffectsDef` — C++ `CSpecialEffectsDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SpecialEffectsDef {
+    #[def("SpecialEffects")]
+    pub special_effects: SpecialEffectsStringMap,
 }

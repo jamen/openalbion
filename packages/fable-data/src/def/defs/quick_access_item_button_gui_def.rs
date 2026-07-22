@@ -1,12 +1,13 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CQuickAccessItemButtonGuiDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct QuickAccessItemButtonGuiDef {
-        "ButtonGraphic" => pub button_graphic: i32,
-        "Position" => pub position: Vector2D,
-        "Offset" => pub offset: Vector2D,
-    }
+/// C++ `CQuickAccessItemButtonGuiDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct QuickAccessItemButtonGuiDef {
+    #[def("ButtonGraphic")]
+    pub button_graphic: i32,
+    #[def("Position")]
+    pub position: Vector2D,
+    #[def("Offset")]
+    pub offset: Vector2D,
 }

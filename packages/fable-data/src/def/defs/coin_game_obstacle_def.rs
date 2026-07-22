@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CCoinGameObstacleDef` — C++ `CCoinGameObstacleDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CoinGameObstacleDef {
-        "Radius" => pub radius: f32,
-    }
+/// `CCoinGameObstacleDef` — C++ `CCoinGameObstacleDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CoinGameObstacleDef {
+    #[def("Radius")]
+    pub radius: f32,
 }

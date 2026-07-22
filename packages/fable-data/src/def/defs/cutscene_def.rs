@@ -1,16 +1,22 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CCutsceneDef` — C++ `CCutsceneDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CutsceneDef {
-        "Macro" => pub macro_: Vec<String>,
-        "SkipCond" => pub skip_cond: Vec<String>,
-        "SetupCond" => pub setup_cond: Vec<String>,
-        "Lights" => pub lights: Vec<String>,
-        "LightScene" => pub light_scene: Vec<String>,
-        "Sound" => pub sound: Vec<String>,
-        "Answer0" => pub answer0: Vec<String>,
-        "Answer1" => pub answer1: Vec<String>,
-    }
+/// `CCutsceneDef` — C++ `CCutsceneDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CutsceneDef {
+    #[def("Macro")]
+    pub macro_: Vec<String>,
+    #[def("SkipCond")]
+    pub skip_cond: Vec<String>,
+    #[def("SetupCond")]
+    pub setup_cond: Vec<String>,
+    #[def("Lights")]
+    pub lights: Vec<String>,
+    #[def("LightScene")]
+    pub light_scene: Vec<String>,
+    #[def("Sound")]
+    pub sound: Vec<String>,
+    #[def("Answer0")]
+    pub answer0: Vec<String>,
+    #[def("Answer1")]
+    pub answer1: Vec<String>,
 }

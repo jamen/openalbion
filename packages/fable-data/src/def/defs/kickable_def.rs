@@ -1,20 +1,29 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CKickableDef` — C++ `CKickableDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct KickableDef {
-        "BaseDistanceToTravel" => pub base_distance_to_travel: f32,
-        "StrengthScaleRange" => pub strength_scale_range: f32,
-        "SpeedScaleRange" => pub speed_scale_range: f32,
-        "BaseSpeedScaleRange" => pub base_speed_scale_range: f32,
-        "RandomBase" => pub random_base: f32,
-        "RandomRange" => pub random_range: f32,
-        "ShotToAttach" => pub shot_to_attach: i32,
-        "OpinionDeedType" => pub opinion_deed_type: OpinionDeedType,
-        "OpinionDeedFaction" => pub opinion_deed_faction: i32,
-        "OpinionDeedTypeToEnemies" => pub opinion_deed_type_to_enemies: OpinionDeedType,
-        "IgnoreNavigationTest" => pub ignore_navigation_test: bool,
-    }
+/// `CKickableDef` — C++ `CKickableDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct KickableDef {
+    #[def("BaseDistanceToTravel")]
+    pub base_distance_to_travel: f32,
+    #[def("StrengthScaleRange")]
+    pub strength_scale_range: f32,
+    #[def("SpeedScaleRange")]
+    pub speed_scale_range: f32,
+    #[def("BaseSpeedScaleRange")]
+    pub base_speed_scale_range: f32,
+    #[def("RandomBase")]
+    pub random_base: f32,
+    #[def("RandomRange")]
+    pub random_range: f32,
+    #[def("ShotToAttach")]
+    pub shot_to_attach: i32,
+    #[def("OpinionDeedType")]
+    pub opinion_deed_type: OpinionDeedType,
+    #[def("OpinionDeedFaction")]
+    pub opinion_deed_faction: i32,
+    #[def("OpinionDeedTypeToEnemies")]
+    pub opinion_deed_type_to_enemies: OpinionDeedType,
+    #[def("IgnoreNavigationTest")]
+    pub ignore_navigation_test: bool,
 }

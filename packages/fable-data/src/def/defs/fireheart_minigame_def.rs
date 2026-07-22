@@ -1,13 +1,16 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CFireheartMinigameDef` — C++ `CFireheartMinigameDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct FireheartMinigameDef {
-        "MoonFX" => pub moon_fx: String,
-        "SunFX" => pub sun_fx: String,
-        "QuitText" => pub quit_text: u32,
-        "YesText" => pub yes_text: u32,
-        "NoText" => pub no_text: u32,
-    }
+/// `CFireheartMinigameDef` — C++ `CFireheartMinigameDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct FireheartMinigameDef {
+    #[def("MoonFX")]
+    pub moon_fx: String,
+    #[def("SunFX")]
+    pub sun_fx: String,
+    #[def("QuitText")]
+    pub quit_text: u32,
+    #[def("YesText")]
+    pub yes_text: u32,
+    #[def("NoText")]
+    pub no_text: u32,
 }

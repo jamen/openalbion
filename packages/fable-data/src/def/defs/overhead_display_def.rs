@@ -1,11 +1,12 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `COverheadDisplayDef` — C++ `COverheadDisplayDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct OverheadDisplayDef {
-        "DisplayDamage" => pub display_damage: bool,
-        "DisplayRepair" => pub display_repair: bool,
-        "DisplayRenown" => pub display_renown: bool,
-    }
+/// `COverheadDisplayDef` — C++ `COverheadDisplayDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct OverheadDisplayDef {
+    #[def("DisplayDamage")]
+    pub display_damage: bool,
+    #[def("DisplayRepair")]
+    pub display_repair: bool,
+    #[def("DisplayRenown")]
+    pub display_renown: bool,
 }

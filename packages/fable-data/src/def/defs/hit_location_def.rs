@@ -1,28 +1,45 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `HIT_LOCATION` — C++ `CHitLocationDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HitLocationDef {
-        "PhysicalPrimitive" => pub physical_primitive: PhysicalPrimitiveInit,
-        "Armour" => pub armour: DefIndex,
-        "HitDamageEffect" => pub hit_damage_effect: i32,
-        "HitBlockedEffect" => pub hit_blocked_effect: i32,
-        "VulnerableEffect" => pub vulnerable_effect: i32,
-        "HitResponseAction" => pub hit_response_action: i32,
-        "HitResponseToEpicSpellsAction" => pub hit_response_to_epic_spells_action: i32,
-        "HitKnockdownAction" => pub hit_knockdown_action: i32,
-        "HitKnockdownDeathAction" => pub hit_knockdown_death_action: i32,
-        "BlockResponseAction" => pub block_response_action: i32,
-        "Flags" => pub flags: i32,
-        "DefendableAgainstShots" => pub defendable_against_shots: bool = true,
-        "DefendableAgainstMelee" => pub defendable_against_melee: bool = true,
-        "Priority" => pub priority: i32,
-        "Default" => pub default: bool,
-        "DecapitateOnHit" => pub decapitate_on_hit: bool,
-        "PlayGetHitResponse" => pub play_get_hit_response: bool = true,
-        "EnableOnCreate" => pub enable_on_create: bool = true,
-        "HitLocationCodelet" => pub hit_location_codelet: i32,
-    }
+/// `HIT_LOCATION` — C++ `CHitLocationDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HitLocationDef {
+    #[def("PhysicalPrimitive")]
+    pub physical_primitive: PhysicalPrimitiveInit,
+    #[def("Armour")]
+    pub armour: DefIndex,
+    #[def("HitDamageEffect")]
+    pub hit_damage_effect: i32,
+    #[def("HitBlockedEffect")]
+    pub hit_blocked_effect: i32,
+    #[def("VulnerableEffect")]
+    pub vulnerable_effect: i32,
+    #[def("HitResponseAction")]
+    pub hit_response_action: i32,
+    #[def("HitResponseToEpicSpellsAction")]
+    pub hit_response_to_epic_spells_action: i32,
+    #[def("HitKnockdownAction")]
+    pub hit_knockdown_action: i32,
+    #[def("HitKnockdownDeathAction")]
+    pub hit_knockdown_death_action: i32,
+    #[def("BlockResponseAction")]
+    pub block_response_action: i32,
+    #[def("Flags")]
+    pub flags: i32,
+    #[def("DefendableAgainstShots", default = true)]
+    pub defendable_against_shots: bool,
+    #[def("DefendableAgainstMelee", default = true)]
+    pub defendable_against_melee: bool,
+    #[def("Priority")]
+    pub priority: i32,
+    #[def("Default")]
+    pub default: bool,
+    #[def("DecapitateOnHit")]
+    pub decapitate_on_hit: bool,
+    #[def("PlayGetHitResponse", default = true)]
+    pub play_get_hit_response: bool,
+    #[def("EnableOnCreate", default = true)]
+    pub enable_on_create: bool,
+    #[def("HitLocationCodelet")]
+    pub hit_location_codelet: i32,
 }

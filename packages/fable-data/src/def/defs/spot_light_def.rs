@@ -1,16 +1,21 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CSpotLightDef` — C++ `CSpotLightDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SpotLightDef {
-        "Colour" => pub colour: RGBColour,
-        "InnerRadius" => pub inner_radius: f32,
-        "OuterRadius" => pub outer_radius: f32,
-        "Width" => pub width: f32,
-        "Flicker" => pub flicker: f32,
-        "FlickerSpeed" => pub flicker_speed: f32 = 0.3,
-        "Angle" => pub angle: f32,
-    }
+/// `CSpotLightDef` — C++ `CSpotLightDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SpotLightDef {
+    #[def("Colour")]
+    pub colour: RGBColour,
+    #[def("InnerRadius")]
+    pub inner_radius: f32,
+    #[def("OuterRadius")]
+    pub outer_radius: f32,
+    #[def("Width")]
+    pub width: f32,
+    #[def("Flicker")]
+    pub flicker: f32,
+    #[def("FlickerSpeed", default = 0.3)]
+    pub flicker_speed: f32,
+    #[def("Angle")]
+    pub angle: f32,
 }

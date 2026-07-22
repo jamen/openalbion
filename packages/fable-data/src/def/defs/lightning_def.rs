@@ -1,16 +1,21 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `LIGHTNING` — C++ `CLightningDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct LightningDef {
-        "Range" => pub range: f32,
-        "LifeTime" => pub life_time: f32,
-        "MaxNumberOfBranches" => pub max_number_of_branches: i32,
-        "NeedLOSToBranch" => pub need_los_to_branch: bool,
-        "DamagePeriod" => pub damage_period: f32,
-        "DamagePerCycle" => pub damage_per_cycle: f32,
-        "NodeDefIndex" => pub node_def_index: DefIndex,
-    }
+/// `LIGHTNING` — C++ `CLightningDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct LightningDef {
+    #[def("Range")]
+    pub range: f32,
+    #[def("LifeTime")]
+    pub life_time: f32,
+    #[def("MaxNumberOfBranches")]
+    pub max_number_of_branches: i32,
+    #[def("NeedLOSToBranch")]
+    pub need_los_to_branch: bool,
+    #[def("DamagePeriod")]
+    pub damage_period: f32,
+    #[def("DamagePerCycle")]
+    pub damage_per_cycle: f32,
+    #[def("NodeDefIndex")]
+    pub node_def_index: DefIndex,
 }

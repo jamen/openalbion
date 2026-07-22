@@ -1,10 +1,10 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CGuildMasterDef` — C++ `CGuildMasterDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct GuildMasterDef {
-        "MinSecondsBetweenTeleport" => pub min_seconds_between_teleport: f32,
-        "MinSecondsBetweenWillUse" => pub min_seconds_between_will_use: f32,
-    }
+/// `CGuildMasterDef` — C++ `CGuildMasterDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct GuildMasterDef {
+    #[def("MinSecondsBetweenTeleport")]
+    pub min_seconds_between_teleport: f32,
+    #[def("MinSecondsBetweenWillUse")]
+    pub min_seconds_between_will_use: f32,
 }

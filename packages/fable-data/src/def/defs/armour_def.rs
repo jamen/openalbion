@@ -1,17 +1,23 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `ARMOUR` — C++ `CArmourDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ArmourDef {
-        "AugmentationResponse" => pub augmentation_response: BTreeMap<i32, f32>,
-        "DamageTypeResponse" => pub damage_type_response: BTreeMap<i32, f32>,
-        "ArmourThresholds" => pub armour_thresholds: BTreeMap<i32, f32>,
-        "AllHitsKnockdown" => pub all_hits_knockdown: bool,
-        "AllHitsNegated" => pub all_hits_negated: bool,
-        "AllHitsCauseRecoil" => pub all_hits_cause_recoil: bool,
-        "DamageMaterial" => pub damage_material: DefIndex,
-        "BlockMaterial" => pub block_material: DefIndex,
-    }
+/// `ARMOUR` — C++ `CArmourDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ArmourDef {
+    #[def("AugmentationResponse")]
+    pub augmentation_response: BTreeMap<i32, f32>,
+    #[def("DamageTypeResponse")]
+    pub damage_type_response: BTreeMap<i32, f32>,
+    #[def("ArmourThresholds")]
+    pub armour_thresholds: BTreeMap<i32, f32>,
+    #[def("AllHitsKnockdown")]
+    pub all_hits_knockdown: bool,
+    #[def("AllHitsNegated")]
+    pub all_hits_negated: bool,
+    #[def("AllHitsCauseRecoil")]
+    pub all_hits_cause_recoil: bool,
+    #[def("DamageMaterial")]
+    pub damage_material: DefIndex,
+    #[def("BlockMaterial")]
+    pub block_material: DefIndex,
 }

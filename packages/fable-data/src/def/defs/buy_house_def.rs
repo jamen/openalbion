@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CBuyHouseDef` — C++ `CBuyHouseDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct BuyHouseDef {
-        "Main" => pub main: bool = true,
-    }
+/// `CBuyHouseDef` — C++ `CBuyHouseDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct BuyHouseDef {
+    #[def("Main", default = true)]
+    pub main: bool,
 }

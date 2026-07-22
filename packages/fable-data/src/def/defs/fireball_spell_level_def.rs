@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CFireballSpellLevelDef` — C++ `CFireballSpellLevelDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct FireballSpellLevelDef {
-        "Level" => pub level: i32,
-    }
+/// `CFireballSpellLevelDef` — C++ `CFireballSpellLevelDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct FireballSpellLevelDef {
+    #[def("Level")]
+    pub level: i32,
 }

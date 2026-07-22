@@ -1,24 +1,37 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CLightDef` — C++ `CLightDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct LightDef {
-        "Colour" => pub colour: RGBColour,
-        "HaloGraphic" => pub halo_graphic: i32,
-        "InnerRadius" => pub inner_radius: f32,
-        "OuterRadius" => pub outer_radius: f32,
-        "Flicker" => pub flicker: f32,
-        "FlickerSpeed" => pub flicker_speed: f32 = 0.3,
-        "StartActive" => pub start_active: bool = true,
-        "SunlightAttenuator" => pub sunlight_attenuator: bool,
-        "DaylightAttenuator" => pub daylight_attenuator: bool,
-        "EffectChannel" => pub effect_channel: PointLightChannelEffect,
-        "Inverted" => pub inverted: bool,
-        "DaylightAttenuatorFadeInStart" => pub daylight_attenuator_fade_in_start: f32,
-        "DaylightAttenuatorFadeInEnd" => pub daylight_attenuator_fade_in_end: f32 = 12.0,
-        "DaylightAttenuatorFadeOutStart" => pub daylight_attenuator_fade_out_start: f32 = 12.0,
-        "DaylightAttenuatorFadeOutEnd" => pub daylight_attenuator_fade_out_end: f32,
-    }
+/// `CLightDef` — C++ `CLightDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct LightDef {
+    #[def("Colour")]
+    pub colour: RGBColour,
+    #[def("HaloGraphic")]
+    pub halo_graphic: i32,
+    #[def("InnerRadius")]
+    pub inner_radius: f32,
+    #[def("OuterRadius")]
+    pub outer_radius: f32,
+    #[def("Flicker")]
+    pub flicker: f32,
+    #[def("FlickerSpeed", default = 0.3)]
+    pub flicker_speed: f32,
+    #[def("StartActive", default = true)]
+    pub start_active: bool,
+    #[def("SunlightAttenuator")]
+    pub sunlight_attenuator: bool,
+    #[def("DaylightAttenuator")]
+    pub daylight_attenuator: bool,
+    #[def("EffectChannel")]
+    pub effect_channel: PointLightChannelEffect,
+    #[def("Inverted")]
+    pub inverted: bool,
+    #[def("DaylightAttenuatorFadeInStart")]
+    pub daylight_attenuator_fade_in_start: f32,
+    #[def("DaylightAttenuatorFadeInEnd", default = 12.0)]
+    pub daylight_attenuator_fade_in_end: f32,
+    #[def("DaylightAttenuatorFadeOutStart", default = 12.0)]
+    pub daylight_attenuator_fade_out_start: f32,
+    #[def("DaylightAttenuatorFadeOutEnd")]
+    pub daylight_attenuator_fade_out_end: f32,
 }

@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CExpressionSubDef` — C++ `CExpressionSubDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ExpressionSubDef {
-        "ExpressionDef" => pub expression_def: i32,
-    }
+/// `CExpressionSubDef` — C++ `CExpressionSubDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ExpressionSubDef {
+    #[def("ExpressionDef")]
+    pub expression_def: i32,
 }

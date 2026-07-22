@@ -1,23 +1,35 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `NUISystem::CUIStateDef` — C++ `NUISystem::CUIStateDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct UiStateDef {
-        "GraphicIndex" => pub graphic_index: u32,
-        "PositionX" => pub position_x: f32,
-        "PositionY" => pub position_y: f32,
-        "ZoomX" => pub zoom_x: f32,
-        "ZoomY" => pub zoom_y: f32,
-        "ColourR" => pub colour_r: f32,
-        "ColourG" => pub colour_g: f32,
-        "ColourB" => pub colour_b: f32,
-        "ColourA" => pub colour_a: f32,
-        "UpdateTime" => pub update_time: f32,
-        "StateChangeType" => pub state_change_type: i32,
-        "LinearChange" => pub linear_change: bool,
-        "StateChangeFlag" => pub state_change_flag: u32,
-        "ChildrenNotAffected" => pub children_not_affected: Vec<i32>,
-    }
+/// `NUISystem::CUIStateDef` — C++ `NUISystem::CUIStateDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct UiStateDef {
+    #[def("GraphicIndex")]
+    pub graphic_index: u32,
+    #[def("PositionX")]
+    pub position_x: f32,
+    #[def("PositionY")]
+    pub position_y: f32,
+    #[def("ZoomX")]
+    pub zoom_x: f32,
+    #[def("ZoomY")]
+    pub zoom_y: f32,
+    #[def("ColourR")]
+    pub colour_r: f32,
+    #[def("ColourG")]
+    pub colour_g: f32,
+    #[def("ColourB")]
+    pub colour_b: f32,
+    #[def("ColourA")]
+    pub colour_a: f32,
+    #[def("UpdateTime")]
+    pub update_time: f32,
+    #[def("StateChangeType")]
+    pub state_change_type: i32,
+    #[def("LinearChange")]
+    pub linear_change: bool,
+    #[def("StateChangeFlag")]
+    pub state_change_flag: u32,
+    #[def("ChildrenNotAffected")]
+    pub children_not_affected: Vec<i32>,
 }
 

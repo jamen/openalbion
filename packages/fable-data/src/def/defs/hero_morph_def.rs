@@ -1,13 +1,15 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CHeroMorphDef` — C++ `CHeroMorphDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct HeroMorphDef {
-        "TextureMorphs" => pub texture_morphs: TextureMorphs,
-        "SkeletalMorphs" => pub skeletal_morphs: SkeletalMorphs,
-        "ParticleMorphs" => pub particle_morphs: ParticleMorphs,
-        "IdleParticleMorphs" => pub idle_particle_morphs: ParticleMorphs,
-    }
+/// `CHeroMorphDef` — C++ `CHeroMorphDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct HeroMorphDef {
+    #[def("TextureMorphs")]
+    pub texture_morphs: TextureMorphs,
+    #[def("SkeletalMorphs")]
+    pub skeletal_morphs: SkeletalMorphs,
+    #[def("ParticleMorphs")]
+    pub particle_morphs: ParticleMorphs,
+    #[def("IdleParticleMorphs")]
+    pub idle_particle_morphs: ParticleMorphs,
 }

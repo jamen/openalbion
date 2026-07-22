@@ -1,10 +1,10 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CCrateStackDef` — C++ `CCrateStackDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct CrateStackDef {
-        "StackType" => pub stack_type: i32,
-        "Priority" => pub priority: i32,
-    }
+/// `CCrateStackDef` — C++ `CCrateStackDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct CrateStackDef {
+    #[def("StackType")]
+    pub stack_type: i32,
+    #[def("Priority")]
+    pub priority: i32,
 }

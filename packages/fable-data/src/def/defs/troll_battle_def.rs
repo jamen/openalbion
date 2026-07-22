@@ -1,17 +1,24 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CTrollBattleDef` — C++ `CTrollBattleDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct TrollBattleDef {
-        "GroundPoundSpeedMultiplierStart" => pub ground_pound_speed_multiplier_start: f32 = 1.0,
-        "GroundPoundSpeedMultiplierEnd" => pub ground_pound_speed_multiplier_end: f32 = 1.0,
-        "AttackPosPredictiveness" => pub attack_pos_predictiveness: f32,
-        "PercentageChanceToUseSecondaryShotType" => pub percentage_chance_to_use_secondary_shot_type: f32,
-        "SecondaryShotType" => pub secondary_shot_type: i32,
-        "MinLaughDistance" => pub min_laugh_distance: f32 = 8.0,
-        "MaxTimeBetweenKnockdownAndBoast" => pub max_time_between_knockdown_and_boast: f32 = 10.5,
-        "FallDownExplosionIndex" => pub fall_down_explosion_index: i32,
-        "DeathExplosionIndex" => pub death_explosion_index: i32,
-    }
+/// `CTrollBattleDef` — C++ `CTrollBattleDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct TrollBattleDef {
+    #[def("GroundPoundSpeedMultiplierStart", default = 1.0)]
+    pub ground_pound_speed_multiplier_start: f32,
+    #[def("GroundPoundSpeedMultiplierEnd", default = 1.0)]
+    pub ground_pound_speed_multiplier_end: f32,
+    #[def("AttackPosPredictiveness")]
+    pub attack_pos_predictiveness: f32,
+    #[def("PercentageChanceToUseSecondaryShotType")]
+    pub percentage_chance_to_use_secondary_shot_type: f32,
+    #[def("SecondaryShotType")]
+    pub secondary_shot_type: i32,
+    #[def("MinLaughDistance", default = 8.0)]
+    pub min_laugh_distance: f32,
+    #[def("MaxTimeBetweenKnockdownAndBoast", default = 10.5)]
+    pub max_time_between_knockdown_and_boast: f32,
+    #[def("FallDownExplosionIndex")]
+    pub fall_down_explosion_index: i32,
+    #[def("DeathExplosionIndex")]
+    pub death_explosion_index: i32,
 }

@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `SIM_VOICES` — C++ `CSimVoicesDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct SimVoicesDef {
-        "Entry" => pub entry: SimVoice,
-    }
+/// `SIM_VOICES` — C++ `CSimVoicesDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct SimVoicesDef {
+    #[def("Entry")]
+    pub entry: SimVoice,
 }

@@ -1,10 +1,10 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CDecapitationDef` — C++ `CDecapitationDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct DecapitationDef {
-        "BodyParticleEffect" => pub body_particle_effect: i32,
-        "Head" => pub head: i32,
-    }
+/// `CDecapitationDef` — C++ `CDecapitationDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct DecapitationDef {
+    #[def("BodyParticleEffect")]
+    pub body_particle_effect: i32,
+    #[def("Head")]
+    pub head: i32,
 }

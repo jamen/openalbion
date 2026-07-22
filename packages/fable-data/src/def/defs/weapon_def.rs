@@ -1,42 +1,73 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CWeaponDef` — C++ `CWeaponDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct WeaponDef {
-        "Type" => pub type_: WeaponType,
-        "Class" => pub class: WeaponClass,
-        "Property" => pub property: DefIndex,
-        "AnimationGroup" => pub animation_group: String = String::from("SWORD"),
-        "SheatheObject" => pub sheathe_object: DefIndex,
-        "SheatheObjectAlwaysVisible" => pub sheathe_object_always_visible: bool,
-        "AnimationSpeedVal" => pub animation_speed_val: f32,
-        "Damage" => pub damage: f32,
-        "DamageType" => pub damage_type: DamageAttribute = DamageAttribute::MELEE,
-        "Explosion" => pub explosion: DefIndex,
-        "FlourishParticles" => pub flourish_particles: ObjectAugmentationParticleSet,
-        "FlourishSpecialWeaponTrail" => pub flourish_special_weapon_trail: WeaponTrailGraphicSet,
-        "WeaponTrails" => pub weapon_trails: VecMap<WeaponTrailGraphicSet, ObjectAugmentationType>,
-        "UseAnalogueLoading" => pub use_analogue_loading: bool,
-        "MissileLoadCarrySlot" => pub missile_load_carry_slot: DefIndex,
-        "ProjectileWeaponHelperNameTip" => pub projectile_weapon_helper_name_tip: String = String::from("weapon_pos_a"),
-        "ProjectileWeaponHelperNameBase" => pub projectile_weapon_helper_name_base: String = String::from("weapon_pos_b"),
-        "Shot" => pub shot: DefIndex,
-        "Ammo" => pub ammo: DefIndex,
-        "TargetingRange" => pub targeting_range: DefIndex,
-        "TargetingFOV" => pub targeting_fov: f32,
-        "ArrowTrails" => pub arrow_trails: VecMap<i32, IdleStateGroup>,
-        "ReloadSpeedRange" => pub reload_speed_range: FloatRange,
-        "ProjectileWeaponAutoReload" => pub projectile_weapon_auto_reload: bool,
-        "ProjectileWeaponStartLoaded" => pub projectile_weapon_start_loaded: bool,
-        "UseExtendedProjectileTrails" => pub use_extended_projectile_trails: bool,
-        "NextWeaponForBoss" => pub next_weapon_for_boss: i32,
-        "MeleeTargetingArc" => pub melee_targeting_arc: f32 = 60.0,
-        "NeedsLoading" => pub needs_loading: bool = true,
-        "UnsheatheToCombatAnim" => pub unsheathe_to_combat_anim: String,
-        "UnsheatheToNormalAnim" => pub unsheathe_to_normal_anim: String,
-        "SheatheFromCombatAnim" => pub sheathe_from_combat_anim: String,
-        "SheatheFromNormalAnim" => pub sheathe_from_normal_anim: String,
-    }
+/// `CWeaponDef` — C++ `CWeaponDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct WeaponDef {
+    #[def("Type")]
+    pub type_: WeaponType,
+    #[def("Class")]
+    pub class: WeaponClass,
+    #[def("Property")]
+    pub property: DefIndex,
+    #[def("AnimationGroup", default = String::from("SWORD"))]
+    pub animation_group: String,
+    #[def("SheatheObject")]
+    pub sheathe_object: DefIndex,
+    #[def("SheatheObjectAlwaysVisible")]
+    pub sheathe_object_always_visible: bool,
+    #[def("AnimationSpeedVal")]
+    pub animation_speed_val: f32,
+    #[def("Damage")]
+    pub damage: f32,
+    #[def("DamageType", default = DamageAttribute::MELEE)]
+    pub damage_type: DamageAttribute,
+    #[def("Explosion")]
+    pub explosion: DefIndex,
+    #[def("FlourishParticles")]
+    pub flourish_particles: ObjectAugmentationParticleSet,
+    #[def("FlourishSpecialWeaponTrail")]
+    pub flourish_special_weapon_trail: WeaponTrailGraphicSet,
+    #[def("WeaponTrails")]
+    pub weapon_trails: VecMap<WeaponTrailGraphicSet, ObjectAugmentationType>,
+    #[def("UseAnalogueLoading")]
+    pub use_analogue_loading: bool,
+    #[def("MissileLoadCarrySlot")]
+    pub missile_load_carry_slot: DefIndex,
+    #[def("ProjectileWeaponHelperNameTip", default = String::from("weapon_pos_a"))]
+    pub projectile_weapon_helper_name_tip: String,
+    #[def("ProjectileWeaponHelperNameBase", default = String::from("weapon_pos_b"))]
+    pub projectile_weapon_helper_name_base: String,
+    #[def("Shot")]
+    pub shot: DefIndex,
+    #[def("Ammo")]
+    pub ammo: DefIndex,
+    #[def("TargetingRange")]
+    pub targeting_range: DefIndex,
+    #[def("TargetingFOV")]
+    pub targeting_fov: f32,
+    #[def("ArrowTrails")]
+    pub arrow_trails: VecMap<i32, IdleStateGroup>,
+    #[def("ReloadSpeedRange")]
+    pub reload_speed_range: FloatRange,
+    #[def("ProjectileWeaponAutoReload")]
+    pub projectile_weapon_auto_reload: bool,
+    #[def("ProjectileWeaponStartLoaded")]
+    pub projectile_weapon_start_loaded: bool,
+    #[def("UseExtendedProjectileTrails")]
+    pub use_extended_projectile_trails: bool,
+    #[def("NextWeaponForBoss")]
+    pub next_weapon_for_boss: i32,
+    #[def("MeleeTargetingArc", default = 60.0)]
+    pub melee_targeting_arc: f32,
+    #[def("NeedsLoading", default = true)]
+    pub needs_loading: bool,
+    #[def("UnsheatheToCombatAnim")]
+    pub unsheathe_to_combat_anim: String,
+    #[def("UnsheatheToNormalAnim")]
+    pub unsheathe_to_normal_anim: String,
+    #[def("SheatheFromCombatAnim")]
+    pub sheathe_from_combat_anim: String,
+    #[def("SheatheFromNormalAnim")]
+    pub sheathe_from_normal_anim: String,
 }

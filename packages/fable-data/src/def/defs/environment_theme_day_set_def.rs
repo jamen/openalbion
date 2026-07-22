@@ -1,20 +1,28 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `ENVIRONMENT_THEME_DAY` — C++ `CEnvironmentThemeDaySetDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct EnvironmentThemeDaySetDef {
-        "Time" => pub time: Vec<EnvironmentThemeDef>,
-        "SunTilt" => pub sun_tilt: f32,
-        "SunRotate" => pub sun_rotate: f32,
-        "SunHeight" => pub sun_height: f32,
-        "MoonTilt" => pub moon_tilt: f32,
-        "MoonRotate" => pub moon_rotate: f32,
-        "MoonHeight" => pub moon_height: f32,
-        "ColourLookupColumn" => pub colour_lookup_column: i32,
-        "EditorColour" => pub editor_colour: RGBColour,
-        "FishWeightMult" => pub fish_weight_mult: f32 = 1.0,
-    }
+/// `ENVIRONMENT_THEME_DAY` — C++ `CEnvironmentThemeDaySetDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct EnvironmentThemeDaySetDef {
+    #[def("Time")]
+    pub time: Vec<EnvironmentThemeDef>,
+    #[def("SunTilt")]
+    pub sun_tilt: f32,
+    #[def("SunRotate")]
+    pub sun_rotate: f32,
+    #[def("SunHeight")]
+    pub sun_height: f32,
+    #[def("MoonTilt")]
+    pub moon_tilt: f32,
+    #[def("MoonRotate")]
+    pub moon_rotate: f32,
+    #[def("MoonHeight")]
+    pub moon_height: f32,
+    #[def("ColourLookupColumn")]
+    pub colour_lookup_column: i32,
+    #[def("EditorColour")]
+    pub editor_colour: RGBColour,
+    #[def("FishWeightMult", default = 1.0)]
+    pub fish_weight_mult: f32,
 }
 

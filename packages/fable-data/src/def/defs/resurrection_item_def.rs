@@ -1,10 +1,9 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CResurrectionItemDef` — C++ `CResurrectionItemDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ResurrectionItemDef {
-        "OnUseParticleEffect" => pub on_use_particle_effect: DefIndex,
-    }
+/// `CResurrectionItemDef` — C++ `CResurrectionItemDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ResurrectionItemDef {
+    #[def("OnUseParticleEffect")]
+    pub on_use_particle_effect: DefIndex,
 }

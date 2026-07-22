@@ -1,12 +1,13 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// C++ `CAbilityTrackDef` (sub-component def).
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct AbilityTrackDef {
-        "ExperienceStat" => pub experience_stat: HeroExperienceStatCategory,
-        "Abilities" => pub abilities: Vec<AbilityTrackLevelDef>,
-        "MaxedOutDescription" => pub maxed_out_description: i32,
-    }
+/// C++ `CAbilityTrackDef` (sub-component def).
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct AbilityTrackDef {
+    #[def("ExperienceStat")]
+    pub experience_stat: HeroExperienceStatCategory,
+    #[def("Abilities")]
+    pub abilities: Vec<AbilityTrackLevelDef>,
+    #[def("MaxedOutDescription")]
+    pub maxed_out_description: i32,
 }

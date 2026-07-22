@@ -1,9 +1,8 @@
-use crate::def_struct;
+use crate::DefStruct;
 
-def_struct! {
-    /// `CReadableDef` — C++ `CReadableDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ReadableDef {
-        "UseInfoDisplay" => pub use_info_display: bool,
-    }
+/// `CReadableDef` — C++ `CReadableDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ReadableDef {
+    #[def("UseInfoDisplay")]
+    pub use_info_display: bool,
 }

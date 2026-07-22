@@ -1,11 +1,11 @@
-use crate::def_struct;
+use crate::DefStruct;
 use crate::def::prelude::*;
 
-def_struct! {
-    /// `CClockDef` — C++ `CClockDef`.
-    #[derive(Debug, Clone, PartialEq)]
-    pub struct ClockDef {
-        "Sound" => pub sound: VecMap<String, i32>,
-        "HandType" => pub hand_type: ClockHandType,
-    }
+/// `CClockDef` — C++ `CClockDef`.
+#[derive(Debug, Clone, PartialEq, DefStruct)]
+pub struct ClockDef {
+    #[def("Sound")]
+    pub sound: VecMap<String, i32>,
+    #[def("HandType")]
+    pub hand_type: ClockHandType,
 }
