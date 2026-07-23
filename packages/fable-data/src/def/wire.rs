@@ -567,4 +567,90 @@ mod tests {
             other => panic!("expected member error on scale, got {other:?}"),
         }
     }
+
+    // ── derive smoke tests (P0.5) ────────────────────────────────────────────
+
+    #[derive(Debug, Clone, PartialEq, crate::DefStruct)]
+    pub struct TestDefStructSmoke {
+        #[def("Value")]
+        pub value: i32,
+    }
+
+    #[test]
+    fn def_struct_round_trip() {
+        let value = TestDefStructSmoke { value: 42 };
+        round_trip(value);
+    }
+
+    #[test]
+    fn wire_struct_smoke_round_trip() {
+        let value = TestCompound {
+            scale: 1.0,
+            kind: ControllerType::Keyboard,
+            names: vec![],
+        };
+        round_trip(value);
+    }
+
+    #[derive(Debug, Clone, PartialEq, crate::DefVariant)]
+    pub enum TestVariantSmoke {
+        #[def(0)]
+        Foo { x: i32 },
+        #[def(1)]
+        Bar { name: String },
+    }
+
+    #[test]
+    fn def_variant_round_trip() {
+        let v0 = TestVariantSmoke::Foo { x: 7 };
+        round_trip(v0);
+        let v1 = TestVariantSmoke::Bar {
+            name: String::from("test"),
+        };
+        round_trip(v1);
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, crate::DefEnum)]
+    pub enum TestEnumSmoke {
+        #[def("VALUE_A")]
+        A = 0,
+        #[def("VALUE_B")]
+        B = 1,
+    }
+
+    #[test]
+    fn def_enum_round_trip() {
+        round_trip(TestEnumSmoke::A);
+        round_trip(TestEnumSmoke::B);
+
+        assert_eq!(TestEnumSmoke::A.symbol(), "VALUE_A");
+        assert_eq!(TestEnumSmoke::from_symbol("VALUE_B"), Some(TestEnumSmoke::B));
+        assert_eq!(TestEnumSmoke::from_symbol("MISSING"), None);
+    }
+
+    #[test]
+    fn def_enum_rejects_out_of_table() {
+        let bytes = 99i32.to_le_bytes();
+        let mut cur = &bytes[..];
+        assert!(matches!(
+            TestEnumSmoke::parse(&mut cur),
+            Err(ParseWireError::InvalidEnumValue { value: 99 })
+        ));
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, crate::DefFlags)]
+    #[flags(FLAG_ONE = 1 => "ONE", FLAG_TWO = 2 => "TWO")]
+    pub struct TestFlagsSmoke(pub i32);
+
+    #[test]
+    fn def_flags_round_trip() {
+        round_trip(TestFlagsSmoke(0));
+        round_trip(TestFlagsSmoke(1));
+        round_trip(TestFlagsSmoke(3));
+
+        assert!(TestFlagsSmoke(3).contains(TestFlagsSmoke::FLAG_ONE));
+        assert!(TestFlagsSmoke(3).contains(TestFlagsSmoke::FLAG_TWO));
+        assert_eq!(TestFlagsSmoke::from_symbol("ONE"), Some(TestFlagsSmoke(1)));
+        assert_eq!(TestFlagsSmoke::from_symbol("MISSING"), None);
+    }
 }
