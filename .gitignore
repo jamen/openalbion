@@ -1,3 +1,6 @@
 target
 *.log
 .direnv
+
+# local git worktrees for parallel work
+/worktree/
