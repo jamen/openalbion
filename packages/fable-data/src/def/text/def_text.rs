@@ -157,7 +157,7 @@ pub enum DefParseErrorKind {
     ConsumeChar(ConsumeCharError),
     #[display("skip trivia: {_0}")]
     SkipTrivia(SkipTriviaError),
-    #[display("unexpected token. expected {expected}")]
+    #[display("expected {expected}")]
     UnexpectedToken { expected: String },
     #[display("invalid number: {_0}")]
     InvalidNumber(String),

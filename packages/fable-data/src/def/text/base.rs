@@ -60,7 +60,7 @@ impl LineIndex {
 }
 
 #[derive(Debug, Display, Error)]
-#[display("parse error at {pos}: {inner}")]
+#[display("{inner}")]
 pub struct ParseError<InnerError> {
     pub pos: usize,
     pub inner: InnerError,
