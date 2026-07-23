@@ -7,5 +7,5 @@ pub mod symbols;
 
 pub use self::base::{LineIndex, Span, Spanned};
 pub use self::def_text::*;
-pub use self::lexer::{LexError, LexErrorKind, Lexer, Token, TokenKind, lex};
+pub use self::lexer::{LexError, LexErrorKind, Lexer, Token, TokenKind, lex, TextParseErrorKind};
 pub use self::symbols::SymbolTable;

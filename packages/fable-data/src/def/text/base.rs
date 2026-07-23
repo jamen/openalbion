@@ -37,13 +37,13 @@ impl LineIndex {
         Self { line_starts }
     }
 
-    pub fn lookup(&self, pos: usize) -> (usize, usize, &str) {
+    pub fn lookup(&self, pos: usize) -> (usize, usize) {
         let line = self
             .line_starts
             .binary_search(&pos)
             .unwrap_or_else(|i| i.saturating_sub(1));
         let col = pos - self.line_starts[line] + 1;
-        (line + 1, col, "")
+        (line + 1, col)
     }
 
     pub fn line_text<'a>(&self, source: &'a str, pos: usize) -> &'a str {

@@ -1,7 +1,9 @@
 use super::base::{ParseError, Span, Spanned};
-use super::header::{HeaderItem, HeaderParser};
-use super::lexer::{LexError, LexErrorKind, Token, TokenKind, lex};
-use derive_more::Display;
+use super::header::{self, HeaderItem};
+use super::lexer::{
+    Cursor, TextParseErrorKind, TokenKind, describe, lex,
+    lex_error_to_parse_error,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
@@ -92,23 +94,17 @@ impl std::fmt::Display for Expr {
                 fmt_separated(f, &c.arguments, ", ")?;
                 f.write_str(")")
             }
-            Expr::BitOr(terms) => fmt_separated_spanned(f, terms, " | "),
-            Expr::Add(terms) => fmt_separated_spanned(f, terms, " + "),
+            Expr::BitOr(terms) => fmt_separated(f, terms, " | "),
+            Expr::Add(terms) => fmt_separated(f, terms, " + "),
         }
     }
 }
 
-fn fmt_separated(f: &mut std::fmt::Formatter<'_>, terms: &[Spanned<Expr>], sep: &str) -> std::fmt::Result {
-    for (i, term) in terms.iter().enumerate() {
-        if i > 0 {
-            f.write_str(sep)?;
-        }
-        write!(f, "{}", term.value)?;
-    }
-    Ok(())
-}
-
-fn fmt_separated_spanned(f: &mut std::fmt::Formatter<'_>, terms: &[Spanned<Expr>], sep: &str) -> std::fmt::Result {
+fn fmt_separated(
+    f: &mut std::fmt::Formatter<'_>,
+    terms: &[Spanned<Expr>],
+    sep: &str,
+) -> std::fmt::Result {
     for (i, term) in terms.iter().enumerate() {
         if i > 0 {
             f.write_str(sep)?;
@@ -178,78 +174,7 @@ pub struct Call {
     pub arguments: Vec<Spanned<Expr>>,
 }
 
-pub type DefParseError = ParseError<DefParseErrorKind>;
-
-#[derive(Debug, Display)]
-pub enum DefParseErrorKind {
-    #[display("expected {expected}")]
-    UnexpectedToken { expected: String },
-    #[display("mismatched tag: opened <{opened}>, closed <\\{closed}>")]
-    MismatchedTag { opened: String, closed: String },
-    #[display("unterminated string")]
-    UnterminatedString,
-    #[display("unterminated block comment")]
-    UnterminatedBlockComment,
-    #[display("unexpected character {_0:?}")]
-    UnexpectedChar(char),
-}
-
-/// A strict, token-based parser for the text-def grammar (§11.5). It walks the
-/// flat [`Token`] stream produced by [`lex`] — trivia and banner lines are
-/// already gone — and produces one AST or the file's single [`DefParseError`]
-/// (§11.2: strict, one error per file, no recovery).
-pub struct DefParser<'a> {
-    tokens: Vec<Token<'a>>,
-    pos: usize,
-}
-
-/// Map a [`LexError`] onto the file's single [`DefParseError`]: a lex failure is
-/// this file's parse error, rendered like any other (§11.5).
-fn lex_error_to_parse_error(e: LexError) -> DefParseError {
-    let kind = match e.kind {
-        LexErrorKind::UnterminatedString => DefParseErrorKind::UnterminatedString,
-        LexErrorKind::UnterminatedBlockComment => DefParseErrorKind::UnterminatedBlockComment,
-        LexErrorKind::UnexpectedChar(c) => DefParseErrorKind::UnexpectedChar(c),
-    };
-    DefParseError::new(e.span.start, kind)
-}
-
-/// A short human name for a token kind, for "expected …, found …" messages.
-fn describe(kind: TokenKind) -> &'static str {
-    match kind {
-        TokenKind::Ident => "identifier",
-        TokenKind::Number => "number",
-        TokenKind::Str => "string",
-        TokenKind::Definition => "#definition",
-        TokenKind::DefinitionTemplate => "#definition_template",
-        TokenKind::EndDefinition => "#end_definition",
-        TokenKind::Define => "#define",
-        TokenKind::Ifdef => "#ifdef",
-        TokenKind::Ifndef => "#ifndef",
-        TokenKind::Else => "#else",
-        TokenKind::Endif => "#endif",
-        TokenKind::Pragma => "#pragma",
-        TokenKind::Namespace => "namespace",
-        TokenKind::Enum => "enum",
-        TokenKind::Dot => ".",
-        TokenKind::LBracket => "[",
-        TokenKind::RBracket => "]",
-        TokenKind::LParen => "(",
-        TokenKind::RParen => ")",
-        TokenKind::LBrace => "{",
-        TokenKind::RBrace => "}",
-        TokenKind::Lt => "<",
-        TokenKind::Gt => ">",
-        TokenKind::Backslash => "\\",
-        TokenKind::Pipe => "|",
-        TokenKind::Plus => "+",
-        TokenKind::Shl => "<<",
-        TokenKind::Eq => "=",
-        TokenKind::Comma => ",",
-        TokenKind::Semi => ";",
-        TokenKind::Eof => "end of input",
-    }
-}
+pub type DefParseError = ParseError<TextParseErrorKind>;
 
 /// Whether `kind` can never appear inside a def body — a directive or header
 /// keyword, or EOF. Hitting one before `#end_definition` is the precise "missing
@@ -272,462 +197,410 @@ fn is_body_terminator(kind: TokenKind) -> bool {
     )
 }
 
-impl<'a> DefParser<'a> {
-    /// Lex `input` and build a parser over its tokens. On a lex error the stream
-    /// is a lone `Eof`, so [`parse_expr`](Self::parse_expr) fails cleanly; use
-    /// [`parse_def_file`] when the lex error must be surfaced.
-    pub fn new(input: &'a str) -> Self {
-        let tokens = lex(input).unwrap_or_else(|_| {
-            vec![Token {
-                kind: TokenKind::Eof,
-                span: Span {
-                    start: input.len(),
-                    end: input.len(),
-                },
-                source: &input[input.len()..],
-            }]
-        });
-        Self { tokens, pos: 0 }
-    }
+// ── Public entry points ───────────────────────────────────────────────────────
 
-    // ── Token cursor ──────────────────────────────────────────────────────────
+pub fn parse_def_file(input: &str) -> Result<DefFile, DefParseError> {
+    let tokens = lex(input).map_err(|e| {
+        let (pos, kind) = lex_error_to_parse_error(e);
+        ParseError::new(pos, kind)
+    })?;
+    let mut cursor = Cursor::new(tokens);
+    parse_file(&mut cursor)
+}
 
-    /// The current token. Always valid: the stream ends in exactly one `Eof` and
-    /// [`bump`](Self::bump) never advances past it.
-    fn peek(&self) -> Token<'a> {
-        self.tokens[self.pos]
-    }
+/// Parse a single expression from `input`. Used by tests that need to evaluate
+/// expressions without going through a full definition.
+pub fn parse_expr_str(input: &str) -> Result<Spanned<Expr>, DefParseError> {
+    let tokens = lex(input).map_err(|e| {
+        let (pos, kind) = lex_error_to_parse_error(e);
+        ParseError::new(pos, kind)
+    })?;
+    let mut cursor = Cursor::new(tokens);
+    parse_expr(&mut cursor)
+}
 
-    /// The token `n` ahead, saturating at the trailing `Eof`.
-    fn peek_at(&self, n: usize) -> Token<'a> {
-        *self
-            .tokens
-            .get(self.pos + n)
-            .unwrap_or_else(|| self.tokens.last().expect("stream ends in Eof"))
-    }
+// ── Productions on &mut Cursor ────────────────────────────────────────────────
 
-    /// Return the current token and advance (never past `Eof`).
-    fn bump(&mut self) -> Token<'a> {
-        let tok = self.tokens[self.pos];
-        if tok.kind != TokenKind::Eof {
-            self.pos += 1;
-        }
-        tok
-    }
-
-    fn at(&self, kind: TokenKind) -> bool {
-        self.peek().kind == kind
-    }
-
-    /// Whether the current token is an `Ident` whose text is exactly `name`
-    /// (contextual keywords like `specialises`).
-    fn at_ident(&self, name: &str) -> bool {
-        let t = self.peek();
-        t.kind == TokenKind::Ident && t.source == name
-    }
-
-    /// End offset of the most recently consumed token — used for node spans.
-    fn prev_end(&self) -> usize {
-        self.tokens[self.pos.saturating_sub(1)].span.end
-    }
-
-    fn err(&self, at: usize, expected: impl Into<String>) -> DefParseError {
-        DefParseError::new(
-            at,
-            DefParseErrorKind::UnexpectedToken {
-                expected: expected.into(),
-            },
-        )
-    }
-
-    fn expect(&mut self, kind: TokenKind) -> Result<Token<'a>, DefParseError> {
-        if self.at(kind) {
-            Ok(self.bump())
-        } else {
-            let found = self.peek();
-            Err(self.err(
-                found.span.start,
-                format!("{}, found {}", describe(kind), describe(found.kind)),
-            ))
-        }
-    }
-
-    fn expect_ident(&mut self, what: &str) -> Result<String, DefParseError> {
-        let t = self.peek();
-        if t.kind == TokenKind::Ident {
-            self.bump();
-            Ok(t.source.to_string())
-        } else {
-            Err(self.err(t.span.start, format!("{what}, found {}", describe(t.kind))))
-        }
-    }
-
-    // ── Productions ───────────────────────────────────────────────────────────
-
-    pub fn parse_file(&mut self) -> Result<DefFile, DefParseError> {
-        let mut file = DefFile::default();
-        loop {
-            match self.peek().kind {
-                TokenKind::Eof => break,
-                TokenKind::Definition | TokenKind::DefinitionTemplate => {
-                    let def = self.parse_definition()?;
-                    let name_index = file.definitions.len();
-                    let def_name = def.value.name.clone();
-                    file.definitions.push(def);
-                    file.by_name.insert(def_name, name_index);
-                }
-                // A file-local `enum`/`#define` declaration at `.def` top level.
-                // Parsed on tokens by the shared header grammar (Phase 3).
-                TokenKind::Enum | TokenKind::Define => {
-                    file.headers.push(self.parse_header_item_on_tokens()?);
-                }
-                // Stray tokens between top-level items are skipped, as the
-                // pre-token parser did (its `skip_to_next_top_level_item` walked
-                // over anything up to the next `#definition`/`enum`/`#define`).
-                // This is not body-recovery — the strict body loop still errors
-                // on a missing `#end_definition`.
-                _ => {
-                    self.bump();
-                }
+fn parse_file(cursor: &mut Cursor<'_>) -> Result<DefFile, ParseError<TextParseErrorKind>> {
+    let mut file = DefFile::default();
+    loop {
+        match cursor.peek().kind {
+            TokenKind::Eof => break,
+            TokenKind::Definition | TokenKind::DefinitionTemplate => {
+                let def = parse_definition(cursor)?;
+                let name_index = file.definitions.len();
+                let def_name = def.value.name.clone();
+                file.definitions.push(def);
+                file.by_name.insert(def_name, name_index);
             }
-        }
-        Ok(file)
-    }
-
-    /// Parse one file-local header item using the token-based header grammar
-    /// (Phase 3). Constructs a temporary [`HeaderParser`] over the remaining
-    /// tokens, parses one item, then advances the def parser's cursor by the
-    /// number of tokens consumed.
-    fn parse_header_item_on_tokens(&mut self) -> Result<HeaderItem, DefParseError> {
-        let remaining: Vec<Token<'a>> = self.tokens[self.pos..].to_vec();
-        let mut hp = HeaderParser::from_tokens(remaining);
-        let item = hp.parse_one_item().map_err(|e| {
-            self.err(e.pos, format!("enum or #define declaration: {}", e.inner))
-        })?;
-        self.pos += hp.consumed();
-        Ok(item)
-    }
-
-    fn parse_definition(&mut self) -> Result<Spanned<Definition>, DefParseError> {
-        let header_tok = self.peek();
-        let def_start = header_tok.span.start;
-        let is_template = match header_tok.kind {
-            TokenKind::DefinitionTemplate => {
-                self.bump();
-                true
+            // File-local `enum`/`#define` declarations at `.def` top level.
+            // Parsed directly on the shared cursor — no clone-bridge.
+            TokenKind::Enum | TokenKind::Define => {
+                file.headers
+                    .push(header::parse_item_on_cursor(cursor).map_err(|e| {
+                        let pos = e.pos;
+                        ParseError::new(pos, TextParseErrorKind::UnexpectedToken {
+                            expected: format!("enum or #define declaration: {}", e.inner),
+                        })
+                    })?);
             }
-            TokenKind::Definition => {
-                self.bump();
-                false
-            }
+            // Stray tokens between top-level items are skipped, as the
+            // pre-token parser did (its `skip_to_next_top_level_item` walked
+            // over anything up to the next `#definition`/`enum`/`#define`).
+            // This is not body-recovery — the strict body loop still errors
+            // on a missing `#end_definition`.
             _ => {
-                return Err(self.err(
-                    header_tok.span.start,
-                    "#definition or #definition_template",
-                ));
+                cursor.bump();
             }
-        };
-
-        let def_type = self.expect_ident("definition type")?;
-        let name = self.expect_ident("definition name")?;
-
-        let specializes = if self.at_ident("specialises") {
-            let spec_kw = self.bump();
-            let parent_span_start = self.peek().span.start;
-            let parent = self.expect_ident("specialised parent")?;
-            let spec_span = Span {
-                start: spec_kw.span.start,
-                end: parent_span_start + parent.len(),
-            };
-            Some((parent, spec_span))
-        } else {
-            None
-        };
-
-        let mut body = Vec::new();
-        let def_end = loop {
-            let tk = self.peek().kind;
-            if tk == TokenKind::EndDefinition {
-                let mut end = self.bump().span.end;
-                // The pre-token parser tolerated a trailing `;` after
-                // `#end_definition` (an optional terminator, a clean rule).
-                if self.at(TokenKind::Semi) {
-                    end = self.bump().span.end;
-                }
-                break end;
-            }
-            if is_body_terminator(tk) {
-                return Err(self
-                    .err(self.peek().span.start, "#end_definition")
-                    .with_def_header(def_start));
-            }
-            body.push(self.parse_statement().map_err(|e| e.with_def_header(def_start))?);
-        };
-
-        let (specializes, specializes_span) = match specializes {
-            Some((name, span)) => (Some(name), Some(span)),
-            None => (None, None),
-        };
-
-        Ok(Spanned {
-            span: Span {
-                start: def_start,
-                end: def_end,
-            },
-            value: Definition {
-                is_template,
-                def_type,
-                name,
-                specializes,
-                specializes_span,
-                body,
-            },
-        })
+        }
     }
+    Ok(file)
+}
 
-    fn parse_statement(&mut self) -> Result<Spanned<Statement>, DefParseError> {
-        let stmt_start = self.peek().span.start;
-
-        // Tagged block: `<` not followed by `\` (a `<\` opens a *close* tag).
-        if self.at(TokenKind::Lt) && self.peek_at(1).kind != TokenKind::Backslash {
-            let tb = self.parse_tagged_block()?;
-            return Ok(Spanned {
-                span: Span {
-                    start: stmt_start,
-                    end: self.prev_end(),
-                },
-                value: Statement::TaggedBlock(tb),
-            });
+fn parse_definition(
+    cursor: &mut Cursor<'_>,
+) -> Result<Spanned<Definition>, ParseError<TextParseErrorKind>> {
+    let header_tok = cursor.peek();
+    let def_start = header_tok.span.start;
+    let is_template = match header_tok.kind {
+        TokenKind::DefinitionTemplate => {
+            cursor.bump();
+            true
         }
+        TokenKind::Definition => {
+            cursor.bump();
+            false
+        }
+        _ => {
+            return Err(cursor.err_at(
+                header_tok.span.start,
+                TextParseErrorKind::UnexpectedToken {
+                    expected: "#definition or #definition_template".into(),
+                },
+            ));
+        }
+    };
 
-        let path = self.parse_property_path()?;
+    let def_type = cursor.expect_ident("definition type")?;
+    let name = cursor.expect_ident("definition name")?;
 
-        // Method call: the path is followed by an argument list.
-        if self.at(TokenKind::LParen) {
-            let (object, method) = self.split_method_path(path)?;
-            let call = self.parse_call_with_name(method)?;
-            if self.at(TokenKind::Semi) {
-                self.bump();
+    let specializes = if cursor.at_ident("specialises") {
+        let spec_kw = cursor.bump();
+        let parent_span_start = cursor.peek().span.start;
+        let parent = cursor.expect_ident("specialised parent")?;
+        let spec_span = Span {
+            start: spec_kw.span.start,
+            end: parent_span_start + parent.len(),
+        };
+        Some((parent, spec_span))
+    } else {
+        None
+    };
+
+    let mut body = Vec::new();
+    let def_end = loop {
+        let tk = cursor.peek().kind;
+        if tk == TokenKind::EndDefinition {
+            let mut end = cursor.bump().span.end;
+            if cursor.at(TokenKind::Semi) {
+                end = cursor.bump().span.end;
             }
-            return Ok(Spanned {
-                span: Span {
-                    start: stmt_start,
-                    end: self.prev_end(),
-                },
-                value: Statement::MethodCall(MethodCall { object, call }),
-            });
+            break end;
         }
+        if is_body_terminator(tk) {
+            let err = cursor
+                .err(TextParseErrorKind::UnexpectedToken {
+                    expected: "#end_definition".into(),
+                })
+                .with_def_header(def_start);
+            return Err(err);
+        }
+        body.push(
+            parse_statement(cursor).map_err(|e| e.with_def_header(def_start))?,
+        );
+    };
 
-        // Field assignment: `path expr`.
-        let expr = self.parse_expr()?;
-        if self.at(TokenKind::Semi) {
-            self.bump();
-        }
-        Ok(Spanned {
+    let (specializes, specializes_span) = match specializes {
+        Some((name, span)) => (Some(name), Some(span)),
+        None => (None, None),
+    };
+
+    Ok(Spanned {
+        span: Span {
+            start: def_start,
+            end: def_end,
+        },
+        value: Definition {
+            is_template,
+            def_type,
+            name,
+            specializes,
+            specializes_span,
+            body,
+        },
+    })
+}
+
+fn parse_statement(
+    cursor: &mut Cursor<'_>,
+) -> Result<Spanned<Statement>, ParseError<TextParseErrorKind>> {
+    let stmt_start = cursor.peek().span.start;
+
+    // Tagged block: `<` not followed by `\` (a `<\` opens a *close* tag).
+    if cursor.at(TokenKind::Lt) && cursor.peek_at(1).kind != TokenKind::Backslash {
+        let tb = parse_tagged_block(cursor)?;
+        return Ok(Spanned {
             span: Span {
                 start: stmt_start,
-                end: self.prev_end(),
+                end: cursor.prev_end(),
             },
-            value: Statement::Field(Field { path, expr }),
-        })
+            value: Statement::TaggedBlock(tb),
+        });
     }
 
-    fn parse_tagged_block(&mut self) -> Result<TaggedBlock, DefParseError> {
-        self.expect(TokenKind::Lt)?;
-        let tag = self.expect_ident("tag name")?;
-        self.expect(TokenKind::Gt)?;
-        let mut body = Vec::new();
-        loop {
-            let tk = self.peek().kind;
-            if tk == TokenKind::Lt && self.peek_at(1).kind == TokenKind::Backslash {
-                self.bump(); // `<`
-                self.bump(); // `\`
-                let close_tag = self.expect_ident("closing tag name")?;
-                self.expect(TokenKind::Gt)?;
-                if close_tag != tag {
-                    return Err(DefParseError::new(
-                        self.prev_end(),
-                        DefParseErrorKind::MismatchedTag {
-                            opened: tag,
-                            closed: close_tag,
-                        },
-                    ));
-                }
-                break;
-            }
-            // A directive/keyword, EOF, or `#end_definition` inside the block
-            // means it was never closed (§11.5, strict).
-            if is_body_terminator(tk) || tk == TokenKind::EndDefinition {
-                return Err(self.err(self.peek().span.start, format!("<\\{tag}>")));
-            }
-            body.push(self.parse_statement()?);
+    let path = parse_property_path(cursor)?;
+
+    // Method call: the path is followed by an argument list.
+    if cursor.at(TokenKind::LParen) {
+        let (object, method) = split_method_path(cursor, path)?;
+        let call = parse_call_with_name(cursor, method)?;
+        if cursor.at(TokenKind::Semi) {
+            cursor.bump();
         }
-        Ok(TaggedBlock { tag, body })
+        return Ok(Spanned {
+            span: Span {
+                start: stmt_start,
+                end: cursor.prev_end(),
+            },
+            value: Statement::MethodCall(MethodCall { object, call }),
+        });
     }
 
-    fn parse_property_path(&mut self) -> Result<PropertyPath, DefParseError> {
-        let mut segments = vec![PathSegment::Field(self.expect_ident("field name")?)];
-        loop {
-            if self.at(TokenKind::Dot) {
-                self.bump();
-                segments.push(PathSegment::Field(self.expect_ident("field name")?));
-            } else if self.at(TokenKind::LBracket) {
-                self.bump();
-                let idx = self.parse_expr()?;
-                self.expect(TokenKind::RBracket)?;
-                segments.push(PathSegment::Index(idx));
-            } else {
-                break;
+    // Field assignment: `path expr`.
+    let expr = parse_expr(cursor)?;
+    if cursor.at(TokenKind::Semi) {
+        cursor.bump();
+    }
+    Ok(Spanned {
+        span: Span {
+            start: stmt_start,
+            end: cursor.prev_end(),
+        },
+        value: Statement::Field(Field { path, expr }),
+    })
+}
+
+fn parse_tagged_block(
+    cursor: &mut Cursor<'_>,
+) -> Result<TaggedBlock, ParseError<TextParseErrorKind>> {
+    cursor.expect(TokenKind::Lt)?;
+    let tag = cursor.expect_ident("tag name")?;
+    cursor.expect(TokenKind::Gt)?;
+    let mut body = Vec::new();
+    loop {
+        let tk = cursor.peek().kind;
+        if tk == TokenKind::Lt && cursor.peek_at(1).kind == TokenKind::Backslash {
+            cursor.bump(); // `<`
+            cursor.bump(); // `\`
+            let close_tag = cursor.expect_ident("closing tag name")?;
+            cursor.expect(TokenKind::Gt)?;
+            if close_tag != tag {
+                return Err(ParseError::new(
+                    cursor.prev_end(),
+                    TextParseErrorKind::MismatchedTag {
+                        opened: tag,
+                        closed: close_tag,
+                    },
+                ));
             }
+            break;
         }
-        Ok(PropertyPath { segments })
+        // A directive/keyword, EOF, or `#end_definition` inside the block
+        // means it was never closed (§11.5, strict).
+        if is_body_terminator(tk) || tk == TokenKind::EndDefinition {
+            return Err(cursor.err(TextParseErrorKind::UnexpectedToken {
+                expected: format!("<\\{tag}>"),
+            }));
+        }
+        body.push(parse_statement(cursor)?);
     }
+    Ok(TaggedBlock { tag, body })
+}
 
-    fn split_method_path(
-        &self,
-        path: PropertyPath,
-    ) -> Result<(PropertyPath, String), DefParseError> {
-        let mut segments = path.segments;
-        if let Some(PathSegment::Field(method)) = segments.pop() {
-            Ok((PropertyPath { segments }, method))
+fn parse_property_path(
+    cursor: &mut Cursor<'_>,
+) -> Result<PropertyPath, ParseError<TextParseErrorKind>> {
+    let mut segments = vec![PathSegment::Field(cursor.expect_ident("field name")?)];
+    loop {
+        if cursor.at(TokenKind::Dot) {
+            cursor.bump();
+            segments.push(PathSegment::Field(cursor.expect_ident("field name")?));
+        } else if cursor.at(TokenKind::LBracket) {
+            cursor.bump();
+            let idx = parse_expr(cursor)?;
+            cursor.expect(TokenKind::RBracket)?;
+            segments.push(PathSegment::Index(idx));
         } else {
-            Err(self.err(self.peek().span.start, "method name"))
+            break;
         }
     }
+    Ok(PropertyPath { segments })
+}
 
-    pub fn parse_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        self.parse_bitor_expr()
-    }
-
-    fn parse_bitor_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        let start = self.peek().span.start;
-        let first = self.parse_add_expr()?;
-        let mut terms = vec![first];
-        while self.at(TokenKind::Pipe) {
-            self.bump();
-            terms.push(self.parse_add_expr()?);
-        }
-        if terms.len() == 1 {
-            Ok(terms.pop().unwrap())
-        } else {
-            Ok(Spanned {
-                span: Span {
-                    start,
-                    end: self.prev_end(),
-                },
-                value: Expr::BitOr(terms),
-            })
-        }
-    }
-
-    fn parse_add_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        let start = self.peek().span.start;
-        let first = self.parse_leaf_expr()?;
-        let mut terms = vec![first];
-        while self.at(TokenKind::Plus) {
-            self.bump();
-            terms.push(self.parse_leaf_expr()?);
-        }
-        if terms.len() == 1 {
-            Ok(terms.pop().unwrap())
-        } else {
-            Ok(Spanned {
-                span: Span {
-                    start,
-                    end: self.prev_end(),
-                },
-                value: Expr::Add(terms),
-            })
-        }
-    }
-
-    fn parse_leaf_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        let tok = self.peek();
-        match tok.kind {
-            TokenKind::Str => {
-                self.bump();
-                // The lexer guarantees a closing quote (unterminated → lex
-                // error), so both quotes are present to strip.
-                let unquoted = tok.source[1..tok.source.len() - 1].to_string();
-                Ok(Spanned {
-                    span: tok.span,
-                    value: Expr::String(unquoted),
-                })
-            }
-            TokenKind::Number => {
-                self.bump();
-                Ok(Spanned {
-                    span: tok.span,
-                    value: Expr::Number(tok.source.to_string()),
-                })
-            }
-            TokenKind::Ident => {
-                self.bump();
-                match tok.source {
-                    "TRUE" | "BTRUE" => Ok(Spanned {
-                        span: tok.span,
-                        value: Expr::Bool(true),
-                    }),
-                    "FALSE" | "BFALSE" => Ok(Spanned {
-                        span: tok.span,
-                        value: Expr::Bool(false),
-                    }),
-                    ident => {
-                        if self.at(TokenKind::LParen) {
-                            let call = self.parse_call_with_name(ident.to_string())?;
-                            Ok(Spanned {
-                                span: Span {
-                                    start: tok.span.start,
-                                    end: self.prev_end(),
-                                },
-                                value: Expr::Constructor(call),
-                            })
-                        } else {
-                            Ok(Spanned {
-                                span: tok.span,
-                                value: Expr::Symbol(ident.to_string()),
-                            })
-                        }
-                    }
-                }
-            }
-            _ => Err(self.err(tok.span.start, format!("expression, found {}", describe(tok.kind)))),
-        }
-    }
-
-    fn parse_call_with_name(&mut self, name: String) -> Result<Call, DefParseError> {
-        self.expect(TokenKind::LParen)?;
-        let arguments = self.parse_arguments()?;
-        self.expect(TokenKind::RParen)?;
-        Ok(Call { name, arguments })
-    }
-
-    fn parse_arguments(&mut self) -> Result<Vec<Spanned<Expr>>, DefParseError> {
-        let mut args = Vec::new();
-        if self.at(TokenKind::RParen) {
-            return Ok(args);
-        }
-        loop {
-            args.push(self.parse_expr()?);
-            if self.at(TokenKind::Comma) {
-                self.bump();
-            } else {
-                break;
-            }
-        }
-        Ok(args)
+fn split_method_path(
+    cursor: &Cursor<'_>,
+    path: PropertyPath,
+) -> Result<(PropertyPath, String), ParseError<TextParseErrorKind>> {
+    let mut segments = path.segments;
+    if let Some(PathSegment::Field(method)) = segments.pop() {
+        Ok((PropertyPath { segments }, method))
+    } else {
+        Err(cursor.err(TextParseErrorKind::UnexpectedToken {
+            expected: "method name".into(),
+        }))
     }
 }
 
-pub fn parse_def_file(input: &str) -> Result<DefFile, DefParseError> {
-    let tokens = lex(input).map_err(lex_error_to_parse_error)?;
-    let mut parser = DefParser { tokens, pos: 0 };
-    parser.parse_file()
+pub fn parse_expr(
+    cursor: &mut Cursor<'_>,
+) -> Result<Spanned<Expr>, ParseError<TextParseErrorKind>> {
+    parse_bitor_expr(cursor)
+}
+
+fn parse_bitor_expr(
+    cursor: &mut Cursor<'_>,
+) -> Result<Spanned<Expr>, ParseError<TextParseErrorKind>> {
+    let start = cursor.peek().span.start;
+    let first = parse_add_expr(cursor)?;
+    let mut terms = vec![first];
+    while cursor.at(TokenKind::Pipe) {
+        cursor.bump();
+        terms.push(parse_add_expr(cursor)?);
+    }
+    if terms.len() == 1 {
+        Ok(terms.pop().unwrap())
+    } else {
+        Ok(Spanned {
+            span: Span {
+                start,
+                end: cursor.prev_end(),
+            },
+            value: Expr::BitOr(terms),
+        })
+    }
+}
+
+fn parse_add_expr(
+    cursor: &mut Cursor<'_>,
+) -> Result<Spanned<Expr>, ParseError<TextParseErrorKind>> {
+    let start = cursor.peek().span.start;
+    let first = parse_leaf_expr(cursor)?;
+    let mut terms = vec![first];
+    while cursor.at(TokenKind::Plus) {
+        cursor.bump();
+        terms.push(parse_leaf_expr(cursor)?);
+    }
+    if terms.len() == 1 {
+        Ok(terms.pop().unwrap())
+    } else {
+        Ok(Spanned {
+            span: Span {
+                start,
+                end: cursor.prev_end(),
+            },
+            value: Expr::Add(terms),
+        })
+    }
+}
+
+fn parse_leaf_expr(
+    cursor: &mut Cursor<'_>,
+) -> Result<Spanned<Expr>, ParseError<TextParseErrorKind>> {
+    let tok = cursor.peek();
+    match tok.kind {
+        TokenKind::Str => {
+            cursor.bump();
+            let unquoted = tok.source[1..tok.source.len() - 1].to_string();
+            Ok(Spanned {
+                span: tok.span,
+                value: Expr::String(unquoted),
+            })
+        }
+        TokenKind::Number => {
+            cursor.bump();
+            Ok(Spanned {
+                span: tok.span,
+                value: Expr::Number(tok.source.to_string()),
+            })
+        }
+        TokenKind::Ident => {
+            cursor.bump();
+            match tok.source {
+                "TRUE" | "BTRUE" => Ok(Spanned {
+                    span: tok.span,
+                    value: Expr::Bool(true),
+                }),
+                "FALSE" | "BFALSE" => Ok(Spanned {
+                    span: tok.span,
+                    value: Expr::Bool(false),
+                }),
+                ident => {
+                    if cursor.at(TokenKind::LParen) {
+                        let call = parse_call_with_name(cursor, ident.to_string())?;
+                        Ok(Spanned {
+                            span: Span {
+                                start: tok.span.start,
+                                end: cursor.prev_end(),
+                            },
+                            value: Expr::Constructor(call),
+                        })
+                    } else {
+                        Ok(Spanned {
+                            span: tok.span,
+                            value: Expr::Symbol(ident.to_string()),
+                        })
+                    }
+                }
+            }
+        }
+        _ => Err(cursor.err(TextParseErrorKind::UnexpectedToken {
+            expected: format!("expression, found {}", describe(tok.kind)),
+        })),
+    }
+}
+
+fn parse_call_with_name(
+    cursor: &mut Cursor<'_>,
+    name: String,
+) -> Result<Call, ParseError<TextParseErrorKind>> {
+    cursor.expect(TokenKind::LParen)?;
+    let arguments = parse_arguments(cursor)?;
+    cursor.expect(TokenKind::RParen)?;
+    Ok(Call { name, arguments })
+}
+
+fn parse_arguments(
+    cursor: &mut Cursor<'_>,
+) -> Result<Vec<Spanned<Expr>>, ParseError<TextParseErrorKind>> {
+    let mut args = Vec::new();
+    if cursor.at(TokenKind::RParen) {
+        return Ok(args);
+    }
+    loop {
+        args.push(parse_expr(cursor)?);
+        if cursor.at(TokenKind::Comma) {
+            cursor.bump();
+        } else {
+            break;
+        }
+    }
+    Ok(args)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::lexer::TextParseErrorKind;
 
     fn parse_def(body: &str) -> Spanned<Definition> {
         let input = format!("#definition OBJECT T\n{body}\n#end_definition");
@@ -738,7 +611,7 @@ mod tests {
         parse_def_file(input).unwrap().definitions.pop().unwrap()
     }
 
-    fn parse_err(input: &str) -> DefParseErrorKind {
+    fn parse_err(input: &str) -> TextParseErrorKind {
         parse_def_file(input).unwrap_err().inner
     }
 
@@ -746,7 +619,7 @@ mod tests {
         parse_def(stmt).value.body.pop().unwrap()
     }
 
-    fn parse_expr(value: &str) -> Spanned<Expr> {
+    fn parse_expr_test(value: &str) -> Spanned<Expr> {
         match &parse_stmt(&format!("X {value};")).value {
             Statement::Field(f) => f.expr.clone(),
             other => panic!("expected Field, got {other:?}"),
@@ -765,7 +638,7 @@ mod tests {
     }
 
     fn number(value: &str) -> String {
-        match parse_expr(value).value {
+        match parse_expr_test(value).value {
             Expr::Number(s) => s,
             other => panic!("expected Number, got {other:?}"),
         }
@@ -807,7 +680,7 @@ mod tests {
 
     #[test]
     fn string() {
-        let Expr::String(s) = parse_expr(r#""Hello, World!""#).value else {
+        let Expr::String(s) = parse_expr_test(r#""Hello, World!""#).value else {
             panic!()
         };
         assert_eq!(s, "Hello, World!");
@@ -815,19 +688,19 @@ mod tests {
 
     #[test]
     fn bool_test() {
-        assert!(matches!(parse_expr("TRUE").value, Expr::Bool(true)));
-        assert!(matches!(parse_expr("FALSE").value, Expr::Bool(false)));
+        assert!(matches!(parse_expr_test("TRUE").value, Expr::Bool(true)));
+        assert!(matches!(parse_expr_test("FALSE").value, Expr::Bool(false)));
     }
 
     #[test]
     fn bool_b_prefix() {
-        assert!(matches!(parse_expr("BTRUE").value, Expr::Bool(true)));
-        assert!(matches!(parse_expr("BFALSE").value, Expr::Bool(false)));
+        assert!(matches!(parse_expr_test("BTRUE").value, Expr::Bool(true)));
+        assert!(matches!(parse_expr_test("BFALSE").value, Expr::Bool(false)));
     }
 
     #[test]
     fn add_n_ary() {
-        let Expr::Add(terms) = &parse_expr("1 + 2 + 3").value else {
+        let Expr::Add(terms) = &parse_expr_test("1 + 2 + 3").value else {
             panic!()
         };
         assert_eq!(terms.len(), 3);
@@ -835,7 +708,7 @@ mod tests {
 
     #[test]
     fn bitor_n_ary() {
-        let Expr::BitOr(terms) = &parse_expr("A | B | C").value else {
+        let Expr::BitOr(terms) = &parse_expr_test("A | B | C").value else {
             panic!()
         };
         assert_eq!(terms.len(), 3);
@@ -843,7 +716,7 @@ mod tests {
 
     #[test]
     fn bitor_precedence_lower_than_add() {
-        let Expr::BitOr(terms) = &parse_expr("A | B + C").value else {
+        let Expr::BitOr(terms) = &parse_expr_test("A | B + C").value else {
             panic!()
         };
         assert_eq!(terms.len(), 2);
@@ -856,7 +729,7 @@ mod tests {
 
     #[test]
     fn constructor_with_args() {
-        let Expr::Constructor(c) = &parse_expr("CRGBColour(255, 128, 64, 255)").value else {
+        let Expr::Constructor(c) = &parse_expr_test("CRGBColour(255, 128, 64, 255)").value else {
             panic!()
         };
         assert_eq!(c.name, "CRGBColour");
@@ -865,7 +738,7 @@ mod tests {
 
     #[test]
     fn empty_constructor() {
-        let Expr::Constructor(c) = &parse_expr("CRGBColour()").value else {
+        let Expr::Constructor(c) = &parse_expr_test("CRGBColour()").value else {
             panic!()
         };
         assert!(c.arguments.is_empty());
@@ -873,7 +746,7 @@ mod tests {
 
     #[test]
     fn identifier() {
-        let Expr::Symbol(s) = parse_expr("GRAPHIC_NULL").value else {
+        let Expr::Symbol(s) = parse_expr_test("GRAPHIC_NULL").value else {
             panic!()
         };
         assert_eq!(s, "GRAPHIC_NULL");
@@ -1081,20 +954,20 @@ mod tests {
         // A `/*` with real content and no closer is a lex error, surfaced as the
         // file's single parse error (§11.2, strict — no line-skip recovery).
         let kind = parse_err("#definition OBJECT T\n  Health /* never closes\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::UnterminatedBlockComment));
+        assert!(matches!(kind, TextParseErrorKind::UnterminatedBlockComment));
     }
 
     #[test]
     fn err_unterminated_string() {
         let kind = parse_err("#definition OBJECT T\n  Name \"no close\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::UnterminatedString));
+        assert!(matches!(kind, TextParseErrorKind::UnterminatedString));
     }
 
     #[test]
     fn err_mismatched_tag() {
         // A mismatched close tag is a hard error, not a dropped statement.
         let kind = parse_err("#definition OBJECT T\n  <A>\n  <\\B>\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::MismatchedTag { .. }));
+        assert!(matches!(kind, TextParseErrorKind::MismatchedTag { .. }));
     }
 
     #[test]
@@ -1102,7 +975,7 @@ mod tests {
         let kind = parse_err("#definition OBJECT T\n  Health 100;\n");
         assert!(matches!(
             kind,
-            DefParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
+            TextParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
         ));
     }
 
@@ -1122,7 +995,7 @@ mod tests {
         let err = parse_def_file(input).unwrap_err();
         assert!(matches!(
             err.inner,
-            DefParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
+            TextParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
         ));
         // The error is anchored at the second `#definition` (the token that
         // revealed FIRST was never closed), not swallowed away.

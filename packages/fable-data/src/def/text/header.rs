@@ -1,6 +1,5 @@
 use super::base::ParseError;
-use super::lexer::{LexError, LexErrorKind, Token, TokenKind, lex};
-use derive_more::Display;
+use super::lexer::{Cursor, TextParseErrorKind, lex, lex_error_to_parse_error};
 
 // ── Data types (unchanged from the char-parser era) ───────────────────────────
 
@@ -59,395 +58,292 @@ pub struct IfDef {
 
 // ── Error types ───────────────────────────────────────────────────────────────
 
-pub type HeaderParseError = ParseError<HeaderParseErrorKind>;
+pub type HeaderParseError = ParseError<TextParseErrorKind>;
 
-#[derive(Debug, Display)]
-pub enum HeaderParseErrorKind {
-    #[display("expected {expected}")]
-    UnexpectedToken { expected: String },
-    #[display("unterminated namespace")]
-    UnterminatedNamespace,
-    #[display("unterminated #ifdef")]
-    UnterminatedIfDef,
-    #[display("unterminated enum")]
-    UnterminatedEnum,
-    #[display("unknown item")]
-    UnknownItem,
-    #[display("invalid number")]
-    InvalidNumber,
-    #[display("unterminated string")]
-    UnterminatedString,
-    #[display("unterminated block comment")]
-    UnterminatedBlockComment,
-    #[display("unexpected character {_0:?}")]
-    UnexpectedChar(char),
-}
+// ── Productions on &mut Cursor ────────────────────────────────────────────────
 
-fn lex_error_to_header_error(e: LexError) -> HeaderParseError {
-    let kind = match e.kind {
-        LexErrorKind::UnterminatedString => HeaderParseErrorKind::UnterminatedString,
-        LexErrorKind::UnterminatedBlockComment => HeaderParseErrorKind::UnterminatedBlockComment,
-        LexErrorKind::UnexpectedChar(c) => HeaderParseErrorKind::UnexpectedChar(c),
-    };
-    ParseError::new(e.span.start, kind)
-}
-
-// ── Token-based header parser ─────────────────────────────────────────────────
-
-fn describe(kind: TokenKind) -> &'static str {
-    match kind {
-        TokenKind::Ident => "identifier",
-        TokenKind::Number => "number",
-        TokenKind::Str => "string",
-        TokenKind::Definition => "#definition",
-        TokenKind::DefinitionTemplate => "#definition_template",
-        TokenKind::EndDefinition => "#end_definition",
-        TokenKind::Define => "#define",
-        TokenKind::Ifdef => "#ifdef",
-        TokenKind::Ifndef => "#ifndef",
-        TokenKind::Else => "#else",
-        TokenKind::Endif => "#endif",
-        TokenKind::Pragma => "#pragma",
-        TokenKind::Namespace => "namespace",
-        TokenKind::Enum => "enum",
-        TokenKind::Dot => ".",
-        TokenKind::LBracket => "[",
-        TokenKind::RBracket => "]",
-        TokenKind::LParen => "(",
-        TokenKind::RParen => ")",
-        TokenKind::LBrace => "{",
-        TokenKind::RBrace => "}",
-        TokenKind::Lt => "<",
-        TokenKind::Gt => ">",
-        TokenKind::Backslash => "\\",
-        TokenKind::Pipe => "|",
-        TokenKind::Plus => "+",
-        TokenKind::Shl => "<<",
-        TokenKind::Eq => "=",
-        TokenKind::Comma => ",",
-        TokenKind::Semi => ";",
-        TokenKind::Eof => "end of input",
+/// Parse a single header item (`enum`/`#define`/`namespace`/`#ifdef`/
+/// `#ifndef`) at the current cursor position. Public so the def parser can
+/// consume file-local declarations embedded in `.def` files on the shared
+/// cursor (replaces the clone-bridge).
+pub fn parse_item_on_cursor(
+    cursor: &mut Cursor<'_>,
+) -> Result<HeaderItem, ParseError<TextParseErrorKind>> {
+    match cursor.peek().kind {
+        super::lexer::TokenKind::Enum => {
+            cursor.bump();
+            Ok(HeaderItem::Enum(parse_enum_body(cursor)?))
+        }
+        super::lexer::TokenKind::Define => {
+            cursor.bump();
+            Ok(HeaderItem::Define(parse_define_body(cursor)?))
+        }
+        super::lexer::TokenKind::Namespace => {
+            cursor.bump();
+            Ok(HeaderItem::Namespace(parse_namespace_body(cursor)?))
+        }
+        super::lexer::TokenKind::Ifdef | super::lexer::TokenKind::Ifndef => {
+            let inverted = cursor.peek().kind == super::lexer::TokenKind::Ifndef;
+            cursor.bump();
+            Ok(HeaderItem::IfDef(parse_if_def_body(cursor, inverted)?))
+        }
+        _ => Err(cursor.err(TextParseErrorKind::UnknownItem)),
     }
 }
 
+fn parse_enum_body(cursor: &mut Cursor<'_>) -> Result<EnumDecl, ParseError<TextParseErrorKind>> {
+    let name = if cursor.at(super::lexer::TokenKind::Ident) {
+        Some(cursor.expect_ident("enum name")?)
+    } else {
+        None
+    };
+    cursor.expect(super::lexer::TokenKind::LBrace)?;
+    let variants = parse_enum_variants(cursor)?;
+    cursor.expect(super::lexer::TokenKind::RBrace)?;
+    if cursor.at(super::lexer::TokenKind::Semi) {
+        cursor.bump();
+    }
+    Ok(EnumDecl { name, variants })
+}
+
+fn parse_enum_variants(
+    cursor: &mut Cursor<'_>,
+) -> Result<Vec<EnumVariant>, ParseError<TextParseErrorKind>> {
+    let mut variants = Vec::new();
+    loop {
+        if cursor.at(super::lexer::TokenKind::Eof) {
+            return Err(cursor.err(TextParseErrorKind::UnterminatedEnum));
+        }
+        if cursor.at(super::lexer::TokenKind::RBrace) {
+            break;
+        }
+        variants.push(parse_enum_variant(cursor)?);
+        if cursor.at(super::lexer::TokenKind::Comma) {
+            cursor.bump();
+        } else {
+            break;
+        }
+    }
+    Ok(variants)
+}
+
+fn parse_enum_variant(
+    cursor: &mut Cursor<'_>,
+) -> Result<EnumVariant, ParseError<TextParseErrorKind>> {
+    let name = cursor.expect_ident("identifier")?;
+    let value = if cursor.at(super::lexer::TokenKind::Eq) {
+        cursor.bump();
+        Some(parse_enum_expr(cursor)?)
+    } else {
+        None
+    };
+    Ok(EnumVariant { name, value })
+}
+
+fn parse_enum_expr(cursor: &mut Cursor<'_>) -> Result<EnumExpr, ParseError<TextParseErrorKind>> {
+    parse_enum_bitor(cursor)
+}
+
+fn parse_enum_bitor(
+    cursor: &mut Cursor<'_>,
+) -> Result<EnumExpr, ParseError<TextParseErrorKind>> {
+    let first = parse_enum_shift(cursor)?;
+    let mut terms = vec![first];
+    while cursor.at(super::lexer::TokenKind::Pipe) {
+        cursor.bump();
+        terms.push(parse_enum_shift(cursor)?);
+    }
+    Ok(if terms.len() == 1 {
+        terms.pop().unwrap()
+    } else {
+        EnumExpr::BitOr(terms)
+    })
+}
+
+fn parse_enum_shift(
+    cursor: &mut Cursor<'_>,
+) -> Result<EnumExpr, ParseError<TextParseErrorKind>> {
+    let first = parse_enum_leaf(cursor)?;
+    let mut terms = vec![first];
+    while cursor.at(super::lexer::TokenKind::Shl) {
+        cursor.bump();
+        terms.push(parse_enum_leaf(cursor)?);
+    }
+    Ok(if terms.len() == 1 {
+        terms.pop().unwrap()
+    } else {
+        EnumExpr::Shift(terms)
+    })
+}
+
+fn parse_enum_leaf(cursor: &mut Cursor<'_>) -> Result<EnumExpr, ParseError<TextParseErrorKind>> {
+    use super::lexer::TokenKind;
+    match cursor.peek().kind {
+        TokenKind::Number => {
+            let t = cursor.bump();
+            let n = t
+                .source
+                .parse::<i64>()
+                .map_err(|_| ParseError::new(t.span.start, TextParseErrorKind::InvalidNumber))?;
+            Ok(EnumExpr::Int(n))
+        }
+        TokenKind::Ident => {
+            let t = cursor.bump();
+            Ok(EnumExpr::Ident(t.source.to_string()))
+        }
+        _ => Err(cursor.err(TextParseErrorKind::UnexpectedToken {
+            expected: format!(
+                "number or identifier, found {}",
+                super::lexer::describe(cursor.peek().kind)
+            ),
+        })),
+    }
+}
+
+fn parse_define_body(
+    cursor: &mut Cursor<'_>,
+) -> Result<Define, ParseError<TextParseErrorKind>> {
+    let name = cursor.expect_ident("identifier")?;
+    let t = cursor.peek();
+    if t.kind != super::lexer::TokenKind::Number {
+        return Err(cursor.err(TextParseErrorKind::UnexpectedToken {
+            expected: format!("number, found {}", super::lexer::describe(t.kind)),
+        }));
+    }
+    cursor.bump();
+    let value = t
+        .source
+        .parse::<i64>()
+        .map_err(|_| ParseError::new(t.span.start, TextParseErrorKind::InvalidNumber))?;
+    Ok(Define { name, value })
+}
+
+fn parse_namespace_body(
+    cursor: &mut Cursor<'_>,
+) -> Result<Namespace, ParseError<TextParseErrorKind>> {
+    let name = cursor.expect_ident("identifier")?;
+    cursor.expect(super::lexer::TokenKind::LBrace)?;
+    let mut items = Vec::new();
+    loop {
+        if cursor.at(super::lexer::TokenKind::Eof) {
+            return Err(cursor.err(TextParseErrorKind::UnterminatedNamespace));
+        }
+        if cursor.at(super::lexer::TokenKind::RBrace) {
+            break;
+        }
+        items.push(parse_item_on_cursor(cursor)?);
+    }
+    cursor.expect(super::lexer::TokenKind::RBrace)?;
+    if cursor.at(super::lexer::TokenKind::Semi) {
+        cursor.bump();
+    }
+    Ok(Namespace { name, items })
+}
+
+fn parse_if_def_body(
+    cursor: &mut Cursor<'_>,
+    inverted: bool,
+) -> Result<IfDef, ParseError<TextParseErrorKind>> {
+    let condition = cursor.expect_ident("identifier")?;
+    let mut if_branch = Vec::new();
+    loop {
+        if cursor.at(super::lexer::TokenKind::Eof) {
+            return Err(cursor.err(TextParseErrorKind::UnterminatedIfDef));
+        }
+        if cursor.at(super::lexer::TokenKind::Else) || cursor.at(super::lexer::TokenKind::Endif) {
+            break;
+        }
+        if_branch.push(parse_item_on_cursor(cursor)?);
+    }
+    let else_branch = if cursor.at(super::lexer::TokenKind::Else) {
+        cursor.bump();
+        let mut else_branch = Vec::new();
+        loop {
+            if cursor.at(super::lexer::TokenKind::Eof) {
+                return Err(cursor.err(TextParseErrorKind::UnterminatedIfDef));
+            }
+            if cursor.at(super::lexer::TokenKind::Endif) {
+                break;
+            }
+            else_branch.push(parse_item_on_cursor(cursor)?);
+        }
+        Some(else_branch)
+    } else {
+        None
+    };
+    cursor.expect(super::lexer::TokenKind::Endif)?;
+    Ok(IfDef {
+        condition,
+        if_branch,
+        else_branch,
+        inverted,
+    })
+}
+
+// ── Standalone file parser (thin wrapper over Cursor) ─────────────────────────
+
 pub struct HeaderParser<'a> {
-    tokens: Vec<Token<'a>>,
-    pos: usize,
+    cursor: Cursor<'a>,
 }
 
 impl<'a> HeaderParser<'a> {
-    /// Build a parser over the tokenized input (for standalone `.h` files).
     pub fn new(input: &'a str) -> Result<Self, HeaderParseError> {
-        let tokens = lex(input).map_err(lex_error_to_header_error)?;
-        Ok(Self { tokens, pos: 0 })
+        let tokens = lex(input).map_err(|e| {
+            let (pos, kind) = lex_error_to_parse_error(e);
+            ParseError::new(pos, kind)
+        })?;
+        Ok(Self {
+            cursor: Cursor::new(tokens),
+        })
     }
-
-    /// Build a parser from an existing token stream (for inline `enum`/
-    /// `#define` in `.def` files). After parsing call [`consumed`](Self::consumed)
-    /// to learn how many tokens were consumed.
-    pub fn from_tokens(tokens: Vec<Token<'a>>) -> Self {
-        Self { tokens, pos: 0 }
-    }
-
-    /// Number of tokens consumed so far.
-    pub fn consumed(&self) -> usize {
-        self.pos
-    }
-
-    // ── Token cursor ──────────────────────────────────────────────────────────
-
-    fn peek(&self) -> Token<'a> {
-        self.tokens[self.pos]
-    }
-
-    fn bump(&mut self) -> Token<'a> {
-        let tok = self.tokens[self.pos];
-        if tok.kind != TokenKind::Eof {
-            self.pos += 1;
-        }
-        tok
-    }
-
-    fn at(&self, kind: TokenKind) -> bool {
-        self.peek().kind == kind
-    }
-
-    fn err(&self, kind: HeaderParseErrorKind) -> HeaderParseError {
-        ParseError::new(self.peek().span.start, kind)
-    }
-
-    fn expect(&mut self, kind: TokenKind) -> Result<Token<'a>, HeaderParseError> {
-        if self.at(kind) {
-            Ok(self.bump())
-        } else {
-            let found = self.peek();
-            Err(self.err(HeaderParseErrorKind::UnexpectedToken {
-                expected: format!("{}, found {}", describe(kind), describe(found.kind)),
-            }))
-        }
-    }
-
-    fn expect_ident(&mut self) -> Result<String, HeaderParseError> {
-        let t = self.peek();
-        if t.kind == TokenKind::Ident {
-            self.bump();
-            Ok(t.source.to_string())
-        } else {
-            Err(self.err(HeaderParseErrorKind::UnexpectedToken {
-                expected: format!("identifier, found {}", describe(t.kind)),
-            }))
-        }
-    }
-
-    // ── Productions ───────────────────────────────────────────────────────────
 
     pub fn parse_file(&mut self) -> Result<Header, HeaderParseError> {
         let mut header = Header::default();
-        self.skip_prologue();
+        skip_prologue(&mut self.cursor);
         loop {
-            let tk = self.peek().kind;
-            if tk == TokenKind::Eof || tk == TokenKind::Endif {
+            let tk = self.cursor.peek().kind;
+            if tk == super::lexer::TokenKind::Eof
+                || tk == super::lexer::TokenKind::Endif
+            {
                 break;
             }
-            header.items.push(self.parse_item()?);
+            header.items.push(parse_item_on_cursor(&mut self.cursor)?);
         }
-        self.skip_epilogue();
+        skip_epilogue(&mut self.cursor);
         Ok(header)
     }
+}
 
-    /// Parse a single header item (`enum`/`#define`/`namespace`/`#ifdef`/
-    /// `#ifndef`) at the current position. Used by the def parser to consume
-    /// file-local declarations embedded in a `.def` file.
-    pub fn parse_one_item(&mut self) -> Result<HeaderItem, HeaderParseError> {
-        self.parse_item()
-    }
-
-    fn skip_prologue(&mut self) {
-        if self.at(TokenKind::Pragma) {
-            self.bump();
-            if self.at(TokenKind::Ident) {
-                self.bump(); // `once`
-            }
+fn skip_prologue(cursor: &mut Cursor<'_>) {
+    use super::lexer::TokenKind;
+    if cursor.at(TokenKind::Pragma) {
+        cursor.bump();
+        if cursor.at(TokenKind::Ident) {
+            cursor.bump(); // `once`
         }
-        if self.at(TokenKind::Ifndef) {
-            self.bump();
-            let _ = self.expect_ident(); // guard name
-            if self.at(TokenKind::Define) {
-                self.bump();
-                let _ = self.expect_ident(); // guard name
-                if self.at(TokenKind::Number) {
-                    self.bump(); // optional value
-                }
+    }
+    if cursor.at(TokenKind::Ifndef) {
+        cursor.bump();
+        let _ = cursor.expect_ident("identifier"); // guard name
+        if cursor.at(TokenKind::Define) {
+            cursor.bump();
+            let _ = cursor.expect_ident("identifier"); // guard name
+            if cursor.at(TokenKind::Number) {
+                cursor.bump(); // optional value
             }
         }
     }
+}
 
-    /// The old parser's `skip_to_end_of_line` consumed any guard-name token
-    /// that follows `#endif` without a `//` prefix (e.g.
-    /// `#endif __IDLE_STATE_GROUP_DEF_H__`).
-    fn skip_epilogue(&mut self) {
-        if self.at(TokenKind::Endif) {
-            self.bump();
-        }
-        while !self.at(TokenKind::Eof) {
-            self.bump();
-        }
+/// The old parser's `skip_to_end_of_line` consumed any guard-name token
+/// that follows `#endif` without a `//` prefix (e.g.
+/// `#endif __IDLE_STATE_GROUP_DEF_H__`).
+fn skip_epilogue(cursor: &mut Cursor<'_>) {
+    if cursor.at(super::lexer::TokenKind::Endif) {
+        cursor.bump();
     }
-
-    fn parse_item(&mut self) -> Result<HeaderItem, HeaderParseError> {
-        match self.peek().kind {
-            TokenKind::Enum => {
-                self.bump();
-                Ok(HeaderItem::Enum(self.parse_enum_body()?))
-            }
-            TokenKind::Define => {
-                self.bump();
-                Ok(HeaderItem::Define(self.parse_define_body()?))
-            }
-            TokenKind::Namespace => {
-                self.bump();
-                Ok(HeaderItem::Namespace(self.parse_namespace_body()?))
-            }
-            TokenKind::Ifdef | TokenKind::Ifndef => {
-                let inverted = self.peek().kind == TokenKind::Ifndef;
-                self.bump();
-                Ok(HeaderItem::IfDef(self.parse_if_def_body(inverted)?))
-            }
-            _ => Err(self.err(HeaderParseErrorKind::UnknownItem)),
-        }
-    }
-
-    fn parse_enum_body(&mut self) -> Result<EnumDecl, HeaderParseError> {
-        let name = if self.at(TokenKind::Ident) {
-            Some(self.expect_ident()?)
-        } else {
-            None
-        };
-        self.expect(TokenKind::LBrace)?;
-        let variants = self.parse_enum_variants()?;
-        self.expect(TokenKind::RBrace)?;
-        if self.at(TokenKind::Semi) {
-            self.bump();
-        }
-        Ok(EnumDecl { name, variants })
-    }
-
-    fn parse_enum_variants(&mut self) -> Result<Vec<EnumVariant>, HeaderParseError> {
-        let mut variants = Vec::new();
-        loop {
-            if self.at(TokenKind::Eof) {
-                return Err(self.err(HeaderParseErrorKind::UnterminatedEnum));
-            }
-            if self.at(TokenKind::RBrace) {
-                break;
-            }
-            variants.push(self.parse_enum_variant()?);
-            if self.at(TokenKind::Comma) {
-                self.bump();
-            } else {
-                break;
-            }
-        }
-        Ok(variants)
-    }
-
-    fn parse_enum_variant(&mut self) -> Result<EnumVariant, HeaderParseError> {
-        let name = self.expect_ident()?;
-        let value = if self.at(TokenKind::Eq) {
-            self.bump();
-            Some(self.parse_enum_expr()?)
-        } else {
-            None
-        };
-        Ok(EnumVariant { name, value })
-    }
-
-    fn parse_enum_expr(&mut self) -> Result<EnumExpr, HeaderParseError> {
-        self.parse_enum_bitor()
-    }
-
-    fn parse_enum_bitor(&mut self) -> Result<EnumExpr, HeaderParseError> {
-        let first = self.parse_enum_shift()?;
-        let mut terms = vec![first];
-        while self.at(TokenKind::Pipe) {
-            self.bump();
-            terms.push(self.parse_enum_shift()?);
-        }
-        Ok(if terms.len() == 1 {
-            terms.pop().unwrap()
-        } else {
-            EnumExpr::BitOr(terms)
-        })
-    }
-
-    fn parse_enum_shift(&mut self) -> Result<EnumExpr, HeaderParseError> {
-        let first = self.parse_enum_leaf()?;
-        let mut terms = vec![first];
-        while self.at(TokenKind::Shl) {
-            self.bump();
-            terms.push(self.parse_enum_leaf()?);
-        }
-        Ok(if terms.len() == 1 {
-            terms.pop().unwrap()
-        } else {
-            EnumExpr::Shift(terms)
-        })
-    }
-
-    fn parse_enum_leaf(&mut self) -> Result<EnumExpr, HeaderParseError> {
-        match self.peek().kind {
-            TokenKind::Number => {
-                let t = self.bump();
-                let n = t
-                    .source
-                    .parse::<i64>()
-                    .map_err(|_| ParseError::new(t.span.start, HeaderParseErrorKind::InvalidNumber))?;
-                Ok(EnumExpr::Int(n))
-            }
-            TokenKind::Ident => {
-                let t = self.bump();
-                Ok(EnumExpr::Ident(t.source.to_string()))
-            }
-            _ => Err(self.err(HeaderParseErrorKind::UnexpectedToken {
-                expected: format!(
-                    "number or identifier, found {}",
-                    describe(self.peek().kind)
-                ),
-            })),
-        }
-    }
-
-    fn parse_define_body(&mut self) -> Result<Define, HeaderParseError> {
-        let name = self.expect_ident()?;
-        let t = self.peek();
-        if t.kind != TokenKind::Number {
-            return Err(self.err(HeaderParseErrorKind::UnexpectedToken {
-                expected: format!("number, found {}", describe(t.kind)),
-            }));
-        }
-        self.bump();
-        let value = t
-            .source
-            .parse::<i64>()
-            .map_err(|_| ParseError::new(t.span.start, HeaderParseErrorKind::InvalidNumber))?;
-        Ok(Define { name, value })
-    }
-
-    fn parse_namespace_body(&mut self) -> Result<Namespace, HeaderParseError> {
-        let name = self.expect_ident()?;
-        self.expect(TokenKind::LBrace)?;
-        let mut items = Vec::new();
-        loop {
-            if self.at(TokenKind::Eof) {
-                return Err(self.err(HeaderParseErrorKind::UnterminatedNamespace));
-            }
-            if self.at(TokenKind::RBrace) {
-                break;
-            }
-            items.push(self.parse_item()?);
-        }
-        self.expect(TokenKind::RBrace)?;
-        if self.at(TokenKind::Semi) {
-            self.bump();
-        }
-        Ok(Namespace { name, items })
-    }
-
-    fn parse_if_def_body(&mut self, inverted: bool) -> Result<IfDef, HeaderParseError> {
-        let condition = self.expect_ident()?;
-        let mut if_branch = Vec::new();
-        loop {
-            if self.at(TokenKind::Eof) {
-                return Err(self.err(HeaderParseErrorKind::UnterminatedIfDef));
-            }
-            if self.at(TokenKind::Else) || self.at(TokenKind::Endif) {
-                break;
-            }
-            if_branch.push(self.parse_item()?);
-        }
-        let else_branch = if self.at(TokenKind::Else) {
-            self.bump();
-            let mut else_branch = Vec::new();
-            loop {
-                if self.at(TokenKind::Eof) {
-                    return Err(self.err(HeaderParseErrorKind::UnterminatedIfDef));
-                }
-                if self.at(TokenKind::Endif) {
-                    break;
-                }
-                else_branch.push(self.parse_item()?);
-            }
-            Some(else_branch)
-        } else {
-            None
-        };
-        self.expect(TokenKind::Endif)?;
-        Ok(IfDef {
-            condition,
-            if_branch,
-            else_branch,
-            inverted,
-        })
+    while !cursor.at(super::lexer::TokenKind::Eof) {
+        cursor.bump();
     }
 }
 
@@ -461,12 +357,13 @@ pub fn parse_header_file(input: &str) -> Result<Header, HeaderParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::lexer::TextParseErrorKind;
 
     fn parse_h(input: &str) -> Header {
         parse_header_file(input).expect("header parse ok")
     }
 
-    fn parse_h_err(input: &str) -> HeaderParseErrorKind {
+    fn parse_h_err(input: &str) -> TextParseErrorKind {
         parse_header_file(input).unwrap_err().inner
     }
 
@@ -619,38 +516,38 @@ mod tests {
     #[test]
     fn err_unterminated_enum() {
         let kind = parse_h_err("enum EFoo { A = 1");
-        assert!(matches!(kind, HeaderParseErrorKind::UnexpectedToken { .. }));
+        assert!(matches!(kind, TextParseErrorKind::UnexpectedToken { .. }));
     }
 
     #[test]
     fn err_unterminated_enum_eof_after_comma() {
         // EOF after a comma is a genuine UnterminatedEnum.
         let kind = parse_h_err("enum EFoo { A = 1,");
-        assert!(matches!(kind, HeaderParseErrorKind::UnterminatedEnum));
+        assert!(matches!(kind, TextParseErrorKind::UnterminatedEnum));
     }
 
     #[test]
     fn err_unterminated_namespace() {
         let kind = parse_h_err("namespace NFoo { enum EA { X = 1 };");
-        assert!(matches!(kind, HeaderParseErrorKind::UnterminatedNamespace));
+        assert!(matches!(kind, TextParseErrorKind::UnterminatedNamespace));
     }
 
     #[test]
     fn err_unterminated_ifdef() {
         let kind = parse_h_err("#ifdef _WINDOWS\n#define FOO 1\n");
-        assert!(matches!(kind, HeaderParseErrorKind::UnterminatedIfDef));
+        assert!(matches!(kind, TextParseErrorKind::UnterminatedIfDef));
     }
 
     #[test]
     fn err_unknown_item() {
         let kind = parse_h_err("foo bar");
-        assert!(matches!(kind, HeaderParseErrorKind::UnknownItem));
+        assert!(matches!(kind, TextParseErrorKind::UnknownItem));
     }
 
     #[test]
     fn err_expected_number_in_define() {
         let kind = parse_h_err("#define FOO abc");
-        assert!(matches!(kind, HeaderParseErrorKind::UnexpectedToken { .. }));
+        assert!(matches!(kind, TextParseErrorKind::UnexpectedToken { .. }));
     }
 
     #[test]

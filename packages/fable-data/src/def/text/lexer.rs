@@ -18,7 +18,7 @@
 //! /`#pragma`) is represented in the token set — added in Phase 3 for the
 //! header-grammar merge.
 
-use super::base::Span;
+use super::base::{ParseError, Span};
 use derive_more::{Display, Error};
 
 /// A lexical token kind. Flat, `Copy`, payload-free — the raw text lives in
@@ -87,6 +87,171 @@ pub enum LexErrorKind {
 pub struct LexError {
     pub kind: LexErrorKind,
     pub span: Span,
+}
+
+/// A unified parse-error kind covering both the def and header grammars
+/// (P1.3 — merged `DefParseErrorKind` and `HeaderParseErrorKind`).
+#[derive(Debug, Display)]
+pub enum TextParseErrorKind {
+    #[display("expected {expected}")]
+    UnexpectedToken { expected: String },
+    #[display("mismatched tag: opened <{opened}>, closed <\\{closed}>")]
+    MismatchedTag { opened: String, closed: String },
+    #[display("unterminated string")]
+    UnterminatedString,
+    #[display("unterminated block comment")]
+    UnterminatedBlockComment,
+    #[display("unexpected character {_0:?}")]
+    UnexpectedChar(char),
+    #[display("unterminated namespace")]
+    UnterminatedNamespace,
+    #[display("unterminated #ifdef")]
+    UnterminatedIfDef,
+    #[display("unterminated enum")]
+    UnterminatedEnum,
+    #[display("unknown item")]
+    UnknownItem,
+    #[display("invalid number")]
+    InvalidNumber,
+}
+
+/// Convert a lex error to the corresponding [`TextParseErrorKind`].
+pub fn lex_error_to_parse_error(e: LexError) -> (usize, TextParseErrorKind) {
+    let kind = match e.kind {
+        LexErrorKind::UnterminatedString => TextParseErrorKind::UnterminatedString,
+        LexErrorKind::UnterminatedBlockComment => TextParseErrorKind::UnterminatedBlockComment,
+        LexErrorKind::UnexpectedChar(c) => TextParseErrorKind::UnexpectedChar(c),
+    };
+    (e.span.start, kind)
+}
+
+/// A short human name for a token kind, for "expected …, found …" messages.
+pub fn describe(kind: TokenKind) -> &'static str {
+    match kind {
+        TokenKind::Ident => "identifier",
+        TokenKind::Number => "number",
+        TokenKind::Str => "string",
+        TokenKind::Definition => "#definition",
+        TokenKind::DefinitionTemplate => "#definition_template",
+        TokenKind::EndDefinition => "#end_definition",
+        TokenKind::Define => "#define",
+        TokenKind::Ifdef => "#ifdef",
+        TokenKind::Ifndef => "#ifndef",
+        TokenKind::Else => "#else",
+        TokenKind::Endif => "#endif",
+        TokenKind::Pragma => "#pragma",
+        TokenKind::Namespace => "namespace",
+        TokenKind::Enum => "enum",
+        TokenKind::Dot => ".",
+        TokenKind::LBracket => "[",
+        TokenKind::RBracket => "]",
+        TokenKind::LParen => "(",
+        TokenKind::RParen => ")",
+        TokenKind::LBrace => "{",
+        TokenKind::RBrace => "}",
+        TokenKind::Lt => "<",
+        TokenKind::Gt => ">",
+        TokenKind::Backslash => "\\",
+        TokenKind::Pipe => "|",
+        TokenKind::Plus => "+",
+        TokenKind::Shl => "<<",
+        TokenKind::Eq => "=",
+        TokenKind::Comma => ",",
+        TokenKind::Semi => ";",
+        TokenKind::Eof => "end of input",
+    }
+}
+
+/// A shared token cursor for the def and header parsers (P1.1).
+///
+/// Owns the flat token stream produced by [`lex`] and exposes cursor verbs both
+/// parsers previously hand-rolled: `peek`, `peek_at`, `bump`, `at`, `at_ident`,
+/// `prev_end`, `expect`, `expect_ident`.
+pub struct Cursor<'a> {
+    tokens: Vec<Token<'a>>,
+    pos: usize,
+}
+
+impl<'a> Cursor<'a> {
+    pub fn new(tokens: Vec<Token<'a>>) -> Self {
+        Self { tokens, pos: 0 }
+    }
+
+    /// The current token. Always valid: the stream ends in exactly one `Eof` and
+    /// [`bump`](Self::bump) never advances past it.
+    pub fn peek(&self) -> Token<'a> {
+        self.tokens[self.pos]
+    }
+
+    /// The token `n` ahead, saturating at the trailing `Eof`.
+    pub fn peek_at(&self, n: usize) -> Token<'a> {
+        *self
+            .tokens
+            .get(self.pos + n)
+            .unwrap_or_else(|| self.tokens.last().expect("stream ends in Eof"))
+    }
+
+    /// Return the current token and advance (never past `Eof`).
+    pub fn bump(&mut self) -> Token<'a> {
+        let tok = self.tokens[self.pos];
+        if tok.kind != TokenKind::Eof {
+            self.pos += 1;
+        }
+        tok
+    }
+
+    pub fn at(&self, kind: TokenKind) -> bool {
+        self.peek().kind == kind
+    }
+
+    /// Whether the current token is an `Ident` whose text is exactly `name`
+    /// (contextual keywords like `specialises`).
+    pub fn at_ident(&self, name: &str) -> bool {
+        let t = self.peek();
+        t.kind == TokenKind::Ident && t.source == name
+    }
+
+    /// End offset of the most recently consumed token — used for node spans.
+    pub fn prev_end(&self) -> usize {
+        self.tokens[self.pos.saturating_sub(1)].span.end
+    }
+
+    pub fn err(&self, kind: TextParseErrorKind) -> ParseError<TextParseErrorKind> {
+        ParseError::new(self.peek().span.start, kind)
+    }
+
+    pub fn err_at(&self, at: usize, kind: TextParseErrorKind) -> ParseError<TextParseErrorKind> {
+        ParseError::new(at, kind)
+    }
+
+    pub fn expect(
+        &mut self,
+        kind: TokenKind,
+    ) -> Result<Token<'a>, ParseError<TextParseErrorKind>> {
+        if self.at(kind) {
+            Ok(self.bump())
+        } else {
+            let found = self.peek();
+            Err(self.err(TextParseErrorKind::UnexpectedToken {
+                expected: format!("{}, found {}", describe(kind), describe(found.kind)),
+            }))
+        }
+    }
+
+    pub fn expect_ident(
+        &mut self,
+        what: &str,
+    ) -> Result<String, ParseError<TextParseErrorKind>> {
+        let t = self.peek();
+        if t.kind == TokenKind::Ident {
+            self.bump();
+            Ok(t.source.to_string())
+        } else {
+            Err(self.err(TextParseErrorKind::UnexpectedToken {
+                expected: format!("{what}, found {}", describe(t.kind)),
+            }))
+        }
+    }
 }
 
 /// The tokenizer. Borrows the source for the token slices' lifetime.
