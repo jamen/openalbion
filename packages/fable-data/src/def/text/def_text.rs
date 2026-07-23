@@ -21,6 +21,7 @@ pub struct Definition {
     pub def_type: String,
     pub name: String,
     pub specializes: Option<String>,
+    pub specializes_span: Option<Span>,
     pub body: Vec<Spanned<Statement>>,
 }
 
@@ -431,8 +432,14 @@ impl<'a> DefParser<'a> {
         let name = self.expect_ident("definition name")?;
 
         let specializes = if self.at_ident("specialises") {
-            self.bump();
-            Some(self.expect_ident("specialised parent")?)
+            let spec_kw = self.bump();
+            let parent_span_start = self.peek().span.start;
+            let parent = self.expect_ident("specialised parent")?;
+            let spec_span = Span {
+                start: spec_kw.span.start,
+                end: parent_span_start + parent.len(),
+            };
+            Some((parent, spec_span))
         } else {
             None
         };
@@ -450,12 +457,16 @@ impl<'a> DefParser<'a> {
                 break end;
             }
             if is_body_terminator(tk) {
-                // A directive/keyword or EOF before `#end_definition`: the def
-                // body was never closed (§11.5 — the precise error, no
-                // skip-recovery swallowing the next def).
-                return Err(self.err(self.peek().span.start, "#end_definition"));
+                return Err(self
+                    .err(self.peek().span.start, "#end_definition")
+                    .with_def_header(def_start));
             }
-            body.push(self.parse_statement()?);
+            body.push(self.parse_statement().map_err(|e| e.with_def_header(def_start))?);
+        };
+
+        let (specializes, specializes_span) = match specializes {
+            Some((name, span)) => (Some(name), Some(span)),
+            None => (None, None),
         };
 
         Ok(Spanned {
@@ -468,6 +479,7 @@ impl<'a> DefParser<'a> {
                 def_type,
                 name,
                 specializes,
+                specializes_span,
                 body,
             },
         })

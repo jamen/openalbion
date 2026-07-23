@@ -63,11 +63,21 @@ impl LineIndex {
 #[display("{inner}")]
 pub struct ParseError<InnerError> {
     pub pos: usize,
+    pub def_header_pos: Option<usize>,
     pub inner: InnerError,
 }
 
 impl<T> ParseError<T> {
     pub(crate) fn new(pos: usize, inner: T) -> Self {
-        Self { pos, inner }
+        Self {
+            pos,
+            def_header_pos: None,
+            inner,
+        }
+    }
+
+    pub(crate) fn with_def_header(mut self, def_header_pos: usize) -> Self {
+        self.def_header_pos = Some(def_header_pos);
+        self
     }
 }

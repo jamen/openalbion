@@ -651,7 +651,9 @@ dependencies = [
 name = "fable-def-compiler"
 version = "0.1.0"
 dependencies = [
+ "codespan-reporting 0.13.1",
  "fable-data",
+ "termcolor",
 ]
 
 [[package]]
