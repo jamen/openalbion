@@ -198,9 +198,6 @@ pub enum DefParseErrorKind {
 /// already gone — and produces one AST or the file's single [`DefParseError`]
 /// (§11.2: strict, one error per file, no recovery).
 pub struct DefParser<'a> {
-    /// The full source, kept only for the temporary header bridge (§11.5, Phase
-    /// 2). Removed in Phase 3 once the header grammar parses on tokens too.
-    input: &'a str,
     tokens: Vec<Token<'a>>,
     pos: usize,
 }
@@ -227,7 +224,10 @@ fn describe(kind: TokenKind) -> &'static str {
         TokenKind::EndDefinition => "#end_definition",
         TokenKind::Define => "#define",
         TokenKind::Ifdef => "#ifdef",
+        TokenKind::Ifndef => "#ifndef",
+        TokenKind::Else => "#else",
         TokenKind::Endif => "#endif",
+        TokenKind::Pragma => "#pragma",
         TokenKind::Namespace => "namespace",
         TokenKind::Enum => "enum",
         TokenKind::Dot => ".",
@@ -261,7 +261,10 @@ fn is_body_terminator(kind: TokenKind) -> bool {
             | TokenKind::DefinitionTemplate
             | TokenKind::Define
             | TokenKind::Ifdef
+            | TokenKind::Ifndef
+            | TokenKind::Else
             | TokenKind::Endif
+            | TokenKind::Pragma
             | TokenKind::Namespace
             | TokenKind::Enum
             | TokenKind::Eof
@@ -283,11 +286,7 @@ impl<'a> DefParser<'a> {
                 source: &input[input.len()..],
             }]
         });
-        Self {
-            input,
-            tokens,
-            pos: 0,
-        }
+        Self { tokens, pos: 0 }
     }
 
     // ── Token cursor ──────────────────────────────────────────────────────────
@@ -362,15 +361,6 @@ impl<'a> DefParser<'a> {
         }
     }
 
-    /// Advance the token cursor to the first token at or after `target` bytes.
-    /// Used by the header bridge to resync after the char-based header parser
-    /// consumes a run of source.
-    fn advance_to_byte(&mut self, target: usize) {
-        while self.peek().kind != TokenKind::Eof && self.peek().span.start < target {
-            self.pos += 1;
-        }
-    }
-
     // ── Productions ───────────────────────────────────────────────────────────
 
     pub fn parse_file(&mut self) -> Result<DefFile, DefParseError> {
@@ -385,12 +375,10 @@ impl<'a> DefParser<'a> {
                     file.definitions.push(def);
                     file.by_name.insert(def_name, name_index);
                 }
-                // A file-local `enum`/`#define` declaration. (Only these two are
-                // recognized at `.def` top level, matching the pre-token parser;
-                // the Phase-2 bridge parses them with the char-based header
-                // parser and is removed in Phase 3.)
+                // A file-local `enum`/`#define` declaration at `.def` top level.
+                // Parsed on tokens by the shared header grammar (Phase 3).
                 TokenKind::Enum | TokenKind::Define => {
-                    file.headers.push(self.parse_header_item()?);
+                    file.headers.push(self.parse_header_item_on_tokens()?);
                 }
                 // Stray tokens between top-level items are skipped, as the
                 // pre-token parser did (its `skip_to_next_top_level_item` walked
@@ -405,17 +393,17 @@ impl<'a> DefParser<'a> {
         Ok(file)
     }
 
-    /// Parse one file-local header item by delegating to the char-based header
-    /// parser over the remaining input, then resyncing the token cursor past
-    /// what it consumed. (Temporary Phase-2 bridge; §11.5.)
-    fn parse_header_item(&mut self) -> Result<HeaderItem, DefParseError> {
-        let start = self.peek().span.start;
-        let mut header = HeaderParser::new(&self.input[start..]);
-        let item = header.parse_one_item().map_err(|e| {
-            self.err(start + e.pos, "enum or #define declaration")
+    /// Parse one file-local header item using the token-based header grammar
+    /// (Phase 3). Constructs a temporary [`HeaderParser`] over the remaining
+    /// tokens, parses one item, then advances the def parser's cursor by the
+    /// number of tokens consumed.
+    fn parse_header_item_on_tokens(&mut self) -> Result<HeaderItem, DefParseError> {
+        let remaining: Vec<Token<'a>> = self.tokens[self.pos..].to_vec();
+        let mut hp = HeaderParser::from_tokens(remaining);
+        let item = hp.parse_one_item().map_err(|e| {
+            self.err(e.pos, format!("enum or #define declaration: {}", e.inner))
         })?;
-        let consumed = header.consumed();
-        self.advance_to_byte(start + consumed);
+        self.pos += hp.consumed();
         Ok(item)
     }
 
@@ -721,11 +709,7 @@ impl<'a> DefParser<'a> {
 
 pub fn parse_def_file(input: &str) -> Result<DefFile, DefParseError> {
     let tokens = lex(input).map_err(lex_error_to_parse_error)?;
-    let mut parser = DefParser {
-        input,
-        tokens,
-        pos: 0,
-    };
+    let mut parser = DefParser { tokens, pos: 0 };
     parser.parse_file()
 }
 

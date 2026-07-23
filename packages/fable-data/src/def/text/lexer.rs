@@ -14,12 +14,9 @@
 //! `specialises`, `TRUE`/`FALSE`/`BTRUE`/`BFALSE`, `NULL` — stay [`TokenKind::Ident`]
 //! and are recognized by the parser/evaluator, not here.
 //!
-//! Note on the header directive family: `header.rs` also uses `#pragma`,
-//! `#ifndef`, and `#else`, which have no counterpart in the §11.3 token set
-//! (only `#define`/`#ifdef`/`#endif` do). Those are not representable as tokens
-//! here and lex to an `UnexpectedChar('#')` error; the corpus (`.def`/`.tpl`)
-//! contains none of them, and the header-grammar merge (Phase 3) owns extending
-//! the token set if needed.
+//! The full header-directive set (`#define`/`#ifdef`/`#ifndef`/`#else`/`#endif`
+//! /`#pragma`) is represented in the token set — added in Phase 3 for the
+//! header-grammar merge.
 
 use super::base::Span;
 use derive_more::{Display, Error};
@@ -36,7 +33,10 @@ pub enum TokenKind {
     EndDefinition, // def directives (flat)
     Define,
     Ifdef,
+    Ifndef,
+    Else,
     Endif,
+    Pragma,
     Namespace,
     Enum, // header directives/keywords
     Dot,
@@ -302,7 +302,10 @@ impl<'a> Lexer<'a> {
             "#end_definition" => TokenKind::EndDefinition,
             "#define" => TokenKind::Define,
             "#ifdef" => TokenKind::Ifdef,
+            "#ifndef" => TokenKind::Ifndef,
+            "#else" => TokenKind::Else,
             "#endif" => TokenKind::Endif,
+            "#pragma" => TokenKind::Pragma,
             _ => {
                 return Err(LexError {
                     kind: LexErrorKind::UnexpectedChar('#'),
@@ -536,7 +539,10 @@ mod tests {
     fn header_directives() {
         assert_eq!(kinds("#define"), vec![Define]);
         assert_eq!(kinds("#ifdef"), vec![Ifdef]);
+        assert_eq!(kinds("#ifndef"), vec![Ifndef]);
+        assert_eq!(kinds("#else"), vec![Else]);
         assert_eq!(kinds("#endif"), vec![Endif]);
+        assert_eq!(kinds("#pragma"), vec![Pragma]);
     }
 
     #[test]
@@ -549,10 +555,7 @@ mod tests {
 
     #[test]
     fn unknown_directive_errors() {
-        // `#else`/`#ifndef`/`#pragma` have no §11.3 token; they error on `#`.
-        for d in ["#else", "#ifndef", "#pragma", "#definitionX"] {
-            assert_eq!(lex_err(d), LexErrorKind::UnexpectedChar('#'), "{d}");
-        }
+        assert_eq!(lex_err("#definitionX"), LexErrorKind::UnexpectedChar('#'));
     }
 
     // --- header operators -----------------------------------------------------

@@ -62,7 +62,8 @@ impl SymbolTable {
                 Ok(())
             }
             I::IfDef(ifdef) => {
-                let branch = if self.is_defined(&ifdef.condition) {
+                let taken = self.is_defined(&ifdef.condition) ^ ifdef.inverted;
+                let branch = if taken {
                     &ifdef.if_branch
                 } else {
                     ifdef.else_branch.as_deref().unwrap_or(&[])
