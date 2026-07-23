@@ -1,7 +1,7 @@
 use crate::{
     bytes::{TakeError, UnexpectedEnd, put, put_bytes, take, take_bytes},
     def::binary::{
-        control::{ParseControlError, SerializeControlError, SerializeControlErrorReason},
+        control::{ParseControlError, SerializeControlError},
         names::{Names, NamesEntry},
     },
 };

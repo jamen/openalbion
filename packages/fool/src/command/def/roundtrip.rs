@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::Parser;
 use fable_data::def::binary::{
-    def_binary::{DefBinary, DefBody},
+    def_binary::DefBinary,
     names::Names,
 };
 use std::{collections::BTreeMap, path::PathBuf};
