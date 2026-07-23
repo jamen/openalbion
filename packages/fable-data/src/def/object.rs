@@ -123,8 +123,7 @@ fn expr_to_string(expr: &Spanned<Expr>) -> String {
     match &expr.value {
         Expr::String(s) => s.clone(),
         Expr::Symbol(s) => s.clone(),
-        Expr::Integer(n) => n.to_string(),
-        Expr::Float(x) => x.to_string(),
+        Expr::Number(s) => s.clone(),
         Expr::Bool(b) => {
             if *b {
                 "TRUE".into()

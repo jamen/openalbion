@@ -70,10 +70,6 @@ impl<T> ParseError<T> {
     pub(crate) fn new(pos: usize, inner: T) -> Self {
         Self { pos, inner }
     }
-    pub(crate) fn with_pos(mut self, pos: usize) -> Self {
-        self.pos = pos;
-        self
-    }
 }
 
 pub(crate) struct ParserBase<'a> {

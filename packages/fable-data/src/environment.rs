@@ -224,10 +224,10 @@ impl EnvironmentConfig {
             ] = segments.as_slice()
                 && field_name == "Time"
             {
-                let Expr::Integer(idx) = idx_expr.value else {
+                let Some(idx) = idx_expr.value.as_i32() else {
                     continue;
                 };
-                let keyframe = keyframes_map.entry(idx as i32).or_default();
+                let keyframe = keyframes_map.entry(idx).or_default();
                 Self::set_keyframe_property(keyframe, prop, &field.expr);
             }
         }
@@ -242,11 +242,11 @@ impl EnvironmentConfig {
 
     fn set_keyframe_property(keyframe: &mut TimeKeyframe, prop: &str, expr: &Spanned<Expr>) {
         match prop {
-            "TimeOfDay" => match &expr.value {
-                Expr::Float(f) => keyframe.time_of_day = *f,
-                Expr::Integer(i) => keyframe.time_of_day = *i as f32,
-                _ => {}
-            },
+            "TimeOfDay" => {
+                if let Some(v) = expr.value.as_f32() {
+                    keyframe.time_of_day = v;
+                }
+            }
             "SkyTexture0" => {
                 if let Expr::Symbol(s) = &expr.value {
                     keyframe.sky_texture0 = Some(s.clone());
@@ -257,26 +257,26 @@ impl EnvironmentConfig {
                     keyframe.sky_texture1 = Some(s.clone());
                 }
             }
-            "SkyTexture1Blend" => match &expr.value {
-                Expr::Float(f) => keyframe.sky_texture1_blend = *f,
-                Expr::Integer(i) => keyframe.sky_texture1_blend = *i as f32,
-                _ => {}
-            },
+            "SkyTexture1Blend" => {
+                if let Some(v) = expr.value.as_f32() {
+                    keyframe.sky_texture1_blend = v;
+                }
+            }
             "MoonLit" => {
                 if let Expr::Bool(b) = &expr.value {
                     keyframe.moon_lit = *b;
                 }
             }
-            "FogStartZ" => match &expr.value {
-                Expr::Float(f) => keyframe.fog_start_z = *f,
-                Expr::Integer(i) => keyframe.fog_start_z = *i as f32,
-                _ => {}
-            },
-            "FogEndZ" => match &expr.value {
-                Expr::Float(f) => keyframe.fog_end_z = *f,
-                Expr::Integer(i) => keyframe.fog_end_z = *i as f32,
-                _ => {}
-            },
+            "FogStartZ" => {
+                if let Some(v) = expr.value.as_f32() {
+                    keyframe.fog_start_z = v;
+                }
+            }
+            "FogEndZ" => {
+                if let Some(v) = expr.value.as_f32() {
+                    keyframe.fog_end_z = v;
+                }
+            }
             _ => {}
         }
     }

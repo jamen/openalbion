@@ -1,5 +1,6 @@
-use super::base::{ConsumeCharError, ParseError, ParserBase, SkipTriviaError, Span, Spanned};
+use super::base::{ParseError, Span, Spanned};
 use super::header::{HeaderItem, HeaderParser};
+use super::lexer::{LexError, LexErrorKind, Token, TokenKind, lex};
 use derive_more::Display;
 use std::collections::HashMap;
 
@@ -81,8 +82,7 @@ impl std::fmt::Display for PropertyPath {
 impl std::fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expr::Integer(n) => write!(f, "{n}"),
-            Expr::Float(x) => write!(f, "{x}"),
+            Expr::Number(s) => f.write_str(s),
             Expr::Bool(b) => f.write_str(if *b { "TRUE" } else { "FALSE" }),
             Expr::String(s) => write!(f, "\"{s}\""),
             Expr::Symbol(s) => f.write_str(s),
@@ -125,8 +125,11 @@ pub enum PathSegment {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Integer(i64),
-    Float(f32),
+    /// A numeric literal, kept as its raw source slice (optional leading `-`,
+    /// digits, optional `.frac`, optional trailing `f`). Interpretation — int
+    /// vs float, truncation, range — is deferred to evaluation (§11.2), where it
+    /// is type-specific per field. Use [`number_is_float`] to classify the shape.
+    Number(String),
     Bool(bool),
     String(String),
     Symbol(String),
@@ -135,220 +138,338 @@ pub enum Expr {
     Add(Vec<Spanned<Expr>>),
 }
 
+/// Whether a [`Expr::Number`] literal is float-shaped — it contains a `.` or a
+/// trailing `f` — mirroring the old parser's int-vs-float split (`has_dot ||
+/// has_f_suffix`). Integer-shaped literals parse as integers; float-shaped ones
+/// parse as `f32` (after stripping the `f`).
+pub fn number_is_float(s: &str) -> bool {
+    s.contains('.') || s.ends_with('f')
+}
+
+impl Expr {
+    /// Interpret a numeric literal as `i32` the way the pre-token parser's
+    /// `Expr::Integer(i64)` arm did — integer-shaped only, truncating `i64` →
+    /// `i32`. Float-shaped literals and non-numbers yield `None`. (Used by the
+    /// sky-keyframe reader for `Time[idx]` indices, which only accepted integer
+    /// literals.)
+    pub fn as_i32(&self) -> Option<i32> {
+        match self {
+            Expr::Number(s) if !number_is_float(s) => s.parse::<i64>().ok().map(|n| n as i32),
+            _ => None,
+        }
+    }
+
+    /// Interpret a numeric literal as `f32`, matching the pre-token parser's
+    /// keyframe-property arms (`Float(f) => f`, `Integer(i) => i as f32`).
+    /// Non-numbers yield `None`.
+    pub fn as_f32(&self) -> Option<f32> {
+        match self {
+            Expr::Number(s) if number_is_float(s) => s.trim_end_matches('f').parse::<f32>().ok(),
+            Expr::Number(s) => s.parse::<i64>().ok().map(|n| n as f32),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Call {
     pub name: String,
     pub arguments: Vec<Spanned<Expr>>,
 }
 
-pub struct DefParser<'a> {
-    parser: ParserBase<'a>,
-}
-
 pub type DefParseError = ParseError<DefParseErrorKind>;
 
 #[derive(Debug, Display)]
 pub enum DefParseErrorKind {
-    #[display("unexpected end of input")]
-    UnexpectedEnd,
-    #[display("unexpected character {_0}")]
-    UnexpectedChar(char),
-    #[display("consume char error: {_0}")]
-    ConsumeChar(ConsumeCharError),
-    #[display("skip trivia: {_0}")]
-    SkipTrivia(SkipTriviaError),
     #[display("expected {expected}")]
     UnexpectedToken { expected: String },
-    #[display("invalid number: {_0}")]
-    InvalidNumber(String),
+    #[display("mismatched tag: opened <{opened}>, closed <\\{closed}>")]
+    MismatchedTag { opened: String, closed: String },
     #[display("unterminated string")]
     UnterminatedString,
     #[display("unterminated block comment")]
     UnterminatedBlockComment,
-    #[display("mismatched tag: opened <{opened}>, closed <\\{closed}>")]
-    MismatchedTag { opened: String, closed: String },
+    #[display("unexpected character {_0:?}")]
+    UnexpectedChar(char),
+}
+
+/// A strict, token-based parser for the text-def grammar (§11.5). It walks the
+/// flat [`Token`] stream produced by [`lex`] — trivia and banner lines are
+/// already gone — and produces one AST or the file's single [`DefParseError`]
+/// (§11.2: strict, one error per file, no recovery).
+pub struct DefParser<'a> {
+    /// The full source, kept only for the temporary header bridge (§11.5, Phase
+    /// 2). Removed in Phase 3 once the header grammar parses on tokens too.
+    input: &'a str,
+    tokens: Vec<Token<'a>>,
+    pos: usize,
+}
+
+/// Map a [`LexError`] onto the file's single [`DefParseError`]: a lex failure is
+/// this file's parse error, rendered like any other (§11.5).
+fn lex_error_to_parse_error(e: LexError) -> DefParseError {
+    let kind = match e.kind {
+        LexErrorKind::UnterminatedString => DefParseErrorKind::UnterminatedString,
+        LexErrorKind::UnterminatedBlockComment => DefParseErrorKind::UnterminatedBlockComment,
+        LexErrorKind::UnexpectedChar(c) => DefParseErrorKind::UnexpectedChar(c),
+    };
+    DefParseError::new(e.span.start, kind)
+}
+
+/// A short human name for a token kind, for "expected …, found …" messages.
+fn describe(kind: TokenKind) -> &'static str {
+    match kind {
+        TokenKind::Ident => "identifier",
+        TokenKind::Number => "number",
+        TokenKind::Str => "string",
+        TokenKind::Definition => "#definition",
+        TokenKind::DefinitionTemplate => "#definition_template",
+        TokenKind::EndDefinition => "#end_definition",
+        TokenKind::Define => "#define",
+        TokenKind::Ifdef => "#ifdef",
+        TokenKind::Endif => "#endif",
+        TokenKind::Namespace => "namespace",
+        TokenKind::Enum => "enum",
+        TokenKind::Dot => ".",
+        TokenKind::LBracket => "[",
+        TokenKind::RBracket => "]",
+        TokenKind::LParen => "(",
+        TokenKind::RParen => ")",
+        TokenKind::LBrace => "{",
+        TokenKind::RBrace => "}",
+        TokenKind::Lt => "<",
+        TokenKind::Gt => ">",
+        TokenKind::Backslash => "\\",
+        TokenKind::Pipe => "|",
+        TokenKind::Plus => "+",
+        TokenKind::Shl => "<<",
+        TokenKind::Eq => "=",
+        TokenKind::Comma => ",",
+        TokenKind::Semi => ";",
+        TokenKind::Eof => "end of input",
+    }
+}
+
+/// Whether `kind` can never appear inside a def body — a directive or header
+/// keyword, or EOF. Hitting one before `#end_definition` is the precise "missing
+/// `#end_definition`" error (§11.5). `EndDefinition` is *not* here: the body loop
+/// matches it first as the valid closer.
+fn is_body_terminator(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Definition
+            | TokenKind::DefinitionTemplate
+            | TokenKind::Define
+            | TokenKind::Ifdef
+            | TokenKind::Endif
+            | TokenKind::Namespace
+            | TokenKind::Enum
+            | TokenKind::Eof
+    )
 }
 
 impl<'a> DefParser<'a> {
+    /// Lex `input` and build a parser over its tokens. On a lex error the stream
+    /// is a lone `Eof`, so [`parse_expr`](Self::parse_expr) fails cleanly; use
+    /// [`parse_def_file`] when the lex error must be surfaced.
     pub fn new(input: &'a str) -> Self {
+        let tokens = lex(input).unwrap_or_else(|_| {
+            vec![Token {
+                kind: TokenKind::Eof,
+                span: Span {
+                    start: input.len(),
+                    end: input.len(),
+                },
+                source: &input[input.len()..],
+            }]
+        });
         Self {
-            parser: ParserBase::new(input),
+            input,
+            tokens,
+            pos: 0,
         }
     }
 
-    fn input(&self) -> &str {
-        self.parser.input()
-    }
-    fn pos(&self) -> usize {
-        self.parser.pos()
-    }
-    fn advance(&mut self, add: usize) {
-        self.parser.advance(add);
-    }
-    fn seek_to(&mut self, pos: usize) {
-        self.parser.seek_to(pos);
-    }
-    fn rest(&self) -> &str {
-        self.parser.rest()
-    }
-    fn is_eof(&self) -> bool {
-        self.parser.is_eof()
-    }
-    fn peek_char(&self) -> Option<char> {
-        self.parser.peek_char()
-    }
-    fn peek_char_at(&self, offset: usize) -> Option<char> {
-        self.parser.peek_char_at(offset)
+    // ── Token cursor ──────────────────────────────────────────────────────────
+
+    /// The current token. Always valid: the stream ends in exactly one `Eof` and
+    /// [`bump`](Self::bump) never advances past it.
+    fn peek(&self) -> Token<'a> {
+        self.tokens[self.pos]
     }
 
-    fn consume_char(&mut self, expected: char) -> Result<(), DefParseError> {
-        self.parser
-            .consume_char(expected)
-            .map_err(|e| DefParseError::new(e.pos, DefParseErrorKind::ConsumeChar(e.inner)))
+    /// The token `n` ahead, saturating at the trailing `Eof`.
+    fn peek_at(&self, n: usize) -> Token<'a> {
+        *self
+            .tokens
+            .get(self.pos + n)
+            .unwrap_or_else(|| self.tokens.last().expect("stream ends in Eof"))
     }
 
-    fn skip_trivia(&mut self) -> Result<(), DefParseError> {
-        self.parser
-            .skip_trivia()
-            .map_err(|e| DefParseError::new(e.pos, DefParseErrorKind::SkipTrivia(e.inner)))
+    /// Return the current token and advance (never past `Eof`).
+    fn bump(&mut self) -> Token<'a> {
+        let tok = self.tokens[self.pos];
+        if tok.kind != TokenKind::Eof {
+            self.pos += 1;
+        }
+        tok
     }
 
-    fn try_consume(&mut self, s: &str) -> bool {
-        self.parser.try_consume(s)
+    fn at(&self, kind: TokenKind) -> bool {
+        self.peek().kind == kind
     }
-    fn err(&self, inner: DefParseErrorKind) -> ParseError<DefParseErrorKind> {
-        ParseError::new(self.pos(), inner)
-    }
-}
 
-impl<'a> DefParser<'a> {
+    /// Whether the current token is an `Ident` whose text is exactly `name`
+    /// (contextual keywords like `specialises`).
+    fn at_ident(&self, name: &str) -> bool {
+        let t = self.peek();
+        t.kind == TokenKind::Ident && t.source == name
+    }
+
+    /// End offset of the most recently consumed token — used for node spans.
+    fn prev_end(&self) -> usize {
+        self.tokens[self.pos.saturating_sub(1)].span.end
+    }
+
+    fn err(&self, at: usize, expected: impl Into<String>) -> DefParseError {
+        DefParseError::new(
+            at,
+            DefParseErrorKind::UnexpectedToken {
+                expected: expected.into(),
+            },
+        )
+    }
+
+    fn expect(&mut self, kind: TokenKind) -> Result<Token<'a>, DefParseError> {
+        if self.at(kind) {
+            Ok(self.bump())
+        } else {
+            let found = self.peek();
+            Err(self.err(
+                found.span.start,
+                format!("{}, found {}", describe(kind), describe(found.kind)),
+            ))
+        }
+    }
+
+    fn expect_ident(&mut self, what: &str) -> Result<String, DefParseError> {
+        let t = self.peek();
+        if t.kind == TokenKind::Ident {
+            self.bump();
+            Ok(t.source.to_string())
+        } else {
+            Err(self.err(t.span.start, format!("{what}, found {}", describe(t.kind))))
+        }
+    }
+
+    /// Advance the token cursor to the first token at or after `target` bytes.
+    /// Used by the header bridge to resync after the char-based header parser
+    /// consumes a run of source.
+    fn advance_to_byte(&mut self, target: usize) {
+        while self.peek().kind != TokenKind::Eof && self.peek().span.start < target {
+            self.pos += 1;
+        }
+    }
+
+    // ── Productions ───────────────────────────────────────────────────────────
+
     pub fn parse_file(&mut self) -> Result<DefFile, DefParseError> {
         let mut file = DefFile::default();
-        while self.skip_to_next_top_level_item() {
-            if self.at_definition_keyword() {
-                let def = self.parse_definition()?;
-                let name_index = file.definitions.len();
-                let def_name = def.value.name.clone();
-                file.definitions.push(def);
-                file.by_name.insert(def_name, name_index);
-            } else {
-                // A file-local `enum`/`#define` declaration.
-                file.headers.push(self.parse_header_item()?);
+        loop {
+            match self.peek().kind {
+                TokenKind::Eof => break,
+                TokenKind::Definition | TokenKind::DefinitionTemplate => {
+                    let def = self.parse_definition()?;
+                    let name_index = file.definitions.len();
+                    let def_name = def.value.name.clone();
+                    file.definitions.push(def);
+                    file.by_name.insert(def_name, name_index);
+                }
+                // A file-local `enum`/`#define` declaration. (Only these two are
+                // recognized at `.def` top level, matching the pre-token parser;
+                // the Phase-2 bridge parses them with the char-based header
+                // parser and is removed in Phase 3.)
+                TokenKind::Enum | TokenKind::Define => {
+                    file.headers.push(self.parse_header_item()?);
+                }
+                // Stray tokens between top-level items are skipped, as the
+                // pre-token parser did (its `skip_to_next_top_level_item` walked
+                // over anything up to the next `#definition`/`enum`/`#define`).
+                // This is not body-recovery — the strict body loop still errors
+                // on a missing `#end_definition`.
+                _ => {
+                    self.bump();
+                }
             }
         }
         Ok(file)
     }
 
-    /// Advance to the next top-level item — a definition or a file-local
-    /// `enum`/`#define` — returning `false` at end of input.
-    fn skip_to_next_top_level_item(&mut self) -> bool {
-        loop {
-            // Skip whitespace, `//` line comments, and `/* */` block comments
-            // so that definitions inside block comments aren't parsed.
-            let _ = self.skip_trivia();
-            if self.is_eof() {
-                return false;
-            }
-            if self.at_definition_keyword() || self.at_header_item_keyword() {
-                return true;
-            }
-            match self.peek_char() {
-                Some(c) => self.advance(c.len_utf8()),
-                None => return false,
-            }
-        }
-    }
-
-    fn at_definition_keyword(&self) -> bool {
-        let rest = self.rest();
-        let after = rest
-            .strip_prefix("#definition_template")
-            .or_else(|| rest.strip_prefix("#definition"));
-        after.is_some_and(|s| s.chars().next().is_some_and(|c| c.is_whitespace()))
-    }
-
-    /// Whether the cursor is at a file-local header declaration (`enum …` or
-    /// `#define …`).
-    fn at_header_item_keyword(&self) -> bool {
-        let rest = self.rest();
-        rest.strip_prefix("enum")
-            .is_some_and(|s| s.starts_with(|c: char| c.is_whitespace() || c == '{'))
-            || rest
-                .strip_prefix("#define")
-                .is_some_and(|s| s.starts_with(char::is_whitespace))
-    }
-
-    /// Parse one file-local header item by delegating to the header parser over
-    /// the remaining input, then advancing past what it consumed.
+    /// Parse one file-local header item by delegating to the char-based header
+    /// parser over the remaining input, then resyncing the token cursor past
+    /// what it consumed. (Temporary Phase-2 bridge; §11.5.)
     fn parse_header_item(&mut self) -> Result<HeaderItem, DefParseError> {
-        let start = self.pos();
-        let mut header = HeaderParser::new(&self.input()[start..]);
+        let start = self.peek().span.start;
+        let mut header = HeaderParser::new(&self.input[start..]);
         let item = header.parse_one_item().map_err(|e| {
-            DefParseError::new(
-                start + e.pos,
-                DefParseErrorKind::UnexpectedToken {
-                    expected: "enum or #define declaration".into(),
-                },
-            )
+            self.err(start + e.pos, "enum or #define declaration")
         })?;
-        self.advance(header.consumed());
+        let consumed = header.consumed();
+        self.advance_to_byte(start + consumed);
         Ok(item)
     }
 
     fn parse_definition(&mut self) -> Result<Spanned<Definition>, DefParseError> {
-        let def_start = self.pos();
-        let is_template = if self.try_consume("#definition_template") {
-            true
-        } else if self.try_consume("#definition") {
-            false
-        } else {
-            return Err(self.err(DefParseErrorKind::UnexpectedToken {
-                expected: "#definition or #definition_template".into(),
-            }));
+        let header_tok = self.peek();
+        let def_start = header_tok.span.start;
+        let is_template = match header_tok.kind {
+            TokenKind::DefinitionTemplate => {
+                self.bump();
+                true
+            }
+            TokenKind::Definition => {
+                self.bump();
+                false
+            }
+            _ => {
+                return Err(self.err(
+                    header_tok.span.start,
+                    "#definition or #definition_template",
+                ));
+            }
         };
 
-        self.skip_trivia()?;
-        let def_type = self.parse_identifier()?;
-        self.skip_trivia()?;
-        let name = self.parse_identifier()?;
-        self.skip_trivia()?;
+        let def_type = self.expect_ident("definition type")?;
+        let name = self.expect_ident("definition name")?;
 
-        let specializes = if self.try_consume("specialises") {
-            self.skip_trivia()?;
-            Some(self.parse_identifier()?)
+        let specializes = if self.at_ident("specialises") {
+            self.bump();
+            Some(self.expect_ident("specialised parent")?)
         } else {
             None
         };
 
         let mut body = Vec::new();
-        loop {
-            self.skip_trivia()?;
-            if self.try_consume("#end_definition") {
-                let _ = self.try_consume(";");
-                break;
-            }
-            if self.is_eof() {
-                return Err(self.err(DefParseErrorKind::UnexpectedToken {
-                    expected: "#end_definition".into(),
-                }));
-            }
-            match self.parse_statement() {
-                Ok(statement) => body.push(statement),
-                // The original compiler tolerated malformed statements (the
-                // retail bins contain defs whose text has stray tokens) —
-                // skip the rest of the line and carry on.
-                Err(_) => {
-                    while let Some(c) = self.peek_char() {
-                        self.advance(c.len_utf8());
-                        if c == '\n' {
-                            break;
-                        }
-                    }
+        let def_end = loop {
+            let tk = self.peek().kind;
+            if tk == TokenKind::EndDefinition {
+                let mut end = self.bump().span.end;
+                // The pre-token parser tolerated a trailing `;` after
+                // `#end_definition` (an optional terminator, a clean rule).
+                if self.at(TokenKind::Semi) {
+                    end = self.bump().span.end;
                 }
+                break end;
             }
-        }
+            if is_body_terminator(tk) {
+                // A directive/keyword or EOF before `#end_definition`: the def
+                // body was never closed (§11.5 — the precise error, no
+                // skip-recovery swallowing the next def).
+                return Err(self.err(self.peek().span.start, "#end_definition"));
+            }
+            body.push(self.parse_statement()?);
+        };
 
-        let def_end = self.pos();
         Ok(Spanned {
             span: Span {
                 start: def_start,
@@ -365,77 +486,79 @@ impl<'a> DefParser<'a> {
     }
 
     fn parse_statement(&mut self) -> Result<Spanned<Statement>, DefParseError> {
-        let stmt_start = self.pos();
-        self.skip_trivia()?;
-        if self.peek_char() == Some('<') && self.peek_char_at(1) != Some('\\') {
+        let stmt_start = self.peek().span.start;
+
+        // Tagged block: `<` not followed by `\` (a `<\` opens a *close* tag).
+        if self.at(TokenKind::Lt) && self.peek_at(1).kind != TokenKind::Backslash {
             let tb = self.parse_tagged_block()?;
-            let end = self.pos();
             return Ok(Spanned {
                 span: Span {
                     start: stmt_start,
-                    end,
+                    end: self.prev_end(),
                 },
                 value: Statement::TaggedBlock(tb),
             });
         }
+
         let path = self.parse_property_path()?;
-        self.skip_trivia()?;
-        if self.peek_char() == Some('(') {
+
+        // Method call: the path is followed by an argument list.
+        if self.at(TokenKind::LParen) {
             let (object, method) = self.split_method_path(path)?;
             let call = self.parse_call_with_name(method)?;
-            self.skip_trivia()?;
-            // The original compiler tolerated a missing statement ';'.
-            let _ = self.try_consume(";");
-            let stmt_end = self.pos();
+            if self.at(TokenKind::Semi) {
+                self.bump();
+            }
             return Ok(Spanned {
                 span: Span {
                     start: stmt_start,
-                    end: stmt_end,
+                    end: self.prev_end(),
                 },
                 value: Statement::MethodCall(MethodCall { object, call }),
             });
         }
-        let value = self.parse_expr()?;
-        self.skip_trivia()?;
-        // The original compiler tolerated a missing statement ';'.
-        let _ = self.try_consume(";");
-        let stmt_end = self.pos();
+
+        // Field assignment: `path expr`.
+        let expr = self.parse_expr()?;
+        if self.at(TokenKind::Semi) {
+            self.bump();
+        }
         Ok(Spanned {
             span: Span {
                 start: stmt_start,
-                end: stmt_end,
+                end: self.prev_end(),
             },
-            value: Statement::Field(Field {
-                path,
-                expr: value,
-            }),
+            value: Statement::Field(Field { path, expr }),
         })
     }
 
     fn parse_tagged_block(&mut self) -> Result<TaggedBlock, DefParseError> {
-        self.consume_char('<')?;
-        let tag = self.parse_identifier()?;
-        self.consume_char('>')?;
+        self.expect(TokenKind::Lt)?;
+        let tag = self.expect_ident("tag name")?;
+        self.expect(TokenKind::Gt)?;
         let mut body = Vec::new();
         loop {
-            self.skip_trivia()?;
-            if self.peek_char() == Some('<') && self.peek_char_at(1) == Some('\\') {
-                self.consume_char('<')?;
-                self.consume_char('\\')?;
-                let close_tag = self.parse_identifier()?;
-                self.consume_char('>')?;
+            let tk = self.peek().kind;
+            if tk == TokenKind::Lt && self.peek_at(1).kind == TokenKind::Backslash {
+                self.bump(); // `<`
+                self.bump(); // `\`
+                let close_tag = self.expect_ident("closing tag name")?;
+                self.expect(TokenKind::Gt)?;
                 if close_tag != tag {
-                    return Err(self.err(DefParseErrorKind::MismatchedTag {
-                        opened: tag,
-                        closed: close_tag,
-                    }));
+                    return Err(DefParseError::new(
+                        self.prev_end(),
+                        DefParseErrorKind::MismatchedTag {
+                            opened: tag,
+                            closed: close_tag,
+                        },
+                    ));
                 }
                 break;
             }
-            if self.is_eof() {
-                return Err(self.err(DefParseErrorKind::UnexpectedToken {
-                    expected: format!("<\\{}>", tag),
-                }));
+            // A directive/keyword, EOF, or `#end_definition` inside the block
+            // means it was never closed (§11.5, strict).
+            if is_body_terminator(tk) || tk == TokenKind::EndDefinition {
+                return Err(self.err(self.peek().span.start, format!("<\\{tag}>")));
             }
             body.push(self.parse_statement()?);
         }
@@ -443,20 +566,15 @@ impl<'a> DefParser<'a> {
     }
 
     fn parse_property_path(&mut self) -> Result<PropertyPath, DefParseError> {
-        let mut segments = Vec::new();
-        let first = self.parse_identifier()?;
-        segments.push(PathSegment::Field(first));
+        let mut segments = vec![PathSegment::Field(self.expect_ident("field name")?)];
         loop {
-            if self.peek_char() == Some('.') {
-                self.consume_char('.')?;
-                let field = self.parse_identifier()?;
-                segments.push(PathSegment::Field(field));
-            } else if self.peek_char() == Some('[') {
-                self.consume_char('[')?;
-                self.skip_trivia()?;
+            if self.at(TokenKind::Dot) {
+                self.bump();
+                segments.push(PathSegment::Field(self.expect_ident("field name")?));
+            } else if self.at(TokenKind::LBracket) {
+                self.bump();
                 let idx = self.parse_expr()?;
-                self.skip_trivia()?;
-                self.consume_char(']')?;
+                self.expect(TokenKind::RBracket)?;
                 segments.push(PathSegment::Index(idx));
             } else {
                 break;
@@ -473,9 +591,7 @@ impl<'a> DefParser<'a> {
         if let Some(PathSegment::Field(method)) = segments.pop() {
             Ok((PropertyPath { segments }, method))
         } else {
-            Err(self.err(DefParseErrorKind::UnexpectedToken {
-                expected: "method name".into(),
-            }))
+            Err(self.err(self.peek().span.start, "method name"))
         }
     }
 
@@ -484,229 +600,132 @@ impl<'a> DefParser<'a> {
     }
 
     fn parse_bitor_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        let start = self.pos();
+        let start = self.peek().span.start;
         let first = self.parse_add_expr()?;
         let mut terms = vec![first];
-        self.skip_trivia()?;
-        while self.try_consume("|") {
-            self.skip_trivia()?;
+        while self.at(TokenKind::Pipe) {
+            self.bump();
             terms.push(self.parse_add_expr()?);
-            self.skip_trivia()?;
         }
-        let end = self.pos();
         if terms.len() == 1 {
             Ok(terms.pop().unwrap())
         } else {
             Ok(Spanned {
-                span: Span { start, end },
+                span: Span {
+                    start,
+                    end: self.prev_end(),
+                },
                 value: Expr::BitOr(terms),
             })
         }
     }
 
     fn parse_add_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        let start = self.pos();
+        let start = self.peek().span.start;
         let first = self.parse_leaf_expr()?;
         let mut terms = vec![first];
-        self.skip_trivia()?;
-        while self.try_consume("+") {
-            self.skip_trivia()?;
+        while self.at(TokenKind::Plus) {
+            self.bump();
             terms.push(self.parse_leaf_expr()?);
-            self.skip_trivia()?;
         }
-        let end = self.pos();
         if terms.len() == 1 {
             Ok(terms.pop().unwrap())
         } else {
             Ok(Spanned {
-                span: Span { start, end },
+                span: Span {
+                    start,
+                    end: self.prev_end(),
+                },
                 value: Expr::Add(terms),
             })
         }
     }
 
     fn parse_leaf_expr(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        self.skip_trivia()?;
-        if self.peek_char() == Some('"') {
-            let start = self.pos();
-            let s = self.parse_string()?;
-            let end = self.pos();
-            return Ok(Spanned {
-                span: Span { start, end },
-                value: Expr::String(s),
-            });
+        let tok = self.peek();
+        match tok.kind {
+            TokenKind::Str => {
+                self.bump();
+                // The lexer guarantees a closing quote (unterminated → lex
+                // error), so both quotes are present to strip.
+                let unquoted = tok.source[1..tok.source.len() - 1].to_string();
+                Ok(Spanned {
+                    span: tok.span,
+                    value: Expr::String(unquoted),
+                })
+            }
+            TokenKind::Number => {
+                self.bump();
+                Ok(Spanned {
+                    span: tok.span,
+                    value: Expr::Number(tok.source.to_string()),
+                })
+            }
+            TokenKind::Ident => {
+                self.bump();
+                match tok.source {
+                    "TRUE" | "BTRUE" => Ok(Spanned {
+                        span: tok.span,
+                        value: Expr::Bool(true),
+                    }),
+                    "FALSE" | "BFALSE" => Ok(Spanned {
+                        span: tok.span,
+                        value: Expr::Bool(false),
+                    }),
+                    ident => {
+                        if self.at(TokenKind::LParen) {
+                            let call = self.parse_call_with_name(ident.to_string())?;
+                            Ok(Spanned {
+                                span: Span {
+                                    start: tok.span.start,
+                                    end: self.prev_end(),
+                                },
+                                value: Expr::Constructor(call),
+                            })
+                        } else {
+                            Ok(Spanned {
+                                span: tok.span,
+                                value: Expr::Symbol(ident.to_string()),
+                            })
+                        }
+                    }
+                }
+            }
+            _ => Err(self.err(tok.span.start, format!("expression, found {}", describe(tok.kind)))),
         }
-        let p0 = self.peek_char();
-        let next_is_digit = p0.is_some_and(|c| c.is_ascii_digit());
-        let neg_then_digit =
-            p0 == Some('-') && self.peek_char_at(1).is_some_and(|c| c.is_ascii_digit());
-        if next_is_digit || neg_then_digit {
-            return self.parse_number();
-        }
-        let ident_start = self.pos();
-        let ident = self.parse_identifier()?;
-        let ident_end = self.pos();
-        if ident == "TRUE" || ident == "BTRUE" {
-            return Ok(Spanned {
-                span: Span {
-                    start: ident_start,
-                    end: ident_end,
-                },
-                value: Expr::Bool(true),
-            });
-        }
-        if ident == "FALSE" || ident == "BFALSE" {
-            return Ok(Spanned {
-                span: Span {
-                    start: ident_start,
-                    end: ident_end,
-                },
-                value: Expr::Bool(false),
-            });
-        }
-        self.skip_trivia()?;
-        if self.peek_char() == Some('(') {
-            let call = self.parse_call_with_name(ident)?;
-            let end = self.pos();
-            return Ok(Spanned {
-                span: Span {
-                    start: ident_start,
-                    end,
-                },
-                value: Expr::Constructor(call),
-            });
-        }
-        Ok(Spanned {
-            span: Span {
-                start: ident_start,
-                end: ident_end,
-            },
-            value: Expr::Symbol(ident),
-        })
     }
 
     fn parse_call_with_name(&mut self, name: String) -> Result<Call, DefParseError> {
-        self.consume_char('(')?;
+        self.expect(TokenKind::LParen)?;
         let arguments = self.parse_arguments()?;
-        self.consume_char(')')?;
+        self.expect(TokenKind::RParen)?;
         Ok(Call { name, arguments })
     }
 
     fn parse_arguments(&mut self) -> Result<Vec<Spanned<Expr>>, DefParseError> {
         let mut args = Vec::new();
-        self.skip_trivia()?;
-        if self.peek_char() == Some(')') {
+        if self.at(TokenKind::RParen) {
             return Ok(args);
         }
         loop {
-            self.skip_trivia()?;
             args.push(self.parse_expr()?);
-            self.skip_trivia()?;
-            if self.try_consume(",") {
-                continue;
+            if self.at(TokenKind::Comma) {
+                self.bump();
             } else {
                 break;
             }
         }
         Ok(args)
     }
-
-    fn parse_number(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        let start = self.pos();
-        match self.parse_number_inner() {
-            Ok(x) => Ok(x),
-            Err(e) => {
-                self.seek_to(start);
-                Err(e.with_pos(start))
-            }
-        }
-    }
-
-    fn parse_number_inner(&mut self) -> Result<Spanned<Expr>, DefParseError> {
-        let start = self.pos();
-        let mut has_dot = false;
-        let mut has_f_suffix = false;
-        if self.peek_char() == Some('-') {
-            self.advance(1);
-        }
-        while self.peek_char().map(|c| c.is_ascii_digit()) == Some(true) {
-            self.advance(1);
-        }
-        if self.peek_char() == Some('.') {
-            has_dot = true;
-            self.advance(1);
-            while self.peek_char().map(|c| c.is_ascii_digit()) == Some(true) {
-                self.advance(1);
-            }
-        }
-        if self.peek_char() == Some('f') {
-            has_f_suffix = true;
-            self.advance(1);
-        }
-        let text = self.input();
-        let text = &text[start..self.pos()];
-        let end = self.pos();
-        if has_dot || has_f_suffix {
-            let text = text.trim_end_matches('f');
-            text.parse::<f32>()
-                .map(|val| Spanned {
-                    span: Span { start, end },
-                    value: Expr::Float(val),
-                })
-                .map_err(|_| self.err(DefParseErrorKind::InvalidNumber(text.into())))
-        } else {
-            text.parse::<i64>()
-                .map(|val| Spanned {
-                    span: Span { start, end },
-                    value: Expr::Integer(val),
-                })
-                .map_err(|_| self.err(DefParseErrorKind::InvalidNumber(text.into())))
-        }
-    }
-
-    fn parse_string(&mut self) -> Result<String, DefParseError> {
-        self.consume_char('"')?;
-        let start = self.pos();
-        while let Some(c) = self.peek_char() {
-            if c == '"' {
-                let s = self.input();
-                let s = s[start..self.pos()].to_string();
-                self.advance(1);
-                return Ok(s);
-            }
-            self.advance(c.len_utf8());
-        }
-        Err(self.err(DefParseErrorKind::UnterminatedString))
-    }
-
-    fn parse_identifier(&mut self) -> Result<String, DefParseError> {
-        let start = self.pos();
-        match self.peek_char() {
-            Some(c) if c.is_ascii_alphabetic() || c == '_' => {
-                self.advance(1);
-            }
-            Some(found) => {
-                return Err(self.err(DefParseErrorKind::ConsumeChar(
-                    ConsumeCharError::UnexpectedCharacter { found },
-                )));
-            }
-            None => return Err(self.err(DefParseErrorKind::UnexpectedEnd)),
-        }
-        while let Some(c) = self.peek_char() {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                self.advance(1);
-            } else {
-                break;
-            }
-        }
-        let s = self.input();
-        let s = s[start..self.pos()].to_string();
-        Ok(s)
-    }
 }
 
 pub fn parse_def_file(input: &str) -> Result<DefFile, DefParseError> {
-    let mut parser = DefParser::new(input);
+    let tokens = lex(input).map_err(lex_error_to_parse_error)?;
+    let mut parser = DefParser {
+        input,
+        tokens,
+        pos: 0,
+    };
     parser.parse_file()
 }
 
@@ -749,48 +768,45 @@ mod tests {
         f.path
     }
 
+    fn number(value: &str) -> String {
+        match parse_expr(value).value {
+            Expr::Number(s) => s,
+            other => panic!("expected Number, got {other:?}"),
+        }
+    }
+
+    // --- numbers stay raw (interpretation is deferred to evaluation) -----------
+
     #[test]
     fn integer() {
-        assert_eq!(parse_expr("42").value, Expr::Integer(42));
-        assert_eq!(parse_expr("42282949").value, Expr::Integer(42282949));
+        assert_eq!(number("42"), "42");
+        assert_eq!(number("42282949"), "42282949");
     }
 
     #[test]
     fn negative_integer() {
-        assert_eq!(parse_expr("-42").value, Expr::Integer(-42));
-        assert_eq!(parse_expr("-42282949").value, Expr::Integer(-42282949));
+        assert_eq!(number("-42"), "-42");
+        assert_eq!(number("-42282949"), "-42282949");
     }
 
     #[test]
-    fn float() {
-        let Expr::Float(f) = parse_expr("4.2").value else {
-            panic!()
-        };
-        assert!((f - 4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("4.2f").value else {
-            panic!()
-        };
-        assert!((f - 4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("4.").value else {
-            panic!()
-        };
-        assert_eq!(f, 4.0);
+    fn float_keeps_source() {
+        // Every float form is preserved verbatim — no `Float` node any more.
+        assert_eq!(number("4.2"), "4.2");
+        assert_eq!(number("4.2f"), "4.2f");
+        assert_eq!(number("4."), "4.");
+        assert_eq!(number("-4.2"), "-4.2");
+        assert_eq!(number("-4.2f"), "-4.2f");
+        assert_eq!(number("-4."), "-4.");
     }
 
     #[test]
-    fn negative_float() {
-        let Expr::Float(f) = parse_expr("-4.2").value else {
-            panic!()
-        };
-        assert!((f - -4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("-4.2f").value else {
-            panic!()
-        };
-        assert!((f - -4.2).abs() < f32::EPSILON);
-        let Expr::Float(f) = parse_expr("-4.").value else {
-            panic!()
-        };
-        assert_eq!(f, -4.0);
+    fn number_shape_classification() {
+        assert!(!number_is_float("42"));
+        assert!(!number_is_float("-42"));
+        assert!(number_is_float("4.2"));
+        assert!(number_is_float("4."));
+        assert!(number_is_float("4.2f"));
     }
 
     #[test]
@@ -885,7 +901,7 @@ mod tests {
         let p = parse_path("Time[0]");
         assert!(matches!(
             &p.segments[1],
-            PathSegment::Index(spanned) if spanned.value == Expr::Integer(0)
+            PathSegment::Index(spanned) if matches!(&spanned.value, Expr::Number(s) if s == "0")
         ));
     }
 
@@ -894,7 +910,7 @@ mod tests {
         let p = parse_path("Time[-1]");
         assert!(matches!(
             &p.segments[1],
-            PathSegment::Index(spanned) if spanned.value == Expr::Integer(-1)
+            PathSegment::Index(spanned) if matches!(&spanned.value, Expr::Number(s) if s == "-1")
         ));
     }
 
@@ -938,7 +954,7 @@ mod tests {
         assert!(matches!(&p.segments[0], PathSegment::Field(s) if s == "Time"));
         assert!(matches!(
             &p.segments[1],
-            PathSegment::Index(spanned) if spanned.value == Expr::Integer(0)
+            PathSegment::Index(spanned) if matches!(&spanned.value, Expr::Number(s) if s == "0")
         ));
         assert!(matches!(&p.segments[2], PathSegment::Field(s) if s == "SkyTexture0"));
     }
@@ -953,7 +969,7 @@ mod tests {
             panic!()
         };
         assert_eq!(f.path.segments.len(), 1);
-        assert!(matches!(f.expr.value, Expr::Integer(100)));
+        assert!(matches!(&f.expr.value, Expr::Number(s) if s == "100"));
     }
 
     #[test]
@@ -1055,49 +1071,66 @@ mod tests {
     }
 
     #[test]
-    fn unterminated_block_comment_recovered() {
-        // An unterminated block comment inside a statement is recovered by
-        // skipping the rest of the line; the definition still parses.
-        let def = parse_def("  Health /* never closes");
-        assert_eq!(def.value.body.len(), 0);
-    }
-
-    #[test]
-    fn err_unterminated_string() {
-        // An unterminated string consumes the rest of the file, so the
-        // definition's `#end_definition` is lost and the file errors.
-        let kind = parse_err("#definition OBJECT T\n  Name \"no close\n#end_definition");
-        assert!(matches!(kind, DefParseErrorKind::UnexpectedToken { .. }));
-    }
-
-    #[test]
-    fn mismatched_tag_recovered() {
-        // A mismatched close tag drops the malformed statement, not the def.
-        let def = parse_def("  <A>\n  <\\B>");
-        assert_eq!(def.value.body.len(), 0);
-    }
-
-    #[test]
     fn missing_semicolon_tolerated() {
-        // The original compiler tolerated a missing statement ';' (retail
-        // defs rely on it).
+        // The `;` terminator is optional (a clean grammar rule, not recovery) —
+        // the only genuine tolerance the corpus relies on (§11.1).
         let def = parse_def("  Health 100");
         assert_eq!(def.value.body.len(), 1);
     }
 
+    // --- strict errors (no recovery) -------------------------------------------
+
     #[test]
-    fn stray_tokens_recovered() {
-        // A stray fragment after a complete statement (seen in retail's
-        // building_herocentre.def) is dropped; sibling statements survive.
-        let def =
-            parse_def("  MESH_GUILD_SHOP_01 IsPartOfHeroGuild TRUE;\n  GroupDef G_REGION_GUILD;");
-        assert_eq!(def.value.body.len(), 2);
+    fn err_unterminated_block_comment() {
+        // A `/*` with real content and no closer is a lex error, surfaced as the
+        // file's single parse error (§11.2, strict — no line-skip recovery).
+        let kind = parse_err("#definition OBJECT T\n  Health /* never closes\n#end_definition");
+        assert!(matches!(kind, DefParseErrorKind::UnterminatedBlockComment));
+    }
+
+    #[test]
+    fn err_unterminated_string() {
+        let kind = parse_err("#definition OBJECT T\n  Name \"no close\n#end_definition");
+        assert!(matches!(kind, DefParseErrorKind::UnterminatedString));
+    }
+
+    #[test]
+    fn err_mismatched_tag() {
+        // A mismatched close tag is a hard error, not a dropped statement.
+        let kind = parse_err("#definition OBJECT T\n  <A>\n  <\\B>\n#end_definition");
+        assert!(matches!(kind, DefParseErrorKind::MismatchedTag { .. }));
     }
 
     #[test]
     fn err_missing_end_definition() {
         let kind = parse_err("#definition OBJECT T\n  Health 100;\n");
-        assert!(matches!(kind, DefParseErrorKind::UnexpectedToken { .. }));
+        assert!(matches!(
+            kind,
+            DefParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
+        ));
+    }
+
+    #[test]
+    fn missing_end_definition_does_not_swallow_next_def() {
+        // The regression this rearchitecture targets: a def missing its
+        // `#end_definition` must fail *precisely* on that def, not silently eat
+        // the following one. The whole file errors (strict, one error per file);
+        // the point is the error is `missing #end_definition`, anchored here.
+        let input = concat!(
+            "#definition OBJECT FIRST\n",
+            "  Health 100;\n",
+            "#definition OBJECT SECOND\n",
+            "  Health 200;\n",
+            "#end_definition\n",
+        );
+        let err = parse_def_file(input).unwrap_err();
+        assert!(matches!(
+            err.inner,
+            DefParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
+        ));
+        // The error is anchored at the second `#definition` (the token that
+        // revealed FIRST was never closed), not swallowed away.
+        assert_eq!(err.pos, input.find("#definition OBJECT SECOND").unwrap());
     }
 
     #[test]
@@ -1123,6 +1156,9 @@ mod tests {
 
     #[test]
     fn skips_between_def_junk() {
+        // The lexer strips commented-out defs and decorative banner lines
+        // (§11.4); the parser skips stray tokens between top-level items and
+        // parses the file-local `enum` via the header bridge. Two defs survive.
         let input = r#"
     //#definition OBJECT COMMENTED_OUT_NEVER_PARSED
     //   Health 999;
@@ -1130,7 +1166,7 @@ mod tests {
 
     enum EFoo { A = 1, B = 2 };
 
-    ******** banner without slashes ********
+    ****************************************
 
     #definition OBJECT FIRST
         Health 100;
@@ -1146,5 +1182,6 @@ mod tests {
         assert_eq!(file.definitions.len(), 2);
         assert_eq!(file.definitions[0].value.name, "FIRST");
         assert_eq!(file.definitions[1].value.name, "SECOND");
+        assert_eq!(file.headers.len(), 1);
     }
 }
