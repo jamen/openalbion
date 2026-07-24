@@ -8,7 +8,7 @@ use self::depth::DepthTexture;
 use self::model::ModelPass;
 pub use self::model::ModelTextureError;
 pub use self::sky::LightingColoursError;
-use self::sky::OuterSkyPass;
+use self::sky::{BaseBandPass, OuterSkyPass};
 use self::terrain::TerrainPass;
 pub use self::texture::TextureUploadError;
 use derive_more::{Display, Error};
@@ -161,6 +161,46 @@ impl<'target> Renderer<'target> {
             .update_uniforms(&self.queue, view_proj, time_of_day, sky_blend);
     }
 
+    pub fn set_base_band_texture0(
+        &mut self,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        self.passes
+            .base_band
+            .set_texture0(&self.device, &self.queue, asset_info, asset_data)
+    }
+
+    pub fn set_base_band_texture1(
+        &mut self,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        self.passes
+            .base_band
+            .set_texture1(&self.device, &self.queue, asset_info, asset_data)
+    }
+
+    pub fn set_base_band_lighting_lut(
+        &mut self,
+        tga_bytes: &[u8],
+    ) -> Result<(), LightingColoursError> {
+        self.passes
+            .base_band
+            .set_lighting_lut(&self.device, &self.queue, tga_bytes)
+    }
+
+    pub fn update_base_band_uniforms(
+        &self,
+        view_proj: [[f32; 4]; 4],
+        time_of_day: f32,
+        sky_blend: f32,
+    ) {
+        self.passes
+            .base_band
+            .update_uniforms(&self.queue, view_proj, time_of_day, sky_blend);
+    }
+
     pub fn render(&mut self) -> Result<PrePresent, SurfaceError> {
         let surface_texture = self.surface.get_current_texture()?;
 
@@ -176,6 +216,9 @@ impl<'target> Renderer<'target> {
 
         self.passes.clear.pass(&mut cmd, &surface_texture_view);
         self.passes.sky.pass(&mut cmd, &surface_texture_view);
+        self.passes
+            .base_band
+            .pass(&mut cmd, &surface_texture_view);
         self.passes
             .terrain
             .pass(&mut cmd, &surface_texture_view, self.depth_texture.view());
@@ -207,6 +250,7 @@ pub enum NewRendererError {
 pub struct RenderPasses {
     clear: ClearPass,
     sky: OuterSkyPass,
+    base_band: BaseBandPass,
     terrain: TerrainPass,
     model: ModelPass,
 }
@@ -221,6 +265,7 @@ impl RenderPasses {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, surface_format),
+            base_band: BaseBandPass::new(device, surface_format),
             terrain: TerrainPass::new(device, surface_format, depth_format),
             model: ModelPass::new(device, queue, surface_format, depth_format),
         }
