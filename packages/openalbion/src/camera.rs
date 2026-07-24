@@ -64,20 +64,8 @@ impl Camera {
     }
 
     pub fn sky_view_projection_matrix(&self) -> Mat4 {
-        let forward = self.forward();
-        let horiz = glam::Vec3::new(forward.x, 0.0, forward.z);
-        let len = horiz.length();
-        if len < 0.0001 {
-            return self.projection_matrix();
-        }
-        let horiz = horiz / len;
-        let right = glam::Vec3::new(-horiz.z, 0.0, horiz.x);
-        let rotation = Mat4::from_cols(
-            right.extend(0.0),
-            glam::Vec3::Y.extend(0.0),
-            (-horiz).extend(0.0),
-            glam::Vec3::ZERO.extend(1.0),
-        );
+        let inv_orientation = self.orientation.conjugate();
+        let rotation = Mat4::from_quat(inv_orientation);
         self.projection_matrix() * rotation
     }
 
