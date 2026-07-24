@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct EngineDef {
@@ -35,6 +36,6 @@ pub struct EngineDef {
     #[def("InvalidTextureStandin")]
     pub invalid_texture_standin: i32,
     #[def("InvalidThemeStandin")]
-    pub invalid_theme_standin: i32,
+    pub invalid_theme_standin: DefIndex,
 }
 

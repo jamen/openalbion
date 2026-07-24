@@ -1,9 +1,11 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ShopItemDef {
+    // The object being sold — a def reference, not a numeric type.
     #[def("Type")]
-    pub type_: i32,
+    pub type_: DefIndex,
     #[def("Quantity")]
     pub quantity: f32,
     #[def("PriceMultiplier", default = 1.0)]

@@ -1,14 +1,15 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::values::Vector3D;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct CarryableDef {
     #[def("ActiveCarrySlot")]
-    pub active_carry_slot: i32,
+    pub active_carry_slot: DefIndex,
     #[def("SecondaryActiveCarrySlot")]
-    pub secondary_active_carry_slot: i32,
+    pub secondary_active_carry_slot: DefIndex,
     #[def("PassiveCarrySlot")]
-    pub passive_carry_slot: i32,
+    pub passive_carry_slot: DefIndex,
     #[def("IncludeInThingScansWhenCarried")]
     pub include_in_thing_scans_when_carried: bool,
     #[def("OnKillFX")]

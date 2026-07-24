@@ -407,10 +407,10 @@ pub enum PhysicalPrimitiveInitType {
     #[def(0)]
     Tag0 {},
     #[def(1)]
-    Tag1 { base_name: i32, radius: f32 },
+    Tag1 { base_name: DefString, radius: f32 },
     #[def(2)]
     Tag2 {
-        base_name: i32,
+        base_name: DefString,
         radius: f32,
         height: f32,
     },
@@ -651,6 +651,12 @@ pub struct TextureMorphs {
 
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct SkeletalMorphsMorphsEntry {
+    // `crc` and `morph_id` are genuinely dual-typed here — `SkeletalMorphs.Add`
+    // has two forms: `Add("file.bncfg")` (filename → `crc` as a def-string) and
+    // `Add(MORPH_TYPE, "file.bncfg", idx, mirror)` (type → `crc` as a number,
+    // filename → `morph_id` as a def-string). Both stay `u32` and go through the
+    // permissive U32 container path. (A clean fix would model this in the bespoke
+    // `CHeroMorphDef` arm; noted for later.)
     pub crc: u32,
     pub morph_id: u32,
     pub bone_or_morph_index: u16,

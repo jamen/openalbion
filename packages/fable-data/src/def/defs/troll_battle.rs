@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct TrollBattleDef {
@@ -11,13 +12,13 @@ pub struct TrollBattleDef {
     #[def("PercentageChanceToUseSecondaryShotType")]
     pub percentage_chance_to_use_secondary_shot_type: f32,
     #[def("SecondaryShotType")]
-    pub secondary_shot_type: i32,
+    pub secondary_shot_type: DefIndex,
     #[def("MinLaughDistance", default = 8.0)]
     pub min_laugh_distance: f32,
     #[def("MaxTimeBetweenKnockdownAndBoast", default = 10.5)]
     pub max_time_between_knockdown_and_boast: f32,
     #[def("FallDownExplosionIndex")]
-    pub fall_down_explosion_index: i32,
+    pub fall_down_explosion_index: DefIndex,
     #[def("DeathExplosionIndex")]
-    pub death_explosion_index: i32,
+    pub death_explosion_index: DefIndex,
 }

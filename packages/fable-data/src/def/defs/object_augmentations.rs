@@ -1,3 +1,4 @@
+use crate::def::wire::DefIndex;
 use crate::DefStruct;
 use crate::def::{
     enums::ObjectAugmentationType,
@@ -16,7 +17,7 @@ pub struct ObjectAugmentationsDef {
     #[def("EmptySlotName")]
     pub empty_slot_name: u32,
     #[def("InitialAugmentations")]
-    pub initial_augmentations: Vec<i32>,
+    pub initial_augmentations: Vec<DefIndex>,
     #[def("SlotUpgradeCosts")]
     pub slot_upgrade_costs: Vec<i32>,
     #[def("InitSounds")]

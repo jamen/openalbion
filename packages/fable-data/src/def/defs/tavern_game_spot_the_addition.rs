@@ -16,7 +16,7 @@ pub struct TavernGameSpotTheAdditionDef {
     #[def("CoverLength")]
     pub cover_length: f32,
     #[def("Knicknacks")]
-    pub knicknacks: Vec<i32>,
+    pub knicknacks: Vec<DefIndex>,
     #[def("ItemsPerRound")]
     pub items_per_round: Vec<i32>,
     #[def("JoystickScale")]

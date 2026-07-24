@@ -1,3 +1,4 @@
+use crate::def::wire::DefIndex;
 use crate::DefStruct;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
@@ -5,7 +6,7 @@ pub struct BossDef {
     #[def("PhaseHealthPercent")]
     pub phase_health_percent: Vec<i32>,
     #[def("Shots")]
-    pub shots: Vec<i32>,
+    pub shots: Vec<DefIndex>,
     #[def("TwinBladeMissesBeforeLunge")]
     pub twin_blade_misses_before_lunge: Vec<i32>,
     #[def("TwinBladeStuckLoops")]

@@ -1,3 +1,4 @@
+use crate::def::wire::DefIndex;
 use crate::DefStruct;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
@@ -37,7 +38,7 @@ pub struct KrakenDef {
     #[def("TicksBetweenBeamExplosions", default = 2)]
     pub ticks_between_beam_explosions: i32,
     #[def("TentacleDefIndex")]
-    pub tentacle_def_index: Vec<i32>,
+    pub tentacle_def_index: Vec<DefIndex>,
     #[def("TentacleMaxRiseDelay", default = 1.0)]
     pub tentacle_max_rise_delay: f32,
 }

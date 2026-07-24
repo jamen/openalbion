@@ -77,13 +77,13 @@ pub struct ThingBuildingDef {
     #[def("DieOffTimer")]
     pub die_off_timer: i32,
     #[def("SimBuildingDef")]
-    pub sim_building_def: u32,
+    pub sim_building_def: DefIndex,
     #[def("Graphic")]
     pub graphic: EngineGraphic,
     #[def("WallMaterial")]
-    pub wall_material: i32,
+    pub wall_material: DefIndex,
     #[def("FloorMaterial")]
-    pub floor_material: i32,
+    pub floor_material: DefIndex,
     #[def("CameraManagerSetIndex")]
     pub camera_manager_set_index: i32,
     #[def("ReverbEnvironmentType")]

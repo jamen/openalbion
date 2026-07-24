@@ -68,7 +68,7 @@ pub struct WeaponDef {
     #[def("UseExtendedProjectileTrails")]
     pub use_extended_projectile_trails: bool,
     #[def("NextWeaponForBoss")]
-    pub next_weapon_for_boss: i32,
+    pub next_weapon_for_boss: DefIndex,
     #[def("MeleeTargetingArc", default = 60.0)]
     pub melee_targeting_arc: f32,
     #[def("NeedsLoading", default = true)]

@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::{
     enums::TrapTriggerType,
     enums::TrapType,
@@ -25,8 +26,8 @@ pub struct TrapDef {
     pub trigger_helper_name: DefString,
     #[def("TrapDamage")]
     pub trap_damage: f32,
-    #[def("ExplosionDefIndex", default = -1)]
-    pub explosion_def_index: i32,
+    #[def("ExplosionDefIndex", default = DefIndex(-1))]
+    pub explosion_def_index: DefIndex,
     #[def("PhysicalObstructionDefIndex", default = -1)]
     pub physical_obstruction_def_index: i32,
     #[def("NumShotsToFireBeforeIdle", default = 3)]

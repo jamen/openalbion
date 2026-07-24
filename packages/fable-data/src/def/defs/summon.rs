@@ -1,11 +1,12 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct SummonDef {
     #[def("CreatureToSummon")]
-    pub creature_to_summon: i32,
+    pub creature_to_summon: DefIndex,
     #[def("CreatureFamilyToSummon")]
-    pub creature_family_to_summon: i32,
+    pub creature_family_to_summon: DefIndex,
     #[def("NumberToSummon")]
     pub number_to_summon: i32,
     #[def("SummonRadius")]

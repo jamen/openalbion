@@ -78,9 +78,9 @@ pub struct ThingObjectDef {
     #[def("RotationTime")]
     pub rotation_time: f32,
     #[def("Material")]
-    pub material: i32,
+    pub material: DefIndex,
     #[def("FloorMaterial")]
-    pub floor_material: i32,
+    pub floor_material: DefIndex,
     #[def("OnDeathObject")]
     pub on_death_object: i32,
     #[def("Property")]

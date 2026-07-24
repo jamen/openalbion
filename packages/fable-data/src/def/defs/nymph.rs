@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct NymphDef {
@@ -13,7 +14,7 @@ pub struct NymphDef {
     #[def("FlyAroundTime")]
     pub fly_around_time: i32,
     #[def("ShotTrapType")]
-    pub shot_trap_type: i32,
+    pub shot_trap_type: DefIndex,
     #[def("ShotsBeforeIdle")]
     pub shots_before_idle: i32,
     #[def("IdleTimeBetweenShots", default = 1.0)]

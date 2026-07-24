@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::{
     values::EngineGraphic,
     wire::DefString,
@@ -13,7 +14,7 @@ pub struct InventoryItemDef {
     #[def("ItemDetails", default = DefString(0))]
     pub item_details: DefString,
     #[def("InventoryCategory")]
-    pub inventory_category: i32,
+    pub inventory_category: DefIndex,
     #[def("MaxNumberItems", default = 1)]
     pub max_number_items: i32,
     #[def("SlotIndex", default = -1)]
@@ -27,7 +28,7 @@ pub struct InventoryItemDef {
     #[def("Orientation")]
     pub orientation: i32,
     #[def("HeroAbilityDef")]
-    pub hero_ability_def: i32,
+    pub hero_ability_def: DefIndex,
     #[def("IsSellable", default = true)]
     pub is_sellable: bool,
     #[def("IsBuyable", default = true)]
@@ -41,7 +42,7 @@ pub struct InventoryItemDef {
     #[def("AutoPickUpAfterFirstPickUp")]
     pub auto_pick_up_after_first_pick_up: bool,
     #[def("ItemToSelectUponRemoval")]
-    pub item_to_select_upon_removal: i32,
+    pub item_to_select_upon_removal: DefIndex,
     #[def("TutorialCategory")]
     pub tutorial_category: i32,
     #[def("UIInventoryCategory", default = 4)]

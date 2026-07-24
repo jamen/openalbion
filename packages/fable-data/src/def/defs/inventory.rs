@@ -243,13 +243,13 @@ pub struct InventoryDef {
     #[def("StatsStatisticsBoastsAchievedLabel")]
     pub stats_statistics_boasts_achieved_label: u32,
     #[def("InitialInventoryStatsItems")]
-    pub initial_inventory_stats_items: Vec<i32>,
+    pub initial_inventory_stats_items: Vec<DefIndex>,
     #[def("InitialInventoryStandardItems")]
     pub initial_inventory_standard_items: Vec<i32>,
     #[def("InitialInventoryWeaponsItems")]
     pub initial_inventory_weapons_items: Vec<i32>,
     #[def("InitialInventoryClothingItems")]
-    pub initial_inventory_clothing_items: Vec<i32>,
+    pub initial_inventory_clothing_items: Vec<DefIndex>,
     #[def("ClothingShadedCircleTLPos")]
     pub clothing_shaded_circle_tl_pos: Vector2D,
     #[def("ClothingShadedCircleExtents")]

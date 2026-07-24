@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::enums::OpinionDeedType;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
@@ -16,11 +17,11 @@ pub struct KickableDef {
     #[def("RandomRange")]
     pub random_range: f32,
     #[def("ShotToAttach")]
-    pub shot_to_attach: i32,
+    pub shot_to_attach: DefIndex,
     #[def("OpinionDeedType")]
     pub opinion_deed_type: OpinionDeedType,
     #[def("OpinionDeedFaction")]
-    pub opinion_deed_faction: i32,
+    pub opinion_deed_faction: DefIndex,
     #[def("OpinionDeedTypeToEnemies")]
     pub opinion_deed_type_to_enemies: OpinionDeedType,
     #[def("IgnoreNavigationTest")]

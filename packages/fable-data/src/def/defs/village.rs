@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::{
     wire::DefString,
 };
@@ -15,7 +16,7 @@ pub struct VillageDef {
     #[def("SecondsSecuritySweepLasts")]
     pub seconds_security_sweep_lasts: i32,
     #[def("WarehouseCrateDef")]
-    pub warehouse_crate_def: i32,
+    pub warehouse_crate_def: DefIndex,
     #[def("SleepAdultStartTime")]
     pub sleep_adult_start_time: i32,
     #[def("SleepAdultEndTime")]

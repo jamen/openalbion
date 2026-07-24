@@ -2,6 +2,7 @@ use crate::DefStruct;
 use crate::def::{
     enums::{IdleStateGroup, Opinion},
     values::FloatRange,
+    wire::DefIndex,
 };
 use std::collections::BTreeMap;
 
@@ -82,7 +83,7 @@ pub struct HeroCombatDef {
     #[def("MeleeRecoilMaintainComboChainStrengthThreshold")]
     pub melee_recoil_maintain_combo_chain_strength_threshold: f32,
     #[def("DefaultCombatAbilities")]
-    pub default_combat_abilities: Vec<i32>,
+    pub default_combat_abilities: Vec<DefIndex>,
     #[def("HeavyWeapons")]
     pub heavy_weapons: BTreeMap<i32, IdleStateGroup>,
     #[def("ProjectileWeaponFirstPersonModeMaxFOVValues")]

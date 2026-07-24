@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ChestDef {
@@ -11,7 +12,7 @@ pub struct ChestDef {
     #[def("OpenAnimationForCreature")]
     pub open_animation_for_creature: String,
     #[def("OpenerObject")]
-    pub opener_object: i32,
+    pub opener_object: DefIndex,
     #[def("OpenersRequired")]
     pub openers_required: i32,
 }

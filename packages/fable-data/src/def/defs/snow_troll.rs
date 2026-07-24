@@ -1,9 +1,10 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct SnowTrollDef {
     #[def("IcicleAttackIndex")]
-    pub icicle_attack_index: i32,
+    pub icicle_attack_index: DefIndex,
     #[def("SecondsIcicleAttackTargetPositionPredictionTime")]
     pub seconds_icicle_attack_target_position_prediction_time: f32,
     #[def("DistancePoundGroundRange")]
@@ -27,7 +28,7 @@ pub struct SnowTrollDef {
     #[def("IcicleAssaultWarningFXIndex")]
     pub icicle_assault_warning_fx_index: i32,
     #[def("IcicleAssaultTrapIndex")]
-    pub icicle_assault_trap_index: i32,
+    pub icicle_assault_trap_index: DefIndex,
     #[def("IceTrailDistanceLimit", default = -1.0)]
     pub ice_trail_distance_limit: f32,
 }

@@ -1,3 +1,4 @@
+use crate::def::wire::DefIndex;
 use crate::DefStruct;
 use crate::def::{
     enums::DamageAttribute,
@@ -10,7 +11,7 @@ pub struct HeroExperienceDef {
     #[def("ExperienceLevelThresholds")]
     pub experience_level_thresholds: Vec<i32>,
     #[def("HeroLevelTitles")]
-    pub hero_level_titles: Vec<i32>,
+    pub hero_level_titles: Vec<DefIndex>,
     #[def("FallbackMultipliers")]
     pub fallback_multipliers: Vec<i32>,
     #[def("SoundIntensityThresholds")]

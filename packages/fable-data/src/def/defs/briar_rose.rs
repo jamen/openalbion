@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct BriarRoseDef {
@@ -13,7 +14,7 @@ pub struct BriarRoseDef {
     #[def("NumberOfHitsToKillImposters")]
     pub number_of_hits_to_kill_imposters: i32,
     #[def("EnvironmentThemeForIntangibleMode")]
-    pub environment_theme_for_intangible_mode: i32,
+    pub environment_theme_for_intangible_mode: DefIndex,
     #[def("SecondsForIntangibleEnvironmentThemeTransitionIn")]
     pub seconds_for_intangible_environment_theme_transition_in: f32,
     #[def("SecondsForIntangibleEnvironmentThemeTransitionOut")]

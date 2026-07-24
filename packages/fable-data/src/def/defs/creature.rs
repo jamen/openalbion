@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::defs::CreatureStatsDef;
 use crate::def::enums::Opinion;
 use crate::def::values::{ExpressionSet, FloatRange, RandomAppearanceMorph, WoundMorphs};
@@ -17,43 +18,43 @@ pub struct CreatureDef {
     #[def("InitialActions")]
     pub initial_actions: Vec<i32>,
     #[def("InitialAppearanceModifiers")]
-    pub initial_appearance_modifiers: Vec<i32>,
+    pub initial_appearance_modifiers: Vec<DefIndex>,
     #[def("PhonemeAnim")]
     pub phoneme_anim: VecMap<String, i32>,
     #[def("DialogueVoices")]
     pub dialogue_voices: Vec<DefString>,
     #[def("Inventory")]
-    pub inventory: i32,
+    pub inventory: DefIndex,
     #[def("ClothingInventory")]
-    pub clothing_inventory: i32,
+    pub clothing_inventory: DefIndex,
     #[def("WeaponsInventory")]
-    pub weapons_inventory: i32,
+    pub weapons_inventory: DefIndex,
     #[def("HeroAbilitiesScreenInventory")]
-    pub hero_abilities_screen_inventory: i32,
+    pub hero_abilities_screen_inventory: DefIndex,
     #[def("QuestCardScreenInventory")]
-    pub quest_card_screen_inventory: i32,
+    pub quest_card_screen_inventory: DefIndex,
     #[def("MapScreenInventory")]
-    pub map_screen_inventory: i32,
+    pub map_screen_inventory: DefIndex,
     #[def("MagicScreenInventory")]
     pub magic_screen_inventory: i32,
     #[def("StatsScreenInventory")]
-    pub stats_screen_inventory: i32,
+    pub stats_screen_inventory: DefIndex,
     #[def("ExperienceScreenInventory")]
-    pub experience_screen_inventory: i32,
+    pub experience_screen_inventory: DefIndex,
     #[def("TradeScreenInventory")]
-    pub trade_screen_inventory: i32,
+    pub trade_screen_inventory: DefIndex,
     #[def("AugmentScreenInventory")]
-    pub augment_screen_inventory: i32,
+    pub augment_screen_inventory: DefIndex,
     #[def("QuestsScreenInventory")]
-    pub quests_screen_inventory: i32,
+    pub quests_screen_inventory: DefIndex,
     #[def("InGameMenuScreen")]
-    pub in_game_menu_screen: i32,
+    pub in_game_menu_screen: DefIndex,
     #[def("CreatureGroup")]
     pub creature_group: u32,
     #[def("BattleCrySound")]
     pub battle_cry_sound: DefString,
     #[def("OpinionSourceDef")]
-    pub opinion_source_def: i32,
+    pub opinion_source_def: DefIndex,
     #[def("RespawnWaitInDaysMin")]
     pub respawn_wait_in_days_min: i32,
     #[def("RespawnWaitInDaysMax")]

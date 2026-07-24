@@ -125,18 +125,18 @@ pub struct ThingCreatureDef {
     pub creature_type: CreatureType,
     #[def("NavigatorTypes")]
     pub navigator_types: Vec<NavigatorType>,
-    #[def("InitialWeaponDef", default = -1)]
-    pub initial_weapon_def: i32,
+    #[def("InitialWeaponDef", default = DefIndex(-1))]
+    pub initial_weapon_def: DefIndex,
     #[def("PrimaryMeleeWeaponDef")]
-    pub primary_melee_weapon_def: i32,
+    pub primary_melee_weapon_def: DefIndex,
     #[def("SecondaryMeleeWeaponDef")]
-    pub secondary_melee_weapon_def: i32,
-    #[def("RangedWeaponDef", default = -1)]
-    pub ranged_weapon_def: i32,
+    pub secondary_melee_weapon_def: DefIndex,
+    #[def("RangedWeaponDef", default = DefIndex(-1))]
+    pub ranged_weapon_def: DefIndex,
     #[def("InitialSheathedWeapon")]
-    pub initial_sheathed_weapon: i32,
+    pub initial_sheathed_weapon: DefIndex,
     #[def("PBrain")]
-    pub p_brain: i32,
+    pub p_brain: DefIndex,
     #[def("CreatureInteractionType")]
     pub creature_interaction_type: CreatureInteractionType,
     #[def("Property")]
@@ -156,19 +156,19 @@ pub struct ThingCreatureDef {
     #[def("ControlledMovementType")]
     pub controlled_movement_type: ControlledMovementType,
     #[def("CombatTypeDef")]
-    pub combat_type_def: i32,
+    pub combat_type_def: DefIndex,
     #[def("ResetCombatTypeOnUnsheatheDefaultWeapons")]
     pub reset_combat_type_on_unsheathe_default_weapons: bool,
     #[def("HeroCombatDef")]
-    pub hero_combat_def: i32,
+    pub hero_combat_def: DefIndex,
     #[def("HeroCombatPCDef")]
-    pub hero_combat_pc_def: i32,
+    pub hero_combat_pc_def: DefIndex,
     #[def("CombatDiameter")]
     pub combat_diameter: f32,
     #[def("DeferHitsIfBehindHitter", default = true)]
     pub defer_hits_if_behind_hitter: bool,
     #[def("LeaderTypeDef")]
-    pub leader_type_def: i32,
+    pub leader_type_def: DefIndex,
     #[def("RecoverEvadeHitsPercent", default = 75.0)]
     pub recover_evade_hits_percent: f32,
     #[def("DeadBodyDecayEffect")]

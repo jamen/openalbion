@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct SummonerDef {
@@ -21,11 +22,11 @@ pub struct SummonerDef {
     #[def("ChargeSecondsToWaitBeforeReuse")]
     pub charge_seconds_to_wait_before_reuse: f32,
     #[def("SummonerDeathExplosion")]
-    pub summoner_death_explosion: i32,
+    pub summoner_death_explosion: DefIndex,
     #[def("LightningOrb")]
-    pub lightning_orb: i32,
+    pub lightning_orb: DefIndex,
     #[def("LightningOrbAttackFireheart")]
-    pub lightning_orb_attack_fireheart: i32,
+    pub lightning_orb_attack_fireheart: DefIndex,
     #[def("LightningOrbLifeSeconds", default = -1.0)]
     pub lightning_orb_life_seconds: f32,
 }

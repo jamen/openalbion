@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct EnvironmentDef {
@@ -111,7 +112,7 @@ pub struct EnvironmentDef {
     #[def("LightningRainThreshold")]
     pub lightning_rain_threshold: f32,
     #[def("LightningTheme")]
-    pub lightning_theme: i32,
+    pub lightning_theme: DefIndex,
     #[def("CloudSpeedMultiplier")]
     pub cloud_speed_multiplier: f32,
     #[def("CloudMaxSpeed")]

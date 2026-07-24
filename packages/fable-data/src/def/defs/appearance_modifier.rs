@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::enums::{ClothingSuitPart, HeroAttachableAppearanceModifierType};
 use crate::def::values::AppearanceModifierGraphics;
 
@@ -13,7 +14,7 @@ pub struct AppearanceModifierDef {
     #[def("IsRemoveable", default = true)]
     pub is_removeable: bool,
     #[def("HeroSuit")]
-    pub hero_suit: i32,
+    pub hero_suit: DefIndex,
     #[def("SuitPart")]
     pub suit_part: ClothingSuitPart,
     #[def("AppearanceType")]
@@ -28,8 +29,8 @@ pub struct AppearanceModifierDef {
     pub sound_radius_multiplier: f32,
     #[def("VisibilityMultiplier", default = 1.0)]
     pub visibility_multiplier: f32,
-    #[def("ArmourDefIndex", default = -1)]
-    pub armour_def_index: i32,
+    #[def("ArmourDefIndex", default = DefIndex(-1))]
+    pub armour_def_index: DefIndex,
     #[def("OveralProtectionWeighting")]
     pub overal_protection_weighting: f32,
 }

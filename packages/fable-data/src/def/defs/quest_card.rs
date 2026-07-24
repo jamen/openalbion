@@ -1,4 +1,5 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 use crate::def::{
     enums::IdleStateGroup,
     wire::DefString,
@@ -21,13 +22,13 @@ pub struct QuestCardDef {
     #[def("TeleporterRegionName")]
     pub teleporter_region_name: DefString,
     #[def("InventoryCategory")]
-    pub inventory_category: i32,
+    pub inventory_category: DefIndex,
     #[def("RenownReward")]
     pub renown_reward: i32,
     #[def("GoldReward")]
     pub gold_reward: i32,
     #[def("RewardObjects")]
-    pub reward_objects: Vec<i32>,
+    pub reward_objects: Vec<DefIndex>,
     #[def("IsCoreQuest")]
     pub is_core_quest: bool,
     #[def("IsVignette")]

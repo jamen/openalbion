@@ -1,9 +1,10 @@
 use crate::DefStruct;
+use crate::def::wire::DefIndex;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct ExplosiveTrailDef {
     #[def("TrapDefIndex")]
-    pub trap_def_index: i32,
+    pub trap_def_index: DefIndex,
     #[def("SecondsBetweenTraps")]
     pub seconds_between_traps: f32,
     #[def("DistanceBetweenTraps")]

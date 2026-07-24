@@ -1,9 +1,10 @@
+use crate::def::wire::DefIndex;
 use crate::DefStruct;
 
 #[derive(Debug, Clone, PartialEq, DefStruct)]
 pub struct FishingDef {
     #[def("FishTypes")]
-    pub fish_types: Vec<i32>,
+    pub fish_types: Vec<DefIndex>,
     #[def("FishingSpotProximity")]
     pub fishing_spot_proximity: f32,
     #[def("FishingSpotMinDepth")]

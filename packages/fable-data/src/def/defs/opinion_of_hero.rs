@@ -8,9 +8,9 @@ pub struct OpinionOfHeroDef {
     #[def("WillAttackCriminals")]
     pub will_attack_criminals: bool,
     #[def("Personality")]
-    pub personality: i32,
+    pub personality: DefIndex,
     #[def("ReactionMask")]
-    pub reaction_mask: i32,
+    pub reaction_mask: DefIndex,
     #[def("DeedMask")]
-    pub deed_mask: i32,
+    pub deed_mask: DefIndex,
 }
