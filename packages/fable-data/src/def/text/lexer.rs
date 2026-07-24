@@ -95,6 +95,8 @@ pub struct LexError {
 pub enum TextParseErrorKind {
     #[display("expected {expected}")]
     UnexpectedToken { expected: String },
+    #[display("missing #end_definition")]
+    MissingEndDefinition,
     #[display("mismatched tag: opened <{opened}>, closed <\\{closed}>")]
     MismatchedTag { opened: String, closed: String },
     #[display("unterminated string")]

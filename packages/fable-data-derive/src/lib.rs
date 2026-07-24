@@ -655,10 +655,6 @@ pub fn derive_def_enum(input: TokenStream) -> TokenStream {
                 }
             }
 
-            /// All known C++ enumerator symbol names for this enum.
-            pub fn all_symbols() -> &'static [&'static str] {
-                &[#( #symbols, )*]
-            }
         }
 
         impl crate::def::enums::DefEnum for #name {
@@ -816,10 +812,6 @@ pub fn derive_def_flags(input: TokenStream) -> TokenStream {
                 }
             }
 
-            /// All known C++ enumerator symbol names for this flags type.
-            pub fn all_symbols() -> &'static [&'static str] {
-                &[#( #symbols, )*]
-            }
         }
 
         impl crate::def::visit::DefDefault for #name {

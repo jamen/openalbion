@@ -309,9 +309,7 @@ fn parse_definition(
         }
         if is_body_terminator(tk) {
             let err = cursor
-                .err(TextParseErrorKind::UnexpectedToken {
-                    expected: "#end_definition".into(),
-                })
+                .err(TextParseErrorKind::MissingEndDefinition)
                 .with_def_header(def_start);
             return Err(err);
         }
@@ -973,10 +971,7 @@ mod tests {
     #[test]
     fn err_missing_end_definition() {
         let kind = parse_err("#definition OBJECT T\n  Health 100;\n");
-        assert!(matches!(
-            kind,
-            TextParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
-        ));
+        assert!(matches!(kind, TextParseErrorKind::MissingEndDefinition));
     }
 
     #[test]
@@ -993,10 +988,7 @@ mod tests {
             "#end_definition\n",
         );
         let err = parse_def_file(input).unwrap_err();
-        assert!(matches!(
-            err.inner,
-            TextParseErrorKind::UnexpectedToken { expected } if expected == "#end_definition"
-        ));
+        assert!(matches!(err.inner, TextParseErrorKind::MissingEndDefinition));
         // The error is anchored at the second `#definition` (the token that
         // revealed FIRST was never closed), not swallowed away.
         assert_eq!(err.pos, input.find("#definition OBJECT SECOND").unwrap());
