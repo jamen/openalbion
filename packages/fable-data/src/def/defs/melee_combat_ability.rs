@@ -22,6 +22,8 @@ pub struct MeleeCombatAbilityDef {
     pub valid_weapon_classes: Vec<WeaponClass>,
     #[def("Decapitate")]
     pub decapitate: bool,
+    #[def("KnockDownEffects", default = -1)]
+    pub knock_down_effects: i32,
     #[def("EvadeAllHits")]
     pub evade_all_hits: bool,
     #[def("CauseRecoil")]
@@ -32,6 +34,4 @@ pub struct MeleeCombatAbilityDef {
     pub combo_multiplier_lower_bound: i32,
     #[def("ComboMultiplierUpperBound", default = -1)]
     pub combo_multiplier_upper_bound: i32,
-    #[def("KnockDownEffects", default = -1)]
-    pub knock_down_effects: i32,
 }

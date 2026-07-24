@@ -49,10 +49,11 @@ pub struct OpinionDeedEffectsDef {
     pub on_react_set_greeted: bool,
     #[def("AllowSpeechOnNonPureAISpeaker")]
     pub allow_speech_on_non_pure_ai_speaker: bool,
-    #[def("AllowWhileCarrying")]
-    pub allow_while_carrying: bool,
-    #[def("BlockWhileFollowingPlayer")]
-    pub block_while_following_player: bool,
+    // Retail order (verified by decoding retail game.bin): AllowIndirectReact… then
+    // BlockWhileFollowingPlayer. `AllowWhileCarrying` is NOT a control of this def
+    // (it's the OPINION_REACTION_MANAGER indexed VecMap).
     #[def("AllowIndirectReactWhileCarrying")]
     pub allow_indirect_react_while_carrying: bool,
+    #[def("BlockWhileFollowingPlayer")]
+    pub block_while_following_player: bool,
 }
