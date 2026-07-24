@@ -589,6 +589,7 @@ pub struct OuterSkyPass {
     lut_layout: LightingLutBindGroupLayout,
     pipeline: OuterSkyPipeline,
     dome: SkyDome,
+    base_band: SkyBaseBand,
     sky_sampler: wgpu::Sampler,
     texture0: Option<TextureView>,
     texture1: Option<TextureView>,
@@ -606,6 +607,7 @@ impl OuterSkyPass {
             OuterSkyPipelineLayout::new(device, &uniform_layout, &texture_layout, &lut_layout);
         let pipeline = OuterSkyPipeline::new(device, &layout, &shader, surface_format);
         let dome = SkyDome::new(device, &uniform_layout);
+        let base_band = SkyBaseBand::new(device, &uniform_layout);
 
         let sky_sampler = linear_clamp_sampler(device, "sky_sampler");
 
@@ -614,6 +616,7 @@ impl OuterSkyPass {
             lut_layout,
             pipeline,
             dome,
+            base_band,
             sky_sampler,
             texture0: None,
             texture1: None,
@@ -717,6 +720,8 @@ impl OuterSkyPass {
     ) {
         self.dome
             .update_uniforms(queue, view_proj, time_of_day, sky_blend);
+        self.base_band
+            .update_uniforms(queue, view_proj, time_of_day, sky_blend);
     }
 
     pub fn pass(&self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
@@ -747,240 +752,17 @@ impl OuterSkyPass {
         });
 
         rpass.set_pipeline(&self.pipeline.0);
+
         rpass.set_bind_group(0, &self.dome.uniform_bind_group, &[]);
         rpass.set_bind_group(1, sky_bind_group, &[]);
         rpass.set_bind_group(2, lut_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.dome.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.dome.index_buffer.slice(..), IndexFormat::Uint16);
         rpass.draw_indexed(0..self.dome.index_count, 0, 0..1);
-    }
-}
 
-pub struct BaseBandShader(ShaderModule);
-
-impl BaseBandShader {
-    pub fn new(device: &Device) -> Self {
-        Self(device.create_shader_module(include_wgsl!("sky/outer_sky.wgsl")))
-    }
-}
-
-pub struct BaseBandPipelineLayout(PipelineLayout);
-
-impl BaseBandPipelineLayout {
-    pub fn new(
-        device: &Device,
-        uniform_layout: &SkyUniformBindGroupLayout,
-        texture_layout: &SkyTextureBindGroupLayout,
-        lut_layout: &LightingLutBindGroupLayout,
-    ) -> Self {
-        Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: Some(type_name::<Self>()),
-            bind_group_layouts: &[&uniform_layout.0, &texture_layout.0, &lut_layout.0],
-            immediate_size: 0,
-        }))
-    }
-}
-
-pub struct BaseBandPipeline(RenderPipeline);
-
-impl BaseBandPipeline {
-    pub fn new(
-        device: &Device,
-        layout: &BaseBandPipelineLayout,
-        shader: &BaseBandShader,
-        target_format: TextureFormat,
-    ) -> Self {
-        Self(device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some(type_name::<Self>()),
-            layout: Some(&layout.0),
-            vertex: VertexState {
-                module: &shader.0,
-                entry_point: Some("vs_main"),
-                buffers: &[SkyVertex::layout()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(FragmentState {
-                module: &shader.0,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(target_format.into())],
-            }),
-            primitive: PrimitiveState {
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        }))
-    }
-}
-
-pub struct BaseBandPass {
-    texture_layout: SkyTextureBindGroupLayout,
-    lut_layout: LightingLutBindGroupLayout,
-    pipeline: BaseBandPipeline,
-    dome: SkyBaseBand,
-    sky_sampler: wgpu::Sampler,
-    texture0: Option<TextureView>,
-    texture1: Option<TextureView>,
-    sky_textures_bind_group: Option<BindGroup>,
-    lighting_lut: Option<BindGroup>,
-}
-
-impl BaseBandPass {
-    pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
-        let shader = BaseBandShader::new(device);
-        let uniform_layout = SkyUniformBindGroupLayout::new(device);
-        let texture_layout = SkyTextureBindGroupLayout::new(device);
-        let lut_layout = LightingLutBindGroupLayout::new(device);
-        let layout =
-            BaseBandPipelineLayout::new(device, &uniform_layout, &texture_layout, &lut_layout);
-        let pipeline = BaseBandPipeline::new(device, &layout, &shader, surface_format);
-        let dome = SkyBaseBand::new(device, &uniform_layout);
-
-        let sky_sampler = linear_clamp_sampler(device, "base_band_sampler");
-
-        Self {
-            texture_layout,
-            lut_layout,
-            pipeline,
-            dome,
-            sky_sampler,
-            texture0: None,
-            texture1: None,
-            sky_textures_bind_group: None,
-            lighting_lut: None,
-        }
-    }
-
-    pub fn set_texture0(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        asset_info: &AssetMetadata,
-        asset_data: &[u8],
-    ) -> Result<(), TextureUploadError> {
-        self.texture0 = Some(upload_texture(device, queue, asset_info, asset_data)?);
-        self.rebuild_sky_bind_group(device);
-        Ok(())
-    }
-
-    pub fn set_texture1(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        asset_info: &AssetMetadata,
-        asset_data: &[u8],
-    ) -> Result<(), TextureUploadError> {
-        self.texture1 = Some(upload_texture(device, queue, asset_info, asset_data)?);
-        self.rebuild_sky_bind_group(device);
-        Ok(())
-    }
-
-    fn rebuild_sky_bind_group(&mut self, device: &Device) {
-        let Some(tex0) = &self.texture0 else {
-            self.sky_textures_bind_group = None;
-            return;
-        };
-
-        let tex1_view = self.texture1.as_ref().unwrap_or(tex0);
-
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("base_band_textures_bind_group"),
-            layout: &self.texture_layout.0,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(tex0),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::TextureView(tex1_view),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::Sampler(&self.sky_sampler),
-                },
-            ],
-        });
-
-        self.sky_textures_bind_group = Some(bind_group);
-    }
-
-    pub fn set_lighting_lut(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        tga_bytes: &[u8],
-    ) -> Result<(), LightingColoursError> {
-        let lut = LightingColoursTexture::from_tga_bytes(device, queue, tga_bytes)?;
-
-        let bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("base_band_lighting_lut_bind_group"),
-            layout: &self.lut_layout.0,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(lut.view()),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Sampler(lut.sampler()),
-                },
-            ],
-        });
-
-        self.lighting_lut = Some(bind_group);
-
-        Ok(())
-    }
-
-    pub fn update_uniforms(
-        &self,
-        queue: &Queue,
-        view_proj: [[f32; 4]; 4],
-        time_of_day: f32,
-        sky_blend: f32,
-    ) {
-        self.dome
-            .update_uniforms(queue, view_proj, time_of_day, sky_blend);
-    }
-
-    pub fn pass(&self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
-        let Some(sky_bind_group) = &self.sky_textures_bind_group else {
-            tracing::warn!("Base band pass: no textures bind group — skipped");
-            return;
-        };
-        let Some(lut_bind_group) = &self.lighting_lut else {
-            tracing::warn!("Base band pass: no lighting LUT — skipped");
-            return;
-        };
-
-        let mut rpass = cmd.begin_render_pass(&RenderPassDescriptor {
-            label: Some(type_name::<Self>()),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: target_texture_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-
-        rpass.set_pipeline(&self.pipeline.0);
-        rpass.set_bind_group(0, &self.dome.uniform_bind_group, &[]);
-        rpass.set_bind_group(1, sky_bind_group, &[]);
-        rpass.set_bind_group(2, lut_bind_group, &[]);
-        rpass.set_vertex_buffer(0, self.dome.vertex_buffer.slice(..));
-        rpass.set_index_buffer(self.dome.index_buffer.slice(..), IndexFormat::Uint16);
-        rpass.draw_indexed(0..self.dome.index_count, 0, 0..1);
+        rpass.set_bind_group(0, &self.base_band.uniform_bind_group, &[]);
+        rpass.set_vertex_buffer(0, self.base_band.vertex_buffer.slice(..));
+        rpass.set_index_buffer(self.base_band.index_buffer.slice(..), IndexFormat::Uint16);
+        rpass.draw_indexed(0..self.base_band.index_count, 0, 0..1);
     }
 }

@@ -4,3 +4,4 @@ target
 
 # local git worktrees for parallel work
 /worktree/
+worktrees/
