@@ -649,17 +649,17 @@ pub struct TextureMorphs {
     pub trailing_u32: u32,
 }
 
+/// `CSkeletalMorphs::CEntry` for `CHeroMorphDef` (NOT the creature
+/// `CSkeletalMorphDef`, which is a plain `Vec<DefString>`). Verified by decoding
+/// retail game.bin: the text form is
+/// `SkeletalMorphs.Add(MorphType, "file.bncfg", BoneIndex, Mirror)` — the morph
+/// *type* (a header constant), the bone-config *filename* (a def-string), a bone
+/// index, and a mirror flag, in that order.
 #[derive(Debug, Clone, PartialEq, WireStruct)]
 pub struct SkeletalMorphsMorphsEntry {
-    // `crc` and `morph_id` are genuinely dual-typed here — `SkeletalMorphs.Add`
-    // has two forms: `Add("file.bncfg")` (filename → `crc` as a def-string) and
-    // `Add(MORPH_TYPE, "file.bncfg", idx, mirror)` (type → `crc` as a number,
-    // filename → `morph_id` as a def-string). Both stay `u32` and go through the
-    // permissive U32 container path. (A clean fix would model this in the bespoke
-    // `CHeroMorphDef` arm; noted for later.)
-    pub crc: u32,
-    pub morph_id: u32,
-    pub bone_or_morph_index: u16,
+    pub morph_type: u32,
+    pub morph_name: DefString,
+    pub bone_index: u16,
     pub mirror_over: bool,
 }
 
