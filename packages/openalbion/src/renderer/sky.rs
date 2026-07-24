@@ -51,59 +51,83 @@ struct SkyUniforms {
     _padding: [f32; 2],
 }
 
-fn generate_skydome_mesh(segments: u32, rings: u32) -> (Vec<SkyVertex>, Vec<u16>) {
+fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
-    // Fable's dome spans z=-500 to z=+7000 with radius ~6500.
-    // Scale our unit hemisphere up so it always covers the frustum regardless
-    // of camera near-plane distance.
-    let dome_scale: f32 = 2000.0;
+    let dome_top_z: f32 = 7000.0;
+    let dome_bottom_z: f32 = -500.0;
+    let dome_radius: f32 = 6500.0;
 
-    let horizon_color = [1.0, 0.7, 0.5, 0.3];
-    let zenith_color = [0.8, 0.85, 1.0, 0.0];
+    vertices.push(SkyVertex {
+        position: [0.0, 0.0, dome_top_z],
+        color: [0.0, 0.0, 0.0, 0.0],
+        uv: [-1e-6, -1e-6],
+    });
 
-    for ring in 0..=rings {
-        let elevation = (ring as f32 / rings as f32) * std::f32::consts::FRAC_PI_2;
-        let y = elevation.sin() * dome_scale;
-        let xz_radius = elevation.cos() * dome_scale;
-        let v = ring as f32 / rings as f32;
-        let t = (v * 2.0).min(1.0);
-        let t = t * t;
-        let color = [
-            horizon_color[0] * (1.0 - t) + zenith_color[0] * t,
-            horizon_color[1] * (1.0 - t) + zenith_color[1] * t,
-            horizon_color[2] * (1.0 - t) + zenith_color[2] * t,
-            horizon_color[3] * (1.0 - t) + zenith_color[3] * t,
-        ];
+    for i in 0..segments {
+        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+        let (sin_a, cos_a) = (angle.sin(), angle.cos());
+        let x = cos_a * dome_radius;
+        let y = sin_a * dome_radius;
+        let u = i as f32 / segments as f32;
 
-        for seg in 0..=segments {
-            let azimuth = (seg as f32 / segments as f32) * std::f32::consts::TAU;
-            let x = xz_radius * azimuth.cos();
-            let z = xz_radius * azimuth.sin();
-            let u = seg as f32 / segments as f32;
+        vertices.push(SkyVertex {
+            position: [x, y, dome_bottom_z],
+            color: [1.0, 1.0, 1.0, 1.0],
+            uv: [u, 1.0],
+        });
 
-            vertices.push(SkyVertex {
-                position: [x, y, z],
-                color,
-                uv: [u, v],
-            });
-        }
+        vertices.push(SkyVertex {
+            position: [x, y, dome_top_z],
+            color: [0.0, 0.0, 0.0, 0.0],
+            uv: [u, 0.0],
+        });
     }
 
-    for ring in 0..rings {
-        for seg in 0..segments {
-            let current = ring * (segments + 1) + seg;
-            let next = current + segments + 1;
+    for i in 0..segments {
+        let center: u16 = 0;
+        let bottom_curr: u16 = 1 + (i * 2) as u16;
+        let top_curr: u16 = 2 + (i * 2) as u16;
+        let bottom_next: u16 = 1 + (((i + 1) % segments) * 2) as u16;
+        let top_next: u16 = 2 + (((i + 1) % segments) * 2) as u16;
 
-            indices.push(current as u16);
-            indices.push((current + 1) as u16);
-            indices.push(next as u16);
+        indices.extend_from_slice(&[center, bottom_curr, bottom_next]);
 
-            indices.push((current + 1) as u16);
-            indices.push((next + 1) as u16);
-            indices.push(next as u16);
-        }
+        indices.extend_from_slice(&[bottom_curr, bottom_next, top_curr]);
+        indices.extend_from_slice(&[bottom_next, top_next, top_curr]);
+    }
+
+    (vertices, indices)
+}
+
+fn build_base_band_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    let dome_radius: f32 = 6500.0;
+    let dome_bottom_z: f32 = -500.0;
+    let base_center_z: f32 = -10000.0;
+
+    vertices.push(SkyVertex {
+        position: [0.0, 0.0, base_center_z],
+        color: [0.0, 0.0, 0.0, 0.0],
+        uv: [0.0, 0.0],
+    });
+
+    for i in 0..segments {
+        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+        let x = angle.cos() * dome_radius;
+        let y = angle.sin() * dome_radius;
+        vertices.push(SkyVertex {
+            position: [x, y, dome_bottom_z],
+            color: [1.0, 1.0, 1.0, 1.0],
+            uv: [0.0, 0.0],
+        });
+    }
+
+    for i in 0..segments {
+        indices.extend_from_slice(&[0, 1 + i as u16, 1 + ((i + 1) % segments) as u16]);
     }
 
     (vertices, indices)
@@ -119,7 +143,7 @@ pub struct SkyDome {
 
 impl SkyDome {
     pub fn new(device: &Device, uniform_layout: &SkyUniformBindGroupLayout) -> Self {
-        let (vertices, indices) = generate_skydome_mesh(32, 16);
+        let (vertices, indices) = build_outer_sky_mesh(36);
         let index_count = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -154,6 +178,84 @@ impl SkyDome {
 
         let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("sky_uniform_bind_group"),
+            layout: &uniform_layout.0,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            index_count,
+            uniform_buffer,
+            uniform_bind_group,
+        }
+    }
+
+    pub fn update_uniforms(
+        &self,
+        queue: &Queue,
+        view_proj: [[f32; 4]; 4],
+        time_of_day: f32,
+        sky_blend: f32,
+    ) {
+        let uniforms = SkyUniforms {
+            view_proj,
+            time_of_day,
+            sky_blend,
+            _padding: [0.0; 2],
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+    }
+}
+
+pub struct SkyBaseBand {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: BindGroup,
+}
+
+impl SkyBaseBand {
+    pub fn new(device: &Device, uniform_layout: &SkyUniformBindGroupLayout) -> Self {
+        let (vertices, indices) = build_base_band_mesh(36);
+        let index_count = indices.len() as u32;
+
+        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("base_band_vertex_buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("base_band_index_buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: BufferUsages::INDEX,
+        });
+
+        let uniforms = SkyUniforms {
+            view_proj: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            time_of_day: 12.0,
+            sky_blend: 0.0,
+            _padding: [0.0; 2],
+        };
+
+        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("base_band_uniform_buffer"),
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("base_band_uniform_bind_group"),
             layout: &uniform_layout.0,
             entries: &[BindGroupEntry {
                 binding: 0,
@@ -624,6 +726,235 @@ impl OuterSkyPass {
         };
         let Some(lut_bind_group) = &self.lighting_lut else {
             tracing::warn!("Sky pass: no lighting LUT — sky skipped");
+            return;
+        };
+
+        let mut rpass = cmd.begin_render_pass(&RenderPassDescriptor {
+            label: Some(type_name::<Self>()),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target_texture_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        rpass.set_pipeline(&self.pipeline.0);
+        rpass.set_bind_group(0, &self.dome.uniform_bind_group, &[]);
+        rpass.set_bind_group(1, sky_bind_group, &[]);
+        rpass.set_bind_group(2, lut_bind_group, &[]);
+        rpass.set_vertex_buffer(0, self.dome.vertex_buffer.slice(..));
+        rpass.set_index_buffer(self.dome.index_buffer.slice(..), IndexFormat::Uint16);
+        rpass.draw_indexed(0..self.dome.index_count, 0, 0..1);
+    }
+}
+
+pub struct BaseBandShader(ShaderModule);
+
+impl BaseBandShader {
+    pub fn new(device: &Device) -> Self {
+        Self(device.create_shader_module(include_wgsl!("sky/outer_sky.wgsl")))
+    }
+}
+
+pub struct BaseBandPipelineLayout(PipelineLayout);
+
+impl BaseBandPipelineLayout {
+    pub fn new(
+        device: &Device,
+        uniform_layout: &SkyUniformBindGroupLayout,
+        texture_layout: &SkyTextureBindGroupLayout,
+        lut_layout: &LightingLutBindGroupLayout,
+    ) -> Self {
+        Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some(type_name::<Self>()),
+            bind_group_layouts: &[&uniform_layout.0, &texture_layout.0, &lut_layout.0],
+            immediate_size: 0,
+        }))
+    }
+}
+
+pub struct BaseBandPipeline(RenderPipeline);
+
+impl BaseBandPipeline {
+    pub fn new(
+        device: &Device,
+        layout: &BaseBandPipelineLayout,
+        shader: &BaseBandShader,
+        target_format: TextureFormat,
+    ) -> Self {
+        Self(device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(type_name::<Self>()),
+            layout: Some(&layout.0),
+            vertex: VertexState {
+                module: &shader.0,
+                entry_point: Some("vs_main"),
+                buffers: &[SkyVertex::layout()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &shader.0,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(target_format.into())],
+            }),
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        }))
+    }
+}
+
+pub struct BaseBandPass {
+    texture_layout: SkyTextureBindGroupLayout,
+    lut_layout: LightingLutBindGroupLayout,
+    pipeline: BaseBandPipeline,
+    dome: SkyBaseBand,
+    sky_sampler: wgpu::Sampler,
+    texture0: Option<TextureView>,
+    texture1: Option<TextureView>,
+    sky_textures_bind_group: Option<BindGroup>,
+    lighting_lut: Option<BindGroup>,
+}
+
+impl BaseBandPass {
+    pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
+        let shader = BaseBandShader::new(device);
+        let uniform_layout = SkyUniformBindGroupLayout::new(device);
+        let texture_layout = SkyTextureBindGroupLayout::new(device);
+        let lut_layout = LightingLutBindGroupLayout::new(device);
+        let layout =
+            BaseBandPipelineLayout::new(device, &uniform_layout, &texture_layout, &lut_layout);
+        let pipeline = BaseBandPipeline::new(device, &layout, &shader, surface_format);
+        let dome = SkyBaseBand::new(device, &uniform_layout);
+
+        let sky_sampler = linear_clamp_sampler(device, "base_band_sampler");
+
+        Self {
+            texture_layout,
+            lut_layout,
+            pipeline,
+            dome,
+            sky_sampler,
+            texture0: None,
+            texture1: None,
+            sky_textures_bind_group: None,
+            lighting_lut: None,
+        }
+    }
+
+    pub fn set_texture0(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        self.texture0 = Some(upload_texture(device, queue, asset_info, asset_data)?);
+        self.rebuild_sky_bind_group(device);
+        Ok(())
+    }
+
+    pub fn set_texture1(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        self.texture1 = Some(upload_texture(device, queue, asset_info, asset_data)?);
+        self.rebuild_sky_bind_group(device);
+        Ok(())
+    }
+
+    fn rebuild_sky_bind_group(&mut self, device: &Device) {
+        let Some(tex0) = &self.texture0 else {
+            self.sky_textures_bind_group = None;
+            return;
+        };
+
+        let tex1_view = self.texture1.as_ref().unwrap_or(tex0);
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("base_band_textures_bind_group"),
+            layout: &self.texture_layout.0,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(tex0),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::TextureView(tex1_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::Sampler(&self.sky_sampler),
+                },
+            ],
+        });
+
+        self.sky_textures_bind_group = Some(bind_group);
+    }
+
+    pub fn set_lighting_lut(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        tga_bytes: &[u8],
+    ) -> Result<(), LightingColoursError> {
+        let lut = LightingColoursTexture::from_tga_bytes(device, queue, tga_bytes)?;
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("base_band_lighting_lut_bind_group"),
+            layout: &self.lut_layout.0,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(lut.view()),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(lut.sampler()),
+                },
+            ],
+        });
+
+        self.lighting_lut = Some(bind_group);
+
+        Ok(())
+    }
+
+    pub fn update_uniforms(
+        &self,
+        queue: &Queue,
+        view_proj: [[f32; 4]; 4],
+        time_of_day: f32,
+        sky_blend: f32,
+    ) {
+        self.dome
+            .update_uniforms(queue, view_proj, time_of_day, sky_blend);
+    }
+
+    pub fn pass(&self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
+        let Some(sky_bind_group) = &self.sky_textures_bind_group else {
+            tracing::warn!("Base band pass: no textures bind group — skipped");
+            return;
+        };
+        let Some(lut_bind_group) = &self.lighting_lut else {
+            tracing::warn!("Base band pass: no lighting LUT — skipped");
             return;
         };
 
