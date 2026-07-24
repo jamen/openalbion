@@ -631,38 +631,10 @@ dependencies = [
  "bcndecode",
  "bytemuck",
  "derive_more 1.0.0",
- "fable-data-derive",
  "fallible-iterator",
  "lzo",
  "miniz_oxide",
  "serde",
-]
-
-[[package]]
-name = "fable-data-derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "fable-def-compiler"
-version = "0.1.0"
-dependencies = [
- "fable-data",
-]
-
-[[package]]
-name = "fable-def-compiler-cli"
-version = "0.1.0"
-dependencies = [
- "argh",
- "codespan-reporting 0.13.1",
- "fable-data",
- "fable-def-compiler",
- "termcolor",
 ]
 
 [[package]]

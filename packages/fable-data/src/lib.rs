@@ -1,7 +1,10 @@
 pub mod big;
 pub mod bytes;
 pub mod crc32;
-pub mod def;
+// `def` and its `fable-data-derive` proc-macros were extracted to the
+// standalone `fable-defs` monorepo (~/git/fable-defs). `environment` still
+// references the removed `def` module and needs reworking against the
+// extracted crate before it (and its `openalbion`/`fool` consumers) will build.
 pub mod environment;
 pub mod kv;
 pub mod texture;
@@ -23,8 +26,3 @@ pub mod lev;
 // mod save;
 // mod stb;
 pub mod wld;
-
-/// Proc-macro derives for the def wire model (see [`def::wire`] / [`def::enums`]).
-/// Re-exported at the crate root so the generated `crate::def::…` paths resolve
-/// and def modules can `use crate::{DefStruct, WireStruct, …}`.
-pub use fable_data_derive::{DefEnum, DefFlags, DefStruct, DefVariant, WireStruct};

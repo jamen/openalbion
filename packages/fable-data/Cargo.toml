@@ -11,5 +11,4 @@ derive_more = { version = "1.0.0", features = ["from", "display", "error"] }
 miniz_oxide = "0.9"
 fallible-iterator = "0.3.0"
 lzo = { path = "../lzo" }
-fable-data-derive = { path = "../fable-data-derive" }
 serde = { version = "1.0.210", features = ["derive"] }
