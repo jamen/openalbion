@@ -405,17 +405,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codespan-reporting"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
-dependencies = [
- "serde",
- "termcolor",
- "unicode-width",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -631,10 +620,30 @@ dependencies = [
  "bcndecode",
  "bytemuck",
  "derive_more 1.0.0",
+ "fable-defs",
  "fallible-iterator",
  "lzo",
  "miniz_oxide",
  "serde",
+]
+
+[[package]]
+name = "fable-defs"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "derive_more 1.0.0",
+ "fable-defs-derive",
+ "miniz_oxide",
+]
+
+[[package]]
+name = "fable-defs-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1098,7 +1107,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
  "cfg_aliases",
- "codespan-reporting 0.12.0",
+ "codespan-reporting",
  "half",
  "hashbrown 0.16.1",
  "hexf-parse",

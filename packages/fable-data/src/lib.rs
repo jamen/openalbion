@@ -1,10 +1,8 @@
 pub mod big;
 pub mod bytes;
 pub mod crc32;
-// `def` and its `fable-data-derive` proc-macros were extracted to the
-// standalone `fable-defs` monorepo (~/git/fable-defs). `environment` still
-// references the removed `def` module and needs reworking against the
-// extracted crate before it (and its `openalbion`/`fool` consumers) will build.
+// Re-export `fable-defs`'s `def` module under the same path used before the extraction.
+pub use fable_defs::def;
 pub mod environment;
 pub mod kv;
 pub mod texture;
