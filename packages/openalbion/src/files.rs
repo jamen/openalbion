@@ -227,6 +227,7 @@ impl Files {
     }
 
     /// Load the LUT row indices from the ENVIRONMENT def in game.bin.
+    /// Falls back to defaults (13-16) when the def fields are zero.
     pub fn load_lut_rows(&self) -> LutRows {
         let mut rows = LutRows::default();
         let names_path = self.fable_directory.join("data/CompiledDefs/names.bin");
@@ -235,10 +236,10 @@ impl Files {
         let Ok(def_binary) = DefBinary::load_with_names(&game_bin_path, &names) else { return rows; };
         for entry in def_binary.entries(&names) {
             if let DefBody::Environment(def) = &entry.record.body {
-                rows.sky_gradient_top = def.sky_gradient_top_lookup_row.max(0) as usize;
-                rows.sky_gradient_top_alpha = def.sky_gradient_top_alpha_lookup_row.max(0) as usize;
-                rows.sky_gradient_bottom = def.sky_gradient_bottom_lookup_row.max(0) as usize;
-                rows.sky_gradient_bottom_alpha = def.sky_gradient_bottom_alpha_lookup_row.max(0) as usize;
+                if def.sky_gradient_top_lookup_row > 0 { rows.sky_gradient_top = def.sky_gradient_top_lookup_row as usize; }
+                if def.sky_gradient_top_alpha_lookup_row > 0 { rows.sky_gradient_top_alpha = def.sky_gradient_top_alpha_lookup_row as usize; }
+                if def.sky_gradient_bottom_lookup_row > 0 { rows.sky_gradient_bottom = def.sky_gradient_bottom_lookup_row as usize; }
+                if def.sky_gradient_bottom_alpha_lookup_row > 0 { rows.sky_gradient_bottom_alpha = def.sky_gradient_bottom_alpha_lookup_row as usize; }
                 break;
             }
         }
@@ -386,10 +387,21 @@ impl Files {
 type MeshTextures = Vec<Option<(AssetMetadata, Vec<u8>)>>;
 
 /// LUT row indices from the ENVIRONMENT def.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct LutRows {
     pub sky_gradient_top: usize,
     pub sky_gradient_top_alpha: usize,
     pub sky_gradient_bottom: usize,
     pub sky_gradient_bottom_alpha: usize,
+}
+
+impl Default for LutRows {
+    fn default() -> Self {
+        Self {
+            sky_gradient_top: 13,
+            sky_gradient_top_alpha: 14,
+            sky_gradient_bottom: 15,
+            sky_gradient_bottom_alpha: 16,
+        }
+    }
 }
