@@ -55,12 +55,12 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
-    let dome_top_z: f32 = 7000.0;
-    let dome_bottom_z: f32 = -500.0;
+    let dome_top_y: f32 = 7000.0;
+    let dome_bottom_y: f32 = -500.0;
     let dome_radius: f32 = 6500.0;
 
     vertices.push(SkyVertex {
-        position: [0.0, 0.0, dome_top_z],
+        position: [0.0, dome_top_y, 0.0],
         color: [0.0, 0.0, 0.0, 0.0],
         uv: [-1e-6, -1e-6],
     });
@@ -69,17 +69,17 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let (sin_a, cos_a) = (angle.sin(), angle.cos());
         let x = cos_a * dome_radius;
-        let y = sin_a * dome_radius;
+        let z = sin_a * dome_radius;
         let u = i as f32 / segments as f32;
 
         vertices.push(SkyVertex {
-            position: [x, y, dome_bottom_z],
+            position: [x, dome_bottom_y, z],
             color: [1.0, 1.0, 1.0, 1.0],
             uv: [u, 1.0],
         });
 
         vertices.push(SkyVertex {
-            position: [x, y, dome_top_z],
+            position: [x, dome_top_y, z],
             color: [0.0, 0.0, 0.0, 0.0],
             uv: [u, 0.0],
         });
@@ -106,11 +106,11 @@ fn build_base_band_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     let mut indices = Vec::new();
 
     let dome_radius: f32 = 6500.0;
-    let dome_bottom_z: f32 = -500.0;
-    let base_center_z: f32 = -10000.0;
+    let dome_bottom_y: f32 = -500.0;
+    let base_center_y: f32 = -10000.0;
 
     vertices.push(SkyVertex {
-        position: [0.0, 0.0, base_center_z],
+        position: [0.0, base_center_y, 0.0],
         color: [0.0, 0.0, 0.0, 0.0],
         uv: [0.0, 0.0],
     });
@@ -118,9 +118,9 @@ fn build_base_band_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     for i in 0..segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let x = angle.cos() * dome_radius;
-        let y = angle.sin() * dome_radius;
+        let z = angle.sin() * dome_radius;
         vertices.push(SkyVertex {
-            position: [x, y, dome_bottom_z],
+            position: [x, dome_bottom_y, z],
             color: [1.0, 1.0, 1.0, 1.0],
             uv: [0.0, 0.0],
         });
@@ -772,7 +772,7 @@ fn sun_direction(time_of_day: f32) -> [f32; 3] {
     let azimuth = (t - 0.25) * std::f32::consts::TAU;
     let elevation = (t * std::f32::consts::PI).sin();
     let h = elevation.abs().sqrt();
-    [azimuth.cos() * h, azimuth.sin() * h, elevation.max(0.05)]
+    [azimuth.cos() * h, elevation.max(0.05), azimuth.sin() * h]
 }
 
 fn moon_direction(time_of_day: f32) -> [f32; 3] {
@@ -786,7 +786,7 @@ fn build_sprite_quad(position: [f32; 3], size: f32) -> (Vec<SkyVertex>, Vec<u16>
             .sqrt();
         [position[0] / len, position[1] / len, position[2] / len]
     };
-    let world_up = [0.0, 0.0, 1.0f32];
+    let world_up = [0.0, 1.0, 0.0f32];
     let dot = dir[0] * world_up[0] + dir[1] * world_up[1] + dir[2] * world_up[2];
     let ref_vec = if dot.abs() > 0.999 {
         [0.0, 1.0, 0.0]

@@ -43,8 +43,8 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.uv = vec2<f32>(in.uv.x, 1.0 - in.uv.y);
     out.vertex_color = in.color;
 
-    // Height fraction: 0 at zenith (top, y=2000), 1 at horizon (bottom, y=0).
-    out.height_fraction = (2000.0 - in.position.y) / 2000.0;
+    // Height fraction: 0 at zenith (Y=7000), 1 at horizon (Y=-500).
+    out.height_fraction = (7000.0 - in.position.y) / 7500.0;
 
     return out;
 }
