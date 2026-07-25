@@ -563,6 +563,11 @@ pub struct OuterSkyPass {
     /// Flat RGBA pixel data from the LUT (190 × 21 pixels).
     /// Used to compute per-frame zenith/horizon gradient colours.
     lut_pixels: Vec<[f32; 4]>,
+    /// LUT row indices from the ENVIRONMENT def (default: 13,14,15,16).
+    row_top: usize,
+    row_top_alpha: usize,
+    row_bottom: usize,
+    row_bottom_alpha: usize,
 }
 
 impl OuterSkyPass {
@@ -591,6 +596,10 @@ impl OuterSkyPass {
             sky_textures_bind_group: None,
             lighting_lut: None,
             lut_pixels: Vec::new(),
+            row_top: 13,
+            row_top_alpha: 14,
+            row_bottom: 15,
+            row_bottom_alpha: 16,
         }
     }
 
@@ -691,6 +700,19 @@ impl OuterSkyPass {
         Ok(())
     }
 
+    pub fn set_lut_rows(
+        &mut self,
+        top: usize,
+        top_alpha: usize,
+        bottom: usize,
+        bottom_alpha: usize,
+    ) {
+        self.row_top = top;
+        self.row_top_alpha = top_alpha;
+        self.row_bottom = bottom;
+        self.row_bottom_alpha = bottom_alpha;
+    }
+
     fn lut_lookup(&self, row: usize, time_of_day: f32) -> [f32; 4] {
         if self.lut_pixels.is_empty() {
             return [0.5, 0.5, 0.5, 1.0];
@@ -711,10 +733,10 @@ impl OuterSkyPass {
         time_of_day: f32,
         _sky_blend: f32,
     ) {
-        let zenith = self.lut_lookup(13, time_of_day);
-        let zenith_alpha = self.lut_lookup(14, time_of_day);
-        let horizon = self.lut_lookup(15, time_of_day);
-        let horizon_alpha = self.lut_lookup(16, time_of_day);
+        let zenith = self.lut_lookup(self.row_top, time_of_day);
+        let zenith_alpha = self.lut_lookup(self.row_top_alpha, time_of_day);
+        let horizon = self.lut_lookup(self.row_bottom, time_of_day);
+        let horizon_alpha = self.lut_lookup(self.row_bottom_alpha, time_of_day);
 
         let uniforms = SkyUniforms {
             view_proj,

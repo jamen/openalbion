@@ -161,6 +161,16 @@ impl<'target> Renderer<'target> {
             .update_uniforms(&self.queue, view_proj, time_of_day, sky_blend);
     }
 
+    pub fn set_lut_rows(
+        &mut self,
+        top: usize,
+        top_alpha: usize,
+        bottom: usize,
+        bottom_alpha: usize,
+    ) {
+        self.passes.sky.set_lut_rows(top, top_alpha, bottom, bottom_alpha);
+    }
+
     pub fn set_sun_texture(
         &mut self,
         asset_info: &AssetMetadata,

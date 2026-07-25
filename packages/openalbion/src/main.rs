@@ -186,6 +186,22 @@ impl App {
             .set_lighting_lut(&self.files.lighting_lut_bytes)
             .map_err(E::UploadLightingLut)?;
 
+        // Set up LUT row indices from the ENVIRONMENT def.
+        let lut_rows = self.files.load_lut_rows();
+        tracing::info!(
+            "LUT rows: top={},{}, bottom={},{}",
+            lut_rows.sky_gradient_top,
+            lut_rows.sky_gradient_top_alpha,
+            lut_rows.sky_gradient_bottom,
+            lut_rows.sky_gradient_bottom_alpha,
+        );
+        renderer.set_lut_rows(
+            lut_rows.sky_gradient_top,
+            lut_rows.sky_gradient_top_alpha,
+            lut_rows.sky_gradient_bottom,
+            lut_rows.sky_gradient_bottom_alpha,
+        );
+
         // Load sun and moon textures from the SKY def.
         if let Some(sky_def) = self.files.load_sky_def() {
             if sky_def.sun_texture != 0 {
