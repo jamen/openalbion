@@ -56,33 +56,34 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     let dome_bottom_y: f32 = -500.0;
     let dome_radius: f32 = 6500.0;
 
-    // Build two rings of vertices: top (Y=7000, diffuse=black) and
-    // bottom (Y=-500, diffuse=white). Each ring has `segments + 1`
-    // vertices so that the vertex at angle=2π has U=1.0 and the
-    // vertex at angle=0 has U=0.0 — same position, different UV,
-    // allowing a clean triangle-strip wrap.
-    let vertex_count = (segments + 1) as usize;
-    let top_base = 0u16;
-    let bottom_base = vertex_count as u16;
+    // Center vertex at the top (zenith cap).
+    vertices.push(SkyVertex {
+        position: [0.0, dome_top_y, 0.0],
+        color: [0.0, 0.0, 0.0, 0.0],
+        uv: [0.5, 0.0],
+    });
 
+    // Top ring: Y=7000, diffuse=black, V=0.
+    let top_base = 1u16;
     for i in 0..=segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let x = angle.cos() * dome_radius;
         let z = angle.sin() * dome_radius;
         let u = i as f32 / segments as f32;
-
         vertices.push(SkyVertex {
             position: [x, dome_top_y, z],
             color: [0.0, 0.0, 0.0, 0.0],
             uv: [u, 0.0],
         });
     }
+
+    // Bottom ring: Y=-500, diffuse=white, V=1.
+    let bottom_base = top_base + segments as u16 + 1;
     for i in 0..=segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let x = angle.cos() * dome_radius;
         let z = angle.sin() * dome_radius;
         let u = i as f32 / segments as f32;
-
         vertices.push(SkyVertex {
             position: [x, dome_bottom_y, z],
             color: [1.0, 1.0, 1.0, 1.0],
@@ -90,7 +91,14 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
         });
     }
 
-    // Triangle strip: alternate top/bottom vertices, wrapping around.
+    // Triangle fan: center to top ring (zenith cap).
+    for i in 0..segments {
+        let t0 = top_base + i as u16;
+        let t1 = top_base + i as u16 + 1;
+        indices.extend_from_slice(&[0, t0, t1]);
+    }
+
+    // Triangle strip: cylinder wall alternating top/bottom.
     for i in 0..segments {
         let t0 = top_base + i as u16;
         let b0 = bottom_base + i as u16;
@@ -726,8 +734,20 @@ impl OuterSkyPass {
         if width == 0 || row >= height {
             return [0.5, 0.5, 0.5, 1.0];
         }
-        let u = (time_of_day / 24.0 * width as f32) as usize % width;
-        self.lut_pixels[row * width + u]
+        let fx = (time_of_day / 24.0 * width as f32) % width as f32;
+        let x0 = fx as usize % width;
+        let x1 = (x0 + 1) % width;
+        let frac = fx - x0 as f32;
+
+        let c0 = &self.lut_pixels[row * width + x0];
+        let c1 = &self.lut_pixels[row * width + x1];
+
+        [
+            c0[0] + (c1[0] - c0[0]) * frac,
+            c0[1] + (c1[1] - c0[1]) * frac,
+            c0[2] + (c1[2] - c0[2]) * frac,
+            c0[3] + (c1[3] - c0[3]) * frac,
+        ]
     }
 
     pub fn update_uniforms(

@@ -48,6 +48,10 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // DEBUG: UV visualisation — red = U, green = V
-    return vec4<f32>(in.uv.x, in.uv.y, 0.0, 1.0);
+    let tex0 = textureSample(sky_texture_0, sky_sampler, in.uv);
+    let tex1 = textureSample(sky_texture_1, sky_sampler, in.uv);
+    let blended = mix(tex0, tex1, 0.5);
+    // lrp r0, v0.w, v0, r0 — lerp between texture blend and vertex diffuse
+    let color = mix(blended.rgb, in.diffuse.rgb, in.diffuse.a);
+    return vec4<f32>(color, 1.0);
 }
