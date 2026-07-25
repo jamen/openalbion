@@ -56,24 +56,20 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     let dome_bottom_y: f32 = -500.0;
     let dome_radius: f32 = 6500.0;
 
-    vertices.push(SkyVertex {
-        position: [0.0, dome_top_y, 0.0],
-        color: [0.0, 0.0, 0.0, 0.0],
-        uv: [0.5, 0.0],
-    });
+    // Build two rings of vertices: top (Y=7000, diffuse=black) and
+    // bottom (Y=-500, diffuse=white). Each ring has `segments + 1`
+    // vertices so that the vertex at angle=2π has U=1.0 and the
+    // vertex at angle=0 has U=0.0 — same position, different UV,
+    // allowing a clean triangle-strip wrap.
+    let vertex_count = (segments + 1) as usize;
+    let top_base = 0u16;
+    let bottom_base = vertex_count as u16;
 
-    for i in 0..segments {
+    for i in 0..=segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
-        let (sin_a, cos_a) = (angle.sin(), angle.cos());
-        let x = cos_a * dome_radius;
-        let z = sin_a * dome_radius;
+        let x = angle.cos() * dome_radius;
+        let z = angle.sin() * dome_radius;
         let u = i as f32 / segments as f32;
-
-        vertices.push(SkyVertex {
-            position: [x, dome_bottom_y, z],
-            color: [1.0, 1.0, 1.0, 1.0],
-            uv: [u, 1.0],
-        });
 
         vertices.push(SkyVertex {
             position: [x, dome_top_y, z],
@@ -81,13 +77,26 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
             uv: [u, 0.0],
         });
     }
+    for i in 0..=segments {
+        let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
+        let x = angle.cos() * dome_radius;
+        let z = angle.sin() * dome_radius;
+        let u = i as f32 / segments as f32;
 
+        vertices.push(SkyVertex {
+            position: [x, dome_bottom_y, z],
+            color: [1.0, 1.0, 1.0, 1.0],
+            uv: [u, 1.0],
+        });
+    }
+
+    // Triangle strip: alternate top/bottom vertices, wrapping around.
     for i in 0..segments {
-        let center: u16 = 0;
-        let bottom_curr: u16 = 1 + (i * 2) as u16;
-        let bottom_next: u16 = 1 + (((i + 1) % segments) * 2) as u16;
-
-        indices.extend_from_slice(&[center, bottom_curr, bottom_next]);
+        let t0 = top_base + i as u16;
+        let b0 = bottom_base + i as u16;
+        let t1 = top_base + i as u16 + 1;
+        let b1 = bottom_base + i as u16 + 1;
+        indices.extend_from_slice(&[t0, b0, t1, t1, b0, b1]);
     }
 
     (vertices, indices)
@@ -104,10 +113,10 @@ fn build_base_band_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     vertices.push(SkyVertex {
         position: [0.0, base_center_y, 0.0],
         color: [0.0, 0.0, 0.0, 0.0],
-        uv: [0.0, 0.0],
+        uv: [0.5, 0.5],
     });
 
-    for i in 0..segments {
+    for i in 0..=segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let x = angle.cos() * dome_radius;
         let z = angle.sin() * dome_radius;
@@ -119,7 +128,7 @@ fn build_base_band_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     }
 
     for i in 0..segments {
-        indices.extend_from_slice(&[0, 1 + i as u16, 1 + ((i + 1) % segments) as u16]);
+        indices.extend_from_slice(&[0, 1 + i as u16, 2 + i as u16]);
     }
 
     (vertices, indices)
