@@ -70,9 +70,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let gradient_color = mix(grad_top.rgb, grad_bottom.rgb, h);
     let gradient_alpha = mix(grad_top_a.r, grad_bottom_a.r, h);
 
+    // Blend the sky texture with the LUT gradient — use the gradient to tint,
+    // not the vertex alpha (which is 0 at zenith, causing the black clear colour
+    // to bleed through). Output fully opaque so the clear colour never shows.
     let tinted = base_sky.rgb * gradient_color;
-
-    let alpha = max(max(in.vertex_color.a, gradient_alpha), base_sky.a);
+    let alpha = max(gradient_alpha, 1.0);
 
     return vec4<f32>(tinted, alpha);
 }

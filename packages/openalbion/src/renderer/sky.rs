@@ -771,8 +771,8 @@ fn sun_direction(time_of_day: f32) -> [f32; 3] {
     let t = time_of_day / 24.0;
     let azimuth = (t - 0.25) * std::f32::consts::TAU;
     let elevation = (t * std::f32::consts::PI).sin();
-    let h = elevation.abs().sqrt();
-    [azimuth.cos() * h, elevation.max(0.05), azimuth.sin() * h]
+    let h = elevation.max(0.0).sqrt();
+    [azimuth.cos() * h, elevation.max(0.0), azimuth.sin() * h]
 }
 
 fn moon_direction(time_of_day: f32) -> [f32; 3] {
@@ -784,20 +784,25 @@ fn build_sprite_quad(position: [f32; 3], size: f32) -> (Vec<SkyVertex>, Vec<u16>
     let dir = {
         let len = (position[0] * position[0] + position[1] * position[1] + position[2] * position[2])
             .sqrt();
+        if len < 0.001 {
+            return (vec![], vec![]);
+        }
         [position[0] / len, position[1] / len, position[2] / len]
     };
-    let world_up = [0.0, 1.0, 0.0f32];
-    let dot = dir[0] * world_up[0] + dir[1] * world_up[1] + dir[2] * world_up[2];
-    let ref_vec = if dot.abs() > 0.999 {
-        [0.0, 1.0, 0.0]
+    let dot = dir[1]; // dot(dir, (0,1,0))
+    let ref_vec: [f32; 3] = if dot.abs() > 0.999 {
+        [0.0, 0.0, 1.0]
     } else {
-        world_up
+        [0.0, 1.0, 0.0]
     };
     let right = {
         let x = ref_vec[1] * dir[2] - ref_vec[2] * dir[1];
         let y = ref_vec[2] * dir[0] - ref_vec[0] * dir[2];
         let z = ref_vec[0] * dir[1] - ref_vec[1] * dir[0];
         let len = (x * x + y * y + z * z).sqrt();
+        if len < 0.001 {
+            return (vec![], vec![]);
+        }
         [x / len, y / len, z / len]
     };
     let up = {
@@ -1018,8 +1023,8 @@ impl SkySpritePass {
         let layout = SkySpritePipelineLayout::new(device, &uniform_layout, &texture_layout);
         let pipeline = SkySpritePipeline::new(device, &layout, &shader, surface_format);
 
-        let sun_mesh = SpriteMesh::new(device, &uniform_layout, [0.0, 0.0, 7000.0], 500.0);
-        let moon_mesh = SpriteMesh::new(device, &uniform_layout, [0.0, 0.0, 7000.0], 350.0);
+        let sun_mesh = SpriteMesh::new(device, &uniform_layout, [0.0, 7000.0, 0.0], 600.0);
+        let moon_mesh = SpriteMesh::new(device, &uniform_layout, [0.0, 7000.0, 0.0], 400.0);
         let sprite_sampler = linear_clamp_sampler(device, "sprite_sampler");
 
         Self {
