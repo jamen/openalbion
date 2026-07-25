@@ -8,7 +8,7 @@ use self::depth::DepthTexture;
 use self::model::ModelPass;
 pub use self::model::ModelTextureError;
 pub use self::sky::LightingColoursError;
-use self::sky::OuterSkyPass;
+use self::sky::{OuterSkyPass, SkySpritePass};
 use self::terrain::TerrainPass;
 pub use self::texture::TextureUploadError;
 use derive_more::{Display, Error};
@@ -161,6 +161,32 @@ impl<'target> Renderer<'target> {
             .update_uniforms(&self.queue, view_proj, time_of_day, sky_blend);
     }
 
+    pub fn set_sun_texture(
+        &mut self,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        self.passes
+            .sprites
+            .set_sun_texture(&self.device, &self.queue, asset_info, asset_data)
+    }
+
+    pub fn set_moon_texture(
+        &mut self,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        self.passes
+            .sprites
+            .set_moon_texture(&self.device, &self.queue, asset_info, asset_data)
+    }
+
+    pub fn update_sprite_uniforms(&self, view_proj: [[f32; 4]; 4], time_of_day: f32) {
+        self.passes
+            .sprites
+            .update(&self.queue, view_proj, time_of_day);
+    }
+
     pub fn render(&mut self) -> Result<PrePresent, SurfaceError> {
         let surface_texture = self.surface.get_current_texture()?;
 
@@ -176,6 +202,7 @@ impl<'target> Renderer<'target> {
 
         self.passes.clear.pass(&mut cmd, &surface_texture_view);
         self.passes.sky.pass(&mut cmd, &surface_texture_view);
+        self.passes.sprites.pass(&mut cmd, &surface_texture_view);
         self.passes
             .terrain
             .pass(&mut cmd, &surface_texture_view, self.depth_texture.view());
@@ -207,6 +234,7 @@ pub enum NewRendererError {
 pub struct RenderPasses {
     clear: ClearPass,
     sky: OuterSkyPass,
+    sprites: SkySpritePass,
     terrain: TerrainPass,
     model: ModelPass,
 }
@@ -221,6 +249,7 @@ impl RenderPasses {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, surface_format),
+            sprites: SkySpritePass::new(device, surface_format),
             terrain: TerrainPass::new(device, surface_format, depth_format),
             model: ModelPass::new(device, queue, surface_format, depth_format),
         }

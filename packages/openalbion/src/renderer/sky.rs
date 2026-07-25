@@ -8,12 +8,12 @@ use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
-    CommandEncoder, Device, Extent3d, FragmentState, IndexFormat, MultisampleState, PipelineLayout,
-    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPassDescriptor, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages,
-    TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
-    VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
+    CommandEncoder, Device, Extent3d, FragmentState, IndexFormat,
+    MultisampleState, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue,
+    RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, SamplerBindingType, ShaderModule,
+    ShaderStages, TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension,
+    VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -764,5 +764,386 @@ impl OuterSkyPass {
         rpass.set_vertex_buffer(0, self.base_band.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.base_band.index_buffer.slice(..), IndexFormat::Uint16);
         rpass.draw_indexed(0..self.base_band.index_count, 0, 0..1);
+    }
+}
+
+fn sun_direction(time_of_day: f32) -> [f32; 3] {
+    let t = time_of_day / 24.0;
+    let azimuth = (t - 0.25) * std::f32::consts::TAU;
+    let elevation = (t * std::f32::consts::PI).sin();
+    let h = elevation.abs().sqrt();
+    [azimuth.cos() * h, azimuth.sin() * h, elevation.max(0.05)]
+}
+
+fn moon_direction(time_of_day: f32) -> [f32; 3] {
+    let d = sun_direction(time_of_day);
+    [-d[0], -d[1], -d[2]]
+}
+
+fn build_sprite_quad(position: [f32; 3], size: f32) -> (Vec<SkyVertex>, Vec<u16>) {
+    let dir = {
+        let len = (position[0] * position[0] + position[1] * position[1] + position[2] * position[2])
+            .sqrt();
+        [position[0] / len, position[1] / len, position[2] / len]
+    };
+    let world_up = [0.0, 0.0, 1.0f32];
+    let dot = dir[0] * world_up[0] + dir[1] * world_up[1] + dir[2] * world_up[2];
+    let ref_vec = if dot.abs() > 0.999 {
+        [0.0, 1.0, 0.0]
+    } else {
+        world_up
+    };
+    let right = {
+        let x = ref_vec[1] * dir[2] - ref_vec[2] * dir[1];
+        let y = ref_vec[2] * dir[0] - ref_vec[0] * dir[2];
+        let z = ref_vec[0] * dir[1] - ref_vec[1] * dir[0];
+        let len = (x * x + y * y + z * z).sqrt();
+        [x / len, y / len, z / len]
+    };
+    let up = {
+        let x = dir[1] * right[2] - dir[2] * right[1];
+        let y = dir[2] * right[0] - dir[0] * right[2];
+        let z = dir[0] * right[1] - dir[1] * right[0];
+        [x, y, z]
+    };
+
+    let h = size * 0.5;
+    let p = position;
+    let vertices = vec![
+        SkyVertex {
+            position: [p[0] - right[0] * h - up[0] * h, p[1] - right[1] * h - up[1] * h, p[2] - right[2] * h - up[2] * h],
+            color: [1.0, 1.0, 1.0, 1.0],
+            uv: [0.0, 0.0],
+        },
+        SkyVertex {
+            position: [p[0] + right[0] * h - up[0] * h, p[1] + right[1] * h - up[1] * h, p[2] + right[2] * h - up[2] * h],
+            color: [1.0, 1.0, 1.0, 1.0],
+            uv: [1.0, 0.0],
+        },
+        SkyVertex {
+            position: [p[0] + right[0] * h + up[0] * h, p[1] + right[1] * h + up[1] * h, p[2] + right[2] * h + up[2] * h],
+            color: [1.0, 1.0, 1.0, 1.0],
+            uv: [1.0, 1.0],
+        },
+        SkyVertex {
+            position: [p[0] - right[0] * h + up[0] * h, p[1] - right[1] * h + up[1] * h, p[2] - right[2] * h + up[2] * h],
+            color: [1.0, 1.0, 1.0, 1.0],
+            uv: [0.0, 1.0],
+        },
+    ];
+    let indices = vec![0, 1, 2, 0, 2, 3];
+    (vertices, indices)
+}
+
+pub struct SkySpriteShader(ShaderModule);
+
+impl SkySpriteShader {
+    pub fn new(device: &Device) -> Self {
+        Self(device.create_shader_module(include_wgsl!("sky/sky_sprite.wgsl")))
+    }
+}
+
+pub struct SkySpriteTextureBindGroupLayout(BindGroupLayout);
+
+impl SkySpriteTextureBindGroupLayout {
+    pub fn new(device: &Device) -> Self {
+        Self(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some(type_name::<Self>()),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        }))
+    }
+}
+
+pub struct SkySpritePipelineLayout(PipelineLayout);
+
+impl SkySpritePipelineLayout {
+    pub fn new(
+        device: &Device,
+        uniform_layout: &SkyUniformBindGroupLayout,
+        texture_layout: &SkySpriteTextureBindGroupLayout,
+    ) -> Self {
+        Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some(type_name::<Self>()),
+            bind_group_layouts: &[&uniform_layout.0, &texture_layout.0],
+            immediate_size: 0,
+        }))
+    }
+}
+
+pub struct SkySpritePipeline(RenderPipeline);
+
+impl SkySpritePipeline {
+    pub fn new(
+        device: &Device,
+        layout: &SkySpritePipelineLayout,
+        shader: &SkySpriteShader,
+        target_format: TextureFormat,
+    ) -> Self {
+        Self(device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(type_name::<Self>()),
+            layout: Some(&layout.0),
+            vertex: VertexState {
+                module: &shader.0,
+                entry_point: Some("vs_main"),
+                buffers: &[SkyVertex::layout()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(FragmentState {
+                module: &shader.0,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: target_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        }))
+    }
+}
+
+struct SpriteMesh {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    index_count: u32,
+    uniform_buffer: wgpu::Buffer,
+    uniform_bind_group: BindGroup,
+}
+
+impl SpriteMesh {
+    fn new(
+        device: &Device,
+        uniform_layout: &SkyUniformBindGroupLayout,
+        position: [f32; 3],
+        size: f32,
+    ) -> Self {
+        let (vertices, indices) = build_sprite_quad(position, size);
+
+        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("sprite_vertex_buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        });
+
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("sprite_index_buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: BufferUsages::INDEX,
+        });
+
+        let uniforms = SkyUniforms {
+            view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            time_of_day: 12.0,
+            sky_blend: 0.0,
+            _padding: [0.0; 2],
+        };
+
+        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("sprite_uniform_buffer"),
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("sprite_uniform_bind_group"),
+            layout: &uniform_layout.0,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            index_count: indices.len() as u32,
+            uniform_buffer,
+            uniform_bind_group,
+        }
+    }
+
+    fn update(&self, queue: &Queue, position: [f32; 3], size: f32, view_proj: [[f32; 4]; 4]) {
+        let (vertices, _) = build_sprite_quad(position, size);
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        let uniforms = SkyUniforms {
+            view_proj,
+            time_of_day: 0.0,
+            sky_blend: 0.0,
+            _padding: [0.0; 2],
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+    }
+}
+
+pub struct SkySpritePass {
+    pipeline: SkySpritePipeline,
+    texture_layout: SkySpriteTextureBindGroupLayout,
+    sprite_sampler: wgpu::Sampler,
+    sun_mesh: SpriteMesh,
+    moon_mesh: SpriteMesh,
+    sun_texture_bind_group: Option<BindGroup>,
+    moon_texture_bind_group: Option<BindGroup>,
+}
+
+impl SkySpritePass {
+    pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
+        let uniform_layout = SkyUniformBindGroupLayout::new(device);
+        let texture_layout = SkySpriteTextureBindGroupLayout::new(device);
+        let shader = SkySpriteShader::new(device);
+        let layout = SkySpritePipelineLayout::new(device, &uniform_layout, &texture_layout);
+        let pipeline = SkySpritePipeline::new(device, &layout, &shader, surface_format);
+
+        let sun_mesh = SpriteMesh::new(device, &uniform_layout, [0.0, 0.0, 7000.0], 500.0);
+        let moon_mesh = SpriteMesh::new(device, &uniform_layout, [0.0, 0.0, 7000.0], 350.0);
+        let sprite_sampler = linear_clamp_sampler(device, "sprite_sampler");
+
+        Self {
+            pipeline,
+            texture_layout,
+            sprite_sampler,
+            sun_mesh,
+            moon_mesh,
+            sun_texture_bind_group: None,
+            moon_texture_bind_group: None,
+        }
+    }
+
+    pub fn set_sun_texture(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        let view = upload_texture(device, queue, asset_info, asset_data)?;
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("sun_texture_bind_group"),
+            layout: &self.texture_layout.0,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&self.sprite_sampler),
+                },
+            ],
+        });
+        self.sun_texture_bind_group = Some(bind_group);
+        Ok(())
+    }
+
+    pub fn set_moon_texture(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        asset_info: &AssetMetadata,
+        asset_data: &[u8],
+    ) -> Result<(), TextureUploadError> {
+        let view = upload_texture(device, queue, asset_info, asset_data)?;
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("moon_texture_bind_group"),
+            layout: &self.texture_layout.0,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&self.sprite_sampler),
+                },
+            ],
+        });
+        self.moon_texture_bind_group = Some(bind_group);
+        Ok(())
+    }
+
+    pub fn update(
+        &self,
+        queue: &Queue,
+        view_proj: [[f32; 4]; 4],
+        time_of_day: f32,
+    ) {
+        let sun_dir = sun_direction(time_of_day);
+        let moon_dir = moon_direction(time_of_day);
+        let distance = 2000.0f32;
+        let sun_pos = [
+            sun_dir[0] * distance,
+            sun_dir[1] * distance,
+            sun_dir[2] * distance,
+        ];
+        let moon_pos = [
+            moon_dir[0] * distance,
+            moon_dir[1] * distance,
+            moon_dir[2] * distance,
+        ];
+        self.sun_mesh
+            .update(queue, sun_pos, 500.0, view_proj);
+        self.moon_mesh
+            .update(queue, moon_pos, 350.0, view_proj);
+    }
+
+    pub fn pass(&self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
+        let mut rpass = cmd.begin_render_pass(&RenderPassDescriptor {
+            label: Some(type_name::<Self>()),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target_texture_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        rpass.set_pipeline(&self.pipeline.0);
+
+        if let Some(bind_group) = &self.sun_texture_bind_group {
+            rpass.set_bind_group(0, &self.sun_mesh.uniform_bind_group, &[]);
+            rpass.set_bind_group(1, bind_group, &[]);
+            rpass.set_vertex_buffer(0, self.sun_mesh.vertex_buffer.slice(..));
+            rpass.set_index_buffer(self.sun_mesh.index_buffer.slice(..), IndexFormat::Uint16);
+            rpass.draw_indexed(0..self.sun_mesh.index_count, 0, 0..1);
+        }
+
+        if let Some(bind_group) = &self.moon_texture_bind_group {
+            rpass.set_bind_group(0, &self.moon_mesh.uniform_bind_group, &[]);
+            rpass.set_bind_group(1, bind_group, &[]);
+            rpass.set_vertex_buffer(0, self.moon_mesh.vertex_buffer.slice(..));
+            rpass.set_index_buffer(self.moon_mesh.index_buffer.slice(..), IndexFormat::Uint16);
+            rpass.draw_indexed(0..self.moon_mesh.index_count, 0, 0..1);
+        }
     }
 }

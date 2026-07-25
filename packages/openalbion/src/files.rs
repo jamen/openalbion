@@ -5,6 +5,7 @@ use fable_data::{
         binary::{def_binary::DefBinary, names::Names},
         object::ObjectDefs,
     },
+    def::SkyDef,
     environment::{EnvironmentConfig, EnvironmentTheme},
     lev::{Lev, LevError},
     mesh::{Mesh, MeshError},
@@ -206,6 +207,37 @@ impl Files {
     /// Get an environment theme by name, if environment data was loaded.
     pub fn environment_theme(&self, name: &str) -> Option<&EnvironmentTheme> {
         self.environment.as_ref()?.themes.get(name)
+    }
+
+    /// Load the SKY def from game.bin containing sun/moon texture indices.
+    pub fn load_sky_def(&self) -> Option<SkyDef> {
+        let names_path = self.fable_directory.join("data/CompiledDefs/names.bin");
+        let game_bin_path = self.fable_directory.join("data/CompiledDefs/game.bin");
+
+        let names = Names::load(&names_path).ok()?;
+        let def_binary = DefBinary::load_with_names(&game_bin_path, &names).ok()?;
+
+        for entry in def_binary.entries(&names) {
+            if let fable_data::def::binary::def_binary::DefBody::SkyDef(def) = &entry.record.body {
+                return Some(def.clone());
+            }
+        }
+        None
+    }
+
+    /// Read a texture asset by its numeric ID from the textures big.
+    pub fn read_texture_by_id(
+        &mut self,
+        tex_id: u32,
+    ) -> Result<(AssetMetadata, Vec<u8>), String> {
+        let asset = self
+            .find_texture_asset(tex_id)
+            .ok_or_else(|| format!("texture id {tex_id} not found in textures.big"))?;
+        let data = self
+            .textures
+            .read_asset_from_metadata(&asset)
+            .map_err(|e| format!("read texture {tex_id}: {e}"))?;
+        Ok((asset, data))
     }
 
     /// Read a sky texture by its symbol name (e.g., "GRAPHIC_ATMOSPHERIC_SKY_MIDNIGHT").
