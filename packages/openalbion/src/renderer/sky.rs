@@ -59,7 +59,7 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     vertices.push(SkyVertex {
         position: [0.0, dome_top_y, 0.0],
         color: [0.0, 0.0, 0.0, 0.0],
-        uv: [-1e-6, -1e-6],
+        uv: [0.5, 0.0],
     });
 
     for i in 0..segments {
@@ -85,14 +85,9 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     for i in 0..segments {
         let center: u16 = 0;
         let bottom_curr: u16 = 1 + (i * 2) as u16;
-        let top_curr: u16 = 2 + (i * 2) as u16;
         let bottom_next: u16 = 1 + (((i + 1) % segments) * 2) as u16;
-        let top_next: u16 = 2 + (((i + 1) % segments) * 2) as u16;
 
         indices.extend_from_slice(&[center, bottom_curr, bottom_next]);
-
-        indices.extend_from_slice(&[bottom_curr, bottom_next, top_curr]);
-        indices.extend_from_slice(&[bottom_next, top_next, top_curr]);
     }
 
     (vertices, indices)
