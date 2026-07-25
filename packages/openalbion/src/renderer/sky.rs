@@ -769,10 +769,15 @@ impl OuterSkyPass {
         let ha = (horizon_alpha[0] * 0.4).clamp(0.0, 1.0);
 
         tracing::info!(
-            "LUT at {:.1}h: zen=({:.3},{:.3},{:.3}) a={:.3}, hor=({:.3},{:.3},{:.3}) a={:.3}",
+            "LUT at {:.1}h row dump — r0={:?}, r10={:?}, r13={:?}, r14={:?}, r15={:?}, r16={:?}, r20={:?}",
             time_of_day,
-            zenith[0], zenith[1], zenith[2], za,
-            horizon[0], horizon[1], horizon[2], ha,
+            self.lut_lookup(0, time_of_day),
+            self.lut_lookup(10, time_of_day),
+            self.lut_lookup(13, time_of_day),
+            self.lut_lookup(14, time_of_day),
+            self.lut_lookup(15, time_of_day),
+            self.lut_lookup(16, time_of_day),
+            self.lut_lookup(20, time_of_day),
         );
 
         let uniforms = SkyUniforms {
