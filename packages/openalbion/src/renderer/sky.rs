@@ -762,10 +762,23 @@ impl OuterSkyPass {
         let horizon = self.lut_lookup(self.row_bottom, time_of_day);
         let horizon_alpha = self.lut_lookup(self.row_bottom_alpha, time_of_day);
 
+        // The LUT alpha-rows use only their R component (matching the
+        // decomp's CBlendedEnvironmentTheme).  Clamp the gradient
+        // influence so the sky texture never fully disappears.
+        let za = (zenith_alpha[0] * 0.4).clamp(0.0, 1.0);
+        let ha = (horizon_alpha[0] * 0.4).clamp(0.0, 1.0);
+
+        tracing::info!(
+            "LUT at {:.1}h: zen=({:.3},{:.3},{:.3}) a={:.3}, hor=({:.3},{:.3},{:.3}) a={:.3}",
+            time_of_day,
+            zenith[0], zenith[1], zenith[2], za,
+            horizon[0], horizon[1], horizon[2], ha,
+        );
+
         let uniforms = SkyUniforms {
             view_proj,
-            zenith_color: [zenith[0], zenith[1], zenith[2], zenith_alpha[0]],
-            horizon_color: [horizon[0], horizon[1], horizon[2], horizon_alpha[0]],
+            zenith_color: [zenith[0], zenith[1], zenith[2], za],
+            horizon_color: [horizon[0], horizon[1], horizon[2], ha],
         };
 
         self.dome.update_uniforms(queue, &uniforms);
