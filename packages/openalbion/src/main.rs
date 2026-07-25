@@ -500,6 +500,12 @@ fn upload_sky_texture(
         }
     };
 
+    tracing::info!(
+        "Uploading sky texture '{name}' ({} bytes) to slot {}",
+        bytes.len(),
+        if secondary { 1 } else { 0 },
+    );
+
     let result = if secondary {
         renderer.set_sky_texture1(&metadata, &bytes)
     } else {
@@ -658,6 +664,12 @@ impl App {
         // Re-select the sky textures for the new time-of-day before borrowing the renderer.
         let sky_blend = self.refresh_sky();
         let sky_view_proj = self.camera.sky_view_projection_matrix().to_cols_array_2d();
+
+        tracing::trace!(
+            "Sky state: time={:.2}h, blend={:.2}",
+            self.time_of_day,
+            sky_blend,
+        );
         let view_proj = self.camera.view_projection_matrix().to_cols_array_2d();
 
         let window = self.window.as_ref().ok_or(E::NoWindow)?;

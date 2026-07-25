@@ -1,8 +1,12 @@
+// Sky sprite shader — matches VSHADER_SKY_SPRITE (vs_1_1)
+// and PSHADER_SKY_SPRITE (ps_1_1).
+// Renders a textured billboard quad (sun or moon) with the vertex
+// colour providing the tint.
+
 struct Uniforms {
     view_proj: mat4x4<f32>,
-    time_of_day: f32,
-    sky_blend: f32,
-    _padding: vec2<f32>,
+    zenith_color: vec4<f32>,
+    horizon_color: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -34,6 +38,5 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let tex_color = textureSample(sprite_texture, sprite_sampler, in.uv);
-    let final_color = tex_color * in.color;
-    return final_color;
+    return tex_color * in.color;
 }

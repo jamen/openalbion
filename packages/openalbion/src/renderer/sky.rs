@@ -40,15 +40,12 @@ impl SkyVertex {
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct SkyUniforms {
+pub(crate) struct SkyUniforms {
     view_proj: [[f32; 4]; 4],
-    /// Time of day in hours (0.0 to 24.0).
-    /// Shader normalizes this to 0.0-1.0 for LUT sampling.
-    time_of_day: f32,
-    /// Blend factor between sky_texture_0 and sky_texture_1 (0.0 to 1.0).
-    sky_blend: f32,
-    /// Padding to align to 16 bytes.
-    _padding: [f32; 2],
+    /// RGB from LUT row 13 (SkyGradientTop), A from row 14 (SkyGradientTopAlpha).
+    zenith_color: [f32; 4],
+    /// RGB from LUT row 15 (SkyGradientBottom), A from row 16 (SkyGradientBottomAlpha).
+    horizon_color: [f32; 4],
 }
 
 fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
@@ -165,9 +162,8 @@ impl SkyDome {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ],
-            time_of_day: 12.0, // Default to noon
-            sky_blend: 0.0,
-            _padding: [0.0; 2],
+            zenith_color: [0.4, 0.6, 1.0, 0.0],
+            horizon_color: [0.6, 0.7, 0.9, 1.0],
         };
 
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -194,20 +190,8 @@ impl SkyDome {
         }
     }
 
-    pub fn update_uniforms(
-        &self,
-        queue: &Queue,
-        view_proj: [[f32; 4]; 4],
-        time_of_day: f32,
-        sky_blend: f32,
-    ) {
-        let uniforms = SkyUniforms {
-            view_proj,
-            time_of_day,
-            sky_blend,
-            _padding: [0.0; 2],
-        };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+    pub fn update_uniforms(&self, queue: &Queue, uniforms: &SkyUniforms) {
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[*uniforms]));
     }
 }
 
@@ -223,19 +207,16 @@ impl SkyBaseBand {
     pub fn new(device: &Device, uniform_layout: &SkyUniformBindGroupLayout) -> Self {
         let (vertices, indices) = build_base_band_mesh(36);
         let index_count = indices.len() as u32;
-
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("base_band_vertex_buffer"),
             contents: bytemuck::cast_slice(&vertices),
             usage: BufferUsages::VERTEX,
         });
-
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("base_band_index_buffer"),
             contents: bytemuck::cast_slice(&indices),
             usage: BufferUsages::INDEX,
         });
-
         let uniforms = SkyUniforms {
             view_proj: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -243,17 +224,14 @@ impl SkyBaseBand {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ],
-            time_of_day: 12.0,
-            sky_blend: 0.0,
-            _padding: [0.0; 2],
+            zenith_color: [0.4, 0.6, 1.0, 0.0],
+            horizon_color: [0.6, 0.7, 0.9, 1.0],
         };
-
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("base_band_uniform_buffer"),
             contents: bytemuck::cast_slice(&[uniforms]),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
-
         let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
             label: Some("base_band_uniform_bind_group"),
             layout: &uniform_layout.0,
@@ -262,7 +240,6 @@ impl SkyBaseBand {
                 resource: uniform_buffer.as_entire_binding(),
             }],
         });
-
         Self {
             vertex_buffer,
             index_buffer,
@@ -272,20 +249,8 @@ impl SkyBaseBand {
         }
     }
 
-    pub fn update_uniforms(
-        &self,
-        queue: &Queue,
-        view_proj: [[f32; 4]; 4],
-        time_of_day: f32,
-        sky_blend: f32,
-    ) {
-        let uniforms = SkyUniforms {
-            view_proj,
-            time_of_day,
-            sky_blend,
-            _padding: [0.0; 2],
-        };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
+    pub fn update_uniforms(&self, queue: &Queue, uniforms: &SkyUniforms) {
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[*uniforms]));
     }
 }
 
@@ -595,6 +560,9 @@ pub struct OuterSkyPass {
     texture1: Option<TextureView>,
     sky_textures_bind_group: Option<BindGroup>,
     lighting_lut: Option<BindGroup>,
+    /// Flat RGBA pixel data from the LUT (190 × 21 pixels).
+    /// Used to compute per-frame zenith/horizon gradient colours.
+    lut_pixels: Vec<[f32; 4]>,
 }
 
 impl OuterSkyPass {
@@ -622,6 +590,7 @@ impl OuterSkyPass {
             texture1: None,
             sky_textures_bind_group: None,
             lighting_lut: None,
+            lut_pixels: Vec::new(),
         }
     }
 
@@ -688,6 +657,18 @@ impl OuterSkyPass {
         queue: &Queue,
         tga_bytes: &[u8],
     ) -> Result<(), LightingColoursError> {
+        let tga = Tga::parse(tga_bytes).map_err(LightingColoursError::Tga)?;
+        let width = tga.width() as usize;
+        let height = tga.height() as usize;
+        let rgba = tga.to_rgba();
+
+        // Store pixel data for CPU-side LUT lookups (used by update_uniforms).
+        self.lut_pixels = rgba
+            .chunks_exact(4)
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .collect();
+        tracing::info!("Stored LUT pixels: {}x{}", width, height);
+
         let lut = LightingColoursTexture::from_tga_bytes(device, queue, tga_bytes)?;
 
         let bind_group = device.create_bind_group(&BindGroupDescriptor {
@@ -705,10 +686,22 @@ impl OuterSkyPass {
             ],
         });
 
-        // The bind group keeps `lut`'s view and sampler alive, so we don't store the LUT itself.
         self.lighting_lut = Some(bind_group);
 
         Ok(())
+    }
+
+    fn lut_lookup(&self, row: usize, time_of_day: f32) -> [f32; 4] {
+        if self.lut_pixels.is_empty() {
+            return [0.5, 0.5, 0.5, 1.0];
+        }
+        let height = 21usize;
+        let width = self.lut_pixels.len() / height;
+        if width == 0 || row >= height {
+            return [0.5, 0.5, 0.5, 1.0];
+        }
+        let u = (time_of_day / 24.0 * width as f32) as usize % width;
+        self.lut_pixels[row * width + u]
     }
 
     pub fn update_uniforms(
@@ -716,23 +709,38 @@ impl OuterSkyPass {
         queue: &Queue,
         view_proj: [[f32; 4]; 4],
         time_of_day: f32,
-        sky_blend: f32,
+        _sky_blend: f32,
     ) {
-        self.dome
-            .update_uniforms(queue, view_proj, time_of_day, sky_blend);
-        self.base_band
-            .update_uniforms(queue, view_proj, time_of_day, sky_blend);
+        let zenith = self.lut_lookup(13, time_of_day);
+        let zenith_alpha = self.lut_lookup(14, time_of_day);
+        let horizon = self.lut_lookup(15, time_of_day);
+        let horizon_alpha = self.lut_lookup(16, time_of_day);
+
+        let uniforms = SkyUniforms {
+            view_proj,
+            zenith_color: [zenith[0], zenith[1], zenith[2], zenith_alpha[0]],
+            horizon_color: [horizon[0], horizon[1], horizon[2], horizon_alpha[0]],
+        };
+
+        self.dome.update_uniforms(queue, &uniforms);
+        self.base_band.update_uniforms(queue, &uniforms);
     }
 
     pub fn pass(&self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
         let Some(sky_bind_group) = &self.sky_textures_bind_group else {
-            tracing::warn!("Sky pass: no textures bind group — sky skipped");
+            tracing::debug!("Sky pass: no textures bind group — sky skipped");
             return;
         };
         let Some(lut_bind_group) = &self.lighting_lut else {
-            tracing::warn!("Sky pass: no lighting LUT — sky skipped");
+            tracing::debug!("Sky pass: no lighting LUT — sky skipped");
             return;
         };
+
+        tracing::trace!(
+            "Sky pass: dome {} indices, base_band {} indices",
+            self.dome.index_count,
+            self.base_band.index_count,
+        );
 
         let mut rpass = cmd.begin_render_pass(&RenderPassDescriptor {
             label: Some(type_name::<Self>()),
@@ -963,9 +971,8 @@ impl SpriteMesh {
 
         let uniforms = SkyUniforms {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            time_of_day: 12.0,
-            sky_blend: 0.0,
-            _padding: [0.0; 2],
+            zenith_color: [0.0; 4],
+            horizon_color: [0.0; 4],
         };
 
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -997,9 +1004,8 @@ impl SpriteMesh {
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         let uniforms = SkyUniforms {
             view_proj,
-            time_of_day: 0.0,
-            sky_blend: 0.0,
-            _padding: [0.0; 2],
+            zenith_color: [0.0; 4],
+            horizon_color: [0.0; 4],
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
@@ -1109,6 +1115,13 @@ impl SkySpritePass {
             moon_dir[1] * distance,
             moon_dir[2] * distance,
         ];
+
+        tracing::trace!(
+            "Sprite update: time={:.2}, sun_dir=({:.2},{:.2},{:.2}), moon_dir=({:.2},{:.2},{:.2})",
+            time_of_day, sun_dir[0], sun_dir[1], sun_dir[2],
+            moon_dir[0], moon_dir[1], moon_dir[2],
+        );
+
         self.sun_mesh
             .update(queue, sun_pos, 500.0, view_proj);
         self.moon_mesh
