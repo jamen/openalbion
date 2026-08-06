@@ -200,16 +200,17 @@ impl App {
             .map(|c| c.height)
             .fold(f32::NEG_INFINITY, f32::max);
         let scale = renderer::terrain::HEIGHT_SCALE;
-        let mid_y = (raw_min + raw_max) * 0.5 * scale;
+        let mid_z = (raw_min + raw_max) * 0.5 * scale;
 
-        self.terrain_center = glam::Vec3::new(span_x * 0.5, mid_y, span_z * 0.5);
+        // Z-up: the heightmap spans X/Y and height is Z. AGENTS.md §3.6.
+        self.terrain_center = glam::Vec3::new(span_x * 0.5, span_z * 0.5, mid_z);
         self.terrain_radius = span_x.max(span_z) * 0.5;
         let world_span = span_x.max(span_z).max((raw_max - raw_min).abs() * scale);
         self.camera.set_world_extents(world_span);
         // Position camera above and back from the terrain centre for a good initial view.
         self.camera.position = self.terrain_center
-            + glam::Vec3::new(world_span * 0.3, world_span * 0.4, world_span * 0.5);
-        self.camera.look_at(self.terrain_center, glam::Vec3::Y);
+            + glam::Vec3::new(world_span * 0.3, world_span * 0.5, world_span * 0.4);
+        self.camera.look_at(self.terrain_center);
         self.camera.fly_speed = world_span * 0.1;
         renderer.set_terrain(&mut self.files, &lev);
         tracing::info!(
@@ -375,13 +376,10 @@ impl App {
                 continue;
             };
 
-            // Z-up → Y-up: Fable stores PositionZ as height; we use Y=up.
+            // World space is Z-up, matching the game — TNG positions pass through
+            // unchanged. AGENTS.md §3.6.
             let scale = thing.object_scale.unwrap_or(1.0);
-            let pos = [
-                thing.position[0],
-                thing.position[2], // Fable Z → our Y (height)
-                thing.position[1], // Fable Y → our Z
-            ];
+            let pos = thing.position;
 
             renderer
                 .add_model(mesh, textures, scale, pos)

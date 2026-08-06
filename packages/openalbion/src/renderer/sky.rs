@@ -62,13 +62,15 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
-    let dome_top_y: f32 = 7000.0;
-    let dome_bottom_y: f32 = -500.0;
+    // engine_sky_renderer.cpp:545 BuildOuterSkyMesh — literals 7e3f, -5e2f, 6.5e3.
+    // Z is up, as in the original.
+    let dome_top_z: f32 = 7000.0;
+    let dome_bottom_z: f32 = -500.0;
     let dome_radius: f32 = 6500.0;
 
     // Center vertex at the top (zenith cap).
     vertices.push(SkyVertex {
-        position: [0.0, dome_top_y, 0.0],
+        position: [0.0, 0.0, dome_top_z],
         color: [0.0, 0.0, 0.0, 0.0],
         uv: [0.5, 0.0],
     });
@@ -78,10 +80,10 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     for i in 0..=segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let x = angle.cos() * dome_radius;
-        let z = angle.sin() * dome_radius;
+        let y = angle.sin() * dome_radius;
         let u = i as f32 / segments as f32;
         vertices.push(SkyVertex {
-            position: [x, dome_top_y, z],
+            position: [x, y, dome_top_z],
             color: [0.0, 0.0, 0.0, 0.0],
             uv: [u, 0.0],
         });
@@ -92,10 +94,10 @@ fn build_outer_sky_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     for i in 0..=segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let x = angle.cos() * dome_radius;
-        let z = angle.sin() * dome_radius;
+        let y = angle.sin() * dome_radius;
         let u = i as f32 / segments as f32;
         vertices.push(SkyVertex {
-            position: [x, dome_bottom_y, z],
+            position: [x, y, dome_bottom_z],
             color: [1.0, 1.0, 1.0, 1.0],
             uv: [u, 1.0],
         });
@@ -124,12 +126,14 @@ fn build_base_band_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
+    // engine_sky_renderer.cpp:666 BuildBaseBandMesh — centre at Z = -1e4f, ring at
+    // radius 6.5e3 and Z = -5e2f.
     let dome_radius: f32 = 6500.0;
-    let dome_bottom_y: f32 = -500.0;
-    let base_center_y: f32 = -10000.0;
+    let dome_bottom_z: f32 = -500.0;
+    let base_center_z: f32 = -10000.0;
 
     vertices.push(SkyVertex {
-        position: [0.0, base_center_y, 0.0],
+        position: [0.0, 0.0, base_center_z],
         color: [0.0, 0.0, 0.0, 0.0],
         uv: [0.5, 0.5],
     });
@@ -137,9 +141,9 @@ fn build_base_band_mesh(segments: u32) -> (Vec<SkyVertex>, Vec<u16>) {
     for i in 0..=segments {
         let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
         let x = angle.cos() * dome_radius;
-        let z = angle.sin() * dome_radius;
+        let y = angle.sin() * dome_radius;
         vertices.push(SkyVertex {
-            position: [x, dome_bottom_y, z],
+            position: [x, y, dome_bottom_z],
             color: [1.0, 1.0, 1.0, 1.0],
             uv: [0.0, 0.0],
         });

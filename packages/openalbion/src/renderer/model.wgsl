@@ -45,7 +45,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
 
-    let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+    // UNVERIFIED: placeholder light, reoriented for Z-up world space (AGENTS.md §3.6).
+    // Model lighting is not yet derived from the original. Logged in AGENTS.md §9.
+    let light_dir = normalize(vec3<f32>(0.5, 0.3, 1.0));
     let n = normalize(in.normal);
     let diffuse = max(dot(n, light_dir), 0.0);
     let lighting = 0.3 + diffuse * 0.7;

@@ -77,13 +77,14 @@ fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
     let mut vertices = Vec::with_capacity(w * h);
     for row in 0..h {
         for col in 0..w {
-            let y = height_at(col, row);
+            let z = height_at(col, row);
 
             let left = height_at(col.saturating_sub(1), row);
             let right = height_at((col + 1).min(w - 1), row);
             let down = height_at(col, row.saturating_sub(1));
             let up = height_at(col, (row + 1).min(h - 1));
-            let normal = normalize([-(right - left), 2.0 * CELL_SIZE, -(up - down)]);
+            // Z-up: gradient in X and Y, up is +Z.
+            let normal = normalize([-(right - left), -(up - down), 2.0 * CELL_SIZE]);
 
             let cell = &cells[row * w + col];
 
@@ -92,7 +93,7 @@ fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
             // the mesh builder according to the layer's `MappingDirection` — not derived from
             // the height gradient. Left zero until the layer meshes land (AGENTS.md step 5.2).
             vertices.push(TerrainVertex {
-                position: [col as f32 * CELL_SIZE, y, row as f32 * CELL_SIZE],
+                position: [col as f32 * CELL_SIZE, row as f32 * CELL_SIZE, z],
                 normal,
                 theme_indices: [
                     cell.ground_theme.0,
@@ -129,7 +130,7 @@ fn normalize(v: [f32; 3]) -> [f32; 3] {
     if len > 0.0 {
         [v[0] / len, v[1] / len, v[2] / len]
     } else {
-        [0.0, 1.0, 0.0]
+        [0.0, 0.0, 1.0]
     }
 }
 
