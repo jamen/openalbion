@@ -1,81 +1,49 @@
+// Landscape — PLACEHOLDER.
+//
+// The original renders the landscape as a background pass plus N alpha-blended
+// per-theme layer passes (VSHADER/PSHADER_LANDSCAPE_FOREGROUND); the layer texture
+// supplies the alpha mask and the colour comes from a planar-projected composited
+// surface texture. Lighting is
+//     Ambient + saturate(n·l)^2 * Diffuse + max(-n·l, 0) * Backlight
+// with all three colours fetched from the environment colour LUT.
+// See AGENTS.md §3.4; the real implementation is step 5.
+//
+// Until then this draws untextured flat-lit geometry so the mesh itself stays
+// inspectable. It deliberately does NOT sample the theme textures: the previous
+// single-pass 3-way blend, the slope-driven cliff mix and the hardcoded light
+// direction were all inventions with no counterpart in the original.
+
 struct Uniforms {
     view_proj: mat4x4<f32>,
     texture_scale: f32,
     _pad: vec3<f32>,
 };
 
-struct PaletteMap {
-    layers: array<u32, 256>,
-};
-
 @group(0) @binding(0) var<uniform> u: Uniforms;
-@group(0) @binding(1) var theme_textures: texture_2d_array<f32>;
-@group(0) @binding(2) var terrain_sampler: sampler;
-@group(0) @binding(3) var<storage, read> palette_map: PaletteMap;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) normal: vec3<f32>,
-    @location(1) world_uv: vec2<f32>,
-    @location(2) @interpolate(flat) theme_0: u32,
-    @location(3) @interpolate(flat) theme_1: u32,
-    @location(4) @interpolate(flat) theme_2: u32,
-    @location(5) @interpolate(flat) blend_0: f32,
-    @location(6) @interpolate(flat) blend_1: f32,
-    @location(7) @interpolate(flat) cliff_u: f32,
-    @location(8) @interpolate(flat) cliff_v: f32,
 };
 
 @vertex
 fn vs_main(
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) theme_indices_in: vec4<u32>,
-    @location(3) blend_in: vec4<u32>,
 ) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = u.view_proj * vec4<f32>(position, 1.0);
     out.normal = normal;
-    out.world_uv = position.xz * u.texture_scale;
-
-    out.theme_0 = theme_indices_in.x;
-    out.theme_1 = theme_indices_in.y;
-    out.theme_2 = theme_indices_in.z;
-
-    out.blend_0 = f32(blend_in.x) / 255.0;
-    out.blend_1 = f32(blend_in.y) / 255.0;
-    out.cliff_u = f32(blend_in.z) / 255.0;
-    out.cliff_v = f32(blend_in.w) / 255.0;
-
     return out;
-}
-
-fn sample_theme(palette_idx: u32, uv: vec2<f32>) -> vec4<f32> {
-    let layer = palette_map.layers[palette_idx];
-    return textureSample(theme_textures, terrain_sampler, uv, layer);
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let light_dir = normalize(vec3<f32>(0.4, 1.0, 0.3));
+    // UNVERIFIED: placeholder light. The real direction and the ambient/diffuse/
+    // backlight colours come from the environment LUT (rows 1/0/3) via the shader
+    // constant registers — see AGENTS.md §3.4, §3.8. Logged in AGENTS.md §9.
+    let light_dir = normalize(vec3<f32>(0.4, 0.3, 1.0));
     let n = normalize(in.normal);
-    let diffuse = max(dot(n, light_dir), 0.0);
-    let shade = 0.25 + diffuse * 0.75;
-
-    let t0 = sample_theme(in.theme_0, in.world_uv);
-    let t1 = sample_theme(in.theme_1, in.world_uv);
-    let t2 = sample_theme(in.theme_2, in.world_uv);
-
-    let b0 = clamp(in.blend_0, 0.0, 1.0);
-    let b1 = clamp(in.blend_1, 0.0, 1.0);
-
-    var base = t0;
-    base = mix(base, t1, b0);
-    base = mix(base, t2, b1);
-
-    let slope_f = clamp((1.0 - in.normal.y) * 6.0 - 0.5, 0.0, 1.0);
-    let cliff_col = t0;
-    base = mix(base, cliff_col, slope_f * 0.7);
-
-    return vec4<f32>(base.rgb * shade, 1.0);
+    let shade = 0.25 + max(dot(n, light_dir), 0.0) * 0.75;
+    return vec4<f32>(vec3<f32>(shade), 1.0);
 }

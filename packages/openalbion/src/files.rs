@@ -24,6 +24,10 @@ pub struct Files {
     pub fable_directory: PathBuf,
     pub textures: BigReader<File>,
     pub graphics: BigReader<File>,
+    /// Raw `lighting_colours.tga`. Consumed by the environment layer's integer texel
+    /// fetch (AGENTS.md §3.1, step 2.1); not uploaded to the GPU — the original looks
+    /// these up on the CPU.
+    #[allow(dead_code)]
     pub lighting_lut_bytes: Vec<u8>,
     pub environment: Option<EnvironmentConfig>,
     pub engine_themes: HashMap<i32, EngineThemeDef>,
@@ -287,6 +291,10 @@ impl Files {
     }
 
     /// Load the SKY def from game.bin containing sun/moon texture indices.
+    ///
+    /// Unused until sun/moon rendering is ported from `RenderSun`/`RenderMoon`
+    /// (AGENTS.md step 4.2).
+    #[allow(dead_code)]
     pub fn load_sky_def(&self) -> Option<SkyDef> {
         let names_path = self.fable_directory.join("data/CompiledDefs/names.bin");
         let game_bin_path = self.fable_directory.join("data/CompiledDefs/game.bin");
@@ -300,26 +308,6 @@ impl Files {
             }
         }
         None
-    }
-
-    /// Load the LUT row indices from the ENVIRONMENT def in game.bin.
-    /// Falls back to defaults (13-16) when the def fields are zero.
-    pub fn load_lut_rows(&self) -> LutRows {
-        let mut rows = LutRows::default();
-        let names_path = self.fable_directory.join("data/CompiledDefs/names.bin");
-        let game_bin_path = self.fable_directory.join("data/CompiledDefs/game.bin");
-        let Ok(names) = Names::load(&names_path) else { return rows; };
-        let Ok(def_binary) = DefBinary::load_with_names(&game_bin_path, &names) else { return rows; };
-        for entry in def_binary.entries(&names) {
-            if let DefBody::Environment(def) = &entry.record.body {
-                if def.sky_gradient_top_lookup_row > 0 { rows.sky_gradient_top = def.sky_gradient_top_lookup_row as usize; }
-                if def.sky_gradient_top_alpha_lookup_row > 0 { rows.sky_gradient_top_alpha = def.sky_gradient_top_alpha_lookup_row as usize; }
-                if def.sky_gradient_bottom_lookup_row > 0 { rows.sky_gradient_bottom = def.sky_gradient_bottom_lookup_row as usize; }
-                if def.sky_gradient_bottom_alpha_lookup_row > 0 { rows.sky_gradient_bottom_alpha = def.sky_gradient_bottom_alpha_lookup_row as usize; }
-                break;
-            }
-        }
-        rows
     }
 
     /// Read a texture asset by its numeric ID from the textures big.
@@ -535,26 +523,6 @@ impl Files {
 /// A mesh's resolved material textures, aligned 1:1 with `Mesh::materials`. Each entry is the
 /// material's diffuse texture (metadata + raw bytes), or `None` if it has none.
 type MeshTextures = Vec<Option<(AssetMetadata, Vec<u8>)>>;
-
-/// LUT row indices from the ENVIRONMENT def.
-#[derive(Debug, Clone, Copy)]
-pub struct LutRows {
-    pub sky_gradient_top: usize,
-    pub sky_gradient_top_alpha: usize,
-    pub sky_gradient_bottom: usize,
-    pub sky_gradient_bottom_alpha: usize,
-}
-
-impl Default for LutRows {
-    fn default() -> Self {
-        Self {
-            sky_gradient_top: 13,
-            sky_gradient_top_alpha: 14,
-            sky_gradient_bottom: 15,
-            sky_gradient_bottom_alpha: 16,
-        }
-    }
-}
 
 pub struct TerrainThemeBundle {
     pub palette_to_layer: [u16; 256],

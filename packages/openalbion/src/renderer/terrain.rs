@@ -86,14 +86,11 @@ fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
             let normal = normalize([-(right - left), 2.0 * CELL_SIZE, -(up - down)]);
 
             let cell = &cells[row * w + col];
-            let slope = {
-                let grad_x = (right - left) * 0.5 / CELL_SIZE;
-                let grad_z = (up - down) * 0.5 / CELL_SIZE;
-                (grad_x * grad_x + grad_z * grad_z).sqrt().atan()
-            };
-            let cliff_u = ((slope / 1.5).clamp(0.0, 1.0) * 255.0) as u8;
-            let cliff_v = 0u8;
 
+            // `CliffU`/`CliffV` are per-vertex texture coordinates on
+            // `CLandscapeLayerMesh::CVertex` (engine_landscape_layer_mesh.hpp:71), produced by
+            // the mesh builder according to the layer's `MappingDirection` — not derived from
+            // the height gradient. Left zero until the layer meshes land (AGENTS.md step 5.2).
             vertices.push(TerrainVertex {
                 position: [col as f32 * CELL_SIZE, y, row as f32 * CELL_SIZE],
                 normal,
@@ -106,8 +103,8 @@ fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
                 blend: [
                     cell.ground_theme_strength.0,
                     cell.ground_theme_strength.1,
-                    cliff_u,
-                    cliff_v,
+                    0,
+                    0,
                 ],
             });
         }

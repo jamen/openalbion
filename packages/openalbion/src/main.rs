@@ -5,7 +5,7 @@ mod renderer;
 use self::{
     camera::Camera,
     files::{Files, NewFilesError},
-    renderer::{LightingColoursError, ModelTextureError, NewRendererError, Renderer},
+    renderer::{ModelTextureError, NewRendererError, Renderer},
 };
 use argh::FromArgs;
 use derive_more::{Display, Error};
@@ -164,7 +164,6 @@ impl App {
 enum TryResumedError {
     CreateWindow(OsError),
     NewRenderer(NewRendererError),
-    UploadLightingLut(LightingColoursError),
     LoadLevel(files::LoadLevelError),
     UploadModelTexture(ModelTextureError),
 }
@@ -181,52 +180,6 @@ impl App {
 
         let mut renderer =
             pollster::block_on(Renderer::new(window.clone())).map_err(E::NewRenderer)?;
-
-        renderer
-            .set_lighting_lut(&self.files.lighting_lut_bytes)
-            .map_err(E::UploadLightingLut)?;
-
-        // Set up LUT row indices from the ENVIRONMENT def.
-        let lut_rows = self.files.load_lut_rows();
-        tracing::info!(
-            "LUT rows: top={},{}, bottom={},{}",
-            lut_rows.sky_gradient_top,
-            lut_rows.sky_gradient_top_alpha,
-            lut_rows.sky_gradient_bottom,
-            lut_rows.sky_gradient_bottom_alpha,
-        );
-        renderer.set_lut_rows(
-            lut_rows.sky_gradient_top,
-            lut_rows.sky_gradient_top_alpha,
-            lut_rows.sky_gradient_bottom,
-            lut_rows.sky_gradient_bottom_alpha,
-        );
-
-        // Load sun and moon textures from the SKY def.
-        if let Some(sky_def) = self.files.load_sky_def() {
-            if sky_def.sun_texture != 0 {
-                match self.files.read_texture_by_id(sky_def.sun_texture as u32) {
-                    Ok((asset_info, data)) => {
-                        let _ = renderer.set_sun_texture(&asset_info, &data);
-                        tracing::info!("Loaded sun texture id={}", sky_def.sun_texture);
-                    }
-                    Err(e) => tracing::warn!("Sun texture id={}: {e}", sky_def.sun_texture),
-                }
-            }
-            if sky_def.moon_texture != 0 {
-                match self.files.read_texture_by_id(sky_def.moon_texture as u32) {
-                    Ok((asset_info, data)) => {
-                        let _ = renderer.set_moon_texture(&asset_info, &data);
-                        tracing::info!("Loaded moon texture id={}", sky_def.moon_texture);
-                    }
-                    Err(e) => tracing::warn!("Moon texture id={}: {e}", sky_def.moon_texture),
-                }
-            }
-        } else {
-            tracing::warn!("SKY def not found in game.bin — sun/moon disabled");
-        }
-
-        tracing::info!("Uploaded lighting LUT to GPU");
 
         // Load and upload the terrain.
         let lev = self
@@ -708,8 +661,10 @@ impl App {
         let window = self.window.as_ref().ok_or(E::NoWindow)?;
         let renderer = self.renderer.as_mut().ok_or(E::NoRenderer)?;
 
-        renderer.update_sky_uniforms(sky_view_proj, self.time_of_day, sky_blend);
-        renderer.update_sprite_uniforms(sky_view_proj, self.time_of_day);
+        // Gradient colours are zero until the environment layer lands (AGENTS.md step 2):
+        // with alpha 0 the shader's final lrp keeps the raw sky texture, so the
+        // unimplemented half is visible rather than faked.
+        renderer.update_sky_uniforms(sky_view_proj, [0.0; 4], [0.0; 4], sky_blend);
         renderer.update_terrain_uniforms(view_proj);
         renderer.update_model_uniforms(view_proj);
         renderer.set_model_camera_pos(self.camera.position);

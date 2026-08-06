@@ -7,8 +7,7 @@ mod texture;
 use self::depth::DepthTexture;
 use self::model::ModelPass;
 pub use self::model::ModelTextureError;
-pub use self::sky::LightingColoursError;
-use self::sky::{OuterSkyPass, SkySpritePass};
+use self::sky::OuterSkyPass;
 use self::terrain::TerrainPass;
 pub use self::texture::TextureUploadError;
 use derive_more::{Display, Error};
@@ -152,52 +151,23 @@ impl<'target> Renderer<'target> {
             .set_texture1(&self.device, &self.queue, asset_info, asset_data)
     }
 
-    pub fn set_lighting_lut(&mut self, tga_bytes: &[u8]) -> Result<(), LightingColoursError> {
-        self.passes
-            .sky
-            .set_lighting_lut(&self.device, &self.queue, tga_bytes)
-    }
-
-    pub fn update_sky_uniforms(&self, view_proj: [[f32; 4]; 4], time_of_day: f32, sky_blend: f32) {
-        self.passes
-            .sky
-            .update_uniforms(&self.queue, view_proj, time_of_day, sky_blend);
-    }
-
-    pub fn set_lut_rows(
-        &mut self,
-        top: usize,
-        top_alpha: usize,
-        bottom: usize,
-        bottom_alpha: usize,
+    /// `gradient_top`/`gradient_bottom` are the sky shader's `c92`/`c93`, `texture_blend`
+    /// its `c0.w`. The environment layer (AGENTS.md step 2) will supply them; until then
+    /// the caller passes zeros and the sky shows its raw texture.
+    pub fn update_sky_uniforms(
+        &self,
+        view_proj: [[f32; 4]; 4],
+        gradient_top: [f32; 4],
+        gradient_bottom: [f32; 4],
+        texture_blend: f32,
     ) {
-        self.passes.sky.set_lut_rows(top, top_alpha, bottom, bottom_alpha);
-    }
-
-    pub fn set_sun_texture(
-        &mut self,
-        asset_info: &AssetMetadata,
-        asset_data: &[u8],
-    ) -> Result<(), TextureUploadError> {
-        self.passes
-            .sprites
-            .set_sun_texture(&self.device, &self.queue, asset_info, asset_data)
-    }
-
-    pub fn set_moon_texture(
-        &mut self,
-        asset_info: &AssetMetadata,
-        asset_data: &[u8],
-    ) -> Result<(), TextureUploadError> {
-        self.passes
-            .sprites
-            .set_moon_texture(&self.device, &self.queue, asset_info, asset_data)
-    }
-
-    pub fn update_sprite_uniforms(&self, view_proj: [[f32; 4]; 4], time_of_day: f32) {
-        self.passes
-            .sprites
-            .update(&self.queue, view_proj, time_of_day);
+        self.passes.sky.update_uniforms(
+            &self.queue,
+            view_proj,
+            gradient_top,
+            gradient_bottom,
+            texture_blend,
+        );
     }
 
     pub fn render(&mut self) -> Result<PrePresent, SurfaceError> {
@@ -215,7 +185,6 @@ impl<'target> Renderer<'target> {
 
         self.passes.clear.pass(&mut cmd, &surface_texture_view);
         self.passes.sky.pass(&mut cmd, &surface_texture_view);
-        self.passes.sprites.pass(&mut cmd, &surface_texture_view);
         self.passes
             .terrain
             .pass(&mut cmd, &surface_texture_view, self.depth_texture.view());
@@ -247,7 +216,6 @@ pub enum NewRendererError {
 pub struct RenderPasses {
     clear: ClearPass,
     sky: OuterSkyPass,
-    sprites: SkySpritePass,
     terrain: TerrainPass,
     model: ModelPass,
 }
@@ -262,7 +230,6 @@ impl RenderPasses {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, surface_format),
-            sprites: SkySpritePass::new(device, surface_format),
             terrain: TerrainPass::new(device, surface_format, depth_format),
             model: ModelPass::new(device, queue, surface_format, depth_format),
         }
