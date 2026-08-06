@@ -789,14 +789,26 @@ Track anything that could not be sourced. Empty is the goal.
 
 | Location | Value | Status |
 |---|---|---|
-| `renderer/terrain.rs` | `HEIGHT_SCALE = 2048.0` | unsourced |
-| `renderer/terrain.rs` | `CELL_SIZE = 1.0` | unsourced |
+| `renderer/terrain.rs` | `HEIGHT_SCALE = 2048.0` | unsourced — real scale is in `engine_landscape*.cpp` |
+| `renderer/terrain.rs` | `CELL_SIZE = 1.0` | unsourced — ″ |
+| `renderer/terrain.rs` | `texture_scale = 0.0625` | unsourced; moot once layer meshes supply `CliffU`/`CliffV` (step 5.2) |
+| `renderer/terrain.wgsl` | placeholder light dir + `0.25/0.75` shade | placeholder; real form is `Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` (step 5.4) |
+| `renderer/model.wgsl` | placeholder light dir + `0.3/0.7` shade | placeholder; models not yet in scope |
+| `renderer/model.rs` | `ALPHA_CUTOFF = 0.5` | unsourced |
 | — | `LightArray` / `LightGlobals` offsets in the Lights layout | §3.8 open item, step 1.5 |
+
+Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:616`,
+`while (uVar13 < 0x24)`) and its `7000` / `−500` / `6500` extents are sourced and cited
+in place.
 
 ---
 
 ## 10. History
 
+- **2026-08-05** — **Step 0 complete** on branch `renderer-refocus`: invented mechanisms
+  stripped (`dc165b1`), raw non-sRGB colour space (`8e59ee5`), native Z-up (`99f0d8d`),
+  unverified constants audited (§9). Sky now renders its raw texture with zeroed
+  gradients; landscape renders untextured flat-lit. Next: step 1 (tooling).
 - **2026-08-05** — Renderer review. Identified the LUT column model (§3.1), the landscape
   layer architecture (§3.4) and the sRGB mismatch (§3.5) as the three root causes behind the
   sky/terrain fix loop. Decoded the `.bbb` shader bank format (§3.7) and recovered the named

@@ -360,6 +360,7 @@ impl OuterSkyPass {
         let layout = OuterSkyPipelineLayout::new(device, &uniform_layout, &texture_layout);
         let pipeline = OuterSkyPipeline::new(device, &layout, &shader, surface_format);
 
+        // 36 segments: engine_sky_renderer.cpp:616 loops `while (uVar13 < 0x24)`.
         let (dome_vertices, dome_indices) = build_outer_sky_mesh(36);
         let dome = SkyMesh::new(
             device,
@@ -369,6 +370,7 @@ impl OuterSkyPass {
             &dome_indices,
         );
 
+        // 36 segments: engine_sky_renderer.cpp:711 loops `while (uVar7 < 0x24)`.
         let (band_vertices, band_indices) = build_base_band_mesh(36);
         let base_band = SkyMesh::new(
             device,

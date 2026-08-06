@@ -19,6 +19,9 @@ use crate::files::Files;
 use fable_data::big::ExtraMetadata;
 use fable_data::texture::{Texture, TextureImageFormat, bcn_encoding_from_dxt};
 
+// UNVERIFIED: neither value is sourced from the game. LEV stores height as a
+// normalised f32; the real world-space scale and cell pitch come from the landscape
+// map/patch code (engine_landscape*.cpp), not from us. AGENTS.md §9.
 pub const HEIGHT_SCALE: f32 = 2048.0;
 const CELL_SIZE: f32 = 1.0;
 
