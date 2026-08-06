@@ -56,10 +56,32 @@ impl<'target> Renderer<'target> {
 
         let surface_capabilities = surface.get_capabilities(&adapter);
 
-        let &surface_format = surface_capabilities
+        // Prefer a non-sRGB surface. Textures upload as *Unorm (linear, no sRGB decode),
+        // so an sRGB target would encode without a matching decode and wash out every
+        // colour. The original is D3D9 with no sRGB framebuffer. AGENTS.md §3.5.
+        //
+        // Take the surface's *preferred* format and strip the sRGB suffix, rather than
+        // scanning for any non-sRGB format — the capability list can lead with exotic
+        // entries (Rgba16Unorm here) that need features we do not request.
+        let preferred = surface_capabilities
             .formats
             .first()
-            .unwrap_or(&TextureFormat::Rgba8UnormSrgb);
+            .copied()
+            .unwrap_or(TextureFormat::Rgba8Unorm);
+        let stripped = preferred.remove_srgb_suffix();
+        let surface_format = if surface_capabilities.formats.contains(&stripped) {
+            stripped
+        } else {
+            preferred
+        };
+
+        if surface_format.is_srgb() {
+            tracing::warn!(
+                "No non-sRGB surface format available; colours will be sRGB-encoded \
+                 without a matching decode (AGENTS.md §3.5)"
+            );
+        }
+        tracing::info!("Surface format: {surface_format:?}");
 
         let passes = RenderPasses::new(&device, &queue, surface_format, DepthTexture::FORMAT);
         let depth_texture = DepthTexture::new(&device, [1, 1]);
@@ -80,7 +102,7 @@ impl<'target> Renderer<'target> {
             &SurfaceConfiguration {
                 usage: TextureUsages::RENDER_ATTACHMENT,
                 format: self.surface_format,
-                view_formats: vec![self.surface_format.add_srgb_suffix()],
+                view_formats: vec![],
                 alpha_mode: CompositeAlphaMode::Auto,
                 width: size[0],
                 height: size[1],
@@ -173,13 +195,14 @@ impl<'target> Renderer<'target> {
     pub fn render(&mut self) -> Result<PrePresent, SurfaceError> {
         let surface_texture = self.surface.get_current_texture()?;
 
-        let surface_texture_view =
-            surface_texture
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor {
-                    format: Some(self.surface_format.add_srgb_suffix()),
-                    ..Default::default()
-                });
+        // Raw (non-sRGB) view. Textures upload as *Unorm, i.e. linear with no sRGB
+        // decode; viewing the target as sRGB applied an encode with no matching decode,
+        // washing out every colour in every pass. The original is D3D9 with no sRGB
+        // framebuffer and raw texture sampling, so sample raw and write raw.
+        // AGENTS.md §3.5.
+        let surface_texture_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut cmd = self.device.create_command_encoder(&Default::default());
 
