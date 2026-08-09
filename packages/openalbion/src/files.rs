@@ -3,16 +3,18 @@ use fable_data::{
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
     def::binary::{DefBinary, DefBody},
     def::names::Names,
+    def::EngineThemeDef,
     def::SkyDef,
-    object::ObjectDefs,
     environment::{EnvironmentConfig, EnvironmentTheme},
-    lev::{Lev, LevError},
+    lev::{Lev, LevError, ThemePalette},
     mesh::{Mesh, MeshError},
+    object::ObjectDefs,
     tga::{Tga, TgaError},
     tng::Tng,
     wad::{ReadContentError, WadReader, WadReaderError},
 };
 use std::{
+    collections::HashMap,
     fs::File,
     io::{self, BufReader},
     path::{Path, PathBuf},
@@ -24,6 +26,7 @@ pub struct Files {
     pub graphics: BigReader<File>,
     pub lighting_lut_bytes: Vec<u8>,
     pub environment: Option<EnvironmentConfig>,
+    pub engine_themes: HashMap<i32, EngineThemeDef>,
 }
 
 #[derive(Debug, Display, Error)]
@@ -151,18 +154,93 @@ impl Files {
             }
         };
 
+        let engine_themes = Self::load_engine_themes(fable_directory, &textures);
+
         Ok(Self {
             fable_directory: fable_directory.to_path_buf(),
             textures,
             graphics,
             lighting_lut_bytes,
             environment,
+            engine_themes,
         })
+    }
+
+    fn load_engine_themes(
+        fable_directory: &Path,
+        _textures: &BigReader<File>,
+    ) -> HashMap<i32, EngineThemeDef> {
+        let names_path = fable_directory.join("data/CompiledDefs/names.bin");
+        let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
+
+        let names = match Names::load(&names_path) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!("names.bin not found, terrain textures disabled: {e:?}");
+                return HashMap::new();
+            }
+        };
+        let def_binary = match DefBinary::load_with_names(&game_bin_path, &names) {
+            Ok(db) => db,
+            Err(e) => {
+                tracing::warn!("game.bin not found, terrain textures disabled: {e:?}");
+                return HashMap::new();
+            }
+        };
+
+        let mut map = HashMap::new();
+        for entry in def_binary.entries(&names) {
+            if let DefBody::EngineThemeDef(def) = &entry.record.body {
+                map.insert(entry.global_index as i32, def.clone());
+            }
+        }
+        tracing::info!("Loaded {} engine theme defs from game.bin", map.len());
+
+        // Debug: check if palette def_index values are CRCs into the names table
+        let sample_names = [
+            ("GROUND_GRASS_NO_LOCAL_DETAIL", 1909i32),
+            ("GROUND_PATH_SAND", 1906i32),
+            ("GROUND_ROCK_CLIFF", 1882i32),
+            ("GROUND_BIGTREES", 1915i32),
+        ];
+        for (name, di) in &sample_names {
+            let crc = *di as u32;
+            if let Some(names_entry) = names.map.get(&crc) {
+                tracing::info!(
+                    "  CRC lookup: def_index={di} (0x{crc:08X}) → \"{}\", palette name=\"{}\", match={}",
+                    names_entry.string,
+                    name,
+                    names_entry.string == *name,
+                );
+            } else {
+                tracing::info!(
+                    "  CRC lookup: def_index={di} (0x{crc:08X}) → <not found in names table>",
+                );
+            }
+        }
+        map
     }
 
     /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.
     pub fn load_level(&self, name: &str) -> Result<Lev, LoadLevelError> {
         use LoadLevelError as E;
+
+        let loose_path = self
+            .fable_directory
+            .join("data/Levels/FinalAlbion")
+            .join(format!("{name}.lev"));
+        if let Ok(bytes) = std::fs::read(&loose_path) {
+            let lev = Lev::from_bytes(&bytes).map_err(E::Parse)?;
+            tracing::info!(
+                "Loaded level {} from {} ({}x{}, {} heightmap cells)",
+                name,
+                loose_path.display(),
+                lev.header.width,
+                lev.header.height,
+                lev.heightmap_cells.len(),
+            );
+            return Ok(lev);
+        }
 
         let wad_path = self.fable_directory.join("data/Levels/FinalAlbion.wad");
         let wad_file = BufReader::new(File::open(&wad_path).map_err(E::OpenWad)?);
@@ -217,7 +295,7 @@ impl Files {
         let def_binary = DefBinary::load_with_names(&game_bin_path, &names).ok()?;
 
         for entry in def_binary.entries(&names) {
-            if let fable_data::def::binary::DefBody::SkyDef(def) = &entry.record.body {
+            if let DefBody::SkyDef(def) = &entry.record.body {
                 return Some(def.clone());
             }
         }
@@ -285,7 +363,15 @@ impl Files {
     ///
     /// Prefers the debug build's loose .tng first; falls back to the wad.
     pub fn load_tng(&self, level_name: &str) -> Result<Tng, String> {
-        // Read the level's .tng from the retail level archive.
+        let loose_path = self
+            .fable_directory
+            .join("data/Levels/FinalAlbion")
+            .join(format!("{level_name}.tng"));
+        if let Ok(bytes) = std::fs::read(&loose_path) {
+            let text = String::from_utf8_lossy(&bytes);
+            return Tng::parse(&text).map_err(|e| format!("parse tng: {e}"));
+        }
+
         let wad_path = self.fable_directory.join("data/Levels/FinalAlbion.wad");
         let wad_file = std::io::BufReader::new(
             std::fs::File::open(&wad_path).map_err(|e| format!("open wad: {e}"))?,
@@ -302,6 +388,72 @@ impl Files {
             .map_err(|e| format!("read tng: {e}"))?;
         let text = String::from_utf8_lossy(&bytes);
         Tng::parse(&text).map_err(|e| format!("parse tng: {e}"))
+    }
+
+    pub fn resolve_terrain_themes(&self, palette: &ThemePalette) -> TerrainThemeBundle {
+        let mut palette_to_layer = [0u16; 256];
+        let mut texture_ids: Vec<i32> = Vec::new();
+        let mut def_index_to_layer: HashMap<i32, u16> = HashMap::new();
+
+        for (pal_idx, entry) in palette.entries.iter().enumerate() {
+            if entry.def_index <= 0 || entry.name == "NO_THEME" || entry.name.is_empty() {
+                continue;
+            }
+            if let Some(&layer) = def_index_to_layer.get(&entry.def_index) {
+                palette_to_layer[pal_idx] = layer;
+                continue;
+            }
+            let Some(theme) = self.engine_themes.get(&entry.def_index) else {
+                tracing::debug!(
+                    "Palette [{}] \"{}\" def_index={} not found in engine_themes ({} themes loaded)",
+                    pal_idx, entry.name, entry.def_index, self.engine_themes.len(),
+                );
+                continue;
+            };
+            if theme.base_texture <= 0 {
+                tracing::debug!(
+                    "Engine theme \"{}\" (def_index={}) has no base_texture (id={})",
+                    entry.name, entry.def_index, theme.base_texture,
+                );
+                continue;
+            }
+            let layer = texture_ids.len() as u16;
+            texture_ids.push(theme.base_texture);
+            def_index_to_layer.insert(entry.def_index, layer);
+            palette_to_layer[pal_idx] = layer;
+        }
+
+        let theme_count = texture_ids.len();
+        let used_slots = palette.entries.iter().filter(|e| e.name != "NO_THEME" && !e.name.is_empty()).count();
+        tracing::info!(
+            "Terrain themes: {} unique engine themes with textures ({} palette slots with names, {} total)",
+            theme_count,
+            used_slots,
+            palette.entries.len(),
+        );
+        if theme_count > 0 {
+            tracing::info!(
+                "First texture IDs: {:?}",
+                &texture_ids[..theme_count.min(5)],
+            );
+        }
+        if used_slots > 0 {
+            let sample: Vec<&str> = palette.entries.iter()
+                .filter(|e| e.name != "NO_THEME" && !e.name.is_empty())
+                .take(5)
+                .map(|e| e.name.as_str())
+                .collect();
+            tracing::info!("Sample palette names: {:?}", sample);
+            if !self.engine_themes.is_empty() {
+                let sample_keys: Vec<i32> = self.engine_themes.keys().take(5).copied().collect();
+                tracing::info!("Sample engine theme def_indices: {:?}", sample_keys);
+            }
+        }
+
+        TerrainThemeBundle {
+            palette_to_layer,
+            texture_ids,
+        }
     }
 
     /// Load OBJECT definitions from a text `objects.def` at `path`, returning a resolver that maps
@@ -402,4 +554,9 @@ impl Default for LutRows {
             sky_gradient_bottom_alpha: 16,
         }
     }
+}
+
+pub struct TerrainThemeBundle {
+    pub palette_to_layer: [u16; 256],
+    pub texture_ids: Vec<i32>,
 }

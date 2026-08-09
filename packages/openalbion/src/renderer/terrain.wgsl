@@ -1,13 +1,22 @@
 struct Uniforms {
     view_proj: mat4x4<f32>,
+    texture_scale: f32,
+    _pad: vec3<f32>,
+};
+
+struct PaletteMap {
+    layers: array<u32, 256>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
+@group(0) @binding(1) var theme_textures: texture_2d_array<f32>;
+@group(0) @binding(2) var terrain_sampler: sampler;
+@group(0) @binding(3) var<storage, read> palette_map: PaletteMap;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) normal: vec3<f32>,
-    @location(1) height: f32,
+    @location(1) world_uv: vec2<f32>,
     @location(2) @interpolate(flat) theme_0: u32,
     @location(3) @interpolate(flat) theme_1: u32,
     @location(4) @interpolate(flat) theme_2: u32,
@@ -27,7 +36,7 @@ fn vs_main(
     var out: VertexOutput;
     out.clip_position = u.view_proj * vec4<f32>(position, 1.0);
     out.normal = normal;
-    out.height = position.y;
+    out.world_uv = position.xz * u.texture_scale;
 
     out.theme_0 = theme_indices_in.x;
     out.theme_1 = theme_indices_in.y;
@@ -41,12 +50,9 @@ fn vs_main(
     return out;
 }
 
-fn theme_debug_color(idx: u32) -> vec3<f32> {
-    let hue = f32(idx) * 0.382 + 0.15;
-    let r = sin(hue * 6.283) * 0.5 + 0.5;
-    let g = sin((hue + 0.333) * 6.283) * 0.5 + 0.5;
-    let b = sin((hue + 0.667) * 6.283) * 0.5 + 0.5;
-    return vec3<f32>(r, g, b);
+fn sample_theme(palette_idx: u32, uv: vec2<f32>) -> vec4<f32> {
+    let layer = palette_map.layers[palette_idx];
+    return textureSample(theme_textures, terrain_sampler, uv, layer);
 }
 
 @fragment
@@ -56,22 +62,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let diffuse = max(dot(n, light_dir), 0.0);
     let shade = 0.25 + diffuse * 0.75;
 
-    let t0 = theme_debug_color(in.theme_0);
-    let t1 = theme_debug_color(in.theme_1);
-    let t2 = theme_debug_color(in.theme_2);
+    let t0 = sample_theme(in.theme_0, in.world_uv);
+    let t1 = sample_theme(in.theme_1, in.world_uv);
+    let t2 = sample_theme(in.theme_2, in.world_uv);
 
     let b0 = clamp(in.blend_0, 0.0, 1.0);
     let b1 = clamp(in.blend_1, 0.0, 1.0);
 
-    // Serial blend: each blend weight mixes the next theme over the current base.
     var base = t0;
     base = mix(base, t1, b0);
     base = mix(base, t2, b1);
 
-    // Slope-driven cliff lookup: steep areas mix toward a cliff colour.
     let slope_f = clamp((1.0 - in.normal.y) * 6.0 - 0.5, 0.0, 1.0);
-    let cliff_col = theme_debug_color(in.theme_0 + in.theme_1 + 5u);
-    base = mix(base, cliff_col, slope_f);
+    let cliff_col = t0;
+    base = mix(base, cliff_col, slope_f * 0.7);
 
-    return vec4<f32>(base * shade, 1.0);
+    return vec4<f32>(base.rgb * shade, 1.0);
 }

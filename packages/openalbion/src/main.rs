@@ -17,7 +17,7 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
     error::{EventLoopError, OsError},
-    event::{DeviceEvent, DeviceId, ElementState, KeyEvent, WindowEvent},
+    event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowId},
@@ -258,7 +258,7 @@ impl App {
             + glam::Vec3::new(world_span * 0.3, world_span * 0.4, world_span * 0.5);
         self.camera.look_at(self.terrain_center, glam::Vec3::Y);
         self.camera.fly_speed = world_span * 0.1;
-        renderer.set_terrain(&lev);
+        renderer.set_terrain(&mut self.files, &lev);
         tracing::info!(
             "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1}, world_span={world_span:.1})",
             lev.header.width,
@@ -562,16 +562,20 @@ impl App {
                 ..
             } => {
                 if state == ElementState::Pressed {
-                    // Escape unlocks the cursor.
                     if keycode == KeyCode::Escape {
                         if let Some(window) = &self.window {
-                            window.set_cursor_visible(true);
-                            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-                            self.cursor_locked = false;
+                            if self.cursor_locked {
+                                window.set_cursor_visible(true);
+                                let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+                                self.cursor_locked = false;
+                            } else {
+                                window.set_cursor_visible(false);
+                                let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
+                                self.cursor_locked = true;
+                            }
                         }
                         return Ok(());
                     }
-                    // Click locks the cursor again.
                     if keycode == KeyCode::Enter && !self.cursor_locked {
                         if let Some(window) = &self.window {
                             window.set_cursor_visible(false);
@@ -583,6 +587,19 @@ impl App {
                     self.keys.insert(keycode);
                 } else {
                     self.keys.remove(&keycode);
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if state == ElementState::Pressed
+                    && button == MouseButton::Left
+                    && !self.cursor_locked
+                {
+                    if let Some(window) = &self.window {
+                        window.set_cursor_visible(false);
+                        let _ =
+                            window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
+                        self.cursor_locked = true;
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {

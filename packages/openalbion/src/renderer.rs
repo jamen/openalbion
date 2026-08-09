@@ -14,6 +14,7 @@ pub use self::texture::TextureUploadError;
 use derive_more::{Display, Error};
 use fable_data::big::AssetMetadata;
 use fable_data::lev::Lev;
+use crate::files::Files;
 use wgpu::{
     CommandEncoder, CompositeAlphaMode, CreateSurfaceError, Device, DeviceDescriptor, Features,
     Instance, InstanceDescriptor, PresentMode, Queue, RequestAdapterError, RequestAdapterOptions,
@@ -92,8 +93,10 @@ impl<'target> Renderer<'target> {
         self.depth_texture = DepthTexture::new(&self.device, size);
     }
 
-    pub fn set_terrain(&mut self, lev: &Lev) {
-        self.passes.terrain.set_terrain(&self.device, lev);
+    pub fn set_terrain(&mut self, files: &mut Files, lev: &Lev) {
+        self.passes
+            .terrain
+            .set_terrain(&self.device, &self.queue, files, lev);
     }
 
     pub fn clear_models(&mut self) {

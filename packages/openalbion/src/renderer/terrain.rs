@@ -1,38 +1,25 @@
-//! Renders a level's heightmap as a lit terrain mesh.
-//!
-//! This is a deliberately simple first pass: it builds one mesh from a parsed [`Lev`], shades it
-//! with a single directional light, and draws it with depth testing. Ground-theme texturing,
-//! multiple levels, and proper lighting are left for later.
-
 use bytemuck::{Pod, Zeroable};
 use fable_data::lev::Lev;
 use std::any::type_name;
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingType, BufferBindingType, BufferUsages, CommandEncoder,
-    CompareFunction, DepthBiasState, DepthStencilState, Device, FragmentState, FrontFace,
-    IndexFormat, MultisampleState, PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue,
-    RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderStages, StencilState,
-    TextureFormat, TextureView, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
-    include_wgsl,
+    AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType, BufferUsages,
+    CommandEncoder, CompareFunction, DepthBiasState, DepthStencilState, Device, Extent3d,
+    FilterMode, FragmentState, FrontFace, IndexFormat, MultisampleState, Origin3d, PipelineLayout,
+    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
+    SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderStages, StencilState,
+    TexelCopyTextureInfo, TexelCopyBufferLayout, TextureAspect, TextureDescriptor,
+    TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView,
+    TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexState,
+    VertexStepMode, include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-/// Conversion from stored heightmap float to world-space Z.
-///
-/// Derived from `CMap::LoadFromFile` in the decomp: the file cell's Height field is
-/// multiplied by 2048.0 (`___real_40a0000000000000`) to produce the runtime
-/// `CHeightMapCell::Height` in world units. The constant is the same one used as the
-/// clipping ceiling in `CHeightMap::SetSizeZAt` (max world height ≈ 2048).
-///
-/// The .lev file stores heights as normalised floats (roughly 0.0–1.0); multiplying by
-/// 2048 yields world-space Z, which matches Thing `PositionZ` values (e.g. LookoutPoint
-/// heights ~0.013–0.027 → world Z 27–55, Things at Z 27–42).
+use crate::files::Files;
+use fable_data::big::ExtraMetadata;
+use fable_data::texture::{Texture, TextureImageFormat, bcn_encoding_from_dxt};
+
 pub const HEIGHT_SCALE: f32 = 2048.0;
-/// World-space spacing between adjacent heightmap grid points.
-///
-/// One heightmap cell = one world unit horizontally. Evidence: `.tng` Thing PositionX/Y
-/// are in [0, width] cell units (Blank.lev 128×128 cells, Things at X≈74.8, Y≈68.8).
 const CELL_SIZE: f32 = 1.0;
 
 #[repr(C)]
@@ -40,9 +27,7 @@ const CELL_SIZE: f32 = 1.0;
 struct TerrainVertex {
     position: [f32; 3],
     normal: [f32; 3],
-    /// Engine theme palette indices [t0, t1, t2] packed into bytes.
     theme_indices: [u8; 4],
-    /// Blend weights [b0, b1] and cliff UV packed into bytes.
     blend: [u8; 4],
 }
 
@@ -67,12 +52,16 @@ impl TerrainVertex {
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct TerrainUniforms {
     view_proj: [[f32; 4]; 4],
+    texture_scale: f32,
+    _pad: [f32; 7],           // matches WGSL uniform layout (96 bytes total)
 }
 
-/// Build a triangulated, per-vertex-lit mesh from a level's heightmap grid.
-///
-/// Each vertex carries the three ground-theme palette indices and two blend weights from the
-/// nearest cell, plus cliff-lookup UV values derived from local slope.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+struct PaletteMap {
+    layers: [u32; 256],
+}
+
 fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
     let w = lev.header.width as usize + 1;
     let h = lev.header.height as usize + 1;
@@ -147,22 +136,50 @@ fn normalize(v: [f32; 3]) -> [f32; 3] {
     }
 }
 
-pub struct TerrainUniformBindGroupLayout(BindGroupLayout);
+pub struct TerrainBindGroupLayout(BindGroupLayout);
 
-impl TerrainUniformBindGroupLayout {
+impl TerrainBindGroupLayout {
     pub fn new(device: &Device) -> Self {
         Self(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some(type_name::<Self>()),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
         }))
     }
 }
@@ -178,10 +195,10 @@ impl TerrainShader {
 pub struct TerrainPipelineLayout(PipelineLayout);
 
 impl TerrainPipelineLayout {
-    pub fn new(device: &Device, uniform_layout: &TerrainUniformBindGroupLayout) -> Self {
+    pub fn new(device: &Device, bind_layout: &TerrainBindGroupLayout) -> Self {
         Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(type_name::<Self>()),
-            bind_group_layouts: &[&uniform_layout.0],
+            bind_group_layouts: &[&bind_layout.0],
             immediate_size: 0,
         }))
     }
@@ -214,8 +231,6 @@ impl TerrainPipeline {
             }),
             primitive: PrimitiveState {
                 front_face: FrontFace::Ccw,
-                // No culling for now — the heightmap is a single surface and the winding hasn't
-                // been verified, so this guarantees it's visible from any angle.
                 cull_mode: None,
                 ..Default::default()
             },
@@ -233,69 +248,19 @@ impl TerrainPipeline {
     }
 }
 
-/// The uploaded terrain mesh and its uniform buffer/bind group.
-pub struct TerrainMesh {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    index_count: u32,
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: BindGroup,
-}
-
-impl TerrainMesh {
-    pub fn new(device: &Device, uniform_layout: &TerrainUniformBindGroupLayout, lev: &Lev) -> Self {
-        let (vertices, indices) = build_terrain_mesh(lev);
-
-        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("terrain_vertex_buffer"),
-            contents: bytemuck::cast_slice(&vertices),
-            usage: BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("terrain_index_buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: BufferUsages::INDEX,
-        });
-
-        let uniforms = TerrainUniforms {
-            view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-        };
-
-        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("terrain_uniform_buffer"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("terrain_uniform_bind_group"),
-            layout: &uniform_layout.0,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
-
-        Self {
-            vertex_buffer,
-            index_buffer,
-            index_count: indices.len() as u32,
-            uniform_buffer,
-            uniform_bind_group,
-        }
-    }
-
-    fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
-        let uniforms = TerrainUniforms { view_proj };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
-    }
-}
-
 pub struct TerrainPass {
-    uniform_layout: TerrainUniformBindGroupLayout,
+    bind_layout: TerrainBindGroupLayout,
     pipeline: TerrainPipeline,
-    mesh: Option<TerrainMesh>,
+    sampler: wgpu::Sampler,
+
+    vertex_buffer: Option<wgpu::Buffer>,
+    index_buffer: Option<wgpu::Buffer>,
+    index_count: u32,
+    uniform_buffer: Option<wgpu::Buffer>,
+    bind_group: Option<BindGroup>,
+
+    _texture_array: Option<wgpu::Texture>,
+    _palette_buffer: Option<wgpu::Buffer>,
 }
 
 impl TerrainPass {
@@ -305,18 +270,246 @@ impl TerrainPass {
         depth_format: TextureFormat,
     ) -> Self {
         let shader = TerrainShader::new(device);
-        let uniform_layout = TerrainUniformBindGroupLayout::new(device);
-        let layout = TerrainPipelineLayout::new(device, &uniform_layout);
+        let bind_layout = TerrainBindGroupLayout::new(device);
+        let layout = TerrainPipelineLayout::new(device, &bind_layout);
         let pipeline = TerrainPipeline::new(device, &layout, &shader, surface_format, depth_format);
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("terrain_sampler"),
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::Repeat,
+            ..Default::default()
+        });
 
         Self {
-            uniform_layout,
+            bind_layout,
             pipeline,
-            mesh: None,
+            sampler,
+            vertex_buffer: None,
+            index_buffer: None,
+            index_count: 0,
+            uniform_buffer: None,
+            bind_group: None,
+            _texture_array: None,
+            _palette_buffer: None,
         }
     }
 
-    pub fn set_terrain(&mut self, device: &Device, lev: &Lev) {
+    pub fn set_terrain(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        files: &mut Files,
+        lev: &Lev,
+    ) {
+        let bundle = files.resolve_terrain_themes(&lev.header.heightmap_palette);
+
+        let (vertices, indices) = build_terrain_mesh(lev);
+
+        let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("terrain_vertex_buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: BufferUsages::VERTEX,
+        });
+        let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("terrain_index_buffer"),
+            contents: bytemuck::cast_slice(&indices),
+            usage: BufferUsages::INDEX,
+        });
+        let index_count = indices.len() as u32;
+
+        let uniforms = TerrainUniforms {
+            view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            texture_scale: 0.0625,
+            _pad: [0.0; 7],
+        };
+        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("terrain_uniform_buffer"),
+            contents: bytemuck::cast_slice(&[uniforms]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let (_texture_array, texture_view, palette_buffer) = if bundle.texture_ids.is_empty() {
+            let tex = device.create_texture(&TextureDescriptor {
+                label: Some("terrain_texture_array_empty"),
+                size: Extent3d {
+                    width: 4,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let magenta = vec![255u8, 0, 255, 255].repeat(16);
+            queue.write_texture(
+                tex.as_image_copy(),
+                &magenta,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(16),
+                    rows_per_image: Some(4),
+                },
+                Extent3d {
+                    width: 4,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let view = tex.create_view(&TextureViewDescriptor {
+                label: Some("terrain_texture_array_view"),
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
+            let pal = PaletteMap { layers: [0u32; 256] };
+            let pal_buf = device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("terrain_palette_map"),
+                contents: bytemuck::cast_slice(&[pal]),
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            });
+            (Some(tex), view, Some(pal_buf))
+        } else {
+            let layer_count = bundle.texture_ids.len() as u32;
+            let tex_size = 256u32;
+            let texture_array = device.create_texture(&TextureDescriptor {
+                label: Some("terrain_texture_array"),
+                size: Extent3d {
+                    width: tex_size,
+                    height: tex_size,
+                    depth_or_array_layers: layer_count,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+
+            for (layer, &tex_id) in bundle.texture_ids.iter().enumerate() {
+                tracing::debug!("Loading terrain texture layer {layer}: id={tex_id}");
+                match files.read_texture_by_id(tex_id as u32) {
+                    Ok((asset, data)) => {
+                        let extras = match &asset.extras {
+                            Some(ExtraMetadata::Texture(e)) => e,
+                            _ => {
+                                tracing::warn!("Terrain texture {tex_id} is not a texture asset");
+                                continue;
+                            }
+                        };
+                        let dxt = extras.dxt_compression;
+                        let Some(encoding) = bcn_encoding_from_dxt(dxt) else {
+                            tracing::warn!("Unsupported DXT format for texture {tex_id}: {dxt}");
+                            continue;
+                        };
+                        let width = extras.width as u32;
+                        let height = extras.height as u32;
+                        let parsed = match Texture::parse(
+                            &mut data.as_slice(),
+                            width as usize,
+                            height as usize,
+                            extras.depth as usize,
+                            extras.top_mip_map_size as usize,
+                            encoding,
+                        ) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                tracing::warn!("Parse texture {tex_id}: {e:?}");
+                                continue;
+                            }
+                        };
+                        let rgba = match parsed.get_top_mip_pixel_image(TextureImageFormat::RGBA) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                tracing::warn!("Decode texture {tex_id}: {e:?}");
+                                continue;
+                            }
+                        };
+                        let bytes_per_row = width * 4;
+
+                        queue.write_texture(
+                            TexelCopyTextureInfo {
+                                texture: &texture_array,
+                                mip_level: 0,
+                                origin: Origin3d {
+                                    x: 0,
+                                    y: 0,
+                                    z: layer as u32,
+                                },
+                                aspect: TextureAspect::All,
+                            },
+                            &rgba,
+                            TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(bytes_per_row),
+                                rows_per_image: Some(height),
+                            },
+                            Extent3d {
+                                width,
+                                height,
+                                depth_or_array_layers: 1,
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to load terrain texture id={} for layer {}: {e}",
+                            tex_id,
+                            layer
+                        );
+                    }
+                }
+            }
+
+            let array_view = texture_array.create_view(&TextureViewDescriptor {
+                label: Some("terrain_texture_array_view"),
+                dimension: Some(TextureViewDimension::D2Array),
+                ..Default::default()
+            });
+
+            let mut pal = PaletteMap { layers: [0u32; 256] };
+            for (pal_idx, &layer) in bundle.palette_to_layer.iter().enumerate() {
+                pal.layers[pal_idx] = layer as u32;
+            }
+            let palette_buffer = device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("terrain_palette_map"),
+                contents: bytemuck::cast_slice(&[pal]),
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            });
+
+            (Some(texture_array), array_view, Some(palette_buffer))
+        };
+
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("terrain_bind_group"),
+            layout: &self.bind_layout.0,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: palette_buffer
+                        .as_ref()
+                        .map(|b| b.as_entire_binding())
+                        .unwrap_or(uniform_buffer.as_entire_binding()),
+                },
+            ],
+        });
+
         let min_height = lev
             .heightmap_cells
             .iter()
@@ -334,13 +527,24 @@ impl TerrainPass {
             min_height * HEIGHT_SCALE,
             max_height * HEIGHT_SCALE,
         );
-        self.mesh = Some(TerrainMesh::new(device, &self.uniform_layout, lev));
+
+        self.vertex_buffer = Some(vertex_buffer);
+        self.index_buffer = Some(index_buffer);
+        self.index_count = index_count;
+        self.uniform_buffer = Some(uniform_buffer);
+        self.bind_group = Some(bind_group);
     }
 
     pub fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
-        if let Some(mesh) = &self.mesh {
-            mesh.update_uniforms(queue, view_proj);
-        }
+        let Some(uniform_buffer) = &self.uniform_buffer else {
+            return;
+        };
+        let uniforms = TerrainUniforms {
+            view_proj,
+            texture_scale: 0.0625,
+            _pad: [0.0; 7],
+        };
+        queue.write_buffer(uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
     }
 
     pub fn pass(
@@ -349,7 +553,11 @@ impl TerrainPass {
         target_texture_view: &TextureView,
         depth_texture_view: &TextureView,
     ) {
-        let Some(mesh) = &self.mesh else {
+        let (Some(vertex_buffer), Some(index_buffer), Some(bind_group)) = (
+            &self.vertex_buffer,
+            &self.index_buffer,
+            &self.bind_group,
+        ) else {
             return;
         };
 
@@ -378,9 +586,9 @@ impl TerrainPass {
         });
 
         rpass.set_pipeline(&self.pipeline.0);
-        rpass.set_bind_group(0, &mesh.uniform_bind_group, &[]);
-        rpass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-        rpass.set_index_buffer(mesh.index_buffer.slice(..), IndexFormat::Uint32);
-        rpass.draw_indexed(0..mesh.index_count, 0, 0..1);
+        rpass.set_bind_group(0, bind_group, &[]);
+        rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        rpass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint32);
+        rpass.draw_indexed(0..self.index_count, 0, 0..1);
     }
 }
