@@ -1,226 +1,223 @@
 //! `.lev` heightmap → [`TerrainData`].
 //!
-//! This is a placeholder architecture. The original builds a *linked list of layer meshes
-//! per patch*, each with its own `Blend` / `CliffU` / `CliffV` per vertex and its own
-//! foreground/background textures, drawn as N alpha-blended passes
-//! (`CLandscapeLayerMesh::CVertex`, engine_landscape_layer_mesh.hpp:71 — AGENTS.md §3.4).
-//! Porting `CEngineLandscapeMeshBuilder` (step 5.2) replaces the body of this module and
-//! nothing in the renderer, which is the point of building it here.
+//! The mesh building itself is `fable_data::landscape::mesh`, a port of
+//! `CEngineLandscapeMeshBuilder`. This module is the conversion layer either side of it:
+//! resolving the level's theme palette to `ENGINE_THEME` defs and their textures on the way
+//! in, and expanding the patches' layer meshes into renderer vertices and draws on the way
+//! out (which is what `CLandscapeLayerMesh::BuildForegroundVertexBuffer` does).
 
 use crate::files::Files;
-use renderer::{ImageFormat, TerrainData, TerrainVertex, TextureImage};
-use fable_data::lev::{Lev, LevHeightCell};
+use fable_data::def::EngineThemeDef;
+use fable_data::landscape::{
+    BLEND_TABLE_SIZE, LandscapeMap, MappingDirection, build_blend_table,
+    mesh::{self, LayerTextures, ThemeSource},
+};
+use fable_data::lev::Lev;
+use renderer::{ImageFormat, TerrainData, TerrainDraw, TerrainVertex, TextureImage};
+use std::collections::HashMap;
 
-// UNVERIFIED: neither value is sourced from the game. LEV stores height as a
-// normalised f32; the real world-space scale and cell pitch come from the landscape
-// map/patch code (engine_landscape*.cpp), not from us. AGENTS.md §9.
-pub const HEIGHT_SCALE: f32 = 2048.0;
-const CELL_SIZE: f32 = 1.0;
-
-/// Every terrain layer is decoded to this size so they can share one array texture.
-/// Fable's ground textures are 256×256; anything else is rescaled by being skipped, which
-/// the pass logs.
-const LAYER_TEXTURE_SIZE: u32 = 256;
-
-/// Build the landscape's geometry and layer textures for `lev`.
+/// Build the landscape's geometry, layer passes and textures for `lev`.
 pub fn build_terrain(files: &mut Files, lev: &Lev) -> TerrainData {
-    let (vertices, indices) = build_mesh(
-        lev.header.width as usize,
-        lev.header.height as usize,
-        &lev.heightmap_cells,
-    );
-    let (layers, palette_to_layer) = build_layers(files, lev);
+    let map = LandscapeMap::new(lev);
+    let themes = PaletteThemes::resolve(files, lev);
 
-    let raw_min = lev
-        .heightmap_cells
-        .iter()
-        .map(|c| c.height)
-        .fold(f32::INFINITY, f32::min);
-    let raw_max = lev
-        .heightmap_cells
-        .iter()
-        .map(|c| c.height)
-        .fold(f32::NEG_INFINITY, f32::max);
-    tracing::debug!(
-        "Terrain height range: raw [{raw_min:.2}, {raw_max:.2}], \
-         scaled [{:.2}, {:.2}] (HEIGHT_SCALE {HEIGHT_SCALE} is UNVERIFIED — AGENTS.md §9)",
-        raw_min * HEIGHT_SCALE,
-        raw_max * HEIGHT_SCALE,
+    // One mesh per patch, then merged across patches by (texture, mapping direction) so the
+    // whole level draws in as many passes as it has distinct layers rather than as many as
+    // it has patches. The original sorts its patches for the same reason
+    // (`RenderSortedPatches`); we can do it once up front because nothing streams yet.
+    let mut batches: HashMap<(i32, MappingDirection), Batch> = HashMap::new();
+
+    for patch_y in 0..map.patch_grid_height() {
+        for patch_x in 0..map.patch_grid_width() {
+            let patch = mesh::build_patch(&map, &themes, patch_x, patch_y);
+
+            for layer in &patch.layers {
+                if layer.indices.is_empty() {
+                    continue;
+                }
+                let batch = batches
+                    .entry((layer.textures.foreground, layer.mapping_direction))
+                    .or_default();
+
+                let base = batch.vertices.len() as u32;
+                batch.vertices.extend(layer.vertices.iter().map(|v| {
+                    let (x, y) = (
+                        patch.origin_x + v.x as i32,
+                        patch.origin_y + v.y as i32,
+                    );
+                    TerrainVertex {
+                        position: [x as f32, y as f32, map.height_at(x, y)],
+                        normal: mesh::vertex_normal(&map, x, y),
+                        blend: v.blend as f32 / 255.0,
+                        // The blend table is addressed over its whole extent, so the packed
+                        // byte maps straight onto 0..1.
+                        cliff_uv: [v.cliff_u as f32 / 255.0, v.cliff_v as f32 / 255.0],
+                    }
+                }));
+                batch
+                    .indices
+                    .extend(layer.indices.iter().map(|&i| base + i as u32));
+            }
+        }
+    }
+
+    assemble(files, batches, &themes)
+}
+
+#[derive(Default)]
+struct Batch {
+    vertices: Vec<TerrainVertex>,
+    indices: Vec<u32>,
+}
+
+/// Flatten the per-(texture, direction) batches into one vertex buffer, one index buffer and
+/// a draw list, loading each distinct ground texture once.
+fn assemble(
+    files: &mut Files,
+    batches: HashMap<(i32, MappingDirection), Batch>,
+    themes: &PaletteThemes,
+) -> TerrainData {
+    // Deterministic order, so a run is reproducible and the log reads the same twice.
+    let mut keys: Vec<_> = batches.keys().copied().collect();
+    keys.sort();
+
+    let mut vertices: Vec<TerrainVertex> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    let mut textures: Vec<TextureImage> = Vec::new();
+    let mut texture_slot: HashMap<i32, u32> = HashMap::new();
+    let mut draws: Vec<TerrainDraw> = Vec::new();
+
+    for key in keys {
+        let (texture_id, direction) = key;
+        let batch = &batches[&key];
+
+        let slot = *texture_slot.entry(texture_id).or_insert_with(|| {
+            let image = load_ground_texture(files, texture_id).unwrap_or_else(|error| {
+                tracing::warn!("Ground texture {texture_id}: {error} — placeholder");
+                placeholder_texture()
+            });
+            textures.push(image);
+            (textures.len() - 1) as u32
+        });
+
+        let base = vertices.len() as u32;
+        vertices.extend_from_slice(&batch.vertices);
+        let first_index = indices.len() as u32;
+        indices.extend(batch.indices.iter().map(|&i| base + i));
+
+        let (u, v) = direction.uv_transform();
+        draws.push(TerrainDraw {
+            first_index,
+            index_count: indices.len() as u32 - first_index,
+            texture: slot,
+            blend_table: direction.index() as u32,
+            // `w` is the per-patch UV localisation offset — always a whole number of
+            // texture tiles, so zero samples identically (tools/landscape-statics.md).
+            uv_transform_u: [u[0], u[1], u[2], 0.0],
+            uv_transform_v: [v[0], v[1], v[2], 0.0],
+        });
+    }
+
+    tracing::info!(
+        "Terrain: {} layer passes over {} themes, {} vertices, {} triangles",
+        draws.len(),
+        themes.by_slot.len(),
+        vertices.len(),
+        indices.len() / 3,
     );
 
     TerrainData {
         vertices,
         indices,
-        layers,
-        palette_to_layer,
+        draws,
+        textures,
+        blend_tables: MappingDirection::ALL
+            .iter()
+            .map(|&d| TextureImage {
+                width: BLEND_TABLE_SIZE as u32,
+                height: BLEND_TABLE_SIZE as u32,
+                format: ImageFormat::R8,
+                data: build_blend_table(d),
+            })
+            .collect(),
     }
 }
 
-/// `cell_width`/`cell_height` are the LEV's cell counts; the vertex grid has one more of
-/// each, since vertices sit on cell corners.
-fn build_mesh(
-    cell_width: usize,
-    cell_height: usize,
-    cells: &[LevHeightCell],
-) -> (Vec<TerrainVertex>, Vec<u32>) {
-    let w = cell_width + 1;
-    let h = cell_height + 1;
+/// The level's theme palette, resolved to `ENGINE_THEME` defs.
+struct PaletteThemes {
+    by_slot: HashMap<u8, EngineThemeDef>,
+}
 
-    let height_at = |col: usize, row: usize| -> f32 {
-        cells
-            .get(row * w + col)
-            .map(|c| c.height * HEIGHT_SCALE)
-            .unwrap_or(0.0)
-    };
+impl PaletteThemes {
+    /// Resolve every palette slot **by name**.
+    ///
+    /// `CMap::LoadFromFile` calls `GetDefGlobalIndexFromName` on the palette entry's name
+    /// (`fablelib/map.cpp:2561`) rather than trusting the index stored beside it — and it is
+    /// right not to: in retail data that index is stale, off by a constant 702 for every one
+    /// of LookoutPoint's 38 entries. Resolving by index finds nothing, which is why the
+    /// landscape has been untextured.
+    fn resolve(files: &Files, lev: &Lev) -> PaletteThemes {
+        let mut by_slot = HashMap::new();
+        let mut unresolved = Vec::new();
 
-    let mut vertices = Vec::with_capacity(w * h);
-    for row in 0..h {
-        for col in 0..w {
-            let z = height_at(col, row);
-
-            let left = height_at(col.saturating_sub(1), row);
-            let right = height_at((col + 1).min(w - 1), row);
-            let down = height_at(col, row.saturating_sub(1));
-            let up = height_at(col, (row + 1).min(h - 1));
-            // Z-up: gradient in X and Y, up is +Z.
-            let normal = normalize([-(right - left), -(up - down), 2.0 * CELL_SIZE]);
-
-            let cell = &cells[row * w + col];
-
-            vertices.push(TerrainVertex {
-                position: [col as f32 * CELL_SIZE, row as f32 * CELL_SIZE, z],
-                normal,
-                theme_indices: [
-                    cell.ground_theme.0,
-                    cell.ground_theme.1,
-                    cell.ground_theme.2,
-                    0,
-                ],
-                blend: [
-                    cell.ground_theme_strength.0,
-                    cell.ground_theme_strength.1,
-                    0,
-                    0,
-                ],
-            });
+        for (slot, entry) in lev.header.heightmap_palette.entries.iter().enumerate() {
+            if entry.name.is_empty() || entry.name == "NO_THEME" {
+                continue;
+            }
+            match files.engine_theme_by_name(&entry.name) {
+                Some(def) => {
+                    by_slot.insert(slot as u8, def.clone());
+                }
+                None => unresolved.push(entry.name.clone()),
+            }
         }
-    }
 
-    let mut indices = Vec::with_capacity((w - 1) * (h - 1) * 6);
-    for row in 0..h.saturating_sub(1) {
-        for col in 0..w.saturating_sub(1) {
-            let a = (row * w + col) as u32;
-            let b = a + 1;
-            let c = a + w as u32;
-            let d = c + 1;
-            indices.extend_from_slice(&[a, c, b, b, c, d]);
+        if !unresolved.is_empty() {
+            tracing::warn!(
+                "{} theme palette entries did not resolve to an ENGINE_THEME def: {:?}",
+                unresolved.len(),
+                &unresolved[..unresolved.len().min(8)],
+            );
         }
-    }
+        tracing::debug!("Theme palette: {} slots resolved by name", by_slot.len());
 
-    (vertices, indices)
+        PaletteThemes { by_slot }
+    }
 }
 
-/// Resolve the level's theme palette to a texture per layer, decoded to a common size and
-/// format. Layers that fail to load are replaced by a flat magenta placeholder so the
-/// layer indices the mesh refers to stay valid — a missing texture must not silently
-/// re-point a vertex at a different theme.
-fn build_layers(files: &mut Files, lev: &Lev) -> (Vec<TextureImage>, [u32; 256]) {
-    let bundle = files.resolve_terrain_themes(&lev.header.heightmap_palette);
-
-    let mut layers = Vec::with_capacity(bundle.texture_ids.len());
-    for (layer, &tex_id) in bundle.texture_ids.iter().enumerate() {
-        let image = load_layer(files, tex_id).unwrap_or_else(|error| {
-            tracing::warn!("Terrain layer {layer} (texture id {tex_id}): {error} — placeholder");
-            placeholder_layer()
-        });
-        layers.push(image);
+impl ThemeSource for PaletteThemes {
+    fn base(&self, slot: u8) -> Option<LayerTextures> {
+        let theme = self.by_slot.get(&slot)?;
+        (theme.base_texture > 0).then_some(LayerTextures {
+            foreground: theme.base_texture,
+            background: theme.background_texture,
+            bump_map: theme.base_bump_map,
+            self_illumination: theme.base_texture_self_illumination,
+        })
     }
 
-    let mut palette_to_layer = [0u32; 256];
-    for (slot, &layer) in bundle.palette_to_layer.iter().enumerate() {
-        palette_to_layer[slot] = layer as u32;
+    fn cliff(&self, slot: u8) -> Option<LayerTextures> {
+        let theme = self.by_slot.get(&slot)?;
+        (theme.cliff_base_texture > 0).then_some(LayerTextures {
+            foreground: theme.cliff_base_texture,
+            background: theme.cliff_background_texture,
+            bump_map: theme.cliff_bump_map,
+            self_illumination: theme.cliff_texture_self_illumination,
+        })
     }
-
-    (layers, palette_to_layer)
 }
 
-fn load_layer(files: &mut Files, tex_id: i32) -> Result<TextureImage, String> {
-    let (asset, data) = files.read_texture_by_id(tex_id as u32)?;
-    let image = super::decode_texture_rgba(&asset, &data).map_err(|e| e.to_string())?;
-
-    if image.width != LAYER_TEXTURE_SIZE || image.height != LAYER_TEXTURE_SIZE {
-        return Err(format!(
-            "is {}x{}, expected {LAYER_TEXTURE_SIZE}x{LAYER_TEXTURE_SIZE}",
-            image.width, image.height,
-        ));
-    }
-
-    Ok(image)
+fn load_ground_texture(files: &mut Files, texture_id: i32) -> Result<TextureImage, String> {
+    let (asset, data) = files.read_texture_by_id(texture_id as u32)?;
+    super::decode_texture_rgba(&asset, &data).map_err(|e| e.to_string())
 }
 
-/// Flat magenta, at the layer array's size — an obviously wrong texture beats a silently
-/// shifted layer index.
-fn placeholder_layer() -> TextureImage {
-    let texels = (LAYER_TEXTURE_SIZE * LAYER_TEXTURE_SIZE) as usize;
+/// Flat magenta — an obviously wrong texture beats a silently missing layer.
+fn placeholder_texture() -> TextureImage {
     TextureImage {
-        width: LAYER_TEXTURE_SIZE,
-        height: LAYER_TEXTURE_SIZE,
+        width: 4,
+        height: 4,
         format: ImageFormat::Rgba8,
-        data: [255u8, 0, 255, 255].repeat(texels),
-    }
-}
-
-fn normalize(v: [f32; 3]) -> [f32; 3] {
-    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    if len > 0.0 {
-        [v[0] / len, v[1] / len, v[2] / len]
-    } else {
-        [0.0, 0.0, 1.0]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn cell(height: f32) -> LevHeightCell {
-        LevHeightCell {
-            size: 0,
-            version: 0,
-            height,
-            ground_theme: (0, 0, 0),
-            ground_theme_strength: (0, 0),
-            walkable: true,
-            passover: false,
-            sound_theme: 0,
-            shore: false,
-        }
-    }
-
-    /// Vertices sit on cell corners, so a `w`×`h` cell grid has `(w+1)*(h+1)` of them and
-    /// two triangles per cell.
-    #[test]
-    fn mesh_has_one_vertex_per_grid_corner() {
-        let (w, h) = (3usize, 2usize);
-        let cells = vec![cell(0.0); (w + 1) * (h + 1)];
-
-        let (vertices, indices) = build_mesh(w, h, &cells);
-
-        assert_eq!(vertices.len(), (w + 1) * (h + 1));
-        assert_eq!(indices.len(), w * h * 6);
-        assert!(indices.iter().all(|&i| (i as usize) < vertices.len()));
-    }
-
-    /// Height is Z, and the grid lies in X/Y (AGENTS.md §3.6).
-    #[test]
-    fn height_is_the_z_axis() {
-        let cells = vec![cell(0.25); 4];
-
-        let (vertices, _) = build_mesh(1, 1, &cells);
-
-        assert_eq!(vertices[0].position[..2], [0.0, 0.0]);
-        assert!((vertices[0].position[2] - 0.25 * HEIGHT_SCALE).abs() < 1e-3);
-        // A flat heightfield has every normal pointing straight up.
-        assert!((vertices[0].normal[2] - 1.0).abs() < 1e-6);
+        data: [255u8, 0, 255, 255].repeat(16),
     }
 }

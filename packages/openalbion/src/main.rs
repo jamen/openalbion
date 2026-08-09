@@ -204,7 +204,7 @@ impl App {
             .iter()
             .map(|c| c.height)
             .fold(f32::NEG_INFINITY, f32::max);
-        let scale = scene::HEIGHT_SCALE;
+        let scale = fable_data::landscape::HEIGHT_SCALE;
         let mid_z = (raw_min + raw_max) * 0.5 * scale;
 
         // Z-up: the heightmap spans X/Y and height is Z. AGENTS.md §3.6.
@@ -633,7 +633,7 @@ impl App {
         // with alpha 0 the shader's final lrp keeps the raw sky texture, so the
         // unimplemented half is visible rather than faked.
         renderer.update_sky_uniforms(sky_view_proj, [0.0; 4], [0.0; 4], sky_blend);
-        renderer.update_terrain_uniforms(view_proj);
+        renderer.update_terrain_uniforms(view_proj, self.camera.position);
         renderer.update_model_uniforms(view_proj);
         renderer.set_model_camera_pos(self.camera.position);
 

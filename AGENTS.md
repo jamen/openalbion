@@ -8,20 +8,20 @@
 
 ## 0. Where we are
 
-> **Session summary — 2026-08-08, branch `renderer-refocus`.**
-> **Landed:** the renderer is its own crate with a data-only input boundary (§11), and
-> `openalbion` is a plain binary again — one game binary, no library, no harness.
-> **Abandoned: the mirror.** Comparing screenshots against the original engine needed
-> more setup than it was worth. `packages/mirror` and `scenes.toml` are deleted, and
-> §5 step 1, §6 and §7.1 are **history, not plan** — read them for what they established,
-> not for what to do next.
-> **Still standing:** step 0 (strip-back, raw sRGB, Z-up), and every finding in §3. The
-> oracles (§1) and the ground rules (§2) are unchanged and are now the *only* verification
-> route: derive from the decomp, check numerically, then look at the screen.
-> **Corrected along the way:** FOV is horizontal data, not a fitted vertical constant
-> (§3.10); the colour LUT is indexed by theme column, not time (§3.1); the landscape is
-> N alpha-blended layer passes, not a single 3-way mix (§3.4).
-> **Next renderer work:** step 2, the environment layer. It was never blocked on capture.
+> **Session summary — 2026-08-09, branch `landscape-texturing`.**
+> **Landed: the landscape is textured** (§5 step 5, rewritten §3.4). The foreground layer
+> passes work — triplanar ground textures masked by normal-indexed blend tables — over a
+> ported `CEngineLandscapeMeshBuilder` and a new `fable-data::landscape`.
+> **Corrected:** §3.4's reading of `CliffU`/`CliffV` and of the second texture stage were
+> both wrong; the composited-surface story belonged to the *background* LOD path, not the
+> foreground. `HEIGHT_SCALE = 2048` is now sourced, and `texture_scale` is read from the
+> binary, not guessed.
+> **Still standing** from 2026-08-08: the renderer is its own crate with a data-only input
+> boundary (§11); the mirror is abandoned and §5 step 1, §6 and §7.1 are history, not plan;
+> the oracles (§1) and ground rules (§2) are unchanged and are the only verification route.
+> **Next renderer work: step 2, the environment layer.** It now blocks *both* remaining
+> subsystems — the sky's gradient colours and the landscape's lighting are the same four LUT
+> rows, and both are running with neutral placeholders until it lands.
 
 
 Two renderer subsystems have been attempted — **sky** and **landscape**. Both render
@@ -251,76 +251,105 @@ samples sky textures. Wrong shader.
 `VSHADER_SKY_SPRITE` is `mov oD0, v1; mov oT0, v2` + the standard transform — matches our
 `sky_sprite.wgsl`.
 
-### 3.4 Landscape — the architecture is different from ours
+### 3.4 Landscape — triplanar layers over a normal-indexed blend table
+
+> **Rewritten 2026-08-09.** The earlier reading of this section was wrong in one decisive
+> way: it took `CliffU`/`CliffV` for texture coordinates and the second texture stage for a
+> composited surface. Both are wrong, and correcting them made the subsystem *simpler*.
+> Implemented on branch `landscape-texturing`.
 
 `CLandscapeLayerMesh::CVertex` (`engine_landscape_layer_mesh.hpp:71`):
 
 ```cpp
 unsigned char X;      // grid position within patch
 unsigned char Y;
-unsigned char Blend;  // this layer's alpha at this vertex
-unsigned char CliffU; // texture coords
+unsigned char Blend;  // this layer's theme weight at this vertex
+unsigned char CliffU; // NOT texture coords — the vertex normal, packed
 unsigned char CliffV;
 ```
 
-The layer itself carries `ForegroundTextureIndex`, `BackgroundTextureIndex`,
-`BumpMapTextureIndex`, `SelfIllumination`, `MappingDirection`
-(`LANDSCAPE_TEXTURE_MAPPING_DIRECTION`), its own index/vertex buffers, and a `Next`
-pointer — **a linked list of layers per patch**.
+`BuildMapDirMask` (`engine_landscape_mesh_builder.cpp:623`) fills them with
+`round((normal.x * 0.5 + 0.5) * 255)` and the same for Y, and
+`BuildBlendingTables` (`engine_landscape.cpp:826`) builds **five 128×128 alpha tables**, one
+per `LANDSCAPE_TEXTURE_MAPPING_DIRECTION`, holding `GetMappingDirectionBlend(dir, normal)`
+for the normal each texel decodes to. `RenderForeground` (`engine_landscape_patch.cpp:1076`)
+binds `ForegroundBlendTables[layer.MappingDirection]` to **stage 0** and sets `c40`/`c41`
+from `PositionToTextureUVTransformU/V[layer.MappingDirection]`.
 
-`VSHADER_LANDSCAPE_FOREGROUND`:
+So the foreground pass is:
 
-```asm
-mov r0.xy, v0        ; v0.xy = XY position
-mov r0.z,  v1.x      ; v1.x  = height        → position split across two streams
-mov r0.w,  c0.y      ; 1.0 (preset)
-add r1, r0, -c4      ; c4 = CameraPos — geometry is CAMERA-RELATIVE
-dp4 oPos.{x..w}, r1, c5..c8
+```
+oT0 = (CliffU, CliffV)          → blend table: how much this DIRECTION applies here
+oT1 = (pos·c40, pos·c41)        → planar projection along that direction
+oD0.w = fade(distance) × Blend  ; c42 = ForegroundFadeTransform
+oD0.rgb = Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight
 
-dp3 r4, v2, -c19     ; v2 = normal, c19 = light direction
-max r4.x, r4.x, c0.x ; saturate positive part      (c0.x = 0.0)
-min r4.y, r4.y, c0.x ; keep negative part
-mul r4.x, r4.x, r4.x ; SQUARED n·l
-mul r3, r4.x, c20            ; × diffuse colour
-mad r3, -r4.y, c35, r3       ; + backlight colour × (−n·l)
-add r3, r3, c3               ; + Ambient
-mov oD0.xyz, r3
-
-mov oT0.xy, v3.yzzz  ; UV = (v3.y, v3.z) = (CliffU, CliffV)
-mul oD0.w, r4, v3.x  ; ALPHA = v3.x = Blend, × a distance fade
-dp4 r5.x, r0, c40    ; oT1 = planar projection of world position
-dp4 r5.y, r0, c41    ;      → the composited surface texture
+colour = t1 (the layer's own ground texture) × oD0.rgb × 2
+alpha  = t0.w (blend table) × oD0.w
 ```
 
-`PSHADER_LANDSCAPE_FOREGROUND`:
+**This is triplanar mapping**, not a composited surface. `CEngineSurfaceCompositionManager`
+is a character/mesh texture cache and has nothing to do with it; the thing it was confused
+with is the *background* patch's procedural texture (`RenderProceduralTexture` +
+`PSHADER_LANDSCAPE_PROC_TEXTURE`), which is the distant-LOD representation — the same layers
+rendered top-down into a per-patch target so far terrain draws in one pass.
 
-```asm
-tex t0                          ; layer texture, sampled at (CliffU, CliffV)
-tex t1                          ; composited surface, sampled at the planar projection
-mul_x2_sat r0.xyz, t1, v0       ; colour = surface × light × 2
-mul_sat    r0.w,   t0.w, v0.w   ; alpha  = layerTexture.a × blend
-```
+**The layers composite additively over a blackout pass, not source-alpha-over.**
+`VSHADER_LANDSCAPE_FOREGROUND_BLACKOUT_PASS` is the same transform ending in
+`mov oD0.xyzw, c0.x` — solid black — drawn over the same layer meshes first, laying down
+depth and the origin the layers accumulate onto. Because the alphas sum to exactly 1 at every
+point, `Σ αᵢ·colourᵢ` is a true weighted average that covers completely; source-alpha-over
+would give `1 − Π(1 − αᵢ)` and leak the background wherever no single layer is at full
+strength. That is *why* the theme weights are renormalised to 255 and why the five direction
+blends partition unity — both are preconditions for additive compositing, and getting it
+wrong showed up immediately as sky bleeding through the seams between themes.
 
-So the real pipeline is:
+Per vertex, `ReadThemesAndCreateLayers` (`:798`) turns each of the three themes into a `TOP`
+layer from the theme's **base** texture and four cliff layers (`FRONT`/`BACK`/`LEFT`/`RIGHT`)
+from its **cliff** texture, dropping any whose weight is ≤ 16 and merging layers that share a
+`(direction, texture set)`. The five directions' blends **sum to 1 for any normal** — that is
+what keeps the `mul_x2` from double-darkening a slope, and it pins the reading of the
+`asin`/`acos` arguments the decomp cannot show.
 
-1. A **background pass** (`PSHADER_LANDSCAPE_BACKGROUND`: `t0 × v0 ×2`).
-2. **N alpha-blended foreground layer passes**, one per theme layer in the patch. The layer
-   texture supplies the *mask* (alpha); the *colour* comes from the composited surface
-   texture (`CEngineSurfaceCompositionManager`) via planar projection.
-3. Lighting is `Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight`, all three colours
-   from the environment LUT (rows 1, 0, 3).
-4. UVs are **per-vertex `CliffU`/`CliffV`**, chosen by the layer's `MappingDirection` — *not*
-   derived from world XZ, and *not* a slope-driven blend.
+Patches are 16×16 cells / 17×17 vertices (`PolyMaskGrid[16][16][2]`, `VertexBlend[17][17]`,
+`PatchGridWidth = MapWidth >> 4`). Layers are a linked list per patch, each with its own
+vertex/index buffer.
 
-`renderer/terrain.wgsl` currently does a single pass with a 3-way `mix()` over
-`theme_indices`, a hardcoded `light_dir = (0.4, 1.0, 0.3)`, `shade = 0.25 + diffuse*0.75`,
-and an invented `slope_f = clamp((1 - normal.y)*6 - 0.5, 0, 1)` cliff blend. None of those
-five mechanisms exists in the original. `terrain.rs:93` likewise invents `cliff_u` from an
-`atan` of the height gradient.
+**The `.rdata` tables** (`MappingDirNormals`, `PositionToTextureUVTransformU/V`,
+`MappingDirectionToUVLocalisationTableIndexForU/V`) are initialised data and so absent from
+the decomp. They were read out of `ego_r.exe` via `Ego_r.pdb` — see
+`tools/landscape-statics.md` and `tools/pdbsyms.py`. `MappingDirNormals` is
+`TOP=+Z FRONT=−Y BACK=+Y LEFT=−X RIGHT=+X` (a third confirmation of Z-up), and the UV
+transforms put **one texture tile across 8 world cells**.
 
-The `LEV` side is fine: `LevHeightCell` already carries `ground_theme: (u8,u8,u8)` and
-`ground_theme_strength: (u8,u8)` (`fable-data/src/lev.rs:196`) — three layers with two
-weights, which maps directly onto per-layer `Blend`.
+**The `.lev` side** carries everything needed, with three traps, all now handled in
+`fable-data/src/landscape/`:
+
+- the cell array is indexed `(SizeY − y) * (SizeX + 1) + x` — **row 0 is maximum Y**
+  (`fablelib/map_render.cpp:119`), so naive indexing mirrors the terrain;
+- height is `<file f32> * 2048.0` on load (`fablelib/map.cpp:2594`) then quantised to 1/128
+  by `PeekLandscapeHeight` — `HEIGHT_SCALE` was right, and is now sourced;
+- the theme palette's stored def index is **stale** in retail data (off by a constant 702 for
+  every LookoutPoint entry). `CMap::LoadFromFile` re-resolves it from the entry's *name*
+  (`GetDefGlobalIndexFromName`, `:2561`), and so must we. Resolving by index finds nothing,
+  which is why the landscape was untextured for so long.
+
+**Retail does not build this at runtime.** `CEngineLandscapeMap::OpenStaticMap` streams
+precomputed patches out of `FinalAlbion_RT.stb`, which is a `BBBB` bank container (same magic
+as the shader banks, §3.7); `CEngineLandscapeMeshBuilder` is the editor/dynamic path.
+**We port the builder**, deliberately: we already parse `.lev`, and the `.stb` is only a cache
+of what the builder computes. A partial `.stb` directory parser exists in this repo's history
+(`git show 1079634:fable_data/src/stb/mod.rs`) if that ever changes.
+
+**Filler levels** are ordinary `.lev` files, classified per region in `FinalAlbion.wld` as
+`ContainsMap` (loaded, walkable) or `SeesMap` (visible only). The mechanism is
+`CEngineStaticMapEdgeHeights`: `PeekThemeId`/`PeekThemeBlend`/`PeekLandscapeHeight` first try
+the loaded map, then walk into the **neighbouring** map through `CEngineWorldMap`'s 32×32-cell
+tile grid, and only fall back to a **4-cell border** of cached edge data when a map has no
+`GameMap` — i.e. is not loaded. An unloaded filler's interior is never sampled; its geometry
+comes from the static map file. Sampling clamps to the *cell* grid, one smaller than the
+vertex grid, so the far seam row and column belong to the neighbour and are unreachable while
+we load one map at a time.
 
 ### 3.5 Colour space — a systemic bug affecting everything
 
@@ -663,18 +692,41 @@ with provenance; unit tests pin a few times against texels read straight out of 
 - 4.4 Clouds: `BuildCloudMesh` (`:434`) + `RenderClouds` (`:2636`) — largest remaining sky
   piece; defer until 4.1–4.3 land.
 
-### Step 5 — Landscape, re-architected
+### Step 5 — Landscape — **LANDED (2026-08-09)**, foreground only
 
-- 5.1 **Design review first.** Post the layer-mesh architecture (§3.4) and agree how far to
-  go: full per-patch layer meshes + surface composition, or a simplified equivalent. This is
-  the step most likely to be deliberately scoped down — decide explicitly rather than drift.
-- 5.2 Port `CEngineLandscapeMeshBuilder` to produce per-layer meshes with real `Blend` /
-  `CliffU` / `CliffV` and `MappingDirection`.
-- 5.3 Transcribe the `_FOREGROUND` and `_BACKGROUND` shader pairs.
-- 5.4 Wire lighting constants (`Ambient`, light dir/colour, backlight) from step 2.
-- 5.5 Surface composition (`CEngineSurfaceCompositionManager`) — likely the simplification point.
+Done on branch `landscape-texturing`, in this order:
 
----
+- 5.1 **The `.rdata` statics**, read out of `ego_r.exe` through `Ego_r.pdb`
+  (`tools/pdbsyms.py`, `tools/landscape-statics.md`). This was the gate: without it the
+  texture scale would have been invented.
+- 5.2 **`fable-data::landscape`** — `CEngineMap`'s accessors over a `.lev`: the Y-flipped row
+  indexing, the `*2048` height scale and 1/128 quantisation, the cell-grid clamp, and the
+  three-weights-from-two-bytes renormalisation.
+- 5.3 **`GetMappingDirectionBlend`** and the five blend tables, pinned by a partition-of-unity
+  test.
+- 5.4 **`CEngineLandscapeMeshBuilder`** — `BuildMapDirMask`, `ReadThemesAndCreateLayers`,
+  `GetPassFromTexture`, `AddPolysSurroundingPointWithMask`, `BuildLayerMesh`.
+- 5.5 **The foreground pass** — `TerrainData` is one draw per `(texture, mapping direction)`;
+  `terrain.wgsl` transcribes `VSHADER`/`PSHADER_LANDSCAPE_FOREGROUND` line by line.
+
+*Evidence:* LookoutPoint resolves 38 of 38 palette slots (previously 0) into 26 layer passes
+over 48,955 vertices with no placeholder textures, and renders textured.
+
+**Deliberately not done**, so it is a decision rather than a drift:
+
+- 5.6 Background LOD — the quadtree, tesselation, edge strips and per-patch procedural
+  textures. We run foreground everywhere; the original has `EnableLandscapeTesselation` and
+  `EnableLandscapeLODUpdate` as their own toggles, so this is a supported configuration.
+- 5.7 Bump mapping (`PSHADER_LANDSCAPE_FOREGROUND_BUMP`) and every shadowed/spot variant.
+- 5.8 Water — `CWaterPatchDescriptors`, and the theme's `WaterHeight`/`WaterType`.
+- 5.9 Local detail (grass, flowers): `LOCAL_DETAIL_GENERATOR`, 65 defs, already fully modelled
+  in `fable-defs`. A separate subsystem, not landscape texturing.
+- 5.10 Loading neighbouring maps, which is what makes the seam row real rather than clamped.
+
+**The lighting is the next thing that matters.** The pass runs the real
+`Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` with neutral constants, so the
+landscape is flat-lit until **step 2** supplies environment LUT rows 1/0/3. That is now the
+highest-value remaining work for the landscape, and it is shared with the sky.
 
 ## 6. ~~The mirror~~ — comparing against the original *(historical)*
 
@@ -1279,22 +1331,39 @@ Track anything that could not be sourced. Empty is the goal.
 
 | Location | Value | Status |
 |---|---|---|
-| `openalbion/src/scene/terrain.rs` | `HEIGHT_SCALE = 2048.0` | unsourced — real scale is in `engine_landscape*.cpp` |
-| `openalbion/src/scene/terrain.rs` | `CELL_SIZE = 1.0` | unsourced — ″ |
-| `renderer/src/terrain.rs` | `texture_scale = 0.0625` | unsourced; moot once layer meshes supply `CliffU`/`CliffV` (step 5.2) |
-| `renderer/src/terrain.wgsl` | placeholder light dir + `0.25/0.75` shade | placeholder; real form is `Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` (step 5.4) |
+| `renderer/src/terrain.rs` | `FrameUniforms` ambient/diffuse/backlight/light dir | placeholder — neutral by construction (`Ambient` 0.5 cancels the shader's `mul_x2`), replaced wholesale by step 2's LUT rows 1/0/3 |
+| `renderer/src/terrain.rs` | `fade_transform = (0,0,0,1)` | fade disabled through the real mechanism; `ForegroundFadeStart`/`End` arrive from a console command whose defaults the decomp does not show (`CLandscapeSettings`' ctor is inlined away) |
+| `renderer/src/terrain.rs` | additive layer blend + blackout pass | **derived, not transcribed.** `SetupForegroundStates` goes through a render-state cache Ghidra reduces to offset arithmetic, so the `D3DRS_*` values are unreadable — but the blend mode is forced by the alphas summing to 1, and by the existence of `VSHADER_LANDSCAPE_FOREGROUND_BLACKOUT_PASS`. Confirmed on screen: alpha-over leaked sky between themes, additive-over-black does not |
+| `fable-data/src/landscape/mesh.rs` | `DirectionMask::build` normal | **DIVERGENCE**, marked in place: `BuildMapDirMask` weights up to eight face normals; that arithmetic is too mangled to transcribe, so `PeekMapNormal` is used instead. Same surface, different smoothing |
 | `renderer/src/model.wgsl` | placeholder light dir + `0.3/0.7` shade | placeholder; models not yet in scope |
 | `renderer/src/model.rs` | `ALPHA_CUTOFF = 0.5` | unsourced |
-| — | `LightArray` / `LightGlobals` offsets in the Lights layout | §3.8 open item; due when step 5.4 needs lighting |
+| — | `LightArray` / `LightGlobals` offsets in the Lights layout | §3.8 open item; the landscape pass names `c19`/`c20`/`c35` on the strong hypothesis, still unconfirmed |
 
 Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:616`,
-`while (uVar13 < 0x24)`) and its `7000` / `−500` / `6500` extents are sourced and cited
-in place.
+`while (uVar13 < 0x24)`) and its `7000` / `−500` / `6500` extents; the landscape's
+`HEIGHT_SCALE = 2048.0` (`fablelib/map.cpp:2594`) and `CELL_SIZE = 1.0`; and
+`texture_scale`, which was `0.0625` invented and is `0.125` read out of `ego_r.exe`
+(`tools/landscape-statics.md`). All are sourced and cited in place.
 
 ---
 
 ## 10. History
 
+- **2026-08-09** — **The landscape is textured.** Branch `landscape-texturing`. §3.4 was
+  wrong in one decisive way: `CliffU`/`CliffV` are not texture coordinates but the vertex
+  normal, packed, indexing one of five 128×128 blend tables — and the second texture stage is
+  the layer's *own* ground texture under a triplanar planar projection, not a composited
+  surface. Correcting that made the subsystem simpler, not harder. Recovered the five `.rdata`
+  tables the pass needs from `ego_r.exe` via a new `tools/pdbsyms.py` (llvm-pdbutil refuses
+  this PDB), which pinned the texture scale at one tile per 8 cells. Ported the map accessors,
+  `GetMappingDirectionBlend`, the blend tables and `CEngineLandscapeMeshBuilder` into
+  `fable-data::landscape`, and rewrote the pass and shader. The bug that had kept the ground
+  white: the `.lev` theme palette's stored def index is stale in retail data (off by a
+  constant 702) and the engine resolves it by *name* — we were resolving by index and finding
+  nothing. LookoutPoint now resolves 38/38 slots into 26 layer passes. Established that retail
+  streams precomputed patches from `FinalAlbion_RT.stb` (a `BBBB` bank) and that porting the
+  builder is the right call, and that filler levels are `SeesMap` entries backed by
+  `CEngineStaticMapEdgeHeights`' 4-cell border. Lighting is wired but neutral pending step 2.
 - **2026-08-08** — **The renderer became its own crate, and the mirror was abandoned.**
   `packages/renderer` now depends on wgpu/glam/bytemuck/tracing alone: passes take
   `TerrainData`, `Model` and `TextureImage` instead of reaching into `Files`, `Lev`, `Mesh`

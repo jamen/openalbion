@@ -18,6 +18,9 @@ pub enum ImageFormat {
     Bc3,
     /// Uncompressed 8-bit RGBA.
     Rgba8,
+    /// Uncompressed single-channel 8-bit. The landscape blend tables are `A8` in the
+    /// original; one channel either way, and the shader reads it as `.r`.
+    R8,
 }
 
 impl ImageFormat {
@@ -30,6 +33,7 @@ impl ImageFormat {
             Self::Bc2 => TextureFormat::Bc2RgbaUnorm,
             Self::Bc3 => TextureFormat::Bc3RgbaUnorm,
             Self::Rgba8 => TextureFormat::Rgba8Unorm,
+            Self::R8 => TextureFormat::R8Unorm,
         }
     }
 
@@ -37,7 +41,7 @@ impl ImageFormat {
     pub fn block_extent(self) -> u32 {
         match self {
             Self::Bc1 | Self::Bc2 | Self::Bc3 => 4,
-            Self::Rgba8 => 1,
+            Self::Rgba8 | Self::R8 => 1,
         }
     }
 
@@ -47,6 +51,7 @@ impl ImageFormat {
             Self::Bc1 => 8,
             Self::Bc2 | Self::Bc3 => 16,
             Self::Rgba8 => 4,
+            Self::R8 => 1,
         }
     }
 }

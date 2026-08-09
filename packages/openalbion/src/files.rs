@@ -6,7 +6,7 @@ use fable_data::{
     def::EngineThemeDef,
     def::SkyDef,
     environment::{EnvironmentConfig, EnvironmentTheme},
-    lev::{Lev, LevError, ThemePalette},
+    lev::{Lev, LevError},
     mesh::{Mesh, MeshError},
     object::ObjectDefs,
     tga::{Tga, TgaError},
@@ -30,7 +30,7 @@ pub struct Files {
     #[allow(dead_code)]
     pub lighting_lut_bytes: Vec<u8>,
     pub environment: Option<EnvironmentConfig>,
-    pub engine_themes: HashMap<i32, EngineThemeDef>,
+    pub engine_themes: HashMap<String, EngineThemeDef>,
 }
 
 #[derive(Debug, Display, Error)]
@@ -158,7 +158,7 @@ impl Files {
             }
         };
 
-        let engine_themes = Self::load_engine_themes(fable_directory, &textures);
+        let engine_themes = Self::load_engine_themes(fable_directory);
 
         Ok(Self {
             fable_directory: fable_directory.to_path_buf(),
@@ -170,10 +170,13 @@ impl Files {
         })
     }
 
-    fn load_engine_themes(
-        fable_directory: &Path,
-        _textures: &BigReader<File>,
-    ) -> HashMap<i32, EngineThemeDef> {
+    /// Load every `ENGINE_THEME` def from `game.bin`, keyed by its instance name.
+    ///
+    /// Name, not index: `CMap::LoadFromFile` resolves a `.lev`'s theme palette through
+    /// `GetDefGlobalIndexFromName` (`fablelib/map.cpp:2561`), and the index stored in the
+    /// palette is stale in retail data. Note that a def entry's `def_name` is its *class*
+    /// (`"ENGINE_THEME"`); the instance name is `file_name`.
+    fn load_engine_themes(fable_directory: &Path) -> HashMap<String, EngineThemeDef> {
         let names_path = fable_directory.join("data/CompiledDefs/names.bin");
         let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
 
@@ -195,34 +198,18 @@ impl Files {
         let mut map = HashMap::new();
         for entry in def_binary.entries(&names) {
             if let DefBody::EngineThemeDef(def) = &entry.record.body {
-                map.insert(entry.global_index as i32, def.clone());
+                if let Some(name) = entry.file_name {
+                    map.insert(name.to_string(), def.clone());
+                }
             }
         }
-        tracing::info!("Loaded {} engine theme defs from game.bin", map.len());
-
-        // Debug: check if palette def_index values are CRCs into the names table
-        let sample_names = [
-            ("GROUND_GRASS_NO_LOCAL_DETAIL", 1909i32),
-            ("GROUND_PATH_SAND", 1906i32),
-            ("GROUND_ROCK_CLIFF", 1882i32),
-            ("GROUND_BIGTREES", 1915i32),
-        ];
-        for (name, di) in &sample_names {
-            let crc = *di as u32;
-            if let Some(names_entry) = names.map.get(&crc) {
-                tracing::info!(
-                    "  CRC lookup: def_index={di} (0x{crc:08X}) → \"{}\", palette name=\"{}\", match={}",
-                    names_entry.string,
-                    name,
-                    names_entry.string == *name,
-                );
-            } else {
-                tracing::info!(
-                    "  CRC lookup: def_index={di} (0x{crc:08X}) → <not found in names table>",
-                );
-            }
-        }
+        tracing::info!("Loaded {} ENGINE_THEME defs from game.bin", map.len());
         map
+    }
+
+    /// An `ENGINE_THEME` def by its instance name, e.g. `"GROUND_GRASS"`.
+    pub fn engine_theme_by_name(&self, name: &str) -> Option<&EngineThemeDef> {
+        self.engine_themes.get(name)
     }
 
     /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.
@@ -378,72 +365,6 @@ impl Files {
         Tng::parse(&text).map_err(|e| format!("parse tng: {e}"))
     }
 
-    pub fn resolve_terrain_themes(&self, palette: &ThemePalette) -> TerrainThemeBundle {
-        let mut palette_to_layer = [0u16; 256];
-        let mut texture_ids: Vec<i32> = Vec::new();
-        let mut def_index_to_layer: HashMap<i32, u16> = HashMap::new();
-
-        for (pal_idx, entry) in palette.entries.iter().enumerate() {
-            if entry.def_index <= 0 || entry.name == "NO_THEME" || entry.name.is_empty() {
-                continue;
-            }
-            if let Some(&layer) = def_index_to_layer.get(&entry.def_index) {
-                palette_to_layer[pal_idx] = layer;
-                continue;
-            }
-            let Some(theme) = self.engine_themes.get(&entry.def_index) else {
-                tracing::debug!(
-                    "Palette [{}] \"{}\" def_index={} not found in engine_themes ({} themes loaded)",
-                    pal_idx, entry.name, entry.def_index, self.engine_themes.len(),
-                );
-                continue;
-            };
-            if theme.base_texture <= 0 {
-                tracing::debug!(
-                    "Engine theme \"{}\" (def_index={}) has no base_texture (id={})",
-                    entry.name, entry.def_index, theme.base_texture,
-                );
-                continue;
-            }
-            let layer = texture_ids.len() as u16;
-            texture_ids.push(theme.base_texture);
-            def_index_to_layer.insert(entry.def_index, layer);
-            palette_to_layer[pal_idx] = layer;
-        }
-
-        let theme_count = texture_ids.len();
-        let used_slots = palette.entries.iter().filter(|e| e.name != "NO_THEME" && !e.name.is_empty()).count();
-        tracing::info!(
-            "Terrain themes: {} unique engine themes with textures ({} palette slots with names, {} total)",
-            theme_count,
-            used_slots,
-            palette.entries.len(),
-        );
-        if theme_count > 0 {
-            tracing::info!(
-                "First texture IDs: {:?}",
-                &texture_ids[..theme_count.min(5)],
-            );
-        }
-        if used_slots > 0 {
-            let sample: Vec<&str> = palette.entries.iter()
-                .filter(|e| e.name != "NO_THEME" && !e.name.is_empty())
-                .take(5)
-                .map(|e| e.name.as_str())
-                .collect();
-            tracing::info!("Sample palette names: {:?}", sample);
-            if !self.engine_themes.is_empty() {
-                let sample_keys: Vec<i32> = self.engine_themes.keys().take(5).copied().collect();
-                tracing::info!("Sample engine theme def_indices: {:?}", sample_keys);
-            }
-        }
-
-        TerrainThemeBundle {
-            palette_to_layer,
-            texture_ids,
-        }
-    }
-
     /// Load OBJECT definitions from a text `objects.def` at `path`, returning a resolver that maps
     /// OBJECT def names to mesh symbols.
     ///
@@ -523,8 +444,3 @@ impl Files {
 /// A mesh's resolved material textures, aligned 1:1 with `Mesh::materials`. Each entry is the
 /// material's diffuse texture (metadata + raw bytes), or `None` if it has none.
 type MeshTextures = Vec<Option<(AssetMetadata, Vec<u8>)>>;
-
-pub struct TerrainThemeBundle {
-    pub palette_to_layer: [u16; 256],
-    pub texture_ids: Vec<i32>,
-}

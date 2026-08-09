@@ -36,7 +36,7 @@ pub use self::image::{ImageFormat, TextureImage};
 pub use self::model::{
     AddModelError, AlphaMode, Model, ModelMaterial, ModelPrimitive, ModelSubMesh, ModelVertex,
 };
-pub use self::terrain::{TerrainData, TerrainVertex};
+pub use self::terrain::{TerrainData, TerrainDraw, TerrainVertex};
 
 /// Where a `Renderer` draws. Windowed presentation and offscreen capture share every pass;
 /// only the colour attachment and what happens after submit differ.
@@ -234,8 +234,10 @@ impl<'target> Renderer<'target> {
             .add_model(&self.device, &self.queue, model)
     }
 
-    pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4]) {
-        self.passes.terrain.update_uniforms(&self.queue, view_proj);
+    pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4], camera_pos: glam::Vec3) {
+        self.passes
+            .terrain
+            .update_uniforms(&self.queue, view_proj, camera_pos.to_array());
     }
 
     pub fn update_model_uniforms(&self, view_proj: [[f32; 4]; 4]) {

@@ -16,5 +16,5 @@ pub mod texture;
 
 pub use self::model::{BuildModelError, build_model};
 pub use self::sky::{sky_textures_at_time, upload_sky_textures};
-pub use self::terrain::{HEIGHT_SCALE, build_terrain};
+pub use self::terrain::build_terrain;
 pub use self::texture::{decode_texture, decode_texture_rgba};
