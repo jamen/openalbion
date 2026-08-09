@@ -536,16 +536,18 @@ already modelled in `~/git/fable-defs/packages/defs/src/def/camera_mode.rs:15`.
 At 70° horizontal and 16:9 the vertical FOV is **~43°**, not 70°. We were feeding the def's
 number straight into `perspective_rh` as a *vertical* FOV, giving a far too wide view — so
 this was never a constant to fit against a reference (as §7.1 originally proposed), it was a
-constant to read. Fixed in `mirror`, with the derivation as a unit test.
+constant to read. `Camera::fov_y` (`openalbion/src/camera.rs`) derives it, with the
+derivation as a unit test; `Camera::fov_h` holds the horizontal value.
 
-Two residuals, both flagged in `Scene::fov_y`:
+Two residuals, both flagged on `Camera::fov_y`:
 - The argument to `_CItan()` is register-passed and invisible in the decomp, so half-angle vs
   full-angle is inferred rather than read. Half-angle is near-certain: full-angle would make
   `ScaleX = 1/tan(70°) = 0.36`, an implausibly wide view, where half-angle gives 1.43.
-  A reference capture settles it definitively.
-- *Which* camera mode is active during a scripted `CameraMoveToPosAndLookAtPos` is not yet
-  established, so the per-scene `camera_fov_h` defaults to the template's 70 and should be
-  confirmed at capture time.
+  A reference capture would settle it definitively — but see step 1: there is no capture
+  route any more, so this stands on the arithmetic alone.
+- *Which* camera mode is active in a given shot is not yet established, so `fov_h` defaults
+  to `CAMERA_MODE_TEMPLATE`'s 70 and should be read from `camera_mode.def` per mode once the
+  camera system lands.
 
 `Use2DFOV` selects the second path, where vertical FOV is independent — that is the 2D/UI
 camera (`ENGINE.FOV_2D`) and does not apply to the world camera.

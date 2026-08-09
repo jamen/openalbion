@@ -10,7 +10,10 @@ use glam::{Mat4, Vec3};
 
 pub struct Camera {
     pub position: Vec3,
-    pub fov_y: f32,
+    /// **Horizontal** field of view, radians. `CCamera` (`bbblibrary/lib_camera.hpp:1005`)
+    /// carries `HorizontalFOV` with the vertical derived; `camera_mode.def` gives every
+    /// `CAMERA_MODE` an `FOV`, and `CAMERA_MODE_TEMPLATE` defaults to 70. AGENTS.md §3.10.
+    pub fov_h: f32,
     pub aspect: f32,
     pub near: f32,
     pub far: f32,
@@ -33,7 +36,7 @@ impl Camera {
     pub fn new() -> Self {
         Self {
             position: Vec3::ZERO,
-            fov_y: 70.0_f32.to_radians(),
+            fov_h: 70.0_f32.to_radians(),
             aspect: 16.0 / 9.0,
             near: 0.1,
             far: 1000.0,
@@ -67,8 +70,35 @@ impl Camera {
         Mat4::look_to_rh(self.position, self.forward(), Self::UP)
     }
 
+    /// Vertical field of view in radians, derived from the horizontal FOV and the aspect
+    /// ratio exactly as the engine does.
+    ///
+    /// `CEngineCamera` builds the projection (`fableengine/engine_camera.cpp:781-793`) as:
+    ///
+    /// ```text
+    /// AspectRatio          = width / height
+    /// HomogenousViewScaleX = 1 / tan(HFOV/2)
+    /// HomogenousViewScaleY = HomogenousViewScaleX * AspectRatio   // Use2DFOV == false
+    /// ```
+    ///
+    /// then scales view-space X by `ScaleX` and Y by `ScaleY`. A standard right-handed
+    /// perspective has `m00 = f/aspect`, `m11 = f` with `f = 1/tan(fovY/2)` — the same
+    /// `m11 = m00 * aspect` relation — so equating the two gives
+    ///
+    /// ```text
+    /// fovY = 2 * atan( tan(HFOV/2) / aspect )
+    /// ```
+    ///
+    /// At the 70° template default and 16:9 that is ~43°, *not* 70°. AGENTS.md §3.10.
+    ///
+    /// `Use2DFOV` selects a second path where the vertical FOV is independent
+    /// (`ENGINE.FOV_2D`); that is the 2D/UI camera and does not apply here.
+    pub fn fov_y(&self) -> f32 {
+        2.0 * ((self.fov_h * 0.5).tan() / self.aspect).atan()
+    }
+
     pub fn projection_matrix(&self) -> Mat4 {
-        Mat4::perspective_rh(self.fov_y, self.aspect, self.near, self.far)
+        Mat4::perspective_rh(self.fov_y(), self.aspect, self.near, self.far)
     }
 
     pub fn view_projection_matrix(&self) -> Mat4 {
@@ -146,5 +176,30 @@ impl Camera {
 impl Default for Camera {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Camera;
+
+    /// The engine derives the vertical FOV from the horizontal one and the aspect ratio
+    /// (`engine_camera.cpp:781-793`). At 70° horizontal and 16:9 that is ~43° vertical —
+    /// feeding the def's number straight in as a vertical FOV gives a far too wide view.
+    #[test]
+    fn vertical_fov_is_derived_from_horizontal_and_aspect() {
+        let mut camera = Camera::new();
+        camera.set_aspect(1280, 720);
+
+        assert!((camera.aspect - 16.0 / 9.0).abs() < 1e-6);
+        assert!(
+            (camera.fov_y().to_degrees() - 42.99).abs() < 0.05,
+            "got {}",
+            camera.fov_y().to_degrees()
+        );
+
+        // A square viewport makes horizontal and vertical coincide.
+        camera.set_aspect(720, 720);
+        assert!((camera.fov_y().to_degrees() - 70.0).abs() < 0.01);
     }
 }
