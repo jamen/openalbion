@@ -5,3 +5,6 @@ target
 # local git worktrees for parallel work
 /worktree/
 worktrees/
+
+# mirror render output (reference/ IS committed)
+/out/
