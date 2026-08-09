@@ -5,6 +5,8 @@ pub mod crc32;
 pub use fable_defs::def;
 pub mod environment;
 pub mod kv;
+pub mod manifest;
+pub mod object;
 pub mod texture;
 pub mod tga;
 pub mod tng;

@@ -1,8 +1,8 @@
 // Validation (ignored by default): round-trip the retail def binaries
 // through parse → serialize → re-parse and check the container layout
 // byte-for-byte.  cargo test -p fable-data --test def_binary_roundtrip -- --ignored --nocapture
-use fable_data::def::binary::def_binary::DefBinary;
-use fable_data::def::binary::names::Names;
+use fable_data::def::binary::DefBinary;
+use fable_data::def::names::Names;
 use std::path::Path;
 
 struct IndexEntry {

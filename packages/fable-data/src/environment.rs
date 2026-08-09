@@ -5,8 +5,8 @@
 //! - Lighting lookup table rows
 //! - Fog, clouds, water, and other atmospheric effects
 
-use crate::def::binary::def_binary::{DefBinary, DefBody};
-use crate::def::binary::names::Names;
+use crate::def::binary::{DefBinary, DefBody};
+use crate::def::names::Names;
 use crate::def::text::{DefParseError, Definition, Expr, PathSegment, Spanned, Statement, parse_def_file};
 use crate::def::{EnvironmentDef, EnvironmentThemeDef};
 use derive_more::{Display, Error};

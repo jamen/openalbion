@@ -5,7 +5,7 @@
 //!     cargo test -p fable-data --test lexer_headers -- --nocapture
 
 use fable_data::def::text::lexer::lex;
-use fable_data::def::text::manifest;
+use fable_data::manifest;
 use std::path::Path;
 
 #[test]

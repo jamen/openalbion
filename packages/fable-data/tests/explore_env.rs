@@ -1,7 +1,7 @@
 // Validation (ignored by default): load retail game.bin and check the typed
 // environment defs parse.  cargo test -p fable-data --test explore_env -- --ignored --nocapture
-use fable_data::def::binary::def_binary::{DefBinary, DefBody};
-use fable_data::def::binary::names::Names;
+use fable_data::def::binary::{DefBinary, DefBody};
+use fable_data::def::names::Names;
 use std::collections::BTreeMap;
 use std::path::Path;
 

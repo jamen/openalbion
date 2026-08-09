@@ -398,7 +398,7 @@ impl App {
                 Some(n) => n.clone(),
                 None => continue,
             };
-            if resolved.graphic_type != fable_data::def::object::ObjectGraphicType::StaticMesh {
+            if resolved.graphic_type != fable_data::object::ObjectGraphicType::StaticMesh {
                 continue;
             }
 

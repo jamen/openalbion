@@ -1,12 +1,10 @@
 use derive_more::{Display, Error};
 use fable_data::{
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
-    def::{
-        binary::{def_binary::DefBinary, names::Names},
-        object::ObjectDefs,
-    },
-    def::binary::def_binary::DefBody,
+    def::binary::{DefBinary, DefBody},
+    def::names::Names,
     def::SkyDef,
+    object::ObjectDefs,
     environment::{EnvironmentConfig, EnvironmentTheme},
     lev::{Lev, LevError},
     mesh::{Mesh, MeshError},
@@ -219,7 +217,7 @@ impl Files {
         let def_binary = DefBinary::load_with_names(&game_bin_path, &names).ok()?;
 
         for entry in def_binary.entries(&names) {
-            if let fable_data::def::binary::def_binary::DefBody::SkyDef(def) = &entry.record.body {
+            if let fable_data::def::binary::DefBody::SkyDef(def) = &entry.record.body {
                 return Some(def.clone());
             }
         }
