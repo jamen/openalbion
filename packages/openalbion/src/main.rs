@@ -1,13 +1,16 @@
+//! OpenAlbion — a recreation of Fable: The Lost Chapters' engine.
+//!
+//! The engine binary. Drawing lives in the `renderer` crate, which knows nothing about
+//! Fable's asset formats; `scene` is where this binary turns assets into the plain data
+//! the renderer accepts. World space is Z-up, matching the game (AGENTS.md §3.6).
+
 mod camera;
 mod files;
-mod renderer;
 mod scene;
 
-use self::{
-    camera::Camera,
-    files::{Files, NewFilesError},
-    renderer::{AddModelError, NewRendererError, Renderer},
-};
+use crate::camera::Camera;
+use crate::files::{Files, NewFilesError};
+use renderer::{AddModelError, NewRendererError, Renderer};
 use argh::FromArgs;
 use derive_more::{Display, Error};
 use std::{borrow::Cow, collections::HashSet, path::Path, sync::Arc, time::Instant};

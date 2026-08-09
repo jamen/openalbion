@@ -8,8 +8,8 @@
 //! Until then the caller passes zeroed gradients, so the sky shows the raw sky
 //! texture — the unimplemented half is visible rather than faked.
 
-use super::image::TextureImage;
-use super::texture::{linear_clamp_sampler, upload_texture};
+use crate::image::TextureImage;
+use crate::texture::{linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use std::any::type_name;
 use wgpu::{

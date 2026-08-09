@@ -5,7 +5,7 @@
 //! other side of the crate boundary, which is also where the real
 //! `CEngineLandscapeMeshBuilder` port belongs (AGENTS.md §3.4, step 5.2).
 
-use super::image::TextureImage;
+use crate::image::TextureImage;
 use bytemuck::{Pod, Zeroable};
 use std::any::type_name;
 use wgpu::{

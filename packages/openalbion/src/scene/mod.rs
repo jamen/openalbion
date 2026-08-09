@@ -5,8 +5,8 @@
 //! heightmaps and compiled defs; nothing crosses between them except through here.
 //!
 //! That is deliberate. AGENTS.md §0 traces the sky/landscape fix loop to passes inventing
-//! their own data lookups; a pass that is handed a finished [`TerrainData`] has nothing
-//! left to invent. It also means this module — not a shader — is where §6.8's provenance
+//! their own data lookups; a pass that is handed a finished `TerrainData` has nothing
+//! left to invent. It also means this module — not a shader — is where provenance
 //! logging belongs: "which byte became which constant" is a conversion question.
 
 pub mod model;

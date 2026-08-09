@@ -1,0 +1,14 @@
+[package]
+name = "renderer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# No `fable-data`, no `std::fs`. The renderer draws what it is given; turning Fable's
+# archives into its input types is `openalbion::scene`'s job. See AGENTS.md §11.
+[dependencies]
+bytemuck = { version = "1.24", features = ["derive"] }
+derive_more = { version = "2.1.1", features = ["error", "display"] }
+glam = "0.31.0"
+tracing = "0.1.44"
+wgpu = "28.0.0"

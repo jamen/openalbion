@@ -1,9 +1,16 @@
-//! The renderer: wgpu passes and the data they draw.
+//! OpenAlbion's renderer: wgpu passes and the data they draw.
 //!
-//! Nothing here reads a file or knows an asset format. Every input arrives as a plain
-//! struct — [`TerrainData`], [`Model`], [`TextureImage`] — which is what stops a pass
-//! from inventing a data lookup of its own (AGENTS.md §2 rule 3). Building those from
-//! Fable's archives is the job of `crate::scene`.
+//! Nothing here reads a file or knows an asset format — the dependency list is wgpu,
+//! glam, bytemuck and tracing, and that is the point. Every input arrives as a plain
+//! struct ([`TerrainData`], [`Model`], [`TextureImage`]), so a pass *cannot* invent a
+//! data lookup of its own; AGENTS.md §2 rule 3 becomes a property the compiler checks
+//! rather than one a reviewer has to notice.
+//!
+//! Turning Fable's archives into these types is `openalbion::scene`'s job. Anything that
+//! can produce them can drive this renderer, which is what lets tools other than the
+//! game — the `mirror` harness, a world editor — share it.
+//!
+//! World space is Z-up, matching the game (AGENTS.md §3.6).
 
 mod depth;
 mod image;

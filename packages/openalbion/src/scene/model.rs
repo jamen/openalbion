@@ -1,6 +1,6 @@
 //! `fable_data::mesh::Mesh` → [`Model`].
 
-use crate::renderer::{
+use renderer::{
     AlphaMode, Model, ModelMaterial, ModelPrimitive, ModelSubMesh, ModelVertex,
 };
 use derive_more::{Display, Error};

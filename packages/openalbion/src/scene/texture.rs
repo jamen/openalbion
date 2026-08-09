@@ -1,6 +1,6 @@
 //! Fable texture assets → [`TextureImage`].
 
-use crate::renderer::{ImageFormat, TextureImage};
+use renderer::{ImageFormat, TextureImage};
 use derive_more::{Display, Error};
 use fable_data::{
     big::{AssetMetadata, ExtraMetadata},

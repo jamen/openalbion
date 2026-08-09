@@ -3,7 +3,7 @@
 //! Decoding is the caller's job — by the time bytes reach here they are already pixels or
 //! BCN blocks, so upload cannot fail on a format it does not understand.
 
-use super::image::TextureImage;
+use crate::image::TextureImage;
 use wgpu::{
     Device, Extent3d, Queue, SamplerDescriptor, TexelCopyBufferLayout, TextureDescriptor,
     TextureDimension, TextureUsages, TextureView, TextureViewDescriptor,

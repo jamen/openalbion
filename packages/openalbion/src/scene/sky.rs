@@ -6,7 +6,7 @@
 //! (AGENTS.md §3.1, step 2).
 
 use crate::files::Files;
-use crate::renderer::Renderer;
+use renderer::Renderer;
 
 /// The sky texture pair for a time of day: `(texture0, texture1, blend)`.
 pub type SkyTextures = (Option<String>, Option<String>, f32);

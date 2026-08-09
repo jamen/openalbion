@@ -8,7 +8,7 @@
 //! nothing in the renderer, which is the point of building it here.
 
 use crate::files::Files;
-use crate::renderer::{ImageFormat, TerrainData, TerrainVertex, TextureImage};
+use renderer::{ImageFormat, TerrainData, TerrainVertex, TextureImage};
 use fable_data::lev::{Lev, LevHeightCell};
 
 // UNVERIFIED: neither value is sourced from the game. LEV stores height as a

@@ -5,8 +5,8 @@
 //! use `cull_mode: Back`.  Triangle-strip winding was fixed in `mesh::expand_block` so strips
 //! produce consistent CCW triangles.
 
-use super::image::TextureImage;
-use super::texture::{linear_clamp_sampler, upload_texture};
+use crate::image::TextureImage;
+use crate::texture::{linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
 use std::any::type_name;
