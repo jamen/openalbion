@@ -42,8 +42,7 @@ pub use self::terrain::{TerrainData, TerrainVertex};
 /// only the colour attachment and what happens after submit differ.
 enum Target<'t> {
     Surface(Surface<'t>),
-    /// Owned colour texture plus a `MAP_READ` staging buffer, for headless capture
-    /// (`packages/mirror`). AGENTS.md step 1.3.
+    /// Owned colour texture plus a `MAP_READ` staging buffer, for headless capture.
     Offscreen {
         texture: Texture,
         readback: wgpu::Buffer,
