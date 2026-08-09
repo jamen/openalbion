@@ -8,9 +8,9 @@
 //! Until then the caller passes zeroed gradients, so the sky shows the raw sky
 //! texture — the unimplemented half is visible rather than faked.
 
-use super::texture::{TextureUploadError, linear_clamp_sampler, upload_texture};
+use super::image::TextureImage;
+use super::texture::{linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
-use fable_data::big::AssetMetadata;
 use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -392,30 +392,17 @@ impl OuterSkyPass {
         }
     }
 
-    /// Set the primary sky texture (texture0).
-    pub fn set_texture0(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        asset_info: &AssetMetadata,
-        asset_data: &[u8],
-    ) -> Result<(), TextureUploadError> {
-        self.texture0 = Some(upload_texture(device, queue, asset_info, asset_data)?);
+    /// Set the primary sky texture — `t0` in `PSHADER_OUTER_SKY`.
+    pub fn set_texture0(&mut self, device: &Device, queue: &Queue, image: &TextureImage) {
+        self.texture0 = Some(upload_texture(device, queue, "sky_texture0", image));
         self.rebuild_sky_bind_group(device);
-        Ok(())
     }
 
-    /// Set the secondary sky texture for blending (texture1).
-    pub fn set_texture1(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        asset_info: &AssetMetadata,
-        asset_data: &[u8],
-    ) -> Result<(), TextureUploadError> {
-        self.texture1 = Some(upload_texture(device, queue, asset_info, asset_data)?);
+    /// Set the secondary sky texture — `t1`, blended against `t0` by the pixel shader's
+    /// `c0.w`.
+    pub fn set_texture1(&mut self, device: &Device, queue: &Queue, image: &TextureImage) {
+        self.texture1 = Some(upload_texture(device, queue, "sky_texture1", image));
         self.rebuild_sky_bind_group(device);
-        Ok(())
     }
 
     fn rebuild_sky_bind_group(&mut self, device: &Device) {

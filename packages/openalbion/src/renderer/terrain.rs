@@ -1,5 +1,12 @@
+//! The landscape pass.
+//!
+//! Takes a prebuilt [`TerrainData`] — vertices, indices and one decoded image per theme
+//! layer. Building that from a `.lev` heightmap is a data transformation and lives on the
+//! other side of the crate boundary, which is also where the real
+//! `CEngineLandscapeMeshBuilder` port belongs (AGENTS.md §3.4, step 5.2).
+
+use super::image::TextureImage;
 use bytemuck::{Pod, Zeroable};
-use fable_data::lev::Lev;
 use std::any::type_name;
 use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
@@ -15,23 +22,27 @@ use wgpu::{
     util::{BufferInitDescriptor, DeviceExt},
 };
 
-use crate::files::Files;
-use fable_data::big::ExtraMetadata;
-use fable_data::texture::{Texture, TextureImageFormat, bcn_encoding_from_dxt};
-
-// UNVERIFIED: neither value is sourced from the game. LEV stores height as a
-// normalised f32; the real world-space scale and cell pitch come from the landscape
-// map/patch code (engine_landscape*.cpp), not from us. AGENTS.md §9.
-pub const HEIGHT_SCALE: f32 = 2048.0;
-const CELL_SIZE: f32 = 1.0;
+/// Everything the pass needs to draw a landscape, with no asset formats behind it.
+pub struct TerrainData {
+    pub vertices: Vec<TerrainVertex>,
+    pub indices: Vec<u32>,
+    /// One image per theme layer. All layers must share a size — the pass uploads them
+    /// into a single array texture and skips any that disagree.
+    pub layers: Vec<TextureImage>,
+    /// LEV heightmap-palette slot → index into `layers`.
+    pub palette_to_layer: [u32; 256],
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct TerrainVertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-    theme_indices: [u8; 4],
-    blend: [u8; 4],
+pub struct TerrainVertex {
+    /// World position, Z-up (AGENTS.md §3.6).
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    /// Palette slots of this vertex's ground themes, resolved through
+    /// [`TerrainData::palette_to_layer`] in the shader.
+    pub theme_indices: [u8; 4],
+    pub blend: [u8; 4],
 }
 
 impl TerrainVertex {
@@ -63,78 +74,6 @@ struct TerrainUniforms {
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct PaletteMap {
     layers: [u32; 256],
-}
-
-fn build_terrain_mesh(lev: &Lev) -> (Vec<TerrainVertex>, Vec<u32>) {
-    let w = lev.header.width as usize + 1;
-    let h = lev.header.height as usize + 1;
-    let cells = &lev.heightmap_cells;
-
-    let height_at = |col: usize, row: usize| -> f32 {
-        cells
-            .get(row * w + col)
-            .map(|c| c.height * HEIGHT_SCALE)
-            .unwrap_or(0.0)
-    };
-
-    let mut vertices = Vec::with_capacity(w * h);
-    for row in 0..h {
-        for col in 0..w {
-            let z = height_at(col, row);
-
-            let left = height_at(col.saturating_sub(1), row);
-            let right = height_at((col + 1).min(w - 1), row);
-            let down = height_at(col, row.saturating_sub(1));
-            let up = height_at(col, (row + 1).min(h - 1));
-            // Z-up: gradient in X and Y, up is +Z.
-            let normal = normalize([-(right - left), -(up - down), 2.0 * CELL_SIZE]);
-
-            let cell = &cells[row * w + col];
-
-            // `CliffU`/`CliffV` are per-vertex texture coordinates on
-            // `CLandscapeLayerMesh::CVertex` (engine_landscape_layer_mesh.hpp:71), produced by
-            // the mesh builder according to the layer's `MappingDirection` — not derived from
-            // the height gradient. Left zero until the layer meshes land (AGENTS.md step 5.2).
-            vertices.push(TerrainVertex {
-                position: [col as f32 * CELL_SIZE, row as f32 * CELL_SIZE, z],
-                normal,
-                theme_indices: [
-                    cell.ground_theme.0,
-                    cell.ground_theme.1,
-                    cell.ground_theme.2,
-                    0,
-                ],
-                blend: [
-                    cell.ground_theme_strength.0,
-                    cell.ground_theme_strength.1,
-                    0,
-                    0,
-                ],
-            });
-        }
-    }
-
-    let mut indices = Vec::with_capacity((w - 1) * (h - 1) * 6);
-    for row in 0..h.saturating_sub(1) {
-        for col in 0..w.saturating_sub(1) {
-            let a = (row * w + col) as u32;
-            let b = a + 1;
-            let c = a + w as u32;
-            let d = c + 1;
-            indices.extend_from_slice(&[a, c, b, b, c, d]);
-        }
-    }
-
-    (vertices, indices)
-}
-
-fn normalize(v: [f32; 3]) -> [f32; 3] {
-    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    if len > 0.0 {
-        [v[0] / len, v[1] / len, v[2] / len]
-    } else {
-        [0.0, 0.0, 1.0]
-    }
 }
 
 pub struct TerrainBindGroupLayout(BindGroupLayout);
@@ -297,28 +236,18 @@ impl TerrainPass {
         }
     }
 
-    pub fn set_terrain(
-        &mut self,
-        device: &Device,
-        queue: &Queue,
-        files: &mut Files,
-        lev: &Lev,
-    ) {
-        let bundle = files.resolve_terrain_themes(&lev.header.heightmap_palette);
-
-        let (vertices, indices) = build_terrain_mesh(lev);
-
+    pub fn set_terrain(&mut self, device: &Device, queue: &Queue, terrain: &TerrainData) {
         let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("terrain_vertex_buffer"),
-            contents: bytemuck::cast_slice(&vertices),
+            contents: bytemuck::cast_slice(&terrain.vertices),
             usage: BufferUsages::VERTEX,
         });
         let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("terrain_index_buffer"),
-            contents: bytemuck::cast_slice(&indices),
+            contents: bytemuck::cast_slice(&terrain.indices),
             usage: BufferUsages::INDEX,
         });
-        let index_count = indices.len() as u32;
+        let index_count = terrain.indices.len() as u32;
 
         let uniforms = TerrainUniforms {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
@@ -331,7 +260,7 @@ impl TerrainPass {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let (_texture_array, texture_view, palette_buffer) = if bundle.texture_ids.is_empty() {
+        let (_texture_array, texture_view, palette_buffer) = if terrain.layers.is_empty() {
             let tex = device.create_texture(&TextureDescriptor {
                 label: Some("terrain_texture_array_empty"),
                 size: Extent3d {
@@ -374,96 +303,75 @@ impl TerrainPass {
             });
             (Some(tex), view, Some(pal_buf))
         } else {
-            let layer_count = bundle.texture_ids.len() as u32;
-            let tex_size = 256u32;
+            // The array's extent and format come from the first layer; every layer has to
+            // agree with it. The caller decodes all layers to a common size, so a mismatch
+            // here is a data bug worth surfacing rather than silently rescaling.
+            let first = &terrain.layers[0];
             let texture_array = device.create_texture(&TextureDescriptor {
                 label: Some("terrain_texture_array"),
                 size: Extent3d {
-                    width: tex_size,
-                    height: tex_size,
-                    depth_or_array_layers: layer_count,
+                    width: first.width,
+                    height: first.height,
+                    depth_or_array_layers: terrain.layers.len() as u32,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: TextureDimension::D2,
-                format: TextureFormat::Rgba8Unorm,
+                format: first.format.wgpu_format(),
                 usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
                 view_formats: &[],
             });
 
-            for (layer, &tex_id) in bundle.texture_ids.iter().enumerate() {
-                tracing::debug!("Loading terrain texture layer {layer}: id={tex_id}");
-                match files.read_texture_by_id(tex_id as u32) {
-                    Ok((asset, data)) => {
-                        let extras = match &asset.extras {
-                            Some(ExtraMetadata::Texture(e)) => e,
-                            _ => {
-                                tracing::warn!("Terrain texture {tex_id} is not a texture asset");
-                                continue;
-                            }
-                        };
-                        let dxt = extras.dxt_compression;
-                        let Some(encoding) = bcn_encoding_from_dxt(dxt) else {
-                            tracing::warn!("Unsupported DXT format for texture {tex_id}: {dxt}");
-                            continue;
-                        };
-                        let width = extras.width as u32;
-                        let height = extras.height as u32;
-                        let parsed = match Texture::parse(
-                            &mut data.as_slice(),
-                            width as usize,
-                            height as usize,
-                            extras.depth as usize,
-                            extras.top_mip_map_size as usize,
-                            encoding,
-                        ) {
-                            Ok(p) => p,
-                            Err(e) => {
-                                tracing::warn!("Parse texture {tex_id}: {e:?}");
-                                continue;
-                            }
-                        };
-                        let rgba = match parsed.get_top_mip_pixel_image(TextureImageFormat::RGBA) {
-                            Ok(d) => d,
-                            Err(e) => {
-                                tracing::warn!("Decode texture {tex_id}: {e:?}");
-                                continue;
-                            }
-                        };
-                        let bytes_per_row = width * 4;
-
-                        queue.write_texture(
-                            TexelCopyTextureInfo {
-                                texture: &texture_array,
-                                mip_level: 0,
-                                origin: Origin3d {
-                                    x: 0,
-                                    y: 0,
-                                    z: layer as u32,
-                                },
-                                aspect: TextureAspect::All,
-                            },
-                            &rgba,
-                            TexelCopyBufferLayout {
-                                offset: 0,
-                                bytes_per_row: Some(bytes_per_row),
-                                rows_per_image: Some(height),
-                            },
-                            Extent3d {
-                                width,
-                                height,
-                                depth_or_array_layers: 1,
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to load terrain texture id={} for layer {}: {e}",
-                            tex_id,
-                            layer
-                        );
-                    }
+            for (layer, image) in terrain.layers.iter().enumerate() {
+                if image.width != first.width
+                    || image.height != first.height
+                    || image.format != first.format
+                {
+                    tracing::warn!(
+                        "Terrain layer {layer} is {}x{} {:?}, expected {}x{} {:?} — skipped",
+                        image.width,
+                        image.height,
+                        image.format,
+                        first.width,
+                        first.height,
+                        first.format,
+                    );
+                    continue;
                 }
+                if !image.is_complete() {
+                    tracing::warn!(
+                        "Terrain layer {layer} has {} bytes, too few for {}x{} {:?} — skipped",
+                        image.data.len(),
+                        image.width,
+                        image.height,
+                        image.format,
+                    );
+                    continue;
+                }
+
+                queue.write_texture(
+                    TexelCopyTextureInfo {
+                        texture: &texture_array,
+                        mip_level: 0,
+                        origin: Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer as u32,
+                        },
+                        aspect: TextureAspect::All,
+                    },
+                    &image.data,
+                    TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(image.bytes_per_row()),
+                        rows_per_image: Some(image.height),
+                    },
+                    Extent3d {
+                        width: image.width,
+                        height: image.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
             }
 
             let array_view = texture_array.create_view(&TextureViewDescriptor {
@@ -472,10 +380,9 @@ impl TerrainPass {
                 ..Default::default()
             });
 
-            let mut pal = PaletteMap { layers: [0u32; 256] };
-            for (pal_idx, &layer) in bundle.palette_to_layer.iter().enumerate() {
-                pal.layers[pal_idx] = layer as u32;
-            }
+            let pal = PaletteMap {
+                layers: terrain.palette_to_layer,
+            };
             let palette_buffer = device.create_buffer_init(&BufferInitDescriptor {
                 label: Some("terrain_palette_map"),
                 contents: bytemuck::cast_slice(&[pal]),
@@ -511,22 +418,10 @@ impl TerrainPass {
             ],
         });
 
-        let min_height = lev
-            .heightmap_cells
-            .iter()
-            .map(|c| c.height)
-            .fold(f32::INFINITY, f32::min);
-        let max_height = lev
-            .heightmap_cells
-            .iter()
-            .map(|c| c.height)
-            .fold(f32::NEG_INFINITY, f32::max);
         tracing::info!(
-            "Terrain height range: raw [{:.2}, {:.2}], scaled [{:.2}, {:.2}]",
-            min_height,
-            max_height,
-            min_height * HEIGHT_SCALE,
-            max_height * HEIGHT_SCALE,
+            "Terrain uploaded: {} vertices, {index_count} indices, {} texture layers",
+            terrain.vertices.len(),
+            terrain.layers.len(),
         );
 
         self.vertex_buffer = Some(vertex_buffer);

@@ -1,14 +1,14 @@
-//! Renders a Fable mesh: every primitive, every per-material draw range, with the material's
+//! Renders a [`Model`]: every primitive, every per-material draw range, with the material's
 //! diffuse texture and alpha mode (opaque / alpha-test cutout / alpha-blended).
 //!
 //! Backface culling is enabled per-material: `two_sided` materials use `cull_mode: None`, the rest
 //! use `cull_mode: Back`.  Triangle-strip winding was fixed in `mesh::expand_block` so strips
 //! produce consistent CCW triangles.
 
-use super::texture::{TextureUploadError, linear_clamp_sampler, upload_texture};
+use super::image::TextureImage;
+use super::texture::{linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
-use fable_data::{big::AssetMetadata, mesh::Mesh};
 use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
@@ -24,17 +24,62 @@ use wgpu::{
 };
 
 /// Texels with alpha below this are discarded by alpha-test (cutout) materials.
+// UNVERIFIED: not sourced from the game. AGENTS.md §9.
 const ALPHA_CUTOFF: f32 = 0.5;
+
+/// How a material's alpha channel is treated.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum AlphaMode {
+    /// Alpha ignored.
+    #[default]
+    Opaque,
+    /// Alpha-tested: texels below [`ALPHA_CUTOFF`] are discarded, depth still written.
+    Cutout,
+    /// Alpha-blended, depth-tested but not depth-written, drawn back-to-front.
+    Blend,
+}
+
+/// One material: its diffuse map (a 1×1 white texture stands in when absent) and how it
+/// blends.
+pub struct ModelMaterial {
+    pub diffuse: Option<TextureImage>,
+    pub alpha_mode: AlphaMode,
+    pub two_sided: bool,
+}
+
+/// A contiguous run of a primitive's indices drawn with one material.
+pub struct ModelSubMesh {
+    /// Index into [`Model::materials`].
+    pub material: u32,
+    pub index_start: u32,
+    pub index_count: u32,
+}
+
+/// One primitive's geometry and its per-material draw ranges.
+pub struct ModelPrimitive {
+    pub vertices: Vec<ModelVertex>,
+    pub indices: Vec<u16>,
+    pub sub_meshes: Vec<ModelSubMesh>,
+}
+
+/// A model ready to upload: geometry, materials, and where to put it in the world.
+pub struct Model {
+    pub primitives: Vec<ModelPrimitive>,
+    pub materials: Vec<ModelMaterial>,
+    pub scale: f32,
+    /// World position, Z-up (AGENTS.md §3.6).
+    pub position: [f32; 3],
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct MeshVertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-    uv: [f32; 2],
+pub struct ModelVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
 
-impl MeshVertex {
+impl ModelVertex {
     const ATTRIBS: [VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
 
@@ -186,7 +231,7 @@ impl ModelPipelines {
                 vertex: VertexState {
                     module: &shader.0,
                     entry_point: Some("vs_main"),
-                    buffers: &[MeshVertex::layout()],
+                    buffers: &[ModelVertex::layout()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(FragmentState {
@@ -222,7 +267,7 @@ impl ModelPipelines {
 }
 
 /// One material's GPU resources: its bind group (texture + sampler + uniform) and alpha mode.
-struct ModelMaterial {
+struct GpuMaterial {
     bind_group: BindGroup,
     transparent: bool,
 }
@@ -239,23 +284,23 @@ struct SubMeshDraw {
 }
 
 /// One primitive's uploaded geometry plus its per-material sub-draws.
-struct ModelPrimitive {
+struct GpuPrimitive {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     sub_meshes: Vec<SubMeshDraw>,
 }
 
 /// A fully uploaded model: shared transform uniform, its materials, and its primitives.
-struct ModelMesh {
+struct GpuModel {
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: BindGroup,
-    materials: Vec<ModelMaterial>,
-    primitives: Vec<ModelPrimitive>,
+    materials: Vec<GpuMaterial>,
+    primitives: Vec<GpuPrimitive>,
     model_scale: f32,
     model_pos: [f32; 3],
 }
 
-impl ModelMesh {
+impl GpuModel {
     fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
         let uniforms = ModelUniforms {
             view_proj,
@@ -271,11 +316,9 @@ impl ModelMesh {
 }
 
 #[derive(Debug, Display, Error)]
-pub enum ModelTextureError {
-    #[display("mesh has no primitives")]
+pub enum AddModelError {
+    #[display("model has no primitives")]
     NoPrimitives,
-    #[display("{_0}")]
-    Texture(TextureUploadError),
 }
 
 pub struct ModelPass {
@@ -285,7 +328,7 @@ pub struct ModelPass {
     sampler: wgpu::Sampler,
     /// 1x1 white texture used for materials that have no diffuse map.
     white_view: TextureView,
-    meshes: Vec<ModelMesh>,
+    meshes: Vec<GpuModel>,
     /// Camera world-space position, used for depth-sorting transparent draws.
     camera_pos: [f32; 3],
 }
@@ -324,24 +367,19 @@ impl ModelPass {
         &mut self,
         device: &Device,
         queue: &Queue,
-        mesh: &Mesh,
-        material_textures: &[Option<(AssetMetadata, Vec<u8>)>],
-        scale: f32,
-        pos: [f32; 3],
-    ) -> Result<(), ModelTextureError> {
-        use ModelTextureError as E;
-
-        if mesh.primitives.is_empty() {
-            return Err(E::NoPrimitives);
+        model: &Model,
+    ) -> Result<(), AddModelError> {
+        if model.primitives.is_empty() {
+            return Err(AddModelError::NoPrimitives);
         }
 
         let uniforms = ModelUniforms {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            model_scale: scale,
+            model_scale: model.scale,
             _pad0: 0.0,
             _pad1: 0.0,
             _pad2: 0.0,
-            model_pos: pos,
+            model_pos: model.position,
             _pad3: 0.0,
         };
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -358,8 +396,8 @@ impl ModelPass {
             }],
         });
 
-        let materials = self.build_materials(device, queue, mesh, material_textures)?;
-        let primitives = build_primitives(device, mesh);
+        let materials = self.build_materials(device, queue, &model.materials);
+        let primitives = build_primitives(device, model);
 
         let opaque = primitives
             .iter()
@@ -374,40 +412,35 @@ impl ModelPass {
             primitives.iter().map(|p| p.sub_meshes.len()).sum::<usize>() - opaque,
         );
 
-        self.meshes.push(ModelMesh {
+        self.meshes.push(GpuModel {
             uniform_buffer,
             uniform_bind_group,
             materials,
             primitives,
-            model_scale: scale,
-            model_pos: pos,
+            model_scale: model.scale,
+            model_pos: model.position,
         });
         Ok(())
     }
 
-    /// Build a [`ModelMaterial`] per `mesh.materials` entry, uploading each diffuse texture (or
+    /// Build a [`GpuMaterial`] per input material, uploading each diffuse texture (or
     /// falling back to the shared white texture) and baking its alpha mode into a uniform.
     fn build_materials(
         &self,
         device: &Device,
         queue: &Queue,
-        mesh: &Mesh,
-        material_textures: &[Option<(AssetMetadata, Vec<u8>)>],
-    ) -> Result<Vec<ModelMaterial>, ModelTextureError> {
-        use ModelTextureError as E;
-
-        let mut materials = Vec::with_capacity(mesh.materials.len());
-        for (i, material) in mesh.materials.iter().enumerate() {
-            let uploaded = match material_textures.get(i).and_then(|t| t.as_ref()) {
-                Some((meta, data)) => {
-                    Some(upload_texture(device, queue, meta, data).map_err(E::Texture)?)
-                }
-                None => None,
-            };
+        materials_in: &[ModelMaterial],
+    ) -> Vec<GpuMaterial> {
+        let mut materials = Vec::with_capacity(materials_in.len());
+        for material in materials_in {
+            let uploaded = material
+                .diffuse
+                .as_ref()
+                .map(|image| upload_texture(device, queue, "model_material_diffuse", image));
             let view = uploaded.as_ref().unwrap_or(&self.white_view);
 
             let material_uniforms = MaterialUniforms {
-                alpha_test: material.boolean_alpha as u32,
+                alpha_test: (material.alpha_mode == AlphaMode::Cutout) as u32,
                 alpha_cutoff: ALPHA_CUTOFF,
                 _pad0: 0.0,
                 _pad1: 0.0,
@@ -437,12 +470,12 @@ impl ModelPass {
                 ],
             });
 
-            materials.push(ModelMaterial {
+            materials.push(GpuMaterial {
                 bind_group,
-                transparent: material.transparent && !material.boolean_alpha,
+                transparent: material.alpha_mode == AlphaMode::Blend,
             });
         }
-        Ok(materials)
+        materials
     }
 
     pub fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
@@ -501,7 +534,7 @@ impl ModelPass {
     }
 }
 
-impl ModelMesh {
+impl GpuModel {
     fn draw_opaque(&self, rpass: &mut wgpu::RenderPass<'_>, pipelines: &ModelPipelines) {
         for primitive in &self.primitives {
             let mut bound = false;
@@ -540,7 +573,7 @@ impl ModelMesh {
         pipelines: &ModelPipelines,
         camera_pos: [f32; 3],
     ) {
-        let mut transparent_draws: Vec<(&ModelPrimitive, &SubMeshDraw, &ModelMaterial)> =
+        let mut transparent_draws: Vec<(&GpuPrimitive, &SubMeshDraw, &GpuMaterial)> =
             Vec::new();
         for primitive in &self.primitives {
             for sub in &primitive.sub_meshes {
@@ -558,9 +591,9 @@ impl ModelMesh {
             db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        let mut bound_prim: Option<*const ModelPrimitive> = None;
+        let mut bound_prim: Option<*const GpuPrimitive> = None;
         for (primitive, sub, material) in &transparent_draws {
-            let ptr = *primitive as *const ModelPrimitive;
+            let ptr = *primitive as *const GpuPrimitive;
             if bound_prim != Some(ptr) {
                 rpass.set_vertex_buffer(0, primitive.vertex_buffer.slice(..));
                 rpass.set_index_buffer(primitive.index_buffer.slice(..), IndexFormat::Uint16);
@@ -588,24 +621,17 @@ fn dist_sq(a: &[f32; 3], b: &[f32; 3]) -> f32 {
 
 /// Upload every primitive's geometry and resolve its sub-mesh draw ranges. Empty primitives
 /// (no vertices or no indices) are skipped so we never create a zero-sized GPU buffer.
-fn build_primitives(device: &Device, mesh: &Mesh) -> Vec<ModelPrimitive> {
-    mesh.primitives
+fn build_primitives(device: &Device, model: &Model) -> Vec<GpuPrimitive> {
+    model
+        .primitives
         .iter()
         .filter(|p| !p.vertices.is_empty() && !p.indices.is_empty())
         .map(|primitive| {
-            let vertices: Vec<MeshVertex> = primitive
-                .vertices
-                .iter()
-                .map(|v| MeshVertex {
-                    position: v.pos,
-                    normal: v.normal,
-                    uv: v.uv,
-                })
-                .collect();
+            let vertices = &primitive.vertices;
 
             let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
                 label: Some("model_vertex_buffer"),
-                contents: bytemuck::cast_slice(&vertices),
+                contents: bytemuck::cast_slice(vertices),
                 usage: BufferUsages::VERTEX,
             });
             let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -635,13 +661,13 @@ fn build_primitives(device: &Device, mesh: &Mesh) -> Vec<ModelPrimitive> {
                         centre[1] /= count as f32;
                         centre[2] /= count as f32;
                     }
-                    let cull = mesh
+                    let cull = model
                         .materials
-                        .get(s.material_index as usize)
+                        .get(s.material as usize)
                         .map(|m| !m.two_sided)
                         .unwrap_or(true);
                     SubMeshDraw {
-                        material: s.material_index as usize,
+                        material: s.material as usize,
                         index_start: s.index_start,
                         index_count: s.index_count,
                         cull,
@@ -650,7 +676,7 @@ fn build_primitives(device: &Device, mesh: &Mesh) -> Vec<ModelPrimitive> {
                 })
                 .collect();
 
-            ModelPrimitive {
+            GpuPrimitive {
                 vertex_buffer,
                 index_buffer,
                 sub_meshes,

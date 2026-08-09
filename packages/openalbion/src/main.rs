@@ -1,11 +1,12 @@
 mod camera;
 mod files;
 mod renderer;
+mod scene;
 
 use self::{
     camera::Camera,
     files::{Files, NewFilesError},
-    renderer::{ModelTextureError, NewRendererError, Renderer},
+    renderer::{AddModelError, NewRendererError, Renderer},
 };
 use argh::FromArgs;
 use derive_more::{Display, Error};
@@ -164,8 +165,9 @@ impl App {
 enum TryResumedError {
     CreateWindow(OsError),
     NewRenderer(NewRendererError),
-    LoadLevel(files::LoadLevelError),
-    UploadModelTexture(ModelTextureError),
+    LoadLevel(crate::files::LoadLevelError),
+    UploadModel(AddModelError),
+    BuildModel(crate::scene::BuildModelError),
 }
 
 impl App {
@@ -199,7 +201,7 @@ impl App {
             .iter()
             .map(|c| c.height)
             .fold(f32::NEG_INFINITY, f32::max);
-        let scale = renderer::terrain::HEIGHT_SCALE;
+        let scale = scene::HEIGHT_SCALE;
         let mid_z = (raw_min + raw_max) * 0.5 * scale;
 
         // Z-up: the heightmap spans X/Y and height is Z. AGENTS.md §3.6.
@@ -212,7 +214,7 @@ impl App {
             + glam::Vec3::new(world_span * 0.3, world_span * 0.5, world_span * 0.4);
         self.camera.look_at(self.terrain_center);
         self.camera.fly_speed = world_span * 0.1;
-        renderer.set_terrain(&mut self.files, &lev);
+        renderer.set_terrain(&scene::build_terrain(&mut self.files, &lev));
         tracing::info!(
             "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1}, world_span={world_span:.1})",
             lev.header.width,
@@ -256,30 +258,21 @@ impl App {
             return 0.0;
         };
 
-        let Some((tex0_name, tex1_name, blend)) = self
-            .files
-            .environment_theme("ENVIRONMENT_THEME1")
-            .map(|theme| {
-                let (tex0, tex1, blend) = theme.sky_textures_at_time(self.time_of_day);
-                (tex0.map(String::from), tex1.map(String::from), blend)
-            })
+        let Some((tex0_name, tex1_name, blend)) =
+            scene::sky_textures_at_time(&self.files, "ENVIRONMENT_THEME1", self.time_of_day)
         else {
             return 0.0;
         };
 
+        // Re-upload only when the active pair changes.
         let names = (tex0_name, tex1_name);
         if self.sky_textures.as_ref() != Some(&names) {
-            let (tex0_name, tex1_name) = &names;
-            if let Some(name) = tex0_name {
-                upload_sky_texture(&mut self.files, renderer, name, false);
-            }
-            // Only upload texture1 when it differs from texture0 (the pass reuses 0 otherwise).
-            if let Some(name) = tex1_name
-                .as_ref()
-                .filter(|n| Some(*n) != tex0_name.as_ref())
-            {
-                upload_sky_texture(&mut self.files, renderer, name, true);
-            }
+            scene::upload_sky_textures(
+                &mut self.files,
+                renderer,
+                names.0.as_deref(),
+                names.1.as_deref(),
+            );
             tracing::debug!("Sky textures at {:.1}h: {:?}", self.time_of_day, names);
             self.sky_textures = Some(names);
         }
@@ -303,7 +296,7 @@ impl App {
                     "No .tng for {}: {e} — loading fallback mesh",
                     self.level_name
                 );
-                self.load_fallback_model(renderer, E::UploadModelTexture)?;
+                self.load_fallback_model(renderer, E::UploadModel)?;
                 return Ok(());
             }
         };
@@ -313,14 +306,14 @@ impl App {
         // engine stays retail-only and shows the test mesh.
         let Some(object_defs_path) = self.object_defs.clone() else {
             tracing::info!("No --object-defs given — showing test mesh instead of .tng objects");
-            self.load_fallback_model(renderer, E::UploadModelTexture)?;
+            self.load_fallback_model(renderer, E::UploadModel)?;
             return Ok(());
         };
         let defs = match self.files.load_object_defs(&object_defs_path) {
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!("Cannot load object defs: {e} — using fallback mesh");
-                self.load_fallback_model(renderer, E::UploadModelTexture)?;
+                self.load_fallback_model(renderer, E::UploadModel)?;
                 return Ok(());
             }
         };
@@ -381,12 +374,14 @@ impl App {
             let scale = thing.object_scale.unwrap_or(1.0);
             let pos = thing.position;
 
-            renderer
-                .add_model(mesh, textures, scale, pos)
-                .map_err(|e| {
-                    tracing::warn!("Failed to upload model {mesh_name}: {e}");
-                    E::UploadModelTexture(e)
-                })?;
+            let model = scene::build_model(mesh, textures, scale, pos).map_err(|e| {
+                tracing::warn!("Failed to build model {mesh_name}: {e}");
+                E::BuildModel(e)
+            })?;
+            renderer.add_model(&model).map_err(|e| {
+                tracing::warn!("Failed to upload model {mesh_name}: {e}");
+                E::UploadModel(e)
+            })?;
             placed += 1;
         }
 
@@ -401,7 +396,7 @@ impl App {
     fn load_fallback_model(
         &mut self,
         renderer: &mut Renderer<'static>,
-        err_wrap: impl Fn(ModelTextureError) -> TryResumedError,
+        err_wrap: impl Fn(AddModelError) -> TryResumedError,
     ) -> Result<(), TryResumedError> {
         let explicit = self.mesh_name.is_some();
         let candidates: Vec<String> = match &self.mesh_name {
@@ -437,9 +432,14 @@ impl App {
                 "Loading mesh {name} ({} materials, {resolved_textures} textures)",
                 mesh.materials.len(),
             );
-            renderer
-                .add_model(&mesh, &textures, 0.05, [32.0, 16.0, 32.0])
-                .map_err(&err_wrap)?;
+            let model = match scene::build_model(&mesh, &textures, 0.05, [32.0, 16.0, 32.0]) {
+                Ok(model) => model,
+                Err(error) => {
+                    tracing::warn!("Failed to build model {name}: {error}");
+                    continue;
+                }
+            };
+            renderer.add_model(&model).map_err(&err_wrap)?;
             tracing::info!("Uploaded model to GPU");
             return Ok(());
         }
@@ -448,39 +448,6 @@ impl App {
             tracing::warn!("Requested mesh {:?} could not be loaded", self.mesh_name);
         }
         Ok(())
-    }
-}
-
-/// Read a sky texture from the textures archive and upload it to the renderer's primary
-/// (`secondary == false`) or blend (`secondary == true`) slot. Failures are logged, not fatal.
-fn upload_sky_texture(
-    files: &mut Files,
-    renderer: &mut Renderer<'static>,
-    name: &str,
-    secondary: bool,
-) {
-    let (metadata, bytes) = match files.read_sky_texture(name) {
-        Ok(asset) => asset,
-        Err(error) => {
-            tracing::warn!("Failed to read sky texture {name}: {error}");
-            return;
-        }
-    };
-
-    tracing::info!(
-        "Uploading sky texture '{name}' ({} bytes) to slot {}",
-        bytes.len(),
-        if secondary { 1 } else { 0 },
-    );
-
-    let result = if secondary {
-        renderer.set_sky_texture1(&metadata, &bytes)
-    } else {
-        renderer.set_sky_texture0(&metadata, &bytes)
-    };
-
-    if let Err(error) = result {
-        tracing::warn!("Failed to upload sky texture {name}: {error}");
     }
 }
 
