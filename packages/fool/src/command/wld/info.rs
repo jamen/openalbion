@@ -31,5 +31,22 @@ pub fn handler(args: WldInfoArgs) -> anyhow::Result<()> {
         );
     }
 
+    println!("  regions              {}", wld.regions.len());
+    for region in &wld.regions {
+        println!(
+            "  region {n:3} {name}  def={def}  contains={contains}  sees={sees}{world_map}",
+            n = region.region_number,
+            name = region.region_name,
+            def = region.region_def,
+            contains = region.contains_maps.len(),
+            sees = region.sees_maps.len(),
+            world_map = if region.appears_on_world_map {
+                "  on-world-map"
+            } else {
+                ""
+            },
+        );
+    }
+
     Ok(())
 }

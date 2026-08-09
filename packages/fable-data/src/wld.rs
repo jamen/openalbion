@@ -1,21 +1,31 @@
-//! Parser for Fable's `.wld` world-definition text files.
+//! Fable's `.wld` world-definition files.
 //!
-//! A `.wld` lists `NewMap ... EndMap;` blocks, each placing a level file (`.lev`+`.tng`) at a
-//! world-grid position.
+//! Same grammar as `.tng` (see [`crate::text`]), different vocabulary: a `.wld`
+//! places every level on the world grid with `NewMap … EndMap`, and groups them
+//! into named regions with `NewRegion … EndRegion`. A region lists its levels as
+//! repeated `ContainsMap` (loaded, walkable) and `SeesMap` (visible only)
+//! fields — the classification behind the filler levels in AGENTS.md §3.4.
 
-use crate::kv::{KvError, KvParser, KvStatement, KvValue};
+use crate::text::{self, Statement, TextError, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Wld {
-    pub header_stmts: Vec<(String, KvValueOwned)>,
+    /// Top-level fields before the first block, in file order and
+    /// uninterpreted (`MapUIDCount`, `ThingManagerUIDCount`).
+    pub header_fields: Vec<(String, WldValue)>,
     pub maps: Vec<WldMap>,
+    pub regions: Vec<WldRegion>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// One `NewMap <n> … EndMap`.
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct WldMap {
     pub map_number: u32,
+    /// World-grid position, in the 32×32-cell tiles `CEngineWorldMap` indexes.
     pub map_x: i32,
     pub map_y: i32,
+    /// The `.lev` path as written, e.g. `FinalAlbion\LookoutPoint.lev` — a
+    /// literal backslash, not an escape.
     pub level_name: String,
     pub level_script_name: String,
     pub map_uid: u64,
@@ -23,117 +33,143 @@ pub struct WldMap {
     pub loaded_on_proximity: bool,
 }
 
+/// One `NewRegion <n> … EndRegion`.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct WldRegion {
+    pub region_number: u32,
+    pub region_name: String,
+    /// The `REGION_*` def this region resolves to.
+    pub region_def: String,
+    pub display_name: String,
+    pub appears_on_world_map: bool,
+    /// Level paths the region owns: loaded and walkable.
+    pub contains_maps: Vec<String>,
+    /// Level paths the region can see but does not load — the fillers.
+    pub sees_maps: Vec<String>,
+}
+
+/// An owned [`text::Value`], for the header fields this module does not type.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WldValue {
+    Number(String),
+    Bool(bool),
+    String(String),
+    Symbol(String),
+}
+
+impl WldValue {
+    fn from_text(value: &Value<'_>) -> Option<WldValue> {
+        Some(match value {
+            Value::Number(n) => WldValue::Number((*n).to_string()),
+            Value::Bool(b) => WldValue::Bool(*b),
+            Value::String(s) => WldValue::String((*s).to_string()),
+            Value::Symbol(s) => WldValue::Symbol((*s).to_string()),
+            // No `.wld` field is a constructor call; keeping the variant out
+            // means nothing silently reads as an empty string.
+            Value::Call(_) => return None,
+        })
+    }
+}
+
 impl Wld {
-    pub fn parse(input: &str) -> Result<Wld, KvError> {
-        let mut parser = KvParser::new(input);
-        let stmts = parser.parse_statements()?;
+    pub fn parse(input: &str) -> Result<Wld, TextError> {
+        let body = text::parse(input)?;
 
-        let mut header_stmts = Vec::new();
-        let mut maps = Vec::new();
+        let mut wld = Wld {
+            header_fields: Vec::new(),
+            maps: Vec::new(),
+            regions: Vec::new(),
+        };
 
-        for stmt in stmts {
-            match stmt {
-                KvStatement::Block {
-                    keyword: "NewMap",
-                    kind,
-                    body,
-                } => {
-                    maps.push(parse_map(kind, &body));
+        for statement in &body.statements {
+            match &statement.value {
+                Statement::Field(field) => {
+                    if let Some(value) = WldValue::from_text(&field.value.value) {
+                        wld.header_fields.push((field.path.to_string(), value));
+                    }
                 }
-                KvStatement::Block {
-                    keyword: "NewRegion",
-                    kind,
-                    body,
-                } => {
-                    // Regions parsed later; skip for now.
-                    let _ = (kind, body);
+                Statement::Block(block) if block.keyword == "NewMap" => {
+                    wld.maps.push(map(block));
                 }
-                KvStatement::Field(name, value) => {
-                    header_stmts.push((name.to_string(), value.into_owned()));
+                Statement::Block(block) if block.keyword == "NewRegion" => {
+                    wld.regions.push(region(block));
                 }
                 _ => {}
             }
         }
 
-        Ok(Wld { header_stmts, maps })
+        Ok(wld)
+    }
+
+    /// The map placing `level_name`, matched case-insensitively on the trailing
+    /// file name so callers can pass `"LookoutPoint"`.
+    pub fn map_for_level(&self, level_name: &str) -> Option<&WldMap> {
+        let wanted = format!("{level_name}.lev").to_lowercase();
+        self.maps.iter().find(|m| {
+            m.level_name
+                .to_lowercase()
+                .rsplit(['\\', '/'])
+                .next()
+                .is_some_and(|file| file == wanted)
+        })
     }
 }
 
-fn parse_map(map_number_str: &str, body: &[KvStatement<'_>]) -> WldMap {
-    let mut map = WldMap {
-        map_number: map_number_str.parse().unwrap_or(0),
-        map_x: 0,
-        map_y: 0,
-        level_name: String::new(),
-        level_script_name: String::new(),
-        map_uid: 0,
-        is_sea: false,
-        loaded_on_proximity: false,
+fn map(block: &text::Block<'_>) -> WldMap {
+    let body = &block.body;
+    let field = |name: &str| body.field(name).map(|v| &v.value);
+
+    WldMap {
+        map_number: block.kind.and_then(|k| k.value.parse().ok()).unwrap_or(0),
+        map_x: field("MapX").and_then(Value::as_i32).unwrap_or(0),
+        map_y: field("MapY").and_then(Value::as_i32).unwrap_or(0),
+        level_name: field("LevelName")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        level_script_name: field("LevelScriptName")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        map_uid: field("MapUID").and_then(Value::as_u64).unwrap_or(0),
+        is_sea: field("IsSea").and_then(Value::as_bool).unwrap_or(false),
+        loaded_on_proximity: field("LoadedOnPlayerProximity")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    }
+}
+
+fn region(block: &text::Block<'_>) -> WldRegion {
+    let body = &block.body;
+    let field = |name: &str| body.field(name).map(|v| &v.value);
+
+    // `ContainsMap` / `SeesMap` repeat, so they are collected rather than
+    // looked up — a region owns up to a dozen of each.
+    let collect = |name: &str| {
+        body.fields()
+            .filter(|f| f.path.as_name() == Some(name))
+            .filter_map(|f| f.value.value.as_str())
+            .map(str::to_string)
+            .collect()
     };
 
-    for stmt in body {
-        if let KvStatement::Field(name, value) = stmt {
-            match *name {
-                "MapX" => {
-                    if let KvValue::Number(n) = value {
-                        map.map_x = n.parse().unwrap_or(0);
-                    }
-                }
-                "MapY" => {
-                    if let KvValue::Number(n) = value {
-                        map.map_y = n.parse().unwrap_or(0);
-                    }
-                }
-                "LevelName" => {
-                    if let KvValue::String(s) = value {
-                        map.level_name = s.to_string();
-                    }
-                }
-                "LevelScriptName" => {
-                    if let KvValue::String(s) | KvValue::Ident(s) = value {
-                        map.level_script_name = s.to_string();
-                    }
-                }
-                "MapUID" => {
-                    if let KvValue::Number(n) = value {
-                        map.map_uid = n.parse().unwrap_or(0);
-                    }
-                }
-                "IsSea" => {
-                    if let KvValue::Bool(b) = value {
-                        map.is_sea = *b;
-                    }
-                }
-                "LoadedOnPlayerProximity" => {
-                    if let KvValue::Bool(b) = value {
-                        map.loaded_on_proximity = *b;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    map
-}
-
-/// Owned variant of [`KvValue`] for storing in parsed structures.
-#[derive(Debug, Clone, PartialEq)]
-pub enum KvValueOwned {
-    String(String),
-    Number(String),
-    Ident(String),
-    Bool(bool),
-}
-
-impl<'a> KvValue<'a> {
-    fn into_owned(self) -> KvValueOwned {
-        match self {
-            KvValue::String(s) => KvValueOwned::String(s.to_string()),
-            KvValue::Number(s) => KvValueOwned::Number(s.to_string()),
-            KvValue::Ident(s) => KvValueOwned::Ident(s.to_string()),
-            KvValue::Bool(b) => KvValueOwned::Bool(b),
-        }
+    WldRegion {
+        region_number: block.kind.and_then(|k| k.value.parse().ok()).unwrap_or(0),
+        region_name: field("RegionName")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        region_def: field("RegionDef")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        display_name: field("NewDisplayName")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        appears_on_world_map: body.flags().any(|f| f == "AppearOnWorldMap"),
+        contains_maps: collect("ContainsMap"),
+        sees_maps: collect("SeesMap"),
     }
 }
 
@@ -141,38 +177,88 @@ impl<'a> KvValue<'a> {
 mod tests {
     use super::*;
 
+    const WLD: &str = "START_INITIAL_QUESTS;\n\
+        Q_SunnyvaleMaster;\n\
+        END_INITIAL_QUESTS;\n\
+        \n\
+        MapUIDCount 72;\n\
+        ThingManagerUIDCount 1;\n\
+        NewMap 1;\n\
+        MapX 3232;\n\
+        MapY 3488;\n\
+        LevelName \"FinalAlbion\\LookoutPoint.lev\";\n\
+        LevelScriptName \"LookoutPoint\";\n\
+        MapUID 162441;\n\
+        IsSea FALSE;\n\
+        LoadedOnPlayerProximity TRUE;\n\
+        EndMap;\n\
+        NewMap 2;\n\
+        MapX 3104;\n\
+        MapY 3520;\n\
+        LevelName \"FinalAlbion\\PicnicArea.lev\";\n\
+        LevelScriptName \"PicnicArea\";\n\
+        MapUID 163625;\n\
+        IsSea FALSE;\n\
+        LoadedOnPlayerProximity TRUE;\n\
+        EndMap;\n\
+        NewRegion 1;\n\
+        RegionName \"LookoutPoint\";\n\
+        NewDisplayName \"TXT_REGION_LOOKOUT_POINT\";\n\
+        RegionDef \"REGION_LOOKOUT_POINT\";\n\
+        AppearOnWorldMap;\n\
+        MiniMapGraphic MINIMAP_LOOKOUTPOINT;\n\
+        MiniMapRegionExitTextOffsetX[HeroGuildComplexInside] 0.0;\n\
+        MiniMapRegionExitTextOffsetY[PicnicArea] 20.0;\n\
+        ContainsMap \"FinalAlbion\\BowerstoneBridge.lev\";\n\
+        ContainsMap \"FinalAlbion\\LookoutPoint.lev\";\n\
+        SeesMap \"FinalAlbion\\LookoutPoint_Filler_01.lev\";\n\
+        EndRegion;\n";
+
     #[test]
-    fn parse_wld() {
-        let input = r#"MapUIDCount 72;
-ThingManagerUIDCount 1;
-NewMap 1;
-MapX 3232;
-MapY 3488;
-LevelName "FinalAlbion\LookoutPoint.lev";
-LevelScriptName "LookoutPoint";
-MapUID 162441;
-IsSea FALSE;
-LoadedOnPlayerProximity TRUE;
-EndMap;
-NewMap 2;
-MapX 3104;
-MapY 3520;
-LevelName "FinalAlbion\PicnicArea.lev";
-LevelScriptName "PicnicArea";
-MapUID 163625;
-IsSea FALSE;
-LoadedOnPlayerProximity TRUE;
-EndMap;
-"#;
-        let wld = Wld::parse(input).unwrap();
+    fn parses_maps() {
+        let wld = Wld::parse(WLD).unwrap();
         assert_eq!(wld.maps.len(), 2);
         assert_eq!(wld.maps[0].map_number, 1);
         assert_eq!(wld.maps[0].map_x, 3232);
+        assert_eq!(wld.maps[0].map_y, 3488);
+        // The backslash is a literal byte, not an escape.
         assert_eq!(wld.maps[0].level_name, "FinalAlbion\\LookoutPoint.lev");
+        assert_eq!(wld.maps[0].map_uid, 162441);
         assert!(!wld.maps[0].is_sea);
         assert!(wld.maps[0].loaded_on_proximity);
-
-        assert_eq!(wld.maps[1].map_number, 2);
         assert_eq!(wld.maps[1].level_script_name, "PicnicArea");
+    }
+
+    #[test]
+    fn parses_regions_with_repeated_and_indexed_fields() {
+        let wld = Wld::parse(WLD).unwrap();
+        let region = &wld.regions[0];
+        assert_eq!(region.region_number, 1);
+        assert_eq!(region.region_name, "LookoutPoint");
+        assert_eq!(region.region_def, "REGION_LOOKOUT_POINT");
+        assert_eq!(region.display_name, "TXT_REGION_LOOKOUT_POINT");
+        assert!(region.appears_on_world_map);
+        assert_eq!(region.contains_maps.len(), 2);
+        assert_eq!(region.sees_maps, vec!["FinalAlbion\\LookoutPoint_Filler_01.lev"]);
+    }
+
+    #[test]
+    fn header_fields_stop_at_the_first_block() {
+        let wld = Wld::parse(WLD).unwrap();
+        assert_eq!(
+            wld.header_fields,
+            vec![
+                ("MapUIDCount".to_string(), WldValue::Number("72".into())),
+                ("ThingManagerUIDCount".to_string(), WldValue::Number("1".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn finds_a_map_by_level_name() {
+        let wld = Wld::parse(WLD).unwrap();
+        assert_eq!(wld.map_for_level("LookoutPoint").unwrap().map_number, 1);
+        assert_eq!(wld.map_for_level("picnicarea").unwrap().map_number, 2);
+        assert!(wld.map_for_level("Nowhere").is_none());
     }
 }

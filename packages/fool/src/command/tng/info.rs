@@ -21,16 +21,43 @@ pub fn handler(args: TngInfoArgs) -> anyhow::Result<()> {
         println!("  [section {}] {}", si, section.name);
         println!("    things             {}", section.things.len());
         for (ti, thing) in section.things.iter().enumerate() {
+            let placement = match thing.placement() {
+                Some(p) => {
+                    let orientation = match p.orientation {
+                        Some(rh) => format!(
+                            " fwd=({:.2},{:.2},{:.2}) up=({:.2},{:.2},{:.2})",
+                            rh.forward[0],
+                            rh.forward[1],
+                            rh.forward[2],
+                            rh.up[0],
+                            rh.up[1],
+                            rh.up[2],
+                        ),
+                        None => String::new(),
+                    };
+                    format!(
+                        " pos=({:.1},{:.1},{:.1}){orientation}",
+                        p.position[0], p.position[1], p.position[2],
+                    )
+                }
+                None => String::new(),
+            };
+            let base = thing.base();
             println!(
-                "    [{ti}] type={} def={} pos=({:.1},{:.1},{:.1})",
-                thing.thing_type,
-                thing.definition_type,
-                thing.position[0],
-                thing.position[1],
-                thing.position[2],
+                "    [{ti}] type={:?} def={}{placement}{scale}",
+                thing.type_name(),
+                base.definition_type,
+                scale = match thing.physical().and_then(|p| p.object_scale) {
+                    Some(scale) => format!(" scale={scale}"),
+                    None => String::new(),
+                },
             );
-            if let Some(name) = &thing.script_name {
-                println!("      script={name}");
+            if base.script_name != "NULL" && !base.script_name.is_empty() {
+                println!("      script={}", base.script_name);
+            }
+            let classes: Vec<&str> = base.components.iter().map(|c| c.class()).collect();
+            if !classes.is_empty() {
+                println!("      components={}", classes.join(" "));
             }
         }
     }

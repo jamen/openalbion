@@ -4,10 +4,10 @@ pub mod crc32;
 // Re-export `fable-defs`'s `def` module under the same path used before the extraction.
 pub use fable_defs::def;
 pub mod environment;
-pub mod kv;
 pub mod landscape;
 pub mod manifest;
 pub mod object;
+pub mod text;
 pub mod texture;
 pub mod tga;
 pub mod tng;

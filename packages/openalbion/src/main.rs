@@ -327,7 +327,7 @@ impl App {
             .sections
             .iter()
             .flat_map(|s| s.things.iter())
-            .filter(|t| t.definition_type.starts_with("OBJECT_"))
+            .filter(|t| t.base().definition_type.starts_with("OBJECT_"))
             .collect();
 
         let object_count = things.len();
@@ -337,10 +337,10 @@ impl App {
         // instance.)
         let mut mesh_cache = std::collections::HashMap::new();
         for thing in things {
-            let resolved = match defs.resolve(&thing.definition_type) {
+            let resolved = match defs.resolve(&thing.base().definition_type) {
                 Some(r) => r,
                 None => {
-                    tracing::debug!("Unresolved def: {}", thing.definition_type);
+                    tracing::debug!("Unresolved def: {}", thing.base().definition_type);
                     continue;
                 }
             };
@@ -374,8 +374,13 @@ impl App {
 
             // World space is Z-up, matching the game — TNG positions pass through
             // unchanged. AGENTS.md §3.6.
-            let scale = thing.object_scale.unwrap_or(1.0);
-            let pos = thing.position;
+            let scale = thing
+                .physical()
+                .and_then(|p| p.object_scale)
+                .unwrap_or(1.0);
+            let Some(pos) = thing.placement().map(|p| p.position) else {
+                continue;
+            };
 
             let model = scene::build_model(mesh, textures, scale, pos).map_err(|e| {
                 tracing::warn!("Failed to build model {mesh_name}: {e}");
