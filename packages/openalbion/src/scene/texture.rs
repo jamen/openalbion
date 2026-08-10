@@ -13,6 +13,8 @@ pub enum TextureDecodeError {
     NotATexture,
     #[display("unsupported DXT format {_0}")]
     UnsupportedDxtFormat(#[error(not(source))] u16),
+    #[display("volume texture ({_0} slices) — the 2D upload path cannot take it")]
+    VolumeTexture(#[error(not(source))] u16),
     #[display("texture parse error: {_0}")]
     Parse(TextureError),
 }
@@ -68,6 +70,13 @@ fn parse(
         Some(ExtraMetadata::Texture(extras)) => extras,
         _ => return Err(E::NotATexture),
     };
+
+    // `depth > 1` is a volume texture, whose `top_mip_map_size` covers every slice — taking
+    // width/height as the whole asset would upload slice 0's worth of a stack. Two exist
+    // (`WEATHER_RAIN`, `MIST_ALPHA`) and nothing draws them; see `texture_test.rs`.
+    if extras.depth > 1 {
+        return Err(E::VolumeTexture(extras.depth));
+    }
 
     let dxt = extras.dxt_compression;
     let encoding = bcn_encoding_from_dxt(dxt).ok_or(E::UnsupportedDxtFormat(dxt))?;

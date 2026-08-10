@@ -16,13 +16,26 @@ pub struct Texture {
 
 /// Map Fable's `dxt_compression` tag (from a texture asset's metadata) to a BCN encoding.
 ///
-/// The tag is the D3D `D3DFORMAT` family with Fable-specific aliases: `1/31/33` are DXT1 (BC1),
-/// `3/32/34` DXT3 (BC2), and `5/35` DXT5 (BC3). Returns `None` for tags we don't decode.
+/// Only three tags are block-compressed, and every one of them occurs in `textures.big`.
+/// Measured over all 6,324 texture assets, taking bits-per-pixel as `top_mip_map_size` over
+/// the block-padded pixel count (AGENTS.md §3.12):
+///
+/// ```text
+/// dxt=31  bpp=4    3683  DXT1 (BC1)     dxt=1   bpp=32        6  uncompressed 32bpp
+/// dxt=32  bpp=8    2558  DXT3 (BC2)     dxt=1   bpp=256/2048  2  degenerate headers
+/// dxt=35  bpp=8       4  DXT5 (BC3)     dxt=24  bpp=16        1  D3DFMT_X1R5G5B5
+/// ```
+///
+/// **Tag 1 is not DXT1**, despite reading like `D3DFMT_DXT1`'s ordinal:
+/// `ITEMS_EXPRESSIONS_CONTAINMENT_RIGHT_ON` is 64×64 with `top_mip_map_size == 16384`, which
+/// is `w * h * 4` — uncompressed 32bpp — and its chain is 21,824 = 16384+4096+1024+256+64.
+/// Decoding it as BC1 yields noise, so it returns `None` and the caller skips it. Tags `3`,
+/// `5`, `33` and `34` were mapped here once but match no asset in the archive.
 pub fn bcn_encoding_from_dxt(dxt: u16) -> Option<BcnEncoding> {
     match dxt {
-        1 | 31 | 33 => Some(BcnEncoding::Bc1),
-        3 | 32 | 34 => Some(BcnEncoding::Bc2),
-        5 | 35 => Some(BcnEncoding::Bc3),
+        31 => Some(BcnEncoding::Bc1),
+        32 => Some(BcnEncoding::Bc2),
+        35 => Some(BcnEncoding::Bc3),
         _ => None,
     }
 }

@@ -804,6 +804,12 @@ add — this is a slicing-and-upload change.
   So **walk the chain and stop when the bytes run out; never seek by a computed offset.**
 - **`frame_count > 1`** (19 of 4,000) packs every frame; per-asset chain arithmetic does not
   apply. Nothing draws them yet.
+- **`depth > 1` is a volume texture**, and `top_mip_map_size` then covers every slice. Found
+  by the 7.1 test, which flagged `WEATHER_RAIN` (32×32, 8192 bytes where 32×32 DXT3 is 1024)
+  and `MIST_ALPHA` (64×64, 262144) as disagreeing with their encoding — until depth was
+  folded in, at which point `8 × 1024` and `64 × 4096` land exactly. Four assets, counting
+  each one's `_PC` twin in a second bank. The 2D path declines them rather than mistaking
+  slice 0's dimensions for the whole asset.
 
 **Anisotropy is 4, and it is read, not chosen.** `CEngine::AnisotropicFilteringLevel`
 defaults to **2** (`fableengine/engine.cpp:2686`) and is pushed into the per-stage
