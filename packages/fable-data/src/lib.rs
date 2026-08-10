@@ -5,6 +5,7 @@ pub mod crc32;
 pub use fable_defs::def;
 pub mod environment;
 pub mod landscape;
+pub mod local_detail;
 pub mod manifest;
 pub mod text;
 pub mod texture;
