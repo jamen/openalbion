@@ -3,12 +3,12 @@ use fable_data::{
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
     def::binary::{DefBinary, DefBody},
     def::names::Names,
+    def::EngineGraphic,
     def::EngineThemeDef,
     def::SkyDef,
     environment::{EnvironmentConfig, EnvironmentTheme},
     lev::{Lev, LevError},
     mesh::{Mesh, MeshError},
-    object::ObjectDefs,
     tga::{Tga, TgaError},
     tng::Tng,
     wad::{ReadContentError, WadReader, WadReaderError},
@@ -31,6 +31,9 @@ pub struct Files {
     pub lighting_lut_bytes: Vec<u8>,
     pub environment: Option<EnvironmentConfig>,
     pub engine_themes: HashMap<String, EngineThemeDef>,
+    /// Every def that can be a thing's `DefinitionType` and draws something, keyed by
+    /// instance name — what `.tng` placements resolve through. See [`Self::load_thing_graphics`].
+    pub thing_graphics: HashMap<String, EngineGraphic>,
 }
 
 #[derive(Debug, Display, Error)]
@@ -159,6 +162,7 @@ impl Files {
         };
 
         let engine_themes = Self::load_engine_themes(fable_directory);
+        let thing_graphics = Self::load_thing_graphics(fable_directory);
 
         Ok(Self {
             fable_directory: fable_directory.to_path_buf(),
@@ -167,6 +171,7 @@ impl Files {
             lighting_lut_bytes,
             environment,
             engine_themes,
+            thing_graphics,
         })
     }
 
@@ -210,6 +215,52 @@ impl Files {
     /// An `ENGINE_THEME` def by its instance name, e.g. `"GROUND_GRASS"`.
     pub fn engine_theme_by_name(&self, name: &str) -> Option<&EngineThemeDef> {
         self.engine_themes.get(name)
+    }
+
+    /// Every def a `.tng` thing can name that carries a `Graphic`, keyed by instance name.
+    ///
+    /// Four def types have one, and between them they cover every placed thing that draws:
+    /// `OBJECT` (2,849 defs), `CREATURE` (517), `BUILDING` (321) and `MARKER` (57). Reading
+    /// all four uniformly is what makes buildings work without a second code path.
+    ///
+    /// `Graphic.BankIndex` is an asset id in `graphics.big` — not an index into anything,
+    /// and not a symbol name. Across Witchwood, LookoutPoint and Arena every non-zero index
+    /// resolves to a mesh-typed asset, which is why the text `objects.def` bridge this
+    /// replaced is no longer needed.
+    fn load_thing_graphics(fable_directory: &Path) -> HashMap<String, EngineGraphic> {
+        let names_path = fable_directory.join("data/CompiledDefs/names.bin");
+        let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
+
+        let names = match Names::load(&names_path) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!("names.bin not found, level things disabled: {e:?}");
+                return HashMap::new();
+            }
+        };
+        let def_binary = match DefBinary::load_with_names(&game_bin_path, &names) {
+            Ok(db) => db,
+            Err(e) => {
+                tracing::warn!("game.bin not found, level things disabled: {e:?}");
+                return HashMap::new();
+            }
+        };
+
+        let mut map = HashMap::new();
+        for entry in def_binary.entries(&names) {
+            let graphic = match &entry.record.body {
+                DefBody::ThingObjectDef(def) => &def.graphic,
+                DefBody::ThingBuildingDef(def) => &def.graphic,
+                DefBody::ThingMarkerDef(def) => &def.graphic,
+                DefBody::ThingCreatureDef(def) => &def.graphic,
+                _ => continue,
+            };
+            if let Some(name) = entry.file_name {
+                map.insert(name.to_string(), graphic.clone());
+            }
+        }
+        tracing::info!("Loaded {} thing graphics from game.bin", map.len());
+        map
     }
 
     /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.
@@ -365,23 +416,8 @@ impl Files {
         Tng::parse(&text).map_err(|e| format!("parse tng: {e}"))
     }
 
-    /// Load OBJECT definitions from a text `objects.def` at `path`, returning a resolver that maps
-    /// OBJECT def names to mesh symbols.
-    ///
-    /// NOTE: this is a temporary text-def bridge (used only when the user explicitly points at an
-    /// `objects.def`, e.g. from the debug build). The engine's proper path is to resolve OBJECT
-    /// defs from retail `CompiledDefs/game.bin` once the binary `OBJECT` def type is implemented —
-    /// see the def-coverage work. The engine does not read text defs by default.
-    pub fn load_object_defs(&self, path: &Path) -> Result<ObjectDefs, String> {
-        let bytes = std::fs::read(path).map_err(|e| format!("read {path:?}: {e}"))?;
-        let text = String::from_utf8_lossy(&bytes);
-        ObjectDefs::parse(&text).map_err(|e| format!("parse {path:?}: {e}"))
-    }
-
-    /// Read a mesh and its material textures from graphics.big.
+    /// Read a mesh and its material textures from graphics.big, by symbol name.
     pub fn read_mesh(&mut self, mesh_name: &str) -> Result<(Mesh, MeshTextures), ReadMeshError> {
-        use ReadMeshError as E;
-
         let asset = self
             .graphics
             .bank_iter()
@@ -390,11 +426,41 @@ impl Files {
                     .find(|a| a.symbol_name == mesh_name)
                     .cloned()
             })
-            .ok_or(E::NotFound)?;
+            .ok_or(ReadMeshError::NotFound)?;
+        self.read_mesh_asset(&asset)
+    }
+
+    /// Read a mesh by its `graphics.big` asset id — how a def's `Graphic.BankIndex` names one.
+    pub fn read_mesh_by_id(&mut self, id: u32) -> Result<(Mesh, MeshTextures), ReadMeshError> {
+        let asset = self
+            .graphics
+            .bank_iter()
+            .find_map(|bank| bank.asset_by_id(id))
+            .filter(|a| matches!(&a.extras, Some(ExtraMetadata::Mesh(_))))
+            .cloned()
+            .ok_or(ReadMeshError::NotFound)?;
+        self.read_mesh_asset(&asset)
+    }
+
+    /// The mesh asset's symbol name, for logging a placement's provenance.
+    pub fn mesh_name_by_id(&self, id: u32) -> Option<String> {
+        self.graphics
+            .bank_iter()
+            .find_map(|bank| bank.asset_by_id(id))
+            .map(|a| a.symbol_name.to_string())
+    }
+
+    fn read_mesh_asset(
+        &mut self,
+        asset: &AssetMetadata,
+    ) -> Result<(Mesh, MeshTextures), ReadMeshError> {
+        use ReadMeshError as E;
+
+        let mesh_name = &asset.symbol_name;
 
         let mesh_data = self
             .graphics
-            .read_asset_from_metadata(&asset)
+            .read_asset_from_metadata(asset)
             .map_err(E::ReadAssetData)?;
         let mesh = Mesh::decode(&mesh_data).map_err(E::Decode)?;
 

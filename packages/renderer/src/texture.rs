@@ -48,7 +48,8 @@ pub fn upload_texture(
     texture.create_view(&TextureViewDescriptor::default())
 }
 
-/// A linear-filtered, clamp-to-edge sampler — the common case for both texture passes.
+/// A linear-filtered, clamp-to-edge sampler — for textures that are a *lookup*, where a UV
+/// outside `0..1` is out of range rather than another tile.
 pub fn linear_clamp_sampler(device: &Device, label: &str) -> wgpu::Sampler {
     device.create_sampler(&SamplerDescriptor {
         label: Some(label),
@@ -56,6 +57,20 @@ pub fn linear_clamp_sampler(device: &Device, label: &str) -> wgpu::Sampler {
         min_filter: wgpu::FilterMode::Linear,
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
+        ..Default::default()
+    })
+}
+
+/// A linear-filtered, wrapping sampler — D3D9's default addressing, and what any tiled
+/// texture needs. 501 of 1500 meshes sampled out of `graphics.big` carry UVs outside
+/// `0..1`, so clamping is visibly wrong for a third of the mesh library.
+pub fn repeat_sampler(device: &Device, label: &str) -> wgpu::Sampler {
+    device.create_sampler(&SamplerDescriptor {
+        label: Some(label),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        address_mode_u: wgpu::AddressMode::Repeat,
+        address_mode_v: wgpu::AddressMode::Repeat,
         ..Default::default()
     })
 }

@@ -10,7 +10,7 @@ mod scene;
 
 use crate::camera::Camera;
 use crate::files::{Files, NewFilesError};
-use renderer::{AddModelError, NewRendererError, Renderer};
+use renderer::{NewRendererError, Renderer};
 use argh::FromArgs;
 use derive_more::{Display, Error};
 use std::{borrow::Cow, collections::HashSet, path::Path, sync::Arc, time::Instant};
@@ -42,14 +42,31 @@ struct Cli {
     #[argh(option)]
     level: Option<String>,
 
-    /// mesh to load from graphics.big by symbol name (default: first renderable mesh found)
+    /// show a single mesh from graphics.big by symbol name instead of the level's things
     #[argh(option)]
     mesh: Option<String>,
 
-    /// path to a text objects.def for resolving .tng OBJECT things to meshes (temporary dev bridge;
-    /// the engine otherwise uses only retail assets). Without it, a single test mesh is shown.
+    /// render one frame offscreen to this PPM path and exit, instead of opening a window
     #[argh(option)]
-    object_defs: Option<String>,
+    screenshot: Option<String>,
+
+    /// camera world position for --screenshot, as `x,y,z` (default: framed on the level)
+    #[argh(option)]
+    camera: Option<String>,
+
+    /// camera target for --screenshot, as `x,y,z` (default: the terrain centre)
+    #[argh(option)]
+    look_at: Option<String>,
+}
+
+/// `x,y,z` → a point. Returns `None` for anything else, so a typo falls back to the default
+/// framing rather than putting the camera somewhere silently wrong.
+fn parse_point(text: &str) -> Option<glam::Vec3> {
+    let parts: Vec<f32> = text.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+    match parts[..] {
+        [x, y, z] => Some(glam::Vec3::new(x, y, z)),
+        _ => None,
+    }
 }
 
 fn main() {
@@ -76,16 +93,93 @@ enum TryMainError {
     NewApp(NewAppError),
     NewEventLoop(EventLoopError),
     RunEventLoop(EventLoopError),
+    NewRenderer(NewRendererError),
+    LoadScene(TryResumedError),
+    Capture(renderer::CaptureError),
+    WriteScreenshot(std::io::Error),
 }
 
 fn try_main(cli: Cli) -> Result<(), TryMainError> {
     use TryMainError as E;
 
+    let screenshot = cli.screenshot.clone();
+    let camera = cli.camera.as_deref().and_then(parse_point);
+    let look_at = cli.look_at.as_deref().and_then(parse_point);
     let mut app = App::new(cli).map_err(E::NewApp)?;
+
+    if let Some(path) = screenshot {
+        return capture(&mut app, &path, camera, look_at);
+    }
+
     let event_loop = EventLoop::new().map_err(E::NewEventLoop)?;
 
     event_loop.set_control_flow(ControlFlow::Poll);
     event_loop.run_app(&mut app).map_err(E::RunEventLoop)?;
+
+    Ok(())
+}
+
+/// Render one frame with no window and write it out as a binary PPM.
+///
+/// PPM because it needs no encoder — the point is a frame to look at without a compositor,
+/// not an asset. `magick`, `feh` and every image viewer read it.
+fn capture(
+    app: &mut App,
+    path: &str,
+    camera: Option<glam::Vec3>,
+    look_at: Option<glam::Vec3>,
+) -> Result<(), TryMainError> {
+    use TryMainError as E;
+
+    const SIZE: [u32; 2] = [1280, 720];
+
+    let mut renderer =
+        pollster::block_on(Renderer::new_headless(SIZE)).map_err(E::NewRenderer)?;
+
+    app.load_scene(&mut renderer).map_err(E::LoadScene)?;
+    app.camera.set_aspect(SIZE[0], SIZE[1]);
+
+    // `load_scene` framed the whole level; an explicit camera overrides it.
+    if let Some(position) = camera {
+        app.camera.position = position;
+        app.camera.look_at(look_at.unwrap_or(app.terrain_center));
+    } else if let Some(target) = look_at {
+        app.camera.look_at(target);
+    }
+    tracing::info!(
+        "Camera at ({:.1}, {:.1}, {:.1})",
+        app.camera.position.x,
+        app.camera.position.y,
+        app.camera.position.z,
+    );
+
+    app.renderer = Some(renderer);
+    let sky_blend = app.refresh_sky();
+
+    let camera_relative_view_proj = app
+        .camera
+        .camera_relative_view_projection_matrix()
+        .to_cols_array_2d();
+    let view_proj = app.camera.view_projection_matrix().to_cols_array_2d();
+
+    let renderer = app.renderer.as_mut().expect("just set");
+    renderer.update_sky_uniforms(camera_relative_view_proj, [0.0; 4], [0.0; 4], sky_blend);
+    renderer.update_terrain_uniforms(camera_relative_view_proj, app.camera.position);
+    renderer.update_model_uniforms(view_proj);
+    renderer.set_model_camera_pos(app.camera.position);
+
+    let image = renderer.render_to_image().map_err(E::Capture)?;
+
+    let mut ppm = format!("P6\n{} {}\n255\n", image.width, image.height).into_bytes();
+    ppm.extend(image.rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]));
+    std::fs::write(path, ppm).map_err(E::WriteScreenshot)?;
+
+    let (meshes, instances) = renderer.model_stats();
+    tracing::info!(
+        "Wrote {path} ({}x{}), {instances} placements over {meshes} meshes",
+        image.width,
+        image.height,
+    );
 
     Ok(())
 }
@@ -99,8 +193,6 @@ struct App {
     time_of_day: f32,
     level_name: String,
     mesh_name: Option<String>,
-    /// Optional text `objects.def` path for resolving .tng OBJECT things (temporary dev bridge).
-    object_defs: Option<std::path::PathBuf>,
     terrain_center: glam::Vec3,
     terrain_radius: f32,
     /// The sky texture name pair currently uploaded to the GPU, so we only re-upload on change.
@@ -129,21 +221,6 @@ impl App {
 
         let files = Files::new(Path::new(fable_directory)).map_err(E::Files)?;
 
-        for bank in files.textures.bank_iter() {
-            let metadata = bank.metadata();
-
-            tracing::debug!(
-                "Bank: {} (id={}, assets={})",
-                metadata.name,
-                metadata.id,
-                metadata.asset_count
-            );
-
-            for asset in bank.asset_iter() {
-                tracing::debug!("  Asset: {} (id={})", asset.symbol_name, asset.id);
-            }
-        }
-
         Ok(Self {
             files,
             renderer: None,
@@ -153,7 +230,6 @@ impl App {
             time_of_day: 18.0,
             level_name: cli.level.clone().unwrap_or_else(|| "Witchwood".to_string()),
             mesh_name: cli.mesh.clone(),
-            object_defs: cli.object_defs.clone().map(Into::into),
             terrain_center: glam::Vec3::ZERO,
             terrain_radius: 1.0,
             sky_textures: None,
@@ -169,8 +245,6 @@ enum TryResumedError {
     CreateWindow(OsError),
     NewRenderer(NewRendererError),
     LoadLevel(crate::files::LoadLevelError),
-    UploadModel(AddModelError),
-    BuildModel(crate::scene::BuildModelError),
 }
 
 impl App {
@@ -186,7 +260,31 @@ impl App {
         let mut renderer =
             pollster::block_on(Renderer::new(window.clone())).map_err(E::NewRenderer)?;
 
-        // Load and upload the terrain.
+        self.load_scene(&mut renderer)?;
+
+        let size = window.inner_size();
+
+        renderer.resize_surface(size.into());
+
+        self.camera.set_aspect(size.width, size.height);
+
+        window.request_redraw();
+
+        self.window = Some(window.clone());
+        self.renderer = Some(renderer);
+
+        // Upload the initial sky now that the renderer is in place (sky is optional).
+        self.refresh_sky();
+
+        Ok(())
+    }
+
+    /// Load the level: landscape, then the things standing on it, then frame the camera on
+    /// what was loaded. Shared by the windowed and offscreen paths so a screenshot is the
+    /// same scene the viewer shows.
+    fn load_scene(&mut self, renderer: &mut Renderer<'_>) -> Result<(), TryResumedError> {
+        use TryResumedError as E;
+
         let lev = self
             .files
             .load_level(&self.level_name)
@@ -232,22 +330,9 @@ impl App {
             self.terrain_radius,
         );
 
-        // Load and upload a test model (optional — continues without if mesh loading fails).
-        self.load_model(&mut renderer)?;
-
-        let size = window.inner_size();
-
-        renderer.resize_surface(size.into());
-
-        self.camera.set_aspect(size.width, size.height);
-
-        window.request_redraw();
-
-        self.window = Some(window.clone());
-        self.renderer = Some(renderer);
-
-        // Upload the initial sky now that the renderer is in place (sky is optional).
-        self.refresh_sky();
+        // Populate the level from its .tng. Never fatal — a level with unresolvable things
+        // still shows its landscape.
+        self.load_things(renderer);
 
         Ok(())
     }
@@ -283,179 +368,145 @@ impl App {
         blend
     }
 
-    /// Load models from the level's .tng file (if available) and place them at their world
-    /// positions. Falls back to a single test mesh if no .tng is found. The model pass is
-    /// optional — failures are logged, not fatal.
-    fn load_model(&mut self, renderer: &mut Renderer<'static>) -> Result<(), TryResumedError> {
-        use TryResumedError as E;
-
+    /// Populate the level from its `.tng`: every thing whose def draws a static mesh, at its
+    /// own transform, one upload per distinct mesh.
+    ///
+    /// Nothing here is fatal. A level that cannot resolve some of its things should still
+    /// render the rest and say what it dropped — a missing object must be visible in the log
+    /// even when it is invisible on screen.
+    fn load_things(&mut self, renderer: &mut Renderer<'_>) {
         renderer.clear_models();
 
-        // Try to load things from .tng
+        if self.mesh_name.is_some() {
+            self.load_single_mesh(renderer);
+            return;
+        }
+
         let tng = match self.files.load_tng(&self.level_name) {
             Ok(tng) => tng,
-            Err(e) => {
-                tracing::info!(
-                    "No .tng for {}: {e} — loading fallback mesh",
-                    self.level_name
-                );
-                self.load_fallback_model(renderer, E::UploadModel)?;
-                return Ok(());
+            Err(error) => {
+                tracing::warn!("No .tng for {}: {error} — level will be bare", self.level_name);
+                return;
             }
         };
 
-        // OBJECT → mesh resolution currently needs a text objects.def (the binary OBJECT def type
-        // isn't implemented yet). Only do it when the user opted in via --object-defs; otherwise the
-        // engine stays retail-only and shows the test mesh.
-        let Some(object_defs_path) = self.object_defs.clone() else {
-            tracing::info!("No --object-defs given — showing test mesh instead of .tng objects");
-            self.load_fallback_model(renderer, E::UploadModel)?;
-            return Ok(());
-        };
-        let defs = match self.files.load_object_defs(&object_defs_path) {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::warn!("Cannot load object defs: {e} — using fallback mesh");
-                self.load_fallback_model(renderer, E::UploadModel)?;
-                return Ok(());
-            }
-        };
+        let things = scene::resolve_things(&tng, &self.files.thing_graphics);
+        let resolved_placements = things.placement_count();
 
-        // Every OBJECT thing is placed at its own transform (no dedup — a level has many instances
-        // of the same object type at different positions).
-        let things: Vec<&fable_data::tng::TngThing> = tng
-            .sections
-            .iter()
-            .flat_map(|s| s.things.iter())
-            .filter(|t| t.base().definition_type.starts_with("OBJECT_"))
-            .collect();
-
-        let object_count = things.len();
+        let mut uploaded_meshes = 0usize;
         let mut placed = 0usize;
-        // Cache decoded meshes by symbol so the same object type isn't re-decoded per instance.
-        // (GPU-side instancing is left to the binary-def WP-WORLD rebuild; this still uploads per
-        // instance.)
-        let mut mesh_cache = std::collections::HashMap::new();
-        for thing in things {
-            let resolved = match defs.resolve(&thing.base().definition_type) {
-                Some(r) => r,
-                None => {
-                    tracing::debug!("Unresolved def: {}", thing.base().definition_type);
-                    continue;
-                }
-            };
-            let mesh_name = match &resolved.mesh_symbol {
-                Some(n) => n.clone(),
-                None => continue,
-            };
-            if resolved.graphic_type != fable_data::object::ObjectGraphicType::StaticMesh {
-                continue;
-            }
+        let mut failed_meshes = 0usize;
 
-            if !mesh_cache.contains_key(&mesh_name) {
-                let loaded = match self.files.read_mesh(&mesh_name) {
-                    // Keep meshes that have at least one resolved texture (or no primitives at all).
-                    Ok((mesh, textures))
-                        if textures.iter().any(|t| t.is_some()) || mesh.primitives.is_empty() =>
-                    {
-                        Some((mesh, textures))
-                    }
-                    Ok(_) => None, // textureless — skip
-                    Err(e) => {
-                        tracing::warn!("Failed to load mesh {mesh_name}: {e}");
-                        None
-                    }
-                };
-                mesh_cache.insert(mesh_name.clone(), loaded);
-            }
-            let Some((mesh, textures)) = mesh_cache.get(&mesh_name).unwrap() else {
-                continue;
-            };
+        // Deterministic order so two runs log the same thing.
+        let mut mesh_ids: Vec<u32> = things.by_mesh.keys().copied().collect();
+        mesh_ids.sort_unstable();
 
-            // World space is Z-up, matching the game — TNG positions pass through
-            // unchanged. AGENTS.md §3.6.
-            let scale = thing
-                .physical()
-                .and_then(|p| p.object_scale)
-                .unwrap_or(1.0);
-            let Some(pos) = thing.placement().map(|p| p.position) else {
-                continue;
-            };
+        for mesh_id in mesh_ids {
+            let placements = &things.by_mesh[&mesh_id];
+            let name = self
+                .files
+                .mesh_name_by_id(mesh_id)
+                .unwrap_or_else(|| format!("#{mesh_id}"));
 
-            let model = scene::build_model(mesh, textures, scale, pos).map_err(|e| {
-                tracing::warn!("Failed to build model {mesh_name}: {e}");
-                E::BuildModel(e)
-            })?;
-            renderer.add_model(&model).map_err(|e| {
-                tracing::warn!("Failed to upload model {mesh_name}: {e}");
-                E::UploadModel(e)
-            })?;
-            placed += 1;
-        }
-
-        tracing::info!(
-            "Placed {placed} object instances from .tng ({object_count} OBJECT things, {} unique meshes)",
-            mesh_cache.values().filter(|v| v.is_some()).count(),
-        );
-
-        Ok(())
-    }
-
-    fn load_fallback_model(
-        &mut self,
-        renderer: &mut Renderer<'static>,
-        err_wrap: impl Fn(AddModelError) -> TryResumedError,
-    ) -> Result<(), TryResumedError> {
-        let explicit = self.mesh_name.is_some();
-        let candidates: Vec<String> = match &self.mesh_name {
-            Some(name) => vec![name.clone()],
-            None => {
-                let mut meshes: Vec<String> = self
-                    .files
-                    .graphics
-                    .bank_iter()
-                    .flat_map(|bank| bank.asset_iter())
-                    .filter(|a| matches!(&a.extras, Some(fable_data::big::ExtraMetadata::Mesh(_))))
-                    .map(|a| a.symbol_name.to_string())
-                    .collect();
-                meshes.sort();
-                meshes
-            }
-        };
-
-        for name in &candidates {
-            let (mesh, textures) = match self.files.read_mesh(name) {
+            let (mesh, textures) = match self.files.read_mesh_by_id(mesh_id) {
                 Ok(loaded) => loaded,
                 Err(error) => {
-                    tracing::warn!("Failed to load mesh {name}: {error}");
+                    tracing::warn!("Mesh {name} ({mesh_id}): {error} — {} placements dropped", placements.len());
+                    failed_meshes += 1;
                     continue;
                 }
             };
-            let resolved_textures = textures.iter().filter(|t| t.is_some()).count();
-            if !explicit && resolved_textures == 0 {
-                tracing::debug!("Skipping mesh {name} (no resolvable textures)");
-                continue;
-            }
-            tracing::info!(
-                "Loading mesh {name} ({} materials, {resolved_textures} textures)",
-                mesh.materials.len(),
-            );
-            let model = match scene::build_model(&mesh, &textures, 0.05, [32.0, 16.0, 32.0]) {
+
+            // A material with no resolvable texture draws white rather than dropping the
+            // whole mesh: roughly a quarter of the materials in graphics.big have no base
+            // texture at all, and a silently absent object is worse than an untextured one.
+            let model = match scene::build_model(&mesh, &textures) {
                 Ok(model) => model,
                 Err(error) => {
-                    tracing::warn!("Failed to build model {name}: {error}");
+                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", placements.len());
+                    failed_meshes += 1;
                     continue;
                 }
             };
-            renderer.add_model(&model).map_err(&err_wrap)?;
-            tracing::info!("Uploaded model to GPU");
-            return Ok(());
+
+            let instances: Vec<renderer::ModelInstance> = placements
+                .iter()
+                .map(|p| renderer::ModelInstance {
+                    transform: p.transform,
+                    // The per-object colour (`c0`) is opaque white until fade distance
+                    // lands; that leaves the material exactly as authored.
+                    ..Default::default()
+                })
+                .collect();
+
+            match renderer.add_model(&model, &instances) {
+                Ok(()) => {
+                    uploaded_meshes += 1;
+                    placed += instances.len();
+                    // Provenance: which defs became which mesh (AGENTS.md §6.8).
+                    let mut defs: Vec<&str> =
+                        placements.iter().map(|p| p.definition_type.as_str()).collect();
+                    defs.sort_unstable();
+                    defs.dedup();
+                    tracing::debug!(
+                        "{name} (id {mesh_id}) ← {} placements from {defs:?}",
+                        instances.len(),
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", placements.len());
+                    failed_meshes += 1;
+                }
+            }
         }
 
-        if explicit {
-            tracing::warn!("Requested mesh {:?} could not be loaded", self.mesh_name);
+        let skipped = &things.skipped;
+        tracing::info!(
+            "Things: placed {placed} of {resolved_placements} static-mesh placements over \
+             {uploaded_meshes} meshes ({failed_meshes} meshes failed); skipped {} things — \
+             {} no def, {} not drawable, {} without a placement, {:?} by graphic type",
+            skipped.total(),
+            skipped.no_def,
+            skipped.not_drawable,
+            skipped.no_placement,
+            skipped.other_graphic_type,
+        );
+    }
+
+    /// `--mesh NAME`: show one mesh at the terrain centre, for looking at an asset.
+    fn load_single_mesh(&mut self, renderer: &mut Renderer<'_>) {
+        let Some(name) = self.mesh_name.clone() else {
+            return;
+        };
+
+        let (mesh, textures) = match self.files.read_mesh(&name) {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                tracing::warn!("Requested mesh {name}: {error}");
+                return;
+            }
+        };
+        let model = match scene::build_model(&mesh, &textures) {
+            Ok(model) => model,
+            Err(error) => {
+                tracing::warn!("Requested mesh {name}: {error}");
+                return;
+            }
+        };
+
+        let instance = renderer::ModelInstance {
+            transform: glam::Mat4::from_translation(self.terrain_center).to_cols_array_2d(),
+            ..Default::default()
+        };
+        if let Err(error) = renderer.add_model(&model, &[instance]) {
+            tracing::warn!("Requested mesh {name}: {error}");
+            return;
         }
-        Ok(())
+        tracing::info!(
+            "Showing mesh {name} ({} materials, {} with a texture) at the terrain centre",
+            mesh.materials.len(),
+            textures.iter().filter(|t| t.is_some()).count(),
+        );
     }
 }
 
@@ -622,13 +673,21 @@ impl App {
 
         // Re-select the sky textures for the new time-of-day before borrowing the renderer.
         let sky_blend = self.refresh_sky();
-        let sky_view_proj = self.camera.sky_view_projection_matrix().to_cols_array_2d();
 
         tracing::trace!(
             "Sky state: time={:.2}h, blend={:.2}",
             self.time_of_day,
             sky_blend,
         );
+
+        // Two `c5..c8` matrices, one per convention: the sky and the landscape subtract the
+        // camera position from their geometry, so they need a rotation-only view; the static
+        // mesh pass gets absolute world positions from the object matrix and needs the full
+        // one. See `Camera::camera_relative_view_projection_matrix`.
+        let camera_relative_view_proj = self
+            .camera
+            .camera_relative_view_projection_matrix()
+            .to_cols_array_2d();
         let view_proj = self.camera.view_projection_matrix().to_cols_array_2d();
 
         let window = self.window.as_ref().ok_or(E::NoWindow)?;
@@ -637,8 +696,8 @@ impl App {
         // Gradient colours are zero until the environment layer lands (AGENTS.md step 2):
         // with alpha 0 the shader's final lrp keeps the raw sky texture, so the
         // unimplemented half is visible rather than faked.
-        renderer.update_sky_uniforms(sky_view_proj, [0.0; 4], [0.0; 4], sky_blend);
-        renderer.update_terrain_uniforms(view_proj, self.camera.position);
+        renderer.update_sky_uniforms(camera_relative_view_proj, [0.0; 4], [0.0; 4], sky_blend);
+        renderer.update_terrain_uniforms(camera_relative_view_proj, self.camera.position);
         renderer.update_model_uniforms(view_proj);
         renderer.set_model_camera_pos(self.camera.position);
 

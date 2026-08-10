@@ -527,8 +527,9 @@ impl Primitive {
 /// Read one triangle list / strip block out of an index buffer into `indices`.
 ///
 /// For a triangle strip, the standard convention after the first triangle is to emit `[v_{i+1},
-/// v_i, v_{i+2}]` on odd triangles so that every triangle in the strip shares consistent CCW
-/// winding.  Degenerate triangles (two equal indices, zero area) are dropped from the output.
+/// v_i, v_{i+2}]` on odd triangles so that every triangle in the strip shares one winding —
+/// clockwise-front, as Fable authors them. Degenerate triangles are dropped only when the
+/// block flags them, which retail data never does — see AGENTS.md §3.11.
 fn expand_block(
     view: &mut &[u8],
     block: &PrimitiveBlock,

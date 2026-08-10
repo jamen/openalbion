@@ -8,6 +8,23 @@
 
 ## 0. Where we are
 
+> **Session summary — 2026-08-10.**
+> **Landed: levels are populated** (§5 step 6, new §3.11). `.tng` things resolve to static
+> meshes through retail `game.bin`, placed with a ported `CalcObjectMatrix` and drawn
+> instanced through a transcribed `VSHADER_STATIC_DIRLIGHT`.
+> **Three corrections, two of them to things §3 called verified:** the landscape was
+> **mirrored in Y** — §3.4's row-order reading missed that the load loop applies the same
+> flip on write, so the two cancel; meshes are **clockwise-front**, so the model pass was
+> drawing interiors; and the landscape pass was double-subtracting the camera position.
+> **§3.8's last open item is closed** — the light register offsets are read, not
+> hypothesised — which retires the final row of §9's original table.
+> **The lesson worth keeping:** the landscape had no independent witness, so a mirrored
+> terrain stayed self-consistent and invisible for a week. `.tng` placements are that
+> witness, and they are now a gate.
+> **Next renderer work is still step 2, the environment layer.** It now gates three
+> subsystems: sky gradients, landscape lighting and mesh lighting are the same four LUT rows,
+> and all three run with the same neutral placeholder until it lands.
+
 > **Session summary — 2026-08-09, branch `landscape-texturing`.**
 > **Landed: the landscape is textured** (§5 step 5, rewritten §3.4). The foreground layer
 > passes work — triplanar ground textures masked by normal-indexed blend tables — over a
@@ -325,8 +342,16 @@ transforms put **one texture tile across 8 world cells**.
 **The `.lev` side** carries everything needed, with three traps, all now handled in
 `fable-data/src/landscape/`:
 
-- the cell array is indexed `(SizeY − y) * (SizeX + 1) + x` — **row 0 is maximum Y**
-  (`fablelib/map_render.cpp:119`), so naive indexing mirrors the terrain;
+- ~~the cell array is indexed `(SizeY − y) * (SizeX + 1) + x` — row 0 is maximum Y~~
+  **WRONG, corrected 2026-08-10: world Y is the file's row index, with no flip.** The
+  accessors do read `(SizeY − y) * (SizeX + 1) + x` (`map.cpp:2135`,
+  `map_render.cpp:119`) — but the **load loop applies the same flip on write**
+  (`fablelib/map.cpp:2600`): it walks the file sequentially and stores file row `f` at array
+  row `SizeY − f`. Reading world `Y` from array row `SizeY − Y` therefore returns file row
+  `Y`. `(SizeY − y)` describes the engine's in-memory layout, not the file's. We keep cells
+  in file order, so applying the read-side flip alone **mirrored the landscape in Y** — which
+  it was, from the moment it was textured until §5 step 6 drew something else in world space
+  to disagree with it. See §3.11;
 - height is `<file f32> * 2048.0` on load (`fablelib/map.cpp:2594`) then quantised to 1/128
   by `PeekLandscapeHeight` — `HEIGHT_SCALE` was right, and is now sourced;
 - the theme palette's stored def index is **stale** in retail data (off by a constant 702 for
@@ -478,11 +503,29 @@ shaders: `LightArray.Count = 0xc` with `LightSize = 2` (→ 6 lights × 2 regist
 `ShadowedSpotlightAttenuation` at `c36`, `ShadowedSpotlightColour` at `c37`,
 `User` at `c38`–`c95`.
 
-**Open, and the first task of step 2:** the exact `LightArray` / `LightGlobals` /
-`LightAttenuations` offsets. The strong hypothesis is `LightArray.Offset = 19`, giving
-`c19` = light[0] direction and `c20` = light[0] colour (matching the `dp3 v2, -c19` /
-`mul r3, r4.x, c20` pair exactly), with `c35` the backlight global. Read the full
-constructor body to confirm — do not assume.
+**Settled 2026-08-10 — the hypothesis was exactly right.** Read off the constructor body
+(`engine_vs_layout_lights.cpp:56-90`):
+
+| Range | Register | Value |
+|---|---|---|
+| `LightArray` | `c19`–`c30` | `.Offset = 0x13`, `.Count = 0xc`, `LightSize = 2` → 6 lights × 2 |
+| `LightAttenuations` | `c31`–`c34` | `.Offset = 0x1f`, `.Count = 4` |
+| `LightGlobals` | `c35` | `.Offset = 0x23`, `.Count = 1` — **the backlight** |
+| `ShadowedSpotlightAttenuation` | `c36` | `.Offset = 0x24` |
+| `ShadowedSpotlightColour` | `c37` | `.Offset = 0x25` |
+| `User` | `c38`–`c95` | `.Offset = 0x26`, `.Count = 0x3a` |
+
+So `c19` = light[0] direction, `c20` = light[0] colour, and lights 1–5 follow at
+`c21`/`c22`, `c23`/`c24`, …
+
+Cross-checked three ways: `VSHADER_STATIC_DIRLIGHT_2POINTLIGHTS` reads its two point lights
+at `c21` and `c23`, exactly light[1] and light[2] ✓; its `mov r8, c32` lands inside
+`LightAttenuations` ✓; and `CShaderRenderManager::InitialiseLight`
+(`lib_shader_render_manager.cpp:1686`) writes an attenuation only when `index != 0`, i.e.
+**light 0 is the directional light and has none** ✓.
+
+The landscape and static mesh passes both name `c19`/`c20`/`c35` on this basis, and they are
+no longer a hypothesis.
 
 ### 3.9 The original engine is controllable — the comparison surface
 
@@ -580,6 +623,104 @@ Two residuals, both flagged on `Camera::fov_y`:
 
 `Use2DFOV` selects the second path, where vertical FOV is independent — that is the 2D/UI
 camera (`ENGINE.FOV_2D`) and does not apply to the world camera.
+
+### 3.11 Things — placing a level's static meshes
+
+> Landed 2026-08-10. `.tng` placements → instanced static meshes; §5 step 6.
+
+**`c5..c8` carries a rotation-only view, and the camera translation is applied per-geometry.**
+Three shaders pin this between them and only one reading satisfies all three:
+`VSHADER_OUTER_SKY` transforms a dome built around the origin with no translation term, so it
+can only end up around the viewer if the view matrix has none; `VSHADER_LANDSCAPE_FOREGROUND`
+supplies the translation itself with `add r1, r0, -c4` (`c4` = `CameraPos`);
+`VSHADER_STATIC_DIRLIGHT` has neither, because `CalcObjectMatrix` has already put the mesh in
+the world and `CombinedProjectionMatrix = Projection × View × World`
+(`CShaderRenderManager::UpdateWorldTransform`, `lib_shader_render_manager.cpp:2960-3090`).
+
+> **This was a live bug.** `main.rs` fed the landscape pass a view-projection that *already*
+> contained the camera translation while `terrain.wgsl` subtracted `c4` as well, displacing the
+> terrain by `-camera_pos` every frame. It went unnoticed because nothing else was drawn in
+> world space to disagree with it. `Camera` now has both matrices, and a unit test asserts a
+> world point lands on the same pixel through either.
+
+**The object matrix.** `CEngineInternalPrimitiveMeshBase::CalcObjectMatrix`
+(`engine_primitive_manager_mesh_base.cpp:557`) writes a row-vector `CMatrix3x4`:
+
+```
+E11..E13 = -scale * (Forward × Up)      E21..E23 = -scale * Forward
+E31..E33 =  scale * Up                  E41..E43 =  position
+```
+
+`GetWorldPosition` (`engine_primitive_manager_static_meshes.cpp:815`) reads `E41..E43` back as
+the thing's world position, which pins the translation to the fourth row and so the whole
+convention. As columns of a column-major matrix: object **+X → Up×Forward, +Y → −Forward,
++Z → +Up**. That triple is right-handed — `(U×F)×(−F) = U` — which is the check that the sign
+reading is not inverted. `scale` multiplies the rotation and not the translation.
+
+**Mesh coordinates are 100× world coordinates.** `CTCGraphicAppearance` builds the scale it
+hands the primitive as (`fablelib/tc_graphic_appearance.cpp:4658`, and seven other sites in
+that file):
+
+```c
+fVar4 = (this->MainGraphic).RenderSizeX * this->Scale * (float)9.999999776482582e-3;
+```
+
+`9.999999776482582e-3` is `0.01f`; `RenderSizeX` is the def's `Graphic.RenderSizeX` (default
+1.0) and `Scale` is the appearance scale, 1.0 in its constructor (`:526`), which a thing's
+`ObjectScale` multiplies. So **`scale = RenderSizeX × ObjectScale × 0.01`**. It is not a fudge:
+`MESH_SMALL_WALL_CURVED_POST_01` is 176 units tall in the file and 1.76 world units on the
+ground, where one landscape cell is 1.0.
+
+**Resolution is `DefinitionType` → def `Graphic` → `graphics.big` asset id.** Four def types
+carry an `EngineGraphic` and between them cover every placed thing that draws: `OBJECT` (2,849
+defs), `CREATURE` (517), `BUILDING` (321), `MARKER` (57). `Graphic.BankIndex` is an **asset id**,
+not an index and not a symbol name — verified across three levels, where every non-zero index
+resolves to a mesh-typed asset (Witchwood 38/38, LookoutPoint 192/192, Arena 57/57). This is why
+the text `objects.def` bridge is gone: retail `game.bin` has always had the answer.
+
+**`.tng` placements are an independent witness to the landscape's shape**, and the most
+valuable one we have: things were authored standing on the ground, so "do the placements sit
+on the terrain" tests the *terrain*, not just the placements. It is what caught the row-order
+flip above. With the corrected indexing **90 %** of LookoutPoint's placements sit within a
+metre of the ground and the mean deviation is **0.29**, where the flipped reading managed
+28 % and 2.85. `packages/openalbion/tests/placement_test.rs` keeps this as a gate.
+
+One cell is one world unit, confirmed: `CMap::GetThemeSizeZAt(C3DVector)`
+(`fablelib/map.cpp:2143`) truncates a world position straight to a `C2DCoordI` cell index
+with no division. `HEIGHT_SCALE = 2048` is confirmed a second time by the load loop, which
+multiplies each cell by `2.048e3` as it reads it (`map.cpp:2600`).
+
+**Meshes are wound clockwise-front.** Measured from the meshes' own normals, which need no
+oracle: for each triangle, compare the right-hand-rule normal of its winding against the
+average of its three vertex normals. Over 400 meshes from `graphics.big` they **disagree on
+385,787 triangles and agree on 1,082** — all 400 are CW-front. That matches D3D9's default
+`D3DCULL_CCW` (cull the counter-clockwise side). wgpu defaults to `FrontFace::Ccw`, so the
+model pass was culling front faces and drawing the interiors. The landscape never caught it
+because it draws with `cull_mode: None`.
+
+> This is the check to reach for whenever winding is in question — it is a property of the
+> data, needs no reference image, and gives a number rather than an impression.
+
+**Half of every static mesh's triangles are degenerate.** 474,048 of 998,466 emitted
+triangles have two equal indices — strip-stitching artefacts. `PrimitiveBlock`'s
+`degenerate_triangles` flag is **clear on all 917 blocks** measured, so `expand_block` never
+drops them; they rasterise nothing, so this is waste rather than a defect, but it doubles
+every index buffer. Dropping index-degenerate triangles unconditionally is safe and is worth
+doing. (`primitive_count` *is* the triangle count: for static meshes, `Σ(count + 2)` over
+strip blocks equals the declared `index_count` on every primitive measured — the only
+mismatches are animated meshes, which carry no static blocks.)
+
+**Two measurements that changed the code:**
+
+- **UVs are not clamped.** 501 of 1500 meshes sampled out of `graphics.big` carry UVs outside
+  `0..1`. D3D9's default addressing is WRAP; the model sampler was `ClampToEdge`, smearing a
+  third of the library.
+- **`Material::base_texture_id` is a global asset id**, not an index into the mesh asset's own
+  `texture_ids`: 1412/1412 non-zero ids resolve directly in `textures.big`, the indexed reading
+  resolves 0. Also, 441 of 1853 materials have `base_texture_id == 0`, so "no texture" is the
+  normal case and must draw white rather than drop the mesh.
+
+`Mesh::transform_matrix` is identity on all 1500 meshes sampled, so ignoring it is safe.
 
 ---
 
@@ -727,6 +868,51 @@ over 48,955 vertices with no placeholder textures, and renders textured.
 `Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` with neutral constants, so the
 landscape is flat-lit until **step 2** supplies environment LUT rows 1/0/3. That is now the
 highest-value remaining work for the landscape, and it is shared with the sky.
+
+### Step 6 — Things — **LANDED (2026-08-10)**, static meshes only
+
+Levels are populated from their `.tng`. Derivations in §3.11; done in this order:
+
+- 6.1 **The space** — `c5..c8` is rotation-only for camera-relative geometry (sky, landscape)
+  and full for world-space geometry (meshes). Fixed the landscape's double camera subtraction
+  and pinned the equivalence with a unit test.
+- 6.2 **`CalcObjectMatrix`** — `Placement::object_matrix(scale)` in `fable-data`, with the
+  basis mapping, the scale/translation split and a right-handedness check as tests.
+- 6.3 **Resolution** — `scene::things` maps `DefinitionType` → def `Graphic` → asset id over
+  all four thing def types, with the `RenderSizeX × ObjectScale × 0.01` scale. Deleted the
+  text `objects.def` bridge and `fable_data::object` with it.
+- 6.4 **The pass, transcribed** — `model.wgsl` is now `VSHADER_STATIC_DIRLIGHT` +
+  `PSHADER_TEXTURE_DIFFUSE` line by line, reading the same `c3`/`c19`/`c20`/`c35` the
+  landscape does, so **step 2 lights meshes and terrain in one change**.
+- 6.5 **Instancing** — a `Model` is a mesh asset uploaded once; a `ModelInstance` places it.
+  Geometry, materials and textures upload per *mesh*, not per placement, and the frame
+  constants are one buffer for the pass rather than one per model.
+- 6.6 **`--screenshot`** — one offscreen frame to a PPM through the existing
+  `new_headless` + `render_to_image`, which nothing had used since the mirror was deleted.
+
+*Evidence:* Witchwood 38/38, LookoutPoint 192/192 over 44 meshes, Arena 57/57 over 4 — no
+mesh failures, and `placed + skipped == every thing in the file` as a test invariant.
+
+**Deliberately not done**, so it is a decision rather than a drift:
+
+- 6.7 Animated/skinned meshes (`ENGINE_GRAPHIC_ANIMATING_MESH`, `SHADERS_PALSKIN`). They are
+  9 of 288 things in LookoutPoint but **91 of 355 in Arena**, and they are counted and logged
+  per graphic type rather than approximated in bind pose.
+- 6.8 Sprites, 3D sprites and generated effects — their own primitive managers.
+- 6.6a Dropping index-degenerate triangles at decode. Half of every static mesh's triangles
+  are strip stitches with two equal indices (474,048 of 998,466 measured) and the
+  `degenerate_triangles` block flag is clear everywhere, so `expand_block` keeps them all.
+  They rasterise nothing — pure waste, safe to drop, not yet done.
+- 6.9 Frustum culling and `RenderFadeDistance` (`CEngineFadeDistance`,
+  `UpdateStaticMeshAlpha`). The per-instance `colour` that carries the fade is already in the
+  vertex layout and is opaque white; expect the fade constants to be `UNVERIFIED`-shaped, as
+  `SetupRenderModeShadersAndConstants` is the same render-state-cache mangle that defeated
+  the landscape blend modes.
+- 6.10 Local lights: the 2/4/5-point-light shader variants and the 113 `CTCPhysicsLight`
+  things. The register layout is known exactly (§3.8); `c21`–`c34` are simply zero.
+- 6.11 Decals, shadows, outline/glow and every `_ENV_`/`_BUMP_` variant.
+- 6.12 `.wld`-driven world placement. `MapX`/`MapY` only matter once neighbouring maps load —
+  the twin of 5.10.
 
 ## 6. ~~The mirror~~ — comparing against the original *(historical)*
 
@@ -1335,9 +1521,14 @@ Track anything that could not be sourced. Empty is the goal.
 | `renderer/src/terrain.rs` | `fade_transform = (0,0,0,1)` | fade disabled through the real mechanism; `ForegroundFadeStart`/`End` arrive from a console command whose defaults the decomp does not show (`CLandscapeSettings`' ctor is inlined away) |
 | `renderer/src/terrain.rs` | additive layer blend + blackout pass | **derived, not transcribed.** `SetupForegroundStates` goes through a render-state cache Ghidra reduces to offset arithmetic, so the `D3DRS_*` values are unreadable — but the blend mode is forced by the alphas summing to 1, and by the existence of `VSHADER_LANDSCAPE_FOREGROUND_BLACKOUT_PASS`. Confirmed on screen: alpha-over leaked sky between themes, additive-over-black does not |
 | `fable-data/src/landscape/mesh.rs` | `DirectionMask::build` normal | **DIVERGENCE**, marked in place: `BuildMapDirMask` weights up to eight face normals; that arithmetic is too mangled to transcribe, so `PeekMapNormal` is used instead. Same surface, different smoothing |
-| `renderer/src/model.wgsl` | placeholder light dir + `0.3/0.7` shade | placeholder; models not yet in scope |
+| `renderer/src/model.rs` | `FrameUniforms` ambient/diffuse/backlight/light dir | placeholder — the same neutral stand-in the landscape uses, replaced wholesale by step 2's LUT rows 1/0/3 |
 | `renderer/src/model.rs` | `ALPHA_CUTOFF = 0.5` | unsourced |
-| — | `LightArray` / `LightGlobals` offsets in the Lights layout | §3.8 open item; the landscape pass names `c19`/`c20`/`c35` on the strong hypothesis, still unconfirmed |
+| `renderer/src/model.wgsl` | world-space normal instead of object-space light | **DIVERGENCE**, marked in place: the original pre-transforms `c19` into each object's frame; we rotate the normal instead. Identical for the orthonormal matrices `CalcObjectMatrix` produces, and it keeps one light constant shared with the landscape |
+
+Also retired: the `LightArray` / `LightGlobals` / `LightAttenuations` offsets, read exactly
+out of `engine_vs_layout_lights.cpp:56-90` and cross-checked three ways (§3.8); and
+`model.wgsl`'s invented `0.3/0.7` shade, replaced by a transcription of
+`VSHADER_STATIC_DIRLIGHT`.
 
 Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:616`,
 `while (uVar13 < 0x24)`) and its `7000` / `−500` / `6500` extents; the landscape's
@@ -1349,6 +1540,28 @@ Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:
 
 ## 10. History
 
+- **2026-08-10** — **Levels are populated.** §5 step 6. `.tng` things resolve through their
+  def's `Graphic` in retail `game.bin` to a `graphics.big` asset id — verified 38/38, 192/192
+  and 57/57 across Witchwood, LookoutPoint and Arena — so the text `objects.def` bridge and
+  `fable_data::object` are deleted. Ported `CalcObjectMatrix` for orientation (things had none
+  before) and sourced the missing 100× at `tc_graphic_appearance.cpp:4658`:
+  `RenderSizeX × ObjectScale × 0.01`. `Model` split into a mesh asset plus `ModelInstance`
+  placements, so a mesh placed 50 times uploads once. `model.wgsl` is now a transcription of
+  `VSHADER_STATIC_DIRLIGHT` + `PSHADER_TEXTURE_DIFFUSE` over the landscape's own lighting
+  constants, which puts models behind step 2 alongside the terrain and sky.
+  **Four latent bugs found on the way**, three of them in code that predated this work:
+  the landscape was **mirrored in Y** (§3.4's row order — the load loop applies the same
+  `(SizeY − y)` flip on write, so it cancels the read-side one); Fable's meshes are
+  **clockwise-front**, so `FrontFace::Ccw` culled their front faces and drew the interiors
+  (measured over 400 meshes: 385,787 triangles disagree with CCW, 1,082 agree); the landscape
+  pass was fed a view-projection that already contained the camera translation while its
+  shader subtracted `c4` as well; and the model sampler clamped where D3D9 wraps, smearing a
+  third of the mesh library. The first three were invisible while the landscape was the only
+  thing drawn in world space and drew with `cull_mode: None` — placements are the independent
+  witness that exposed them, and `placement_test.rs` now keeps them exposed. Closed
+  §3.8's last open item exactly — `LightArray` at `c19` count 12, `LightAttenuations` at
+  `c31`, `LightGlobals` (the backlight) at `c35` — cross-checked three ways. Added
+  `--screenshot`, which finally uses the headless path left over from the mirror.
 - **2026-08-09** — **The landscape is textured.** Branch `landscape-texturing`. §3.4 was
   wrong in one decisive way: `CliffU`/`CliffV` are not texture coordinates but the vertex
   normal, packed, indexing one of five 128×128 blend tables — and the second texture stage is

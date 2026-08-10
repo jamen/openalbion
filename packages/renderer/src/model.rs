@@ -1,12 +1,17 @@
-//! Renders a [`Model`]: every primitive, every per-material draw range, with the material's
-//! diffuse texture and alpha mode (opaque / alpha-test cutout / alpha-blended).
+//! Renders static meshes: every primitive, every per-material draw range, with the
+//! material's base texture and alpha mode (opaque / alpha-test cutout / alpha-blended).
+//!
+//! A [`Model`] is a mesh *asset* — geometry and materials, uploaded once — and a slice of
+//! [`ModelInstance`]s places it in the world. That split is what a level needs: LookoutPoint
+//! puts 192 things on the ground drawn from 44 distinct meshes, one of which
+//! (`MESH_SMALL_WALL_CURVED_POST_01`) is placed 50 times.
 //!
 //! Backface culling is enabled per-material: `two_sided` materials use `cull_mode: None`, the rest
-//! use `cull_mode: Back`.  Triangle-strip winding was fixed in `mesh::expand_block` so strips
-//! produce consistent CCW triangles.
+//! use `cull_mode: Back`, with `front_face: Cw` — Fable's meshes are clockwise-front, matching
+//! D3D9's default `D3DCULL_CCW`. See the note on the pipeline.
 
 use crate::image::TextureImage;
-use crate::texture::{linear_clamp_sampler, upload_texture};
+use crate::texture::{repeat_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
 use std::any::type_name;
@@ -14,7 +19,7 @@ use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType,
     BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, CompareFunction, DepthBiasState,
-    DepthStencilState, Device, Extent3d, Face, FragmentState, IndexFormat, MultisampleState,
+    DepthStencilState, Device, Extent3d, Face, FragmentState, FrontFace, IndexFormat, MultisampleState,
     PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline,
     RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages, StencilState,
     TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
@@ -62,13 +67,53 @@ pub struct ModelPrimitive {
     pub sub_meshes: Vec<ModelSubMesh>,
 }
 
-/// A model ready to upload: geometry, materials, and where to put it in the world.
+/// A mesh asset ready to upload: geometry and materials, with no position of its own.
+/// Where it stands is [`ModelInstance`]'s job.
 pub struct Model {
     pub primitives: Vec<ModelPrimitive>,
     pub materials: Vec<ModelMaterial>,
-    pub scale: f32,
-    /// World position, Z-up (AGENTS.md §3.6).
-    pub position: [f32; 3],
+}
+
+/// One placement of a [`Model`].
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct ModelInstance {
+    /// Object → world, column-major, Z-up (AGENTS.md §3.6). The `World` half of the
+    /// original's `CombinedProjectionMatrix`; see `CalcObjectMatrix`
+    /// (`engine_primitive_manager_mesh_base.cpp:557`).
+    pub transform: [[f32; 4]; 4],
+    /// The pixel shader's `c0` — the per-object colour, tint times fade alpha, which
+    /// `AddStaticMesh` takes as a `CRGBColour`. Opaque white leaves the material as authored.
+    pub colour: [f32; 4],
+}
+
+impl ModelInstance {
+    /// Four `Float32x4` columns of the object matrix, then the colour.
+    const ATTRIBS: [VertexAttribute; 5] =
+        wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
+
+    fn layout() -> VertexBufferLayout<'static> {
+        VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: VertexStepMode::Instance,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+
+    /// World position — the transform's translation column. Used to depth-sort blended draws.
+    fn position(&self) -> [f32; 3] {
+        let t = self.transform[3];
+        [t[0], t[1], t[2]]
+    }
+}
+
+impl Default for ModelInstance {
+    fn default() -> Self {
+        ModelInstance {
+            transform: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            colour: [1.0; 4],
+        }
+    }
 }
 
 #[repr(C)]
@@ -92,16 +137,41 @@ impl ModelVertex {
     }
 }
 
+/// The per-frame shader constants, by their register names in the Lights layout (§3.8).
+/// The same four lighting registers the landscape pass reads, so one environment supplies
+/// both (AGENTS.md step 2).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct ModelUniforms {
+struct FrameUniforms {
+    /// `c5..c8`
     view_proj: [[f32; 4]; 4],
-    model_scale: f32,
-    _pad0: f32,
-    _pad1: f32,
-    _pad2: f32,
-    model_pos: [f32; 3],
-    _pad3: f32,
+    /// `c3`
+    ambient: [f32; 4],
+    /// `c19`
+    light_dir: [f32; 4],
+    /// `c20`
+    diffuse: [f32; 4],
+    /// `c35`
+    backlight: [f32; 4],
+}
+
+/// The lighting the pass runs with until the environment layer lands (AGENTS.md step 2).
+///
+/// UNVERIFIED, and deliberately inert rather than plausible — the same stand-in
+/// `TerrainPass` uses, for the same reason: an `Ambient` of 0.5 cancels the pixel shader's
+/// `mul_x2` exactly, so meshes show their textures at their authored colour with no
+/// directional term at all. The mechanism is fully wired; step 2 changes only these values.
+impl FrameUniforms {
+    fn new(view_proj: [[f32; 4]; 4]) -> FrameUniforms {
+        FrameUniforms {
+            view_proj,
+            // UNVERIFIED: neutral stand-in — see above.
+            ambient: [0.5, 0.5, 0.5, 1.0],
+            light_dir: [0.0, 0.0, -1.0, 0.0],
+            diffuse: [0.0, 0.0, 0.0, 0.0],
+            backlight: [0.0, 0.0, 0.0, 0.0],
+        }
+    }
 }
 
 #[repr(C)]
@@ -114,9 +184,9 @@ struct MaterialUniforms {
     _pad1: f32,
 }
 
-pub struct ModelUniformBindGroupLayout(BindGroupLayout);
+pub struct ModelFrameBindGroupLayout(BindGroupLayout);
 
-impl ModelUniformBindGroupLayout {
+impl ModelFrameBindGroupLayout {
     pub fn new(device: &Device) -> Self {
         Self(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some(type_name::<Self>()),
@@ -186,12 +256,12 @@ pub struct ModelPipelineLayout(PipelineLayout);
 impl ModelPipelineLayout {
     pub fn new(
         device: &Device,
-        uniform_layout: &ModelUniformBindGroupLayout,
+        frame_layout: &ModelFrameBindGroupLayout,
         material_layout: &ModelMaterialBindGroupLayout,
     ) -> Self {
         Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(type_name::<Self>()),
-            bind_group_layouts: &[&uniform_layout.0, &material_layout.0],
+            bind_group_layouts: &[&frame_layout.0, &material_layout.0],
             immediate_size: 0,
         }))
     }
@@ -231,7 +301,7 @@ impl ModelPipelines {
                 vertex: VertexState {
                     module: &shader.0,
                     entry_point: Some("vs_main"),
-                    buffers: &[ModelVertex::layout()],
+                    buffers: &[ModelVertex::layout(), ModelInstance::layout()],
                     compilation_options: Default::default(),
                 },
                 fragment: Some(FragmentState {
@@ -241,6 +311,13 @@ impl ModelPipelines {
                     targets: &[Some(color_target)],
                 }),
                 primitive: PrimitiveState {
+                    // Fable's meshes are wound clockwise-front, matching D3D9's default
+                    // `D3DCULL_CCW` (cull the counter-clockwise side). Measured, not assumed:
+                    // over 400 meshes from graphics.big, the right-hand-rule normal of a
+                    // triangle disagrees with its own vertex normals on 385,787 triangles and
+                    // agrees on 1,082 — every one of the 400 is CW-front. wgpu defaults to
+                    // `Ccw`, which culled the front faces and drew the interior.
+                    front_face: FrontFace::Cw,
                     cull_mode: cull.then_some(Face::Back),
                     ..Default::default()
                 },
@@ -279,8 +356,6 @@ struct SubMeshDraw {
     index_count: u32,
     /// Whether this sub-mesh should be backface-culled (false for `two_sided` materials).
     cull: bool,
-    /// The model-space centre of this sub-mesh, used for depth-sorting transparent draws.
-    centre: [f32; 3],
 }
 
 /// One primitive's uploaded geometry plus its per-material sub-draws.
@@ -290,45 +365,35 @@ struct GpuPrimitive {
     sub_meshes: Vec<SubMeshDraw>,
 }
 
-/// A fully uploaded model: shared transform uniform, its materials, and its primitives.
+/// A mesh asset uploaded once, with every placement of it in one instance buffer.
 struct GpuModel {
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: BindGroup,
     materials: Vec<GpuMaterial>,
     primitives: Vec<GpuPrimitive>,
-    model_scale: f32,
-    model_pos: [f32; 3],
-}
-
-impl GpuModel {
-    fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
-        let uniforms = ModelUniforms {
-            view_proj,
-            model_scale: self.model_scale,
-            _pad0: 0.0,
-            _pad1: 0.0,
-            _pad2: 0.0,
-            model_pos: self.model_pos,
-            _pad3: 0.0,
-        };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
-    }
+    instance_buffer: wgpu::Buffer,
+    instances: Vec<ModelInstance>,
+    /// Whether any material on this model blends. Only these models contribute to the
+    /// depth-sorted pass, so a level of fully opaque meshes sorts nothing.
+    has_transparent: bool,
 }
 
 #[derive(Debug, Display, Error)]
 pub enum AddModelError {
     #[display("model has no primitives")]
     NoPrimitives,
+    #[display("model has no instances to place")]
+    NoInstances,
 }
 
 pub struct ModelPass {
-    uniform_layout: ModelUniformBindGroupLayout,
     material_layout: ModelMaterialBindGroupLayout,
     pipelines: ModelPipelines,
     sampler: wgpu::Sampler,
-    /// 1x1 white texture used for materials that have no diffuse map.
+    /// 1x1 white texture used for materials that have no base map.
     white_view: TextureView,
     meshes: Vec<GpuModel>,
+    /// One buffer for the whole pass — the static mesh shader has no per-object constants.
+    frame_buffer: wgpu::Buffer,
+    frame_bind_group: BindGroup,
     /// Camera world-space position, used for depth-sorting transparent draws.
     camera_pos: [f32; 3],
 }
@@ -341,20 +406,39 @@ impl ModelPass {
         depth_format: TextureFormat,
     ) -> Self {
         let shader = ModelShader::new(device);
-        let uniform_layout = ModelUniformBindGroupLayout::new(device);
+        let frame_layout = ModelFrameBindGroupLayout::new(device);
         let material_layout = ModelMaterialBindGroupLayout::new(device);
-        let layout = ModelPipelineLayout::new(device, &uniform_layout, &material_layout);
+        let layout = ModelPipelineLayout::new(device, &frame_layout, &material_layout);
         let pipelines = ModelPipelines::new(device, &layout, &shader, surface_format, depth_format);
-        let sampler = linear_clamp_sampler(device, "model_sampler");
+        // D3D9's default addressing is WRAP, and a third of the mesh library needs it: 501
+        // of 1500 meshes sampled out of graphics.big carry UVs outside 0..1.
+        let sampler = repeat_sampler(device, "model_sampler");
         let white_view = create_white_view(device, queue);
 
+        let frame_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("model_frame_buffer"),
+            contents: bytemuck::cast_slice(&[FrameUniforms::new(
+                glam::Mat4::IDENTITY.to_cols_array_2d(),
+            )]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+        let frame_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("model_frame_bind_group"),
+            layout: &frame_layout.0,
+            entries: &[BindGroupEntry {
+                binding: 0,
+                resource: frame_buffer.as_entire_binding(),
+            }],
+        });
+
         Self {
-            uniform_layout,
             material_layout,
             pipelines,
             sampler,
             white_view,
             meshes: Vec::new(),
+            frame_buffer,
+            frame_bind_group,
             camera_pos: [0.0; 3],
         }
     }
@@ -363,64 +447,50 @@ impl ModelPass {
         self.meshes.clear();
     }
 
+    /// Upload one mesh asset and every placement of it. Geometry, materials and textures
+    /// are uploaded once no matter how many instances there are.
     pub fn add_model(
         &mut self,
         device: &Device,
         queue: &Queue,
         model: &Model,
+        instances: &[ModelInstance],
     ) -> Result<(), AddModelError> {
         if model.primitives.is_empty() {
             return Err(AddModelError::NoPrimitives);
         }
-
-        let uniforms = ModelUniforms {
-            view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            model_scale: model.scale,
-            _pad0: 0.0,
-            _pad1: 0.0,
-            _pad2: 0.0,
-            model_pos: model.position,
-            _pad3: 0.0,
-        };
-        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("model_uniform_buffer"),
-            contents: bytemuck::cast_slice(&[uniforms]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-        let uniform_bind_group = device.create_bind_group(&BindGroupDescriptor {
-            label: Some("model_uniform_bind_group"),
-            layout: &self.uniform_layout.0,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
+        if instances.is_empty() {
+            return Err(AddModelError::NoInstances);
+        }
 
         let materials = self.build_materials(device, queue, &model.materials);
         let primitives = build_primitives(device, model);
 
-        let opaque = primitives
-            .iter()
-            .flat_map(|p| &p.sub_meshes)
-            .filter(|s| matches!(materials.get(s.material), Some(m) if !m.transparent))
-            .count();
-        tracing::debug!(
-            "Model: {} primitives, {} materials ({} opaque/cutout + {} transparent sub-draws)",
-            primitives.len(),
-            materials.len(),
-            opaque,
-            primitives.iter().map(|p| p.sub_meshes.len()).sum::<usize>() - opaque,
-        );
+        let instance_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("model_instance_buffer"),
+            contents: bytemuck::cast_slice(instances),
+            usage: BufferUsages::VERTEX,
+        });
+
+        let has_transparent = materials.iter().any(|m| m.transparent);
 
         self.meshes.push(GpuModel {
-            uniform_buffer,
-            uniform_bind_group,
             materials,
             primitives,
-            model_scale: model.scale,
-            model_pos: model.position,
+            instance_buffer,
+            instances: instances.to_vec(),
+            has_transparent,
         });
         Ok(())
+    }
+
+    /// Total placements across every uploaded mesh — what the level actually draws.
+    pub fn instance_count(&self) -> usize {
+        self.meshes.iter().map(|m| m.instances.len()).sum()
+    }
+
+    pub fn model_count(&self) -> usize {
+        self.meshes.len()
     }
 
     /// Build a [`GpuMaterial`] per input material, uploading each diffuse texture (or
@@ -479,9 +549,11 @@ impl ModelPass {
     }
 
     pub fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
-        for mesh in &self.meshes {
-            mesh.update_uniforms(queue, view_proj);
-        }
+        queue.write_buffer(
+            &self.frame_buffer,
+            0,
+            bytemuck::cast_slice(&[FrameUniforms::new(view_proj)]),
+        );
     }
 
     pub fn set_camera_pos(&mut self, pos: glam::Vec3) {
@@ -522,20 +594,43 @@ impl ModelPass {
             multiview_mask: None,
         });
 
-        // Opaque + cutout first (they write depth), then transparent sorted back-to-front.
+        rpass.set_bind_group(0, &self.frame_bind_group, &[]);
+
+        // Opaque and cutout first — they write depth, and every placement of a mesh draws
+        // in one instanced call.
         for mesh in &self.meshes {
-            rpass.set_bind_group(0, &mesh.uniform_bind_group, &[]);
             mesh.draw_opaque(&mut rpass, &self.pipelines);
         }
-        for mesh in &self.meshes {
-            rpass.set_bind_group(0, &mesh.uniform_bind_group, &[]);
-            mesh.draw_transparent(&mut rpass, &self.pipelines, self.camera_pos);
+
+        // Then the blended ones, back to front across the whole level rather than within
+        // one model, so a distant transparent object cannot paint over a near one. Sorting
+        // is per instance, so these draw one at a time.
+        for (mesh, instance) in self.sorted_transparent_instances() {
+            mesh.draw_transparent(&mut rpass, &self.pipelines, instance);
         }
+    }
+
+    /// Every transparent placement in the level, farthest first.
+    fn sorted_transparent_instances(&self) -> Vec<(&GpuModel, u32)> {
+        let mut draws: Vec<(&GpuModel, u32)> = self
+            .meshes
+            .iter()
+            .filter(|m| m.has_transparent)
+            .flat_map(|m| (0..m.instances.len() as u32).map(move |i| (m, i)))
+            .collect();
+        draws.sort_by(|(a, i), (b, j)| {
+            let da = dist_sq(&a.instances[*i as usize].position(), &self.camera_pos);
+            let db = dist_sq(&b.instances[*j as usize].position(), &self.camera_pos);
+            db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        draws
     }
 }
 
 impl GpuModel {
+    /// One instanced draw per (primitive, material) — the whole placement set at once.
     fn draw_opaque(&self, rpass: &mut wgpu::RenderPass<'_>, pipelines: &ModelPipelines) {
+        let instances = 0..self.instances.len() as u32;
         for primitive in &self.primitives {
             let mut bound = false;
             for sub in &primitive.sub_meshes {
@@ -546,8 +641,7 @@ impl GpuModel {
                     continue;
                 }
                 if !bound {
-                    rpass.set_vertex_buffer(0, primitive.vertex_buffer.slice(..));
-                    rpass.set_index_buffer(primitive.index_buffer.slice(..), IndexFormat::Uint16);
+                    self.bind(rpass, primitive);
                     bound = true;
                 }
                 let pipeline = if sub.cull {
@@ -558,57 +652,48 @@ impl GpuModel {
                 rpass.set_pipeline(pipeline);
                 rpass.set_bind_group(1, &material.bind_group, &[]);
                 let end = sub.index_start + sub.index_count;
-                rpass.draw_indexed(sub.index_start..end, 0, 0..1);
+                rpass.draw_indexed(sub.index_start..end, 0, instances.clone());
             }
         }
     }
 
-    /// Draw transparent sub-meshes sorted back-to-front relative to `camera_pos`.
-    ///
-    /// Limitation: per-object sorting only — overlapping translucency between different models
-    /// is not handled.
+    /// Draw only this model's blended sub-meshes, and only for placement `instance`.
     fn draw_transparent(
         &self,
         rpass: &mut wgpu::RenderPass<'_>,
         pipelines: &ModelPipelines,
-        camera_pos: [f32; 3],
+        instance: u32,
     ) {
-        let mut transparent_draws: Vec<(&GpuPrimitive, &SubMeshDraw, &GpuMaterial)> =
-            Vec::new();
         for primitive in &self.primitives {
+            let mut bound = false;
             for sub in &primitive.sub_meshes {
-                if let Some(material) = self.materials.get(sub.material)
-                    && material.transparent
-                {
-                    transparent_draws.push((primitive, sub, material));
+                let Some(material) = self.materials.get(sub.material) else {
+                    continue;
+                };
+                if !material.transparent {
+                    continue;
                 }
+                if !bound {
+                    self.bind(rpass, primitive);
+                    bound = true;
+                }
+                let pipeline = if sub.cull {
+                    &pipelines.blend_culled
+                } else {
+                    &pipelines.blend_unculled
+                };
+                rpass.set_pipeline(pipeline);
+                rpass.set_bind_group(1, &material.bind_group, &[]);
+                let end = sub.index_start + sub.index_count;
+                rpass.draw_indexed(sub.index_start..end, 0, instance..instance + 1);
             }
         }
-        // Sort back-to-front: larger distance draws first, closer draws on top.
-        transparent_draws.sort_by(|(_, a, _), (_, b, _)| {
-            let da = dist_sq(&a.centre, &camera_pos);
-            let db = dist_sq(&b.centre, &camera_pos);
-            db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
-        });
+    }
 
-        let mut bound_prim: Option<*const GpuPrimitive> = None;
-        for (primitive, sub, material) in &transparent_draws {
-            let ptr = *primitive as *const GpuPrimitive;
-            if bound_prim != Some(ptr) {
-                rpass.set_vertex_buffer(0, primitive.vertex_buffer.slice(..));
-                rpass.set_index_buffer(primitive.index_buffer.slice(..), IndexFormat::Uint16);
-                bound_prim = Some(ptr);
-            }
-            let pipeline = if sub.cull {
-                &pipelines.blend_culled
-            } else {
-                &pipelines.blend_unculled
-            };
-            rpass.set_pipeline(pipeline);
-            rpass.set_bind_group(1, &material.bind_group, &[]);
-            let end = sub.index_start + sub.index_count;
-            rpass.draw_indexed(sub.index_start..end, 0, 0..1);
-        }
+    fn bind(&self, rpass: &mut wgpu::RenderPass<'_>, primitive: &GpuPrimitive) {
+        rpass.set_vertex_buffer(0, primitive.vertex_buffer.slice(..));
+        rpass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+        rpass.set_index_buffer(primitive.index_buffer.slice(..), IndexFormat::Uint16);
     }
 }
 
@@ -627,11 +712,9 @@ fn build_primitives(device: &Device, model: &Model) -> Vec<GpuPrimitive> {
         .iter()
         .filter(|p| !p.vertices.is_empty() && !p.indices.is_empty())
         .map(|primitive| {
-            let vertices = &primitive.vertices;
-
             let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
                 label: Some("model_vertex_buffer"),
-                contents: bytemuck::cast_slice(vertices),
+                contents: bytemuck::cast_slice(&primitive.vertices),
                 usage: BufferUsages::VERTEX,
             });
             let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -643,36 +726,15 @@ fn build_primitives(device: &Device, model: &Model) -> Vec<GpuPrimitive> {
             let sub_meshes = primitive
                 .sub_meshes
                 .iter()
-                .map(|s| {
-                    let sub_indices = &primitive.indices
-                        [s.index_start as usize..(s.index_start + s.index_count) as usize];
-                    let mut centre = [0.0f32; 3];
-                    let mut count = 0usize;
-                    for &idx in sub_indices.iter().step_by(3).take(64) {
-                        if let Some(v) = vertices.get(idx as usize) {
-                            centre[0] += v.position[0];
-                            centre[1] += v.position[1];
-                            centre[2] += v.position[2];
-                            count += 1;
-                        }
-                    }
-                    if count > 0 {
-                        centre[0] /= count as f32;
-                        centre[1] /= count as f32;
-                        centre[2] /= count as f32;
-                    }
-                    let cull = model
+                .map(|s| SubMeshDraw {
+                    material: s.material as usize,
+                    index_start: s.index_start,
+                    index_count: s.index_count,
+                    cull: model
                         .materials
                         .get(s.material as usize)
                         .map(|m| !m.two_sided)
-                        .unwrap_or(true);
-                    SubMeshDraw {
-                        material: s.material as usize,
-                        index_start: s.index_start,
-                        index_count: s.index_count,
-                        cull,
-                        centre,
-                    }
+                        .unwrap_or(true),
                 })
                 .collect();
 

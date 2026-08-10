@@ -101,13 +101,27 @@ impl Camera {
         Mat4::perspective_rh(self.fov_y(), self.aspect, self.near, self.far)
     }
 
+    /// `c5..c8` for geometry that arrives in **absolute world coordinates** — the static
+    /// mesh pass. `VSHADER_STATIC_DIRLIGHT` transforms straight from the vertex
+    /// (`dp4 oPos, v0, c5..c8`) with no `-c4`, because the object matrix
+    /// (`CalcObjectMatrix`) has already placed the mesh in the world.
     pub fn view_projection_matrix(&self) -> Mat4 {
         self.projection_matrix() * self.view_matrix()
     }
 
-    /// View-projection with the camera translation removed, so the sky dome renders
-    /// centred on the viewer with no parallax.
-    pub fn sky_view_projection_matrix(&self) -> Mat4 {
+    /// `c5..c8` for geometry that arrives **relative to the camera** — the sky and the
+    /// landscape.
+    ///
+    /// The three world shaders only agree on one reading of `c5..c8`: it carries a
+    /// rotation-only view. `VSHADER_OUTER_SKY` transforms a dome built around the origin
+    /// with no translation term at all, so the dome can only end up around the viewer if
+    /// the view matrix has none; `VSHADER_LANDSCAPE_FOREGROUND` then supplies the
+    /// translation itself with `add r1, r0, -c4` (`c4` = `CameraPos`).
+    ///
+    /// Feeding [`Self::view_projection_matrix`] to a pass that also subtracts the camera
+    /// position displaces its geometry by `-camera_pos`, which is what the landscape was
+    /// doing.
+    pub fn camera_relative_view_projection_matrix(&self) -> Mat4 {
         self.projection_matrix() * Mat4::look_to_rh(Vec3::ZERO, self.forward(), Self::UP)
     }
 
@@ -201,5 +215,30 @@ mod tests {
         // A square viewport makes horizontal and vertical coincide.
         camera.set_aspect(720, 720);
         assert!((camera.fov_y().to_degrees() - 70.0).abs() < 0.01);
+    }
+
+    /// The two `c5..c8` matrices must agree: a world point transformed absolutely (the
+    /// static mesh path) and the same point transformed camera-relative (the landscape and
+    /// sky path) have to land on the same pixel, or models float free of the ground.
+    #[test]
+    fn absolute_and_camera_relative_transforms_agree() {
+        let mut camera = Camera::new();
+        camera.set_aspect(1280, 720);
+        camera.position = glam::Vec3::new(100.0, 60.0, 40.0);
+        camera.look_at(glam::Vec3::new(100.0, 120.0, 22.0));
+
+        let point = glam::Vec3::new(103.0, 118.0, 25.0);
+
+        let ndc = |v: glam::Vec4| v.truncate() / v.w;
+        let absolute = ndc(camera.view_projection_matrix() * point.extend(1.0));
+        let relative = ndc(
+            camera.camera_relative_view_projection_matrix()
+                * (point - camera.position).extend(1.0),
+        );
+
+        assert!(
+            (absolute - relative).length() < 1e-5,
+            "absolute {absolute:?} vs camera-relative {relative:?}"
+        );
     }
 }

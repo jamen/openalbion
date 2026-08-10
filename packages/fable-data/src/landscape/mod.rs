@@ -271,10 +271,29 @@ impl<'a> LandscapeMap<'a> {
     fn cell(&self, x: i32, y: i32) -> &LevHeightCell {
         let x = x.clamp(0, self.width - 1);
         let y = y.clamp(0, self.height - 1);
-        // `(SizeY - y) * (SizeX + 1) + x` — the array holds row 0 at maximum Y
-        // (`CMap::DrawBlockGetSizeZAt`, `fablelib/map_render.cpp:119`, and the same
-        // expression in the load loop at `fablelib/map.cpp:2600`).
-        let row = (self.height - y) as usize;
+        // **World Y is the file's row index, with no flip.**
+        //
+        // The engine's accessors do flip — `CMap::GetGroundSizeZAtIncludingExtraCells`
+        // (`fablelib/map.cpp:2135`) and `CMap::DrawBlockGetSizeZAt`
+        // (`fablelib/map_render.cpp:119`) both index `(SizeY - y) * (SizeX + 1) + x`. But so
+        // does the **load loop** (`fablelib/map.cpp:2600`), which walks the file
+        // sequentially and writes each cell to
+        //
+        // ```c
+        // iVar13 = index / rowWidth;                                 // file row
+        // Cells + (SizeY - iVar13) * (SizeX + 1) + iVar16            // flipped on WRITE
+        // ```
+        //
+        // so file row `f` lands at array row `SizeY - f`. Reading world `Y` back out of
+        // array row `SizeY - Y` therefore returns **file row `Y`**: the two flips cancel,
+        // and `(SizeY - y)` is a property of the engine's in-memory layout, not of the file.
+        //
+        // We keep the cells in file order, so applying the read-side flip on its own mirrors
+        // the terrain in Y. It did, for as long as nothing else was drawn in world space to
+        // disagree — the `.tng` placements were the first independent witness, and they are
+        // decisive: unflipped puts 90% of LookoutPoint's things within a metre of the ground
+        // where flipped manages 28%, and the mean deviation falls from 2.85 to 0.29.
+        let row = y as usize;
         let stride = (self.width + 1) as usize;
         &self.lev.heightmap_cells[row * stride + x as usize]
     }
@@ -442,22 +461,24 @@ mod tests {
         }
     }
 
-    /// `(SizeY - y) * (SizeX + 1) + x` — row 0 of the array is maximum Y
-    /// (`fablelib/map_render.cpp:119`).
+    /// **World Y is the file's row index, with no flip.** The engine's `(SizeY - y)` appears
+    /// on both sides — the load loop writes file row `f` to array row `SizeY - f`
+    /// (`fablelib/map.cpp:2600`) and the accessors read world `Y` from array row `SizeY - Y`
+    /// (`map.cpp:2135`, `map_render.cpp:119`) — so the two cancel. See `cell`.
     #[test]
-    fn row_zero_is_maximum_y() {
+    fn world_y_is_the_file_row() {
         let lev = map_of(4, 3);
         let map = LandscapeMap::new(&lev);
         let stride = 5;
 
-        // y = 0 reads the *last* row of the array, and Y counts back up through it.
-        assert_eq!(map.height_at(0, 0), (3 * stride) as f32);
-        assert_eq!(map.height_at(0, 1), (2 * stride) as f32);
-        assert_eq!(map.height_at(2, 1), (2 * stride + 2) as f32);
+        // y = 0 is the *first* row of the file, and Y counts forward through it.
+        assert_eq!(map.height_at(0, 0), 0.0);
+        assert_eq!(map.height_at(0, 1), stride as f32);
+        assert_eq!(map.height_at(2, 1), (stride + 2) as f32);
 
-        // Array row 0 is the far seam, which only a neighbouring map can reach: y = height
-        // clamps to height - 1 and lands on row 1 instead.
-        assert_eq!(map.height_at(0, 3), stride as f32);
+        // The last file row is the far seam, which only a neighbouring map can reach:
+        // y = height clamps to height - 1 and lands on the row before it.
+        assert_eq!(map.height_at(0, 3), (2 * stride) as f32);
     }
 
     /// Samples clamp to the *cell* grid, which is one smaller than the vertex grid, so the

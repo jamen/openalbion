@@ -199,6 +199,53 @@ pub struct Placement {
     pub orientation: Option<RightHandedSet>,
 }
 
+impl Placement {
+    /// The object → world matrix, a port of `CEngineInternalPrimitiveMeshBase::CalcObjectMatrix`
+    /// (`fableengine/engine_primitive_manager_mesh_base.cpp:557`).
+    ///
+    /// The original writes a `CMatrix3x4` in row-vector form:
+    ///
+    /// ```text
+    /// E11..E13 = -scale * (Forward x Up)      E21..E23 = -scale * Forward
+    /// E31..E33 =  scale * Up                  E41..E43 =  position
+    /// ```
+    ///
+    /// `GetWorldPosition` (`engine_primitive_manager_static_meshes.cpp:815`) reads E41..E43
+    /// straight back as the thing's world position, which is what pins the translation to
+    /// the fourth row and so the whole convention.
+    ///
+    /// Since `v' = v * M` there, the rows are the images of the object basis vectors, and
+    /// the column-major matrix returned here has them as its **columns**: object `+X` maps
+    /// to `Up x Forward`, `+Y` to `-Forward`, `+Z` to `+Up`. That triple is right-handed —
+    /// `(U x F) x (-F) = U` — which is the check that the sign reading is not inverted.
+    ///
+    /// `scale` is the float `CalcObjectMatrix` takes, from
+    /// `CEngineInternalPrimitiveMeshBase::Scale`; it multiplies the rotation and not the
+    /// translation. A thing's `ObjectScale` is what feeds it.
+    ///
+    /// Returns `None` for a placement with no orientation — `CTCPhysicsLight` writes a
+    /// position only, and nothing renders a mesh from one.
+    pub fn object_matrix(&self, scale: f32) -> Option<[[f32; 4]; 4]> {
+        let rhs = self.orientation?;
+        let f = rhs.forward;
+        let u = rhs.up;
+
+        // Up x Forward — the negation of the original's `-(Forward x Up)`.
+        let right = [
+            u[1] * f[2] - u[2] * f[1],
+            u[2] * f[0] - u[0] * f[2],
+            u[0] * f[1] - u[1] * f[0],
+        ];
+
+        Some([
+            [right[0] * scale, right[1] * scale, right[2] * scale, 0.0],
+            [-f[0] * scale, -f[1] * scale, -f[2] * scale, 0.0],
+            [u[0] * scale, u[1] * scale, u[2] * scale, 0.0],
+            [self.position[0], self.position[1], self.position[2], 1.0],
+        ])
+    }
+}
+
 // ── Accessors ─────────────────────────────────────────────────────────────────
 
 impl TngThing {
@@ -1053,5 +1100,80 @@ mod tests {
     fn a_lex_error_is_reported_as_text() {
         let err = Tng::parse("NewThing Object;\nHealth @;\n").unwrap_err();
         assert!(matches!(err, TngError::Text(_)), "got {err}");
+    }
+
+    // ── CalcObjectMatrix ──────────────────────────────────────────────────────
+
+    fn placement(forward: [f32; 3], up: [f32; 3], position: [f32; 3]) -> Placement {
+        Placement {
+            position,
+            orientation: Some(RightHandedSet { forward, up }),
+        }
+    }
+
+    /// The three columns are the images of the object basis vectors, straight off
+    /// `CalcObjectMatrix`'s rows: `+X -> Up x Forward`, `+Y -> -Forward`, `+Z -> +Up`.
+    #[test]
+    fn object_matrix_maps_the_basis_the_way_calc_object_matrix_does() {
+        let m = placement([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [10.0, 20.0, 30.0])
+            .object_matrix(1.0)
+            .unwrap();
+
+        // Up x Forward = (0,0,1) x (0,1,0) = (-1, 0, 0)
+        assert_eq!(m[0], [-1.0, 0.0, 0.0, 0.0]);
+        // -Forward
+        assert_eq!(m[1], [0.0, -1.0, 0.0, 0.0]);
+        // +Up
+        assert_eq!(m[2], [0.0, 0.0, 1.0, 0.0]);
+        // The translation is the position, unscaled — `GetWorldPosition` reads it back.
+        assert_eq!(m[3], [10.0, 20.0, 30.0, 1.0]);
+    }
+
+    /// `CalcObjectMatrix`'s float scales the rotation and leaves the translation alone.
+    #[test]
+    fn object_matrix_scales_rotation_but_not_translation() {
+        let m = placement([0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [10.0, 20.0, 30.0])
+            .object_matrix(2.5)
+            .unwrap();
+
+        assert_eq!(m[0], [-2.5, 0.0, 0.0, 0.0]);
+        assert_eq!(m[2], [0.0, 0.0, 2.5, 0.0]);
+        assert_eq!(m[3], [10.0, 20.0, 30.0, 1.0]);
+    }
+
+    /// The rotation must be a right-handed orthonormal frame — `det = +1`, not `-1`. A
+    /// mirrored frame would invert every mesh's winding and quietly cull its front faces.
+    #[test]
+    fn object_matrix_rotation_is_right_handed() {
+        // A real placement, out of Witchwood.tng.
+        let m = placement(
+            [-0.642772, 0.766028, 0.0],
+            [-0.000264, -0.000222, 0.999994],
+            [31.205811, 25.853271, 54.593445],
+        )
+        .object_matrix(1.0)
+        .unwrap();
+
+        let col = |i: usize| [m[i][0], m[i][1], m[i][2]];
+        let (x, y, z) = (col(0), col(1), col(2));
+
+        let det = x[0] * (y[1] * z[2] - y[2] * z[1]) - y[0] * (x[1] * z[2] - x[2] * z[1])
+            + z[0] * (x[1] * y[2] - x[2] * y[1]);
+        assert!((det - 1.0).abs() < 1e-4, "determinant {det}");
+
+        for c in [x, y, z] {
+            let len = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
+            assert!((len - 1.0).abs() < 1e-4, "column length {len}");
+        }
+    }
+
+    /// `CTCPhysicsLight` writes a position and no `RHSet`, so there is no frame to build.
+    #[test]
+    fn object_matrix_needs_an_orientation() {
+        let placement = Placement {
+            position: [1.0, 2.0, 3.0],
+            orientation: None,
+        };
+        assert!(placement.object_matrix(1.0).is_none());
     }
 }

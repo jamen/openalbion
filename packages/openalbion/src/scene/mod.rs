@@ -13,8 +13,10 @@ pub mod model;
 pub mod sky;
 pub mod terrain;
 pub mod texture;
+pub mod things;
 
-pub use self::model::{BuildModelError, build_model};
+pub use self::model::build_model;
 pub use self::sky::{sky_textures_at_time, upload_sky_textures};
 pub use self::terrain::build_terrain;
 pub use self::texture::{decode_texture, decode_texture_rgba};
+pub use self::things::resolve_things;

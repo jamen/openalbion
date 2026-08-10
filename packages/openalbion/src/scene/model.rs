@@ -16,12 +16,14 @@ pub enum BuildModelError {
 ///
 /// `material_textures` is aligned 1:1 with `mesh.materials` (see `Files::read_mesh`).
 /// A material whose texture is missing or fails to decode falls back to no diffuse map,
-/// which the renderer draws with a white texture — a visible gap, not a silent one.
+/// which the renderer draws with a white texture — a visible gap, not a silent one. Roughly
+/// a quarter of the materials in `graphics.big` have `base_texture_id == 0`, so this is the
+/// normal case, not an error.
+///
+/// Where the model stands is not this function's business — that is a `ModelInstance`.
 pub fn build_model(
     mesh: &Mesh,
     material_textures: &[Option<(AssetMetadata, Vec<u8>)>],
-    scale: f32,
-    position: [f32; 3],
 ) -> Result<Model, BuildModelError> {
     if mesh.primitives.is_empty() {
         return Err(BuildModelError::NoPrimitives);
@@ -80,8 +82,6 @@ pub fn build_model(
     Ok(Model {
         primitives,
         materials,
-        scale,
-        position,
     })
 }
 

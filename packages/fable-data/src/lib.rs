@@ -6,7 +6,6 @@ pub use fable_defs::def;
 pub mod environment;
 pub mod landscape;
 pub mod manifest;
-pub mod object;
 pub mod text;
 pub mod texture;
 pub mod tga;

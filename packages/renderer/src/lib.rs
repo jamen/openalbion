@@ -34,7 +34,8 @@ use wgpu::{
 
 pub use self::image::{ImageFormat, TextureImage};
 pub use self::model::{
-    AddModelError, AlphaMode, Model, ModelMaterial, ModelPrimitive, ModelSubMesh, ModelVertex,
+    AddModelError, AlphaMode, Model, ModelInstance, ModelMaterial, ModelPrimitive, ModelSubMesh,
+    ModelVertex,
 };
 pub use self::terrain::{TerrainData, TerrainDraw, TerrainVertex};
 
@@ -228,10 +229,24 @@ impl<'target> Renderer<'target> {
         self.passes.model.clear_models();
     }
 
-    pub fn add_model(&mut self, model: &Model) -> Result<(), AddModelError> {
+    /// Upload one mesh asset and every placement of it. Geometry, materials and textures
+    /// are uploaded once regardless of how many instances there are.
+    pub fn add_model(
+        &mut self,
+        model: &Model,
+        instances: &[ModelInstance],
+    ) -> Result<(), AddModelError> {
         self.passes
             .model
-            .add_model(&self.device, &self.queue, model)
+            .add_model(&self.device, &self.queue, model, instances)
+    }
+
+    /// `(mesh assets uploaded, placements drawn)`.
+    pub fn model_stats(&self) -> (usize, usize) {
+        (
+            self.passes.model.model_count(),
+            self.passes.model.instance_count(),
+        )
     }
 
     pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4], camera_pos: glam::Vec3) {
