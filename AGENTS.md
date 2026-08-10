@@ -8,6 +8,19 @@
 
 ## 0. Where we are
 
+> **Session summary — 2026-08-10, branch `texture-sampling`.**
+> **Derived: texture sampling** (new §3.12, §5 step 7) — the aliasing at distance is three
+> separate causes, and two are faithfulness bugs. **We never uploaded a mip level.** The
+> chains were never missing: they ship in `textures.big`, uncompressed below level 0, and
+> `Texture::parse` already reads them into `raw_image_data` — 3,978 of 4,000 assets carry a
+> complete chain matching `CalculateTextureSize` exactly, and `get_top_mip_bcn_image` threw
+> every level but the first away. Anisotropy is **4**, read off the shipped `user.ini`, not
+> chosen. MSAA is the one thing here the original does *not* do (`dbugst.ini` has it
+> commented out), so it lands as an `ACCEPTED` divergence rather than a transcription.
+> **The lesson worth keeping:** the parser had the data the whole time and the accessor's
+> name — `get_top_mip_*` — made the loss look intentional. A field parsed and read by nothing
+> (`TextureMetadata::mip_maps`) is the tell.
+>
 > **Session summary — 2026-08-10.**
 > **Landed: levels are populated** (§5 step 6, new §3.11). `.tng` things resolve to static
 > meshes through retail `game.bin`, placed with a ported `CalcObjectMatrix` and drawn
@@ -722,6 +735,112 @@ mismatches are animated meshes, which carry no static blocks.)
 
 `Mesh::transform_matrix` is identity on all 1500 meshes sampled, so ignoring it is safe.
 
+### 3.12 Texture sampling — mip chains, anisotropy, and where MSAA stands
+
+> Derived 2026-08-10, for §5 step 7. The symptom that prompted it: distant terrain and
+> meshes alias into a pixelated mess. Three separate causes, only two of them faithfulness
+> bugs.
+
+**The engine samples the mip chain that ships in the archive — it does not build one.**
+`CTextureManager::ReduceMipmapLevel(CGraphicFrame, CManagedTexture, ulong skip_levels)`
+(`bbblibrary/lib_texture_manager_2.cpp:1568`) implements `SetMaxTextureSize` by *dropping N
+top levels*: it halves width/height `skip_levels` times, allocates a texture with
+`GetNoLevels() - skip_levels` levels, and copies surface levels down. No resampling — the
+levels already exist. (`CTexture::GenerateMipmaps` / `GenerateMipmapsWithGPU`,
+`lib_texture.hpp:1146-1147`, are the render-target path, not the asset path.)
+
+`CTextureManager::CalculateTextureSize` (`lib_texture_manager_2.cpp:1976`) is the
+chain-layout oracle. Ghidra mis-names the parameters — they are `(width, height, with_mips,
+format)`:
+
+```c
+if (fourcc == 'DXT1')                { blockmin = 4; bpp = 4; }
+else if (fourcc == 'DXT3' || 'DXT5') { blockmin = 4; bpp = 8; }
+else                                   blockmin = 1, bpp = GetColourDepth(fmt);
+for (; w != 0 || h != 0; h >>= 1) {
+    total += max(w, blockmin) * max(h, blockmin);
+    if (!with_mips) break;
+    w >>= 1;
+}
+return total * bpp >> 3;
+```
+
+> **Every level's dimensions clamp to a 4-pixel minimum for DXT, and the chain runs to 1×1.**
+
+**Measured: the chains are present, complete, and only level 0 is compressed.** Over 4,000
+of `textures.big`'s 6,324 texture assets (`graphics.big` carries **zero** — every texture
+lives in one archive), `raw_image_data.len()` equals the exact chain sum above for the
+declared `mip_maps` on **3,978**; 7 are genuinely top-only; 12 are the special cases below.
+
+```
+mip_maps histogram: {1:11, 2:39, 3:59, 4:406, 5:361, 6:421, 7:855, 8:1841, 9:4, 10:3}
+```
+
+`Texture::parse` LZO-decompresses the top mip and appends the remaining input **raw**, so
+the totals matching exactly proves **levels 1..n are stored uncompressed and are already in
+`raw_image_data` today**. `get_top_mip_bcn_image` slices `..top_mip_length` and throws them
+away; `TextureMetadata::mip_maps` is parsed and read by nothing. There is no decode work to
+add — this is a slicing-and-upload change.
+
+**Three data caveats, all measured, all handled in step 7:**
+
+- **`dxt_compression` is not uniformly a BCn tag.** Distribution over all 6,324 assets, with
+  bits-per-pixel implied by `top_mip_map_size / (padded w·h)`:
+
+  ```
+  dxt=31  bpp=4    3683  DXT1 (BC1)     dxt=1   bpp=32        6  uncompressed 32bpp
+  dxt=32  bpp=8    2558  DXT3 (BC2)     dxt=1   bpp=256/2048  2  degenerate headers
+  dxt=35  bpp=8       4  DXT5 (BC3)     dxt=24  bpp=16        1  D3DFMT_X1R5G5B5
+  dxt=31/32 fractional bpp  ~55        frame_count > 1 (animated; size is per-frame)
+  ```
+
+  `bcn_encoding_from_dxt` mapped `1 => Bc1`. **Tag 1 is not DXT1** — it is uncompressed
+  32bpp: `ITEMS_EXPRESSIONS_CONTAINMENT_RIGHT_ON` is 64×64 with `top_mip_map_size == 16384
+  == w·h·4` and a chain of 21,824 = 16384+4096+1024+256+64. Those 9 assets decoded as
+  garbage. Tags `3`, `5`, `33`, `34` never occur in the data at all — they were invented.
+- **A few assets pack sub-4×4 levels unclamped.** The 512×512 DXT5 sky textures store
+  349,525 bytes where `CalculateTextureSize` computes 349,552 — a 27-byte deficit, exactly
+  the last three levels stored as raw `w·h` (16+4+1) rather than block-clamped (16+16+16).
+  So **walk the chain and stop when the bytes run out; never seek by a computed offset.**
+- **`frame_count > 1`** (19 of 4,000) packs every frame; per-asset chain arithmetic does not
+  apply. Nothing draws them yet.
+
+**Anisotropy is 4, and it is read, not chosen.** `CEngine::AnisotropicFilteringLevel`
+defaults to **2** (`fableengine/engine.cpp:2686`) and is pushed into the per-stage
+`D3DSAMP_MAXANISOTROPY` slot each frame (`engine.cpp:5724`). `NGlobalConsole::
+ConsoleSetMaxAnisotropy` (`fablelib/global_console.cpp:1371`) writes its `ValSLONG` argument
+into **the same global slot** — which pins the field as the D3D max-anisotropy *degree*, not
+a filter-mode enum. Shipped retail `~/Fable/user.ini` opens with:
+
+```
+SetMaxAnisotropy(4);
+```
+
+`TEXTURE_FILTER_MODE { POINT=0, LINEAR=1, ANISOTROPIC=2 }` and `TEXTURE_MIPMAP_MODE {
+POINT=0, LINEAR=1, DISABLE=2 }` (`_misc/e.hpp:763,770`) confirm anisotropic min/mag and
+trilinear mip are both first-class engine states.
+
+**MSAA is a divergence, and is labelled one.** `MULTI_SAMPLE_MODE { 1X, 2X, 4X }`
+(`_misc/m.hpp:20`), `ESurfaceMultisampleType` = D3D9's `D3DMULTISAMPLE_TYPE`
+(`_core/L4.hpp:1494`), and `CDisplayManager::{EnumerateAntiAliasingModes,
+IsAntiAliasingModeValid, SetDisplayMode(dims, depth, multisample, …)}`
+(`lib_display_manager.hpp:1156-1159`) make it a device-level setting enumerated against
+hardware; `ConsoleSetAntialiasing` (`global_console.cpp:1414`) re-creates the device. In the
+shipped configuration it is **off** — `~/Fable/dbugst.ini:90-91`:
+
+```
+//SetAntialiasing(TRUE);
+//SetAntialiasing9x(TRUE);
+```
+
+So enabling it is an improvement, not a transcription: §6.3 `ACCEPTED`, with the reason
+written down — not a `// UNVERIFIED:` constant, and not a default smuggled in silently.
+
+**What none of this fixes.** The landscape runs the foreground triplanar pass at every
+distance (§5.6, deferred). The original does not sample these textures far away at all — it
+draws per-patch `RenderProceduralTexture` composites. Mipmaps take distant terrain from
+*aliased* to *correct but over-blurred and over-drawn*; the background LOD is its own step.
+
 ---
 
 ## 4. Assessment of the current renderer
@@ -913,6 +1032,54 @@ mesh failures, and `placed + skipped == every thing in the file` as a test invar
 - 6.11 Decals, shadows, outline/glow and every `_ENV_`/`_BUMP_` variant.
 - 6.12 `.wld`-driven world placement. `MapX`/`MapY` only matter once neighbouring maps load —
   the twin of 5.10.
+
+### Step 7 — Sampling: mip chains, anisotropy, MSAA
+
+Derivations in §3.12. Four commits, one mechanism each.
+
+- 7.1 **The format tag mapping**, first, because it changes *which* assets reach the upload
+  path — landing it after 7.2 would confuse attribution of any visual delta. Map only the
+  tags that occur (`31`/`32`/`35` → BC1/BC2/BC3), drop the invented `3`/`5`/`33`/`34`
+  aliases, and return `None` for `1` and `24` so the 9 non-BCn assets are a logged skip
+  rather than BC1-decoded noise.
+- 7.2 **The mip chain, archive to GPU.** `Texture::mip_levels()` walks `raw_image_data` with
+  `CalculateTextureSize`'s clamp, stopping at `mip_maps` levels, at 4×4, or when the bytes
+  run out — whichever comes first. `TextureImage` carries `levels: Vec<Vec<u8>>`;
+  `upload_texture` and `TerrainPass::upload` set `mip_level_count` and write one level each.
+  Ground textures move from `decode_texture_rgba` to `decode_texture`: the comment
+  justifying RGBA8 ("the terrain layer array…") is stale — `TerrainPass` uploads one
+  independent 2D texture per ground texture and binds it per draw, there is no array, and
+  keeping BC lets the shipped chain upload verbatim with no CPU resampling.
+- 7.3 **Trilinear + anisotropy 4** on the two world samplers. `mipmap_filter: Linear`,
+  `anisotropy_clamp: 4` (§3.12). wgpu requires all three filters `Linear` when anisotropy is
+  on, which is the same configuration `TEXTURE_FILTER_ANISOTROPIC` + `TEXTURE_MIPMAP_LINEAR`
+  describe — constraint and oracle agree.
+- 7.4 **MSAA 4×**, as an `ACCEPTED` divergence (§3.12, §6.3). Probe
+  `sample_count_supported(4)` for the colour *and* depth formats and fall back to 1 with a
+  warning. The MSAA colour texture lives beside the depth texture and is recreated with it;
+  `encode` hands every pass the multisampled view and sets `resolve_target` on **the last
+  pass only** — resolving in all four would resolve three times for nothing. `render_to_image`
+  needs no change: the resolve lands in the existing offscreen texture it already copies.
+
+**Blend tables stay single-mip, deliberately.** They are CPU-built 128×128 R8 lookups indexed
+by the packed vertex normal (`oT0 = (CliffU, CliffV)`, §3.4), not by a surface
+parameterisation. §3.4's additive compositing is correct *only* because the five direction
+blends partition unity at every texel; mip-filtering that table would break the partition and
+reintroduce exactly the seam leakage that pinned the blend mode in the first place.
+
+**Deliberately not done**, so it is a decision rather than a drift:
+
+- 7.5 `alpha_to_coverage_enabled`. Cutout materials `discard` at `ALPHA_CUTOFF = 0.5`, which
+  MSAA does not smooth, so foliage silhouettes still crawl. It would pair naturally with 7.4
+  but is a *second* divergence, and the mip chain is most of the foliage shimmer — land 7.2
+  first and judge what is left.
+- 7.6 The `frame_count > 1` animated textures and the 9 non-BCn assets. Nothing draws them.
+- 7.7 `SetMaxTextureSize` / `ReduceMipmapLevel` as a quality knob. The mechanism is understood
+  (§3.12) and is a two-line skip once 7.2 exists; there is no reason to want it yet.
+
+*Watch for, when 7.4 lands:* the landscape draws coplanar layer passes over a blackout pass
+with `cull_mode: None`. Per-sample depth testing can change edge behaviour where those layers
+meet. Seams that appear at 4× and not at 1× are that, not the mip change.
 
 ## 6. ~~The mirror~~ — comparing against the original *(historical)*
 
@@ -1524,6 +1691,8 @@ Track anything that could not be sourced. Empty is the goal.
 | `renderer/src/model.rs` | `FrameUniforms` ambient/diffuse/backlight/light dir | placeholder — the same neutral stand-in the landscape uses, replaced wholesale by step 2's LUT rows 1/0/3 |
 | `renderer/src/model.rs` | `ALPHA_CUTOFF = 0.5` | unsourced |
 | `renderer/src/model.wgsl` | world-space normal instead of object-space light | **DIVERGENCE**, marked in place: the original pre-transforms `c19` into each object's frame; we rotate the normal instead. Identical for the orthonormal matrices `CalcObjectMatrix` produces, and it keeps one light constant shared with the landscape |
+| `renderer/src/texture.rs`, `terrain.rs` | `mipmap_filter: Linear` | **inferred, not read.** `TEXTURE_MIPMAP_LINEAR` exists (`_misc/e.hpp:770`) but which value the engine sets is behind the same render-state cache §9 already records as defeating the landscape blend modes. Linear is *forced* anyway — wgpu requires it when `anisotropy_clamp > 1`, and §3.12 sources the anisotropy at 4 |
+| `renderer/src/lib.rs` | MSAA 4× | **DIVERGENCE**, `ACCEPTED` (§6.3): the original ships AA **off** (`~/Fable/dbugst.ini:90-91`, both `SetAntialiasing` lines commented out). Enabled deliberately as an improvement, per Jamen 2026-08-10; to be made configurable later |
 
 Also retired: the `LightArray` / `LightGlobals` / `LightAttenuations` offsets, read exactly
 out of `engine_vs_layout_lights.cpp:56-90` and cross-checked three ways (§3.8); and
@@ -1540,6 +1709,16 @@ Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:
 
 ## 10. History
 
+- **2026-08-10** — **Texture sampling derived.** §3.12, §5 step 7, branch `texture-sampling`.
+  The renderer had never uploaded a mip level: `mip_level_count: 1` everywhere,
+  `mipmap_filter` at its `Nearest` default, and a decode path named `get_top_mip_*` that
+  discarded the rest. The chains were in the archive all along — 3,978 of 4,000
+  `textures.big` assets carry a complete chain matching `CalculateTextureSize`
+  (`lib_texture_manager_2.cpp:1976`) exactly, with only level 0 LZO-compressed. Anisotropy
+  sourced at 4 from the shipped `user.ini`; MSAA recorded as an `ACCEPTED` divergence
+  because the original ships it off. Also caught: `dxt_compression == 1` is uncompressed
+  32bpp, not DXT1, so 9 assets were decoding as noise, and four aliases in
+  `bcn_encoding_from_dxt` were invented — no asset uses `3`, `5`, `33` or `34`.
 - **2026-08-10** — **Levels are populated.** §5 step 6. `.tng` things resolve through their
   def's `Graphic` in retail `game.bin` to a `graphics.big` asset id — verified 38/38, 192/192
   and 57/57 across Witchwood, LookoutPoint and Arena — so the text `objects.def` bridge and
