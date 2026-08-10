@@ -8,6 +8,27 @@
 
 ## 0. Where we are
 
+> **Session summary — 2026-08-10, branch `local-detail`.**
+> **Landed: levels have foliage** (new §3.13, §5 step 8) — grass, bracken, flowers, brambles
+> and trees, generated rather than read. `fable-data::local_detail` ports
+> `CEngineLocalDetailGenerator` and the placement half of `CLocalDetailCacheMap`; static-mesh
+> objects go through the existing model pass because that is literally the call the engine
+> makes for them, and repeated meshes get a transcribed `SHADERS_REPEATED_MESH` pass.
+> LookoutPoint grows **15,845 objects over 24 meshes** where it had 374 things.
+> **It is exactly reproducible**, which was the point: the whole subsystem is deterministic
+> off one five-instruction PRNG — `GFROR13` is a rotate-right-13 — so the foliage is a pure
+> function of the defs and the heightmap, and the counts are pinned as tests rather than
+> judged by eye. **The `.stb` cache is not needed and was not touched.**
+> **Two corrections found by implementing:** the engine positions objects in *world* cells
+> because its terrain carries the same offset and ours does not, so a level's foliage stood
+> 3,232 cells off its own hillside until the world origin was confined to the random draws;
+> and `TiltToSlope` does nothing at all to a repeated mesh, because only
+> `(cos·Scale, sin·Scale, 0, 0)` survives into its four-float object matrix.
+> **Next is the distance fade** (§5.8.5). Grass currently draws to the horizon; the original
+> dithers it out in screen space under an alpha test, and the stipple pattern is *procedural*
+> — `BuildAlphaStippleTexture` builds a 32×32 ordered dither at startup from the same PRNG,
+> so there is no asset to find.
+>
 > **Session summary — 2026-08-10, branch `texture-sampling`.**
 > **Landed: texture sampling** (new §3.12, §5 step 7) — mip chains, anisotropy 4 and 4× MSAA.
 > The aliasing at distance was three separate causes, and two were faithfulness bugs. **We never uploaded a mip level.** The
@@ -847,6 +868,130 @@ distance (§5.6, deferred). The original does not sample these textures far away
 draws per-patch `RenderProceduralTexture` composites. Mipmaps take distant terrain from
 *aliased* to *correct but over-blurred and over-drawn*; the background LOD is its own step.
 
+### 3.13 Local detail — a level's foliage, generated
+
+> Derived and landed 2026-08-10, for §5 step 8. The full derivation note this condenses was
+> reviewed before implementation; the corrections below are what implementing it found.
+
+**A ground theme names a generator, and every level already has everything needed.**
+`CEngineThemeDef::LocalDetailGeneratorDef` (`fablelib/defs/engine_theme_def.hpp:900`) points
+at a `LOCAL_DETAIL_GENERATOR` def of layers, each of objects. Measured against retail
+`game.bin`: **65 generators, 101 layers, 227 objects, 138 distinct meshes**; 79 of 463
+`ENGINE_THEME` defs name a generator and **all 79 resolve by index** — the `.lev` palette's
+stale index (§3.4) is not a trap here; and **all 227 `Mesh` fields resolve to mesh assets** in
+`graphics.big`, exactly like `Graphic.BankIndex` (§3.11). No new parser was needed for any of
+it, and `fable-defs` already modelled every field.
+
+**Three primitive types, decided in `CLocalDetailObjectCollectionType`'s constructor**
+(`engine_local_detail_theme.cpp:2650`), in this order — a `ZSpriteFadeEnd` wins over
+`IsRepeatedMesh`:
+
+| Type | Of 227 | The engine does | We do |
+|---|---|---|---|
+| `MESH` | 92 | `AddStaticMesh` — the *same call* a `.tng` thing makes (`engine_local_detail_primitives.cpp:484`) | the existing model pass, unchanged |
+| `REPEATED_MESH` | 88 | `SHADERS_REPEATED_MESH`, 16 instances per draw | `LocalDetailPass`, transcribed |
+| `HYBRID_MESH_ZSPRITE` | 47 | mesh near, generated billboard impostor far | the mesh half; impostor deferred (§5.8.7) |
+
+So half of local detail needs **no new pipeline at all**, and that is faithfulness rather than
+a shortcut.
+
+**Placement is deterministic, and that is the whole reason we generate rather than read the
+shipped cache.** Everything random comes from one PRNG:
+
+```
+GFROR13(x) = rotate_right(x, 13)          bbblibrary/lib_global_tools.cpp:1133
+seed       = GFROR13(seed * 0x24a1 + 0x24df)
+```
+
+Ghidra spells the additive constant three ways (`0x24da+5`, `0x24dc+3`, `&DAT_000024df`) —
+one number. Two consumers, both starting from a zeroed seed:
+
+- **`CDisplacementTable`** (`engine_local_detail_generator.cpp:84`) — 32³ floats,
+  `fmod((float)(u32)seed, 65536) / 65536`, filled with the *middle* axis outermost (the loop
+  nest's strides are 0x80 outer, 0x1000 middle, 4 inner). `GetRandomDisplacement(x, y, z)`
+  (`:2190`) is a bare `Table[x&31][y&31][z&31]`, so **a cell has only 32 distinct random
+  values** however much it grows — which is why Fable's grass clumps.
+- **`BuildElementGrid`** (`engine_local_detail_theme.cpp:1357`) — dart throwing on a
+  **toroidal 32×32 cell tile**, stopping after 256 consecutive rejections, with each layer
+  keeping `SpacingFromLayer[j]` from layer *j*'s points. Densities are what set a level's
+  size: spacing 0.12 → 37,241 points per tile (36/cell), 6.5 → 15.
+
+**The pattern therefore repeats exactly every 32 world cells**, by construction. Faithful, and
+not a bug to fix.
+
+**Per placement point** (`AddObjectsFromBlendedThemes` :3956, `AddObjectsFromLayerElement`
+:3256): one draw picks which of the cell's three blended ground themes owns the point, then
+four more pick the object, its scale, whether it survives the slope fade, and its rotation.
+Notable readings:
+
+- `Probability` is a **relative weight within the layer**, never a chance of nothing —
+  `BuildObjectSelectionTable` normalises by the sum, which is what the 11 shipped layers
+  summing to 0.30…1.10 depend on. Its advance fires on `cumulative * 32 < slot`, giving every
+  layer a half-slot bias toward its first object.
+- `ThemeBlendThreshold` is **0.00 on all 227 shipped objects**. The comparison is transcribed;
+  it can never reject anything but a zero-weight theme.
+- The slope fade reads the ground normal's **Z**, settled by the `C3DVector` written over
+  `CMatrix3x4`'s tail. Grass at 0.80…0.90 thins out and then stops as the ground steepens.
+- Scale is `(Scale + (2·rand − 1)·ScaleRandomElement) × 0.01` — **the same 100× mesh-unit
+  constant as §3.11**, sourced independently, and with no `RenderSizeX`.
+- Height and normal are bilinear over `PeekLandscapeHeight` and `PeekMapNormal`
+  (`PeekInterpolatedMapNormal`, `engine_world_map.cpp:1688`), so objects land on exactly the
+  surface the landscape pass draws.
+
+**The repeated-mesh pass has its own register layout** (`engine_vs_layout_repeated_mesh.cpp:60-91`),
+which cross-checks against `VSHADER_REPEATED_MESH` on every register it touches:
+
+| Range | Name | |
+|---|---|---|
+| `c19`–`c34` | `ObjectMatricies` | `.Offset = 0x13, .Count = 0x10` |
+| `c35`–`c50` | `ObjectOffsets` | `.Offset = 0x23, .Count = 0x10` |
+| `c51`–`c66` | `LightingResults` | `.Offset = 0x33, .Count = 0x10` |
+| `c67`–`c82` | `MainLightLightingResults` | `.Offset = 0x43, .Count = 0x10` |
+| `c83`–`c95` | `User` | `.Offset = 0x53, .Count = 0xd` |
+
+`BuildFromSourceMeshes` (`engine_local_detail_primitives.cpp:2799`) fills them as
+`ObjectMatricies[i] = (cos·Scale, sin·Scale, 0, 0)` and
+`ObjectOffsets[i] = (E41, E42, E43, Scale)`. Two things follow directly:
+
+> **`TiltToSlope` has no effect on a repeated mesh.** The tilt basis
+> `AddObjectsFromLayerElement` composes into the placement matrix cannot survive into four
+> floats, however many defs set the flag — and grass, bracken and dandelions all set it.
+
+> **The two zeroed components are the wind skew**, which `SetupWindAnimation` writes later.
+> Both `v0.z` terms read `r0.z`, so wind displaces x and y together rather than along a
+> per-object direction.
+
+**Repeated meshes are lit once per object from the ground normal**, which is why the
+constructor forces `LandscapeNormalLighting` on for them. `CalcSWLightingNoClip`
+(`fableengine/engine_lighting.cpp:2600`) computes
+`Ambient + saturate(−L·n)²·Diffuse + max(L·n, 0)·Backlight` — **`VSHADER_STATIC_DIRLIGHT`'s
+expression over the same four constants**, not merely a similar one. So the landscape, the
+static meshes and the foliage all still light from one set of environment LUT rows, and step 2
+remains one change.
+
+**The fade is a screen-space stipple under an alpha test**, not blending —
+`VSHADER_REPEATED_MESH_STIPPLE_ALPHA` computes `distance · c84.x + c84.w` into `oD0.w` and
+`PSHADER_REPEATED_MESH_STIPPLE_ALPHA` adds it to a screen-space dither sample and `cnd`s the
+texel's alpha away. **The dither pattern is procedural**: `CEngineResourceManager::
+BuildAlphaStippleTexture` (`engine_resource_manager.cpp:2900`) builds a **32×32** ordered
+dither at startup — shuffling 1024 indices with the same `GFROR13` chain — and
+`SetupAlphaStippleTexture` (`:3463`) splats it into all four channels. There is no asset to
+find. This is also the original's own answer to the foliage silhouettes §5 step 7.5 deferred
+`alpha_to_coverage` for.
+
+**Scale, measured.** Local detail is ~100× the placement count of `.tng` things, not
+~10,000×: Witchwood 691, Darkwood 1,147, LookoutPoint 15,845, Arena 0. A whole map's objects
+fit in one instance buffer per mesh and generate in well under a second, which is why
+`CLocalDetailCacheMap`'s ~9,000 lines of quadtree, cache groups and file blocks are not
+ported — they page a thirty-map world through an Xbox's memory, and we load one map.
+
+**The one trap, and it bit.** The engine positions objects in **world** cells because its
+terrain carries the same `MapX`/`MapY` offset; ours does not — the landscape pass draws a map
+at the world origin. So the origin must reach the random draws (it decides *which* foliage
+grows) and nothing else, or a level's foliage stands thousands of cells off its own hillside.
+Every shipped origin is a multiple of 32 and the draws mask to five bits, so the two readings
+are indistinguishable by eye and only a test tells them apart.
+
 ---
 
 ## 4. Assessment of the current renderer
@@ -985,8 +1130,7 @@ over 48,955 vertices with no placeholder textures, and renders textured.
   `EnableLandscapeLODUpdate` as their own toggles, so this is a supported configuration.
 - 5.7 Bump mapping (`PSHADER_LANDSCAPE_FOREGROUND_BUMP`) and every shadowed/spot variant.
 - 5.8 Water — `CWaterPatchDescriptors`, and the theme's `WaterHeight`/`WaterType`.
-- 5.9 Local detail (grass, flowers): `LOCAL_DETAIL_GENERATOR`, 65 defs, already fully modelled
-  in `fable-defs`. A separate subsystem, not landscape texturing.
+- 5.9 Local detail (grass, flowers) — **its own subsystem, and it landed as step 8.**
 - 5.10 Loading neighbouring maps, which is what makes the seam row real rather than clamped.
 
 **The lighting is the next thing that matters.** The pass runs the real
@@ -1099,6 +1243,64 @@ Kept here because it is still the first thing to suspect if seams ever appear.
 on the last drawing pass. Resolving in every pass would resolve three times for nothing, and
 resolving in one of them would make that pass silently load-bearing — reorder the passes and
 the frame goes blank.
+
+### Step 8 — Local detail — **LANDED (2026-08-10)**, branch `local-detail`
+
+Levels have foliage. Derivations in §3.13; done in this order, one mechanism per commit.
+
+- 8.1 **`fable-data::local_detail`**, data only — `rng` (the PRNG and the displacement table),
+  `grid` (the placement grid's dart throwing), `generator` (defs → layers, object types and
+  the object selection table), `place` (the per-cell placement loop over `LandscapeMap`).
+  Nothing here touches the renderer, so all of it is unit-testable with no GPU and no install.
+- 8.2 **Static-mesh objects through the existing model pass**, merged into the same per-mesh
+  instance buffers `.tng` things use. No renderer change, because the engine makes the same
+  call for both.
+- 8.3 **Hybrid objects as their mesh half**, counted and logged, with no impostor.
+- 8.4 **`LocalDetailPass`** — `local_detail.wgsl` transcribes `VSHADER_REPEATED_MESH` +
+  `PSHADER_REPEATED_MESH`, alpha-testing at the object type's `AlphaRef` and lighting from a
+  per-instance ground normal.
+
+*Evidence:* Witchwood 691 objects (381 mesh / 90 hybrid / 220 repeated), Darkwood 1,147
+(486/51/610), LookoutPoint 15,845 (114/68/15,663), Arena 0 — pinned exactly as tests, since
+placement is a pure function of the defs, the heightmap and the PRNG. Every object stands on
+the terrain to within a millimetre, every mesh id resolves and decodes, two runs agree byte
+for byte, and the world origin is proved to move the draws and not the objects.
+
+*Also landed on the way:* `game.bin` is parsed once rather than per def type (the refactor §4
+asked for), and `FinalAlbion.wld` is loaded for the world origin — which is the first half of
+what §6.12 and §5.10 will need.
+
+**Next, and it is the visible gap:** 8.5 **the distance fade**. Grass draws to the horizon
+today. `VSHADER_REPEATED_MESH_STIPPLE_ALPHA` + `PSHADER_REPEATED_MESH_STIPPLE_ALPHA` dither it
+out in screen space under the alpha test, from `FadeStart`/`FadeEnd` (20–22 m for grass,
+100–140 m for trees) through `ModifyFadeDistanceForVideoOptions`. The stipple pattern is
+**procedural** (§3.13), so the only real work is porting `BuildAlphaStippleTexture`'s ordered
+dither — the render state it needs is not behind the render-state cache that defeated the
+landscape blend modes, because it is all in the shader.
+
+**Deliberately not done**, so each is a decision rather than a drift:
+
+- 8.6 The `.stb` local detail cache. Retail ships the finished placements inside
+  `FinalAlbion_RT.stb` (a `BBBB` bank, §3.7) and `CLocalDetailCacheMap::OpenStaticMap` reads
+  them. **Decided 2026-08-10 (Jamen): generate instead**, on §3.4's precedent and because the
+  `.stb` has cost more than it returned before. It stays available as a tier-2 oracle — the
+  engine's own object matrices to diff ours against — if exactness is ever in question.
+- 8.7 ZSprite impostors (`SHADERS_ZSPRITE`, `CEngineBillboardGenerator`,
+  `CEnginePrimitiveManagerRepeatedZSprites`). Consequence, stated: trees keep full geometry to
+  their fade distance instead of collapsing to a billboard at ~55 m. Costs triangles, looks
+  better, diverges from the original's distant silhouette.
+- 8.8 Wind animation. 68 of 227 objects set `HasWindSkew`; the instance layout already carries
+  the two components `SetupWindAnimation` would write.
+- 8.9 Shadow meshes and `CastShadows` — 40 objects carry a distinct one, and nothing in the
+  renderer casts a shadow yet.
+- 8.10 The cache/quadtree/streaming machinery, ~9,000 lines. Justified by the measured scale
+  (§3.13). Revisit when neighbouring maps load.
+- 8.11 Dynamic areas (`AreaChanged`, `UpdateDynamicArea`, `ConsoleAddLocalDetail*`) — the
+  editor path.
+- 8.12 Video-options fade scaling. `ModifyFadeDistanceForVideoOptions` is understood; factor
+  1.0 and clamp 0.0 are the full-quality values, so it is a knob with nothing to turn.
+- 8.13 Local lights on foliage — the twin of 6.10. `CalcSWLightingNoClip` goes on to add the
+  113 `CTCPhysicsLight` things' contributions, and we stop before that loop.
 
 ## 6. ~~The mirror~~ — comparing against the original *(historical)*
 
@@ -1711,6 +1913,10 @@ Track anything that could not be sourced. Empty is the goal.
 | `renderer/src/model.rs` | `ALPHA_CUTOFF = 0.5` | unsourced |
 | `renderer/src/model.wgsl` | world-space normal instead of object-space light | **DIVERGENCE**, marked in place: the original pre-transforms `c19` into each object's frame; we rotate the normal instead. Identical for the orthonormal matrices `CalcObjectMatrix` produces, and it keeps one light constant shared with the landscape |
 | `renderer/src/texture.rs`, `terrain.rs` | `mipmap_filter: Linear` | **inferred, not read.** `TEXTURE_MIPMAP_LINEAR` exists (`_misc/e.hpp:770`) but which value the engine sets is behind the same render-state cache §9 already records as defeating the landscape blend modes. Linear is *forced* anyway — wgpu requires it when `anisotropy_clamp > 1`, and §3.12 sources the anisotropy at 4 |
+| `renderer/src/local_detail.rs` | per-instance vertex buffer instead of 16 instances in vertex constants | **DIVERGENCE**, marked in the shader: `VSHADER_REPEATED_MESH` indexes `c19`/`c35`/`c51` with the address register because vs_1_1 has no instancing. The arithmetic is transcribed unchanged; the batch size of 16 has no observable effect to preserve |
+| `renderer/src/local_detail.wgsl` | lighting evaluated in the vertex shader, not on the CPU | **DIVERGENCE**, marked in place: the original writes `CalcSWLightingNoClip`'s result into `LightingResults` per object. Both inputs are per instance either way, so the result is identical, and this keeps the lighting constants in one place for step 2 |
+| `fable-data/src/local_detail/place.rs` | the draw counter's third index | **UNVERIFIED**: `GetRandomDisplacement`'s third argument is register-passed and invisible in both call sites. That a counter is incremented immediately before each draw is visible; that it starts at zero once per cell, and that the theme draw increments it too, is the reading. Plausibility-neutral — it changes *which* object stands where, not whether the result looks right |
+| `fable-data/src/local_detail/grid.rs` | `cell = floor(x + 0.5)` | **derived, not read.** The `__ftol2_sse` arguments are FPU values, but the storage forces it: the encode is `floor((offset + 0.5) · 255)` and the decode is `byte / 255 − 0.5`, so the offset must land in `[−0.5, 0.5]`. Under `floor(x)` half of every grid would clamp to the cell's far edge and the ±16 wrap would never fire |
 | `renderer/src/lib.rs` | MSAA 4× | **DIVERGENCE**, `ACCEPTED` (§6.3): the original ships AA **off** (`~/Fable/dbugst.ini:90-91`, both `SetAntialiasing` lines commented out). Enabled deliberately as an improvement, per Jamen 2026-08-10; to be made configurable later |
 
 Also retired: the `LightArray` / `LightGlobals` / `LightAttenuations` offsets, read exactly
@@ -1728,6 +1934,26 @@ Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:
 
 ## 10. History
 
+- **2026-08-10** — **Levels have foliage.** §3.13, §5 step 8, branch `local-detail`. Ported
+  `CEngineLocalDetailGenerator` and the placement half of `CLocalDetailCacheMap` into
+  `fable-data::local_detail`, and gave the repeated meshes a transcribed
+  `SHADERS_REPEATED_MESH` pass. **No new parser was needed** — retail `game.bin` already
+  carries 65 generators reaching 227 objects over 138 meshes, every theme reference resolves
+  by index (unlike the `.lev` palette's, §3.4) and every `Mesh` field is a `graphics.big`
+  asset id. The whole subsystem is deterministic off one PRNG (`GFROR13` = `ror32(x, 13)`
+  driving `seed = ror13(seed·0x24a1 + 0x24df)`), so Jamen's call was to **generate rather than
+  read the shipped `.stb` cache**, with counts pinned as tests: Witchwood 691, Darkwood 1,147,
+  LookoutPoint 15,845, Arena 0. Half of local detail needed no new pipeline at all — the
+  engine calls the same `AddStaticMesh` for it that a `.tng` thing uses. **Two corrections
+  from implementing it:** objects come out in map-local cells while the *random draws* stay in
+  world cells, because our landscape draws a map at the world origin and the engine's does
+  not — the foliage stood 3,232 cells off LookoutPoint's hillside until that was split; and
+  `TiltToSlope` cannot affect a repeated mesh, since only `(cos·Scale, sin·Scale, 0, 0)`
+  survives into its object matrix. Also established that the fade's stipple pattern is
+  procedural rather than an asset, and that the ~9,000 lines of cache/quadtree/streaming are
+  unnecessary at one map at a time — a whole level's foliage fits in one instance buffer per
+  mesh. Landed two things it needed on the way: `game.bin` parsed once (§4's refactor) and
+  `FinalAlbion.wld` loaded for the world origin.
 - **2026-08-10** — **Texture sampling landed.** §3.12, §5 step 7, branch `texture-sampling`.
   The renderer had never uploaded a mip level: `mip_level_count: 1` everywhere,
   `mipmap_filter` at its `Nearest` default, and a decode path named `get_top_mip_*` that
