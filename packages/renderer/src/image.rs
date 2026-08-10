@@ -56,27 +56,57 @@ impl ImageFormat {
     }
 }
 
-/// One decoded mip level, ready to upload.
+/// A decoded texture and its mip chain, ready to upload.
 ///
-/// `data` is tightly packed: [`Self::bytes_per_row`] bytes per row of blocks, no padding.
+/// Each level is tightly packed: [`Self::bytes_per_row`] bytes per row of blocks, no padding.
+/// `width`/`height` describe level 0; level `i` is `max(width >> i, 1)` by
+/// `max(height >> i, 1)`, which is how the GPU derives them too.
+///
+/// The chain is not something the renderer builds — Fable ships one per texture asset and the
+/// caller passes it through (AGENTS.md §3.12). A single-level image is the ordinary case for
+/// anything generated at runtime; see [`Self::single`].
 #[derive(Clone, Debug)]
 pub struct TextureImage {
     pub width: u32,
     pub height: u32,
     pub format: ImageFormat,
-    pub data: Vec<u8>,
+    /// Mip levels, largest first. Never empty for an image that should draw.
+    pub levels: Vec<Vec<u8>>,
 }
 
 impl TextureImage {
-    /// Row pitch of `data`, in bytes.
-    pub fn bytes_per_row(&self) -> u32 {
-        self.width.div_ceil(self.format.block_extent()) * self.format.block_bytes()
+    /// An image with no mip chain — one level, at `width` × `height`.
+    pub fn single(width: u32, height: u32, format: ImageFormat, data: Vec<u8>) -> Self {
+        Self {
+            width,
+            height,
+            format,
+            levels: vec![data],
+        }
     }
 
-    /// Whether `data` is large enough for the declared size and format. Passes check this
+    /// Dimensions of mip `level`, as the GPU derives them.
+    pub fn level_size(&self, level: usize) -> (u32, u32) {
+        (
+            (self.width >> level).max(1),
+            (self.height >> level).max(1),
+        )
+    }
+
+    /// Row pitch of mip `level`, in bytes.
+    pub fn bytes_per_row(&self, level: usize) -> u32 {
+        let (width, _) = self.level_size(level);
+        width.div_ceil(self.format.block_extent()) * self.format.block_bytes()
+    }
+
+    /// Whether every level is large enough for its declared size and format. Passes check this
     /// before upload so a short buffer is a logged skip rather than a driver-level abort.
     pub fn is_complete(&self) -> bool {
-        let rows = self.height.div_ceil(self.format.block_extent()) as usize;
-        self.data.len() >= rows * self.bytes_per_row() as usize
+        !self.levels.is_empty()
+            && self.levels.iter().enumerate().all(|(level, data)| {
+                let (_, height) = self.level_size(level);
+                let rows = height.div_ceil(self.format.block_extent()) as usize;
+                data.len() >= rows * self.bytes_per_row(level) as usize
+            })
     }
 }

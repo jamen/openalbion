@@ -10,6 +10,9 @@ pub struct Texture {
     pub height: usize,
     pub depth: usize,
     pub top_mip_length: usize,
+    /// Number of mip levels the asset declares (`TextureMetadata::mip_maps`). All of them are
+    /// in [`Self::raw_image_data`]; see [`Self::mip_levels`].
+    pub mip_map_count: usize,
     pub bcn_encoding: BcnEncoding,
     pub raw_image_data: Vec<u8>,
 }
@@ -55,6 +58,7 @@ impl Texture {
         height: usize,
         depth: usize,
         top_mip_length: usize,
+        mip_map_count: usize,
         bcn_encoding: BcnEncoding,
     ) -> Result<Self, TextureError> {
         use TextureError as E;
@@ -70,7 +74,10 @@ impl Texture {
             small_length as u32
         };
 
-        // The rest of the input is image data. It could be in several different formats
+        // The rest of the input is image data: level 0 is LZO-compressed, every level below it
+        // is stored raw and follows immediately. Measured over `textures.big` — 3,978 of 4,000
+        // assets have a `raw_image_data` length equal to the exact chain sum, which is only
+        // possible if the sub-levels are uncompressed. AGENTS.md §3.12.
 
         let mut raw_image_data = Vec::new();
 
@@ -91,9 +98,51 @@ impl Texture {
             height,
             depth,
             top_mip_length,
+            mip_map_count,
             bcn_encoding,
             raw_image_data,
         })
+    }
+
+    /// Every usable mip level, largest first, as `(width, height, block bytes)`.
+    ///
+    /// Level sizes are `CTextureManager::CalculateTextureSize`
+    /// (`bbblibrary/lib_texture_manager_2.cpp:1976`): each level halves both dimensions, and
+    /// each dimension clamps to a 4-pixel minimum for the block size. Level 0's length comes
+    /// from `top_mip_length` rather than the formula, because that is the length LZO actually
+    /// decompressed to and so is what keeps every subsequent offset aligned with the bytes.
+    ///
+    /// Enumeration stops at the first level whose dimensions fall below 4, and at the first
+    /// level the data is too short for. Both matter: a handful of assets pack their sub-4×4
+    /// levels unclamped (the 512×512 sky textures are 27 bytes short of a block-clamped
+    /// chain), so a level's offset is only trustworthy while every level above it was full
+    /// size. AGENTS.md §3.12.
+    pub fn mip_levels(&self) -> Vec<(usize, usize, &[u8])> {
+        let block_bytes = bcn_block_bytes(self.bcn_encoding) as usize;
+        let mut levels = Vec::new();
+        let mut offset = 0usize;
+
+        for level in 0..self.mip_map_count.max(1) {
+            let width = (self.width >> level).max(1);
+            let height = (self.height >> level).max(1);
+            if width < 4 || height < 4 {
+                break;
+            }
+
+            let length = if level == 0 {
+                self.top_mip_length
+            } else {
+                width.div_ceil(4) * height.div_ceil(4) * block_bytes
+            };
+
+            let Some(bytes) = self.raw_image_data.get(offset..offset + length) else {
+                break;
+            };
+            levels.push((width, height, bytes));
+            offset += length;
+        }
+
+        levels
     }
 
     pub fn get_top_mip_bcn_image(&self) -> Result<&[u8], TextureError> {

@@ -133,11 +133,17 @@ fn assemble(
         textures,
         blend_tables: MappingDirection::ALL
             .iter()
-            .map(|&d| TextureImage {
-                width: BLEND_TABLE_SIZE as u32,
-                height: BLEND_TABLE_SIZE as u32,
-                format: ImageFormat::R8,
-                data: build_blend_table(d),
+            // Single-mip, deliberately: the blend table is a lookup indexed by the packed
+            // vertex normal, not a surface parameterisation, and §3.4's additive compositing
+            // is correct only because the five directions' blends partition unity at every
+            // texel. Mip-filtering it would break the partition and leak between layers.
+            .map(|&d| {
+                TextureImage::single(
+                    BLEND_TABLE_SIZE as u32,
+                    BLEND_TABLE_SIZE as u32,
+                    ImageFormat::R8,
+                    build_blend_table(d),
+                )
             })
             .collect(),
     }
@@ -207,17 +213,15 @@ impl ThemeSource for PaletteThemes {
     }
 }
 
+/// Ground textures keep their block compression, so the mip chain that ships in the archive
+/// uploads verbatim. Each one is its own 2D texture bound per draw — there is no layer array,
+/// and so no reason to decompress to a common format first.
 fn load_ground_texture(files: &mut Files, texture_id: i32) -> Result<TextureImage, String> {
     let (asset, data) = files.read_texture_by_id(texture_id as u32)?;
-    super::decode_texture_rgba(&asset, &data).map_err(|e| e.to_string())
+    super::decode_texture(&asset, &data).map_err(|e| e.to_string())
 }
 
 /// Flat magenta — an obviously wrong texture beats a silently missing layer.
 fn placeholder_texture() -> TextureImage {
-    TextureImage {
-        width: 4,
-        height: 4,
-        format: ImageFormat::Rgba8,
-        data: [255u8, 0, 255, 255].repeat(16),
-    }
+    TextureImage::single(4, 4, ImageFormat::Rgba8, [255u8, 0, 255, 255].repeat(16))
 }

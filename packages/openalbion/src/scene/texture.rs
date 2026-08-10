@@ -4,7 +4,7 @@ use renderer::{ImageFormat, TextureImage};
 use derive_more::{Display, Error};
 use fable_data::{
     big::{AssetMetadata, ExtraMetadata},
-    texture::{BcnEncoding, Texture, TextureError, TextureImageFormat, bcn_encoding_from_dxt},
+    texture::{BcnEncoding, Texture, TextureError, bcn_encoding_from_dxt},
 };
 
 #[derive(Debug, Display, Error)]
@@ -15,48 +15,37 @@ pub enum TextureDecodeError {
     UnsupportedDxtFormat(#[error(not(source))] u16),
     #[display("volume texture ({_0} slices) — the 2D upload path cannot take it")]
     VolumeTexture(#[error(not(source))] u16),
+    #[display("no usable mip level")]
+    NoLevels,
     #[display("texture parse error: {_0}")]
     Parse(TextureError),
 }
 
-/// Decode an asset's top mip, keeping its block compression.
+/// Decode an asset and its mip chain, keeping the block compression.
 ///
-/// The GPU samples BCN natively, so this is the cheaper path and the one to prefer.
+/// The GPU samples BCN natively and Fable ships the whole chain uncompressed below level 0,
+/// so this is a slice-and-copy: no decode, no resampling (AGENTS.md §3.12).
 pub fn decode_texture(
     asset: &AssetMetadata,
     data: &[u8],
 ) -> Result<TextureImage, TextureDecodeError> {
     let (parsed, width, height, format) = parse(asset, data)?;
-    let blocks = parsed
-        .get_top_mip_bcn_image()
-        .map_err(TextureDecodeError::Parse)?;
+
+    let levels: Vec<Vec<u8>> = parsed
+        .mip_levels()
+        .into_iter()
+        .map(|(_, _, bytes)| bytes.to_vec())
+        .collect();
+
+    if levels.is_empty() {
+        return Err(TextureDecodeError::NoLevels);
+    }
 
     Ok(TextureImage {
         width,
         height,
         format,
-        data: blocks.to_vec(),
-    })
-}
-
-/// Decode an asset's top mip all the way to RGBA8.
-///
-/// Needed when several assets have to share one GPU texture — the terrain layer array
-/// mixes DXT1 and DXT5 sources, and an array texture has a single format.
-pub fn decode_texture_rgba(
-    asset: &AssetMetadata,
-    data: &[u8],
-) -> Result<TextureImage, TextureDecodeError> {
-    let (parsed, width, height, _) = parse(asset, data)?;
-    let rgba = parsed
-        .get_top_mip_pixel_image(TextureImageFormat::RGBA)
-        .map_err(TextureDecodeError::Parse)?;
-
-    Ok(TextureImage {
-        width,
-        height,
-        format: ImageFormat::Rgba8,
-        data: rgba,
+        levels,
     })
 }
 
@@ -92,6 +81,7 @@ fn parse(
         height as usize,
         extras.depth as usize,
         extras.top_mip_map_size as usize,
+        extras.mip_maps as usize,
         encoding,
     )
     .map_err(E::Parse)?;

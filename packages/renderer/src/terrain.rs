@@ -17,7 +17,7 @@ use wgpu::{
     Extent3d, FilterMode, FragmentState, FrontFace, IndexFormat, MultisampleState, PipelineLayout,
     PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
     SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderStages, StencilState,
-    TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
     TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
     VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
@@ -365,15 +365,24 @@ impl TerrainPass {
         let blackout_pipeline =
             TerrainPipeline::new_blackout(device, &layout, &shader, surface_format, depth_format);
 
-        // The ground texture tiles; the blend table is a lookup and must not wrap.
+        // The ground texture tiles, and is the one thing here that is projected onto a
+        // surface: trilinear and anisotropic, at the shipped `SetMaxAnisotropy(4)`
+        // (`crate::texture::MAX_ANISOTROPY`, AGENTS.md §3.12). One tile spans 8 world cells,
+        // so grazing views minify hard and this is exactly the case anisotropy is for.
         let ground_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("terrain_ground_sampler"),
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            anisotropy_clamp: crate::texture::MAX_ANISOTROPY,
             address_mode_u: AddressMode::Repeat,
             address_mode_v: AddressMode::Repeat,
             ..Default::default()
         });
+        // The blend table is a lookup indexed by the packed vertex normal — it must not wrap,
+        // and it must not mip: §3.4's additive compositing holds only because the five
+        // directions' blends partition unity at every texel, and a filtered-down level would
+        // not. It is uploaded single-mip to match.
         let blend_sampler = device.create_sampler(&SamplerDescriptor {
             label: Some("terrain_blend_sampler"),
             mag_filter: FilterMode::Linear,
@@ -527,15 +536,14 @@ impl TerrainPass {
         image: &TextureImage,
         label: &str,
     ) -> TextureView {
-        let size = Extent3d {
-            width: image.width.max(1),
-            height: image.height.max(1),
-            depth_or_array_layers: 1,
-        };
         let texture = device.create_texture(&TextureDescriptor {
             label: Some(label),
-            size,
-            mip_level_count: 1,
+            size: Extent3d {
+                width: image.width.max(1),
+                height: image.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: image.levels.len().max(1) as u32,
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: image.format.wgpu_format(),
@@ -544,20 +552,12 @@ impl TerrainPass {
         });
 
         if image.is_complete() {
-            queue.write_texture(
-                texture.as_image_copy(),
-                &image.data,
-                TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(image.bytes_per_row()),
-                    rows_per_image: Some(image.height),
-                },
-                size,
-            );
+            crate::texture::write_levels(queue, &texture, image);
         } else {
             tracing::warn!(
-                "{label}: {} bytes is too few for {}x{} {:?} — left blank",
-                image.data.len(),
+                "{label}: {} levels totalling {} bytes are too few for {}x{} {:?} — left blank",
+                image.levels.len(),
+                image.levels.iter().map(Vec::len).sum::<usize>(),
                 image.width,
                 image.height,
                 image.format,

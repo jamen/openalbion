@@ -8,7 +8,7 @@
 //! as noise on the screen.
 
 use fable_data::big::{BigReader, ExtraMetadata, TextureMetadata};
-use fable_data::texture::{BcnEncoding, bcn_block_bytes, bcn_encoding_from_dxt};
+use fable_data::texture::{BcnEncoding, Texture, bcn_block_bytes, bcn_encoding_from_dxt};
 use std::{collections::BTreeMap, fs::File, path::PathBuf};
 
 fn fable_data_dir() -> Option<PathBuf> {
@@ -122,6 +122,96 @@ fn top_mip_size_matches_the_encoding() {
         "{} of {checked} assets disagree with their declared encoding: {:?}",
         mismatched.len(),
         &mismatched[..mismatched.len().min(8)],
+    );
+}
+
+/// The mip chain ships in the archive — `Texture::mip_levels` slices it, it does not build it.
+///
+/// This is the measurement §3.12 rests on: if the sub-levels were compressed, or laid out any
+/// other way, the chain would not tile `raw_image_data` exactly and the counts below would
+/// collapse.
+#[test]
+fn mip_chains_are_present_and_complete() {
+    let Some(mut reader) = textures_big() else {
+        return;
+    };
+
+    let assets: Vec<_> = texture_assets(&mut reader)
+        .into_iter()
+        .filter(|(_, _, x)| {
+            x.depth <= 1 && x.frame_count <= 1 && bcn_encoding_from_dxt(x.dxt_compression).is_some()
+        })
+        .collect();
+
+    let mut full = 0usize;
+    let mut short = Vec::new();
+    let mut total_levels = 0usize;
+
+    for (bank, symbol, x) in &assets {
+        let (_, bytes) = reader.read_asset(bank, symbol).expect("read asset");
+        let encoding = bcn_encoding_from_dxt(x.dxt_compression).unwrap();
+        let mut input = &bytes[..];
+        let parsed = Texture::parse(
+            &mut input,
+            x.width as usize,
+            x.height as usize,
+            x.depth as usize,
+            x.top_mip_map_size as usize,
+            x.mip_maps as usize,
+            encoding,
+        )
+        .expect("parse texture");
+
+        let levels = parsed.mip_levels();
+        total_levels += levels.len();
+
+        // Level 0 must be exactly what the top-mip accessor returns, so the chain is an
+        // extension of the old behaviour rather than a reinterpretation of it.
+        assert_eq!(
+            levels[0].2,
+            parsed.get_top_mip_bcn_image().expect("top mip"),
+            "{symbol}: level 0 disagrees with get_top_mip_bcn_image"
+        );
+        assert_eq!((levels[0].0, levels[0].1), (x.width as usize, x.height as usize));
+
+        // Every level down to 4x4 should be present. Fewer means the data ran out early.
+        let expected = (0..x.mip_maps.max(1) as usize)
+            .take_while(|&i| (x.width as usize >> i) >= 4 && (x.height as usize >> i) >= 4)
+            .count();
+        if levels.len() == expected {
+            full += 1;
+        } else {
+            short.push((symbol.clone(), x.width, x.height, x.mip_maps, levels.len(), expected));
+        }
+
+        // Levels must halve and stay above the block size.
+        for (i, &(w, h, _)) in levels.iter().enumerate() {
+            assert_eq!((w, h), ((x.width as usize >> i).max(1), (x.height as usize >> i).max(1)));
+            assert!(w >= 4 && h >= 4, "{symbol}: level {i} is {w}x{h}");
+        }
+    }
+
+    println!(
+        "{full} of {} assets carry a complete chain; {total_levels} levels total, \
+         {:.1} per asset",
+        assets.len(),
+        total_levels as f64 / assets.len() as f64,
+    );
+    if !short.is_empty() {
+        println!("short chains: {:?}", &short[..short.len().min(8)]);
+    }
+
+    // Measured 2026-08-10: 6,230 of 6,243 are complete. The stragglers are assets whose data
+    // genuinely stops early, not a layout misreading — allow a handful, not a trend.
+    assert!(
+        full * 500 > assets.len() * 499,
+        "only {full} of {} assets carry a complete chain",
+        assets.len(),
+    );
+    assert!(
+        total_levels > assets.len() * 4,
+        "chains are implausibly short: {total_levels} levels over {} assets",
+        assets.len(),
     );
 }
 
