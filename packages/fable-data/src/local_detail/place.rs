@@ -109,12 +109,14 @@ pub struct PlacedObject {
     /// `LandscapeNormalLighting` — every repeated mesh — are lit once from this rather than
     /// per vertex.
     pub normal: [f32; 3],
-    /// The fourth draw at this element, which is also the object's rotation angle.
+    /// The object's rotation about Z, as a `[0, 1)` fraction of a turn.
     ///
-    /// `AddObject` takes it as a separate argument from the matrix it was already used to
-    /// build, and `CLocalDetailPrimitiveRepeatedMesh::SetupWindAnimation` turns it into the
-    /// per-object `WindDelayArray` byte. Kept so wind animation needs no second draw.
-    pub wind_delay: f32,
+    /// Already folded into `transform`, and kept because two other things need it:
+    /// `NLocalDetailCache::CSourceObject::Angle` is what a repeated mesh's four-float
+    /// `ObjectMatricies` entry is rebuilt from, and
+    /// `CLocalDetailPrimitiveRepeatedMesh::SetupWindAnimation` turns it into the per-object
+    /// `WindDelayArray` byte — so wind animation needs no second draw.
+    pub angle: f32,
 }
 
 impl PlacedObject {
@@ -133,12 +135,20 @@ impl PlacedObject {
     }
 }
 
-/// Every local detail object on `map`.
+/// Every local detail object on `map`, positioned in **map-local** cells.
 ///
 /// `origin` is the map's position in world cells (`CEngineMap::WorldPosX`/`WorldPosY`, which
-/// `FinalAlbion.wld` calls `MapX`/`MapY`). It matters even for a single map: the random draws
-/// are indexed by **world** cell coordinates, so the same terrain at a different world
-/// position grows different foliage.
+/// `FinalAlbion.wld` calls `MapX`/`MapY`), and it affects **only the random draws**. That
+/// split is worth being explicit about, because the engine does not make it: it works in one
+/// world space where a map's terrain and its foliage are both offset by `MapX`/`MapY`, and
+/// `AddObjectsFromLayerElement` accordingly writes world coordinates into the object matrix.
+/// We build one map at a time at the world origin — the landscape pass does the same, its
+/// vertices being plain cell indices — so a world-positioned object would land thousands of
+/// cells off the terrain. The draws still use world coordinates, because that is what decides
+/// *which* foliage grows and getting it wrong would give a map the wrong plants.
+///
+/// When neighbouring maps load (AGENTS.md step 6.12) each one is offset by its own origin,
+/// terrain and foliage together, and the two spaces become one again.
 pub fn place_map(
     map: &LandscapeMap,
     generators: &GeneratorSet,
@@ -285,6 +295,7 @@ fn add_objects_from_layer_element(
     counter: &mut i32,
     out: &mut Vec<PlacedObject>,
 ) {
+    // `origin` reaches this function only through the random draws below.
     let generator = generators.get(generator_index);
     let layer = &generator.layers[layer_index];
     let world_cell = (origin.0 + cell.0, origin.1 + cell.1);
@@ -308,12 +319,10 @@ fn add_objects_from_layer_element(
     let scale = (object.scale + (2.0 * draw() - 1.0) * object.scale_random_element)
         * MESH_UNITS_PER_WORLD_UNIT;
 
-    let position = (
-        world_cell.0 as f32 + element.0,
-        world_cell.1 as f32 + element.1,
-    );
-    let local = (position.0 - origin.0 as f32, position.1 - origin.1 as f32);
-    let normal = interpolated_map_normal(map, local.0, local.1);
+    // Map-local, not world — see `place_map`. The engine adds `WorldPosX`/`WorldPosY` here
+    // because its terrain carries the same offset; ours does not.
+    let position = (cell.0 as f32 + element.0, cell.1 as f32 + element.1);
+    let normal = interpolated_map_normal(map, position.0, position.1);
 
     // 3. The slope rejection. `SlopeFadeStart >= SlopeFadeEnd` disables it; otherwise the
     // object survives with probability `clamp((n.z − start) / (end − start))`, so grass at
@@ -333,7 +342,7 @@ fn add_objects_from_layer_element(
     let angle = draw();
     let (sin, cos) = fast_sin_cos(angle);
 
-    let height = interpolated_height(map, local.0, local.1);
+    let height = interpolated_height(map, position.0, position.1);
     let transform = object_matrix(scale, sin, cos, object, normal, [
         position.0, position.1, height,
     ]);
@@ -344,7 +353,7 @@ fn add_objects_from_layer_element(
         transform,
         scale,
         normal,
-        wind_delay: angle,
+        angle,
     });
 }
 
@@ -406,7 +415,7 @@ fn object_matrix(
 /// The table is real: the engine indexes `GFastCosTable[i]` and `GFastCosTable[i + 1]` and
 /// lerps between them (`engine_local_detail_cache.cpp:3423-3437`), which is a hair coarser
 /// than `sin`/`cos` and is the value the object was actually placed with.
-fn fast_sin_cos(angle: f32) -> (f32, f32) {
+pub fn fast_sin_cos(angle: f32) -> (f32, f32) {
     let scaled = angle * COS_TABLE_SIZE as f32;
     let index = scaled.floor();
     let fraction = scaled - index;

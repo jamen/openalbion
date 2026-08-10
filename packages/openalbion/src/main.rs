@@ -433,6 +433,7 @@ impl App {
             lev,
             self.files.level_origin(&self.level_name),
         );
+        self.load_repeated_meshes(renderer, &local_detail);
         for (mesh_id, mut objects) in local_detail.by_mesh {
             sources
                 .entry(mesh_id)
@@ -502,12 +503,72 @@ impl App {
             "Things: placed {placed} of {} placements over \
              {uploaded_meshes} meshes ({failed_meshes} meshes failed); skipped {} things — \
              {} no def, {} not drawable, {} without a placement, {:?} by graphic type",
-            resolved_placements + local_detail.counts.drawn(),
+            resolved_placements + local_detail.counts.drawn_as_models(),
             skipped.total(),
             skipped.no_def,
             skipped.not_drawable,
             skipped.no_placement,
             skipped.other_graphic_type,
+        );
+    }
+
+    /// Upload local detail's repeated meshes — the grass, bracken and flowers, which outnumber
+    /// everything else in a level by two orders of magnitude.
+    ///
+    /// Their own pass, because the original gives them their own shaders: one draw per
+    /// `(mesh, AlphaRef)` batch however many thousands of instances it carries.
+    fn load_repeated_meshes(
+        &mut self,
+        renderer: &mut Renderer<'_>,
+        local_detail: &scene::LevelLocalDetail,
+    ) {
+        // Deterministic order so two runs log the same thing.
+        let mut keys: Vec<(u32, i32)> = local_detail.repeated.keys().copied().collect();
+        keys.sort_unstable();
+
+        let mut dropped = 0usize;
+        for key in keys {
+            let (mesh_id, alpha_ref) = key;
+            let instances = &local_detail.repeated[&key];
+            let name = self
+                .files
+                .mesh_name_by_id(mesh_id)
+                .unwrap_or_else(|| format!("#{mesh_id}"));
+
+            let built = self
+                .files
+                .read_mesh_by_id(mesh_id)
+                .map_err(|e| e.to_string())
+                .and_then(|(mesh, textures)| {
+                    scene::build_model(&mesh, &textures).map_err(|e| e.to_string())
+                });
+            let model = match built {
+                Ok(model) => model,
+                Err(error) => {
+                    tracing::warn!("Repeated mesh {name}: {error} — {} dropped", instances.len());
+                    dropped += instances.len();
+                    continue;
+                }
+            };
+
+            // `AlphaRef` is the object type's, not the material's, and it is read rather than
+            // invented — unlike the static mesh pass's cutoff (AGENTS.md §9).
+            let cutoff = alpha_ref as f32 / 255.0;
+            match renderer.add_local_detail(&model, instances, cutoff) {
+                Ok(()) => tracing::debug!(
+                    "{name} (id {mesh_id}) ← {} repeated instances, alpha ref {alpha_ref}",
+                    instances.len(),
+                ),
+                Err(error) => {
+                    tracing::warn!("Repeated mesh {name}: {error} — {} dropped", instances.len());
+                    dropped += instances.len();
+                }
+            }
+        }
+
+        let (meshes, drawn) = renderer.local_detail_stats();
+        tracing::info!(
+            "Local detail: {drawn} repeated instances over {meshes} batches ({dropped} dropped)",
         );
     }
 

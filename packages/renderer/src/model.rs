@@ -129,7 +129,7 @@ impl ModelVertex {
     const ATTRIBS: [VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2];
 
-    fn layout() -> VertexBufferLayout<'static> {
+    pub(crate) fn layout() -> VertexBufferLayout<'static> {
         VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: VertexStepMode::Vertex,
@@ -747,7 +747,7 @@ fn build_primitives(device: &Device, model: &Model) -> Vec<GpuPrimitive> {
 }
 
 /// Create a 1x1 opaque-white texture view, used for materials without a diffuse map.
-fn create_white_view(device: &Device, queue: &Queue) -> TextureView {
+pub(crate) fn create_white_view(device: &Device, queue: &Queue) -> TextureView {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some("model_white_fallback"),
         size: Extent3d {

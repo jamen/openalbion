@@ -14,12 +14,14 @@
 
 mod depth;
 mod image;
+mod local_detail;
 mod model;
 mod sky;
 mod terrain;
 mod texture;
 
 use self::depth::DepthTexture;
+use self::local_detail::LocalDetailPass;
 use self::model::ModelPass;
 use self::sky::OuterSkyPass;
 use self::terrain::TerrainPass;
@@ -33,6 +35,7 @@ use wgpu::{
 };
 
 pub use self::image::{ImageFormat, TextureImage};
+pub use self::local_detail::{AddLocalDetailError, LocalDetailInstance};
 pub use self::model::{
     AddModelError, AlphaMode, Model, ModelInstance, ModelMaterial, ModelPrimitive, ModelSubMesh,
     ModelVertex,
@@ -359,6 +362,31 @@ impl<'target> Renderer<'target> {
 
     pub fn clear_models(&mut self) {
         self.passes.model.clear_models();
+        self.passes.local_detail.clear();
+    }
+
+    /// Upload one mesh asset and every repeated-mesh local detail placement of it.
+    ///
+    /// `alpha_cutoff` is the object type's `AlphaRef / 255` — a property of the object type
+    /// rather than of the mesh's materials, so one mesh may appear in more than one batch.
+    pub fn add_local_detail(
+        &mut self,
+        model: &Model,
+        instances: &[LocalDetailInstance],
+        alpha_cutoff: f32,
+    ) -> Result<(), AddLocalDetailError> {
+        self.passes.local_detail.add_batch(
+            &self.device,
+            &self.queue,
+            model,
+            instances,
+            alpha_cutoff,
+        )
+    }
+
+    /// `(mesh assets uploaded, instances drawn)` for the repeated-mesh pass.
+    pub fn local_detail_stats(&self) -> (usize, usize) {
+        self.passes.local_detail.stats()
     }
 
     /// Upload one mesh asset and every placement of it. Geometry, materials and textures
@@ -389,6 +417,9 @@ impl<'target> Renderer<'target> {
 
     pub fn update_model_uniforms(&self, view_proj: [[f32; 4]; 4]) {
         self.passes.model.update_uniforms(&self.queue, view_proj);
+        self.passes
+            .local_detail
+            .update_uniforms(&self.queue, view_proj);
     }
 
     pub fn set_model_camera_pos(&mut self, pos: glam::Vec3) {
@@ -443,6 +474,11 @@ impl<'target> Renderer<'target> {
         self.passes.sky.pass(&mut cmd, colour);
         self.passes
             .terrain
+            .pass(&mut cmd, colour, self.depth_texture.view());
+        // Local detail before the model pass: both write depth for their opaque draws, and
+        // the model pass ends with its depth-sorted blended ones, which must come last.
+        self.passes
+            .local_detail
             .pass(&mut cmd, colour, self.depth_texture.view());
         self.passes
             .model
@@ -586,6 +622,7 @@ struct RenderPasses {
     sky: OuterSkyPass,
     terrain: TerrainPass,
     model: ModelPass,
+    local_detail: LocalDetailPass,
     resolve: ResolvePass,
 }
 
@@ -596,6 +633,7 @@ impl RenderPasses {
             sky: OuterSkyPass::new(device, targets),
             terrain: TerrainPass::new(device, targets),
             model: ModelPass::new(device, queue, targets),
+            local_detail: LocalDetailPass::new(device, queue, targets),
             resolve: ResolvePass,
         }
     }

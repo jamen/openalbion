@@ -18,6 +18,7 @@ use fable_data::lev::Lev;
 use fable_data::local_detail::generator::{Generator, PrimitiveType};
 use fable_data::local_detail::place::{GeneratorSet, PlacedObject, place_map};
 use fable_data::local_detail::rng::DisplacementTable;
+use fable_data::wld::Wld;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -93,17 +94,40 @@ fn generator_set(defs: &Defs, lev: &Lev) -> GeneratorSet {
     set
 }
 
-fn place(defs: &Defs, levels: &Path, level: &str) -> (Lev, GeneratorSet, Vec<PlacedObject>) {
+/// A level's origin in world cells, from the shipped `FinalAlbion.wld`.
+fn origin(retail: &Path, level: &str) -> (i32, i32) {
+    let text = std::fs::read_to_string(retail.join("Levels/FinalAlbion.wld")).unwrap();
+    let wld = Wld::parse(&text).unwrap();
+    let map = wld
+        .map_for_level(level)
+        .unwrap_or_else(|| panic!("{level} is not in FinalAlbion.wld"));
+    (map.map_x, map.map_y)
+}
+
+fn place_at(
+    defs: &Defs,
+    levels: &Path,
+    level: &str,
+    origin: (i32, i32),
+) -> (Lev, GeneratorSet, Vec<PlacedObject>) {
     let lev = Lev::from_bytes(&std::fs::read(levels.join(format!("{level}.lev"))).unwrap()).unwrap();
     let set = generator_set(defs, &lev);
     let objects = {
         let map = LandscapeMap::new(&lev);
-        // Every shipped map origin is a multiple of 32 and the random draws are indexed
-        // `& 0x1f`, so the world origin cannot change what a map grows — placing at (0, 0)
-        // here is the same result the engine gets at the level's real `MapX`/`MapY`.
-        place_map(&map, &set, (0, 0), &DisplacementTable::build())
+        place_map(&map, &set, origin, &DisplacementTable::build())
     };
     (lev, set, objects)
+}
+
+/// Place a level where the world says it is — which is what the engine does, and what the
+/// renderer asks for.
+fn place(
+    defs: &Defs,
+    retail: &Path,
+    levels: &Path,
+    level: &str,
+) -> (Lev, GeneratorSet, Vec<PlacedObject>) {
+    place_at(defs, levels, level, origin(retail, level))
 }
 
 /// Terrain height at a continuous position, bilinear over the four surrounding vertices —
@@ -139,7 +163,7 @@ fn levels_grow_the_objects_they_grow() {
     ];
 
     for (level, total, mesh, repeated, hybrid) in expected {
-        let (_lev, set, objects) = place(&defs, &levels, level);
+        let (_lev, set, objects) = place(&defs, &retail, &levels, level);
 
         let mut counts = HashMap::new();
         for object in &objects {
@@ -184,7 +208,7 @@ fn objects_stand_on_the_terrain() {
     let defs = defs(&retail);
 
     for level in ["Witchwood", "Darkwood", "LookoutPoint"] {
-        let (lev, _set, objects) = place(&defs, &levels, level);
+        let (lev, _set, objects) = place(&defs, &retail, &levels, level);
         let map = LandscapeMap::new(&lev);
         assert!(!objects.is_empty(), "{level} grows nothing");
 
@@ -226,7 +250,7 @@ fn every_object_names_a_real_mesh() {
 
     let mut checked = HashSet::new();
     for level in ["Witchwood", "Darkwood", "LookoutPoint"] {
-        let (_lev, set, objects) = place(&defs, &levels, level);
+        let (_lev, set, objects) = place(&defs, &retail, &levels, level);
         for object in &objects {
             let mesh = object.object_type(&set).mesh;
             if !checked.insert(mesh) {
@@ -265,8 +289,8 @@ fn generation_is_deterministic() {
     };
     let defs = defs(&retail);
 
-    let (_lev, _set, first) = place(&defs, &levels, "Witchwood");
-    let (_lev, _set, second) = place(&defs, &levels, "Witchwood");
+    let (_lev, _set, first) = place(&defs, &retail, &levels, "Witchwood");
+    let (_lev, _set, second) = place(&defs, &retail, &levels, "Witchwood");
 
     assert_eq!(first.len(), second.len());
     for (a, b) in first.iter().zip(&second) {
@@ -286,7 +310,7 @@ fn the_slope_fade_thins_objects_out_on_steep_ground() {
         return;
     };
     let defs = defs(&retail);
-    let (lev, set, objects) = place(&defs, &levels, "LookoutPoint");
+    let (lev, set, objects) = place(&defs, &retail, &levels, "LookoutPoint");
     let map = LandscapeMap::new(&lev);
 
     // Any object standing where the ground normal's Z is below the lowest SlopeFadeStart in
@@ -322,5 +346,47 @@ fn the_slope_fade_thins_objects_out_on_steep_ground() {
     assert!(
         steepest_ground < floor,
         "LookoutPoint has no ground steep enough ({steepest_ground}) to exercise the fade at {floor}",
+    );
+}
+
+/// The world origin reaches the random draws and nothing else.
+///
+/// Two claims, and both have bitten: objects come out in **map-local** coordinates, because
+/// the landscape pass draws a map at the world origin and a world-positioned object lands
+/// thousands of cells away from the terrain it was meant to stand on; and the origin still
+/// decides *which* foliage grows, because the draws are indexed by world cell.
+///
+/// The shipped origins are all multiples of 32, and `GetRandomDisplacement` masks its
+/// indices to five bits, so a real origin has to agree with `(0, 0)` exactly — while an
+/// origin that is *not* a multiple of 32 has to disagree, or the origin is not threaded at
+/// all and the first claim is being tested against a constant.
+#[test]
+fn the_origin_moves_the_draws_and_not_the_objects() {
+    let Some((retail, levels)) = fixtures() else {
+        eprintln!("skipping: no Fable install");
+        return;
+    };
+    let defs = defs(&retail);
+
+    let real = origin(&retail, "Witchwood");
+    assert_eq!(
+        (real.0 % 32, real.1 % 32),
+        (0, 0),
+        "Witchwood's origin {real:?} is not on the 32-cell world tile grid",
+    );
+
+    let (_lev, _set, at_origin) = place_at(&defs, &levels, "Witchwood", (0, 0));
+    let (_lev, _set, in_world) = place_at(&defs, &levels, "Witchwood", real);
+    assert_eq!(at_origin.len(), in_world.len());
+    for (a, b) in at_origin.iter().zip(&in_world) {
+        assert_eq!(a.transform, b.transform, "the origin moved an object");
+        assert_eq!(a.object_type, b.object_type);
+    }
+
+    let (_lev, _set, shifted) = place_at(&defs, &levels, "Witchwood", (real.0 + 1, real.1));
+    assert_ne!(
+        shifted.len(),
+        at_origin.len(),
+        "shifting the origin off the tile grid changed nothing — the draws ignore it",
     );
 }

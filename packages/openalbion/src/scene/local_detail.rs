@@ -6,12 +6,11 @@
 //! `LOCAL_DETAIL_GENERATOR` defs on the way in, and grouping the placed objects by mesh asset
 //! on the way out.
 //!
-//! **Only the objects the original draws as plain static meshes are grouped here.** That is
-//! not a shortcut: `CLocalDetailPrimitiveMesh::AddObjectsToPrimitiveRenderer`
+//! Objects are split by primitive type, which is the engine's own split:
+//! `CLocalDetailPrimitiveMesh::AddObjectsToPrimitiveRenderer`
 //! (`engine_local_detail_primitives.cpp:484`) calls the same `AddStaticMesh` a `.tng` thing
-//! does, through the same shaders, so those objects belong in the model pass by construction.
-//! Repeated meshes go through `SHADERS_REPEATED_MESH` instead and are counted, not
-//! approximated.
+//! does, so those objects go to the model pass; repeated meshes go to `LocalDetailPass` and
+//! its transcription of `SHADERS_REPEATED_MESH`.
 
 use crate::files::Files;
 use fable_data::landscape::LandscapeMap;
@@ -19,7 +18,7 @@ use fable_data::lev::Lev;
 use fable_data::local_detail::generator::{Generator, PrimitiveType};
 use fable_data::local_detail::place::{GeneratorSet, PlacedObject, place_map};
 use fable_data::local_detail::rng::DisplacementTable;
-use renderer::ModelInstance;
+use renderer::{LocalDetailInstance, ModelInstance};
 use std::collections::HashMap;
 
 /// A level's local detail, grouped for upload.
@@ -28,6 +27,12 @@ pub struct LevelLocalDetail {
     /// `graphics.big` asset id → the instances to draw it with, for the objects that go
     /// through the model pass.
     pub by_mesh: HashMap<u32, Vec<ModelInstance>>,
+    /// The repeated meshes, one batch per `(mesh asset id, AlphaRef)`.
+    ///
+    /// Keyed by both because the alpha test belongs to the object type rather than to the
+    /// mesh's materials — the engine passes it per `CAddMeshDesc` — so one mesh shared by two
+    /// object types with different refs is two batches.
+    pub repeated: HashMap<(u32, i32), Vec<LocalDetailInstance>>,
     pub counts: Counts,
 }
 
@@ -45,12 +50,14 @@ pub struct Counts {
     /// `LOCAL_DETAIL_PRIMITIVE_TYPE_HYBRID_MESH_ZSPRITE` — drawn as its mesh half, with no
     /// impostor beyond `ZSpriteFadeStart`.
     pub hybrid: usize,
-    /// `LOCAL_DETAIL_PRIMITIVE_TYPE_REPEATED_MESH` — not drawn yet; needs its own pass.
+    /// `LOCAL_DETAIL_PRIMITIVE_TYPE_REPEATED_MESH` — drawn through `LocalDetailPass`.
     pub repeated: usize,
 }
 
 impl Counts {
-    pub fn drawn(&self) -> usize {
+    /// Objects that reach the model pass. The repeated meshes are counted separately because
+    /// they go somewhere else.
+    pub fn drawn_as_models(&self) -> usize {
         self.mesh + self.hybrid
     }
 }
@@ -78,29 +85,34 @@ pub fn build_local_detail(files: &Files, lev: &Lev, origin: (i32, i32)) -> Level
 
     for object in &objects {
         let object_type = object.object_type(&generators);
+        if object_type.mesh <= 0 {
+            continue;
+        }
+
         match object_type.primitive_type {
             PrimitiveType::Mesh => detail.counts.mesh += 1,
             PrimitiveType::HybridMeshZSprite => detail.counts.hybrid += 1,
             PrimitiveType::RepeatedMesh => {
                 detail.counts.repeated += 1;
+                detail
+                    .repeated
+                    .entry((object_type.mesh as u32, object_type.alpha_ref))
+                    .or_default()
+                    .push(repeated_instance(object));
                 continue;
             }
-        }
-
-        if object_type.mesh <= 0 {
-            continue;
         }
 
         detail
             .by_mesh
             .entry(object_type.mesh as u32)
             .or_default()
-            .push(instance(object));
+            .push(model_instance(object));
     }
 
     tracing::info!(
         "Local detail: {} objects from {} generators over {} palette slots — \
-         {} mesh + {} hybrid drawn over {} meshes, {} repeated meshes deferred",
+         {} mesh + {} hybrid over {} meshes, {} repeated over {} batches",
         detail.counts.placed,
         detail.counts.generators,
         detail.counts.slots,
@@ -108,6 +120,7 @@ pub fn build_local_detail(files: &Files, lev: &Lev, origin: (i32, i32)) -> Level
         detail.counts.hybrid,
         detail.by_mesh.len(),
         detail.counts.repeated,
+        detail.repeated.len(),
     );
 
     detail
@@ -118,10 +131,31 @@ pub fn build_local_detail(files: &Files, lev: &Lev, origin: (i32, i32)) -> Level
 /// The per-object colour (`c0`) stays opaque white, exactly as `.tng` placements do: the
 /// engine passes `0xff` for it here too, and the distance fade that would modulate it is its
 /// own step.
-fn instance(object: &PlacedObject) -> ModelInstance {
+fn model_instance(object: &PlacedObject) -> ModelInstance {
     ModelInstance {
         transform: object.transform,
         ..Default::default()
+    }
+}
+
+/// One placed object as a repeated-mesh instance.
+///
+/// Built from the angle and scale rather than from the placement matrix, because that is what
+/// `BuildFromSourceMeshes` (`engine_local_detail_primitives.cpp:2799`) does: it writes
+/// `(cos(Angle) * Scale, sin(Angle) * Scale, 0, 0)` and `(E41, E42, E43, Scale)`. The
+/// difference is visible — a repeated mesh whose def sets `TiltToSlope` still stands upright,
+/// because the tilt never survives into those four floats.
+fn repeated_instance(object: &PlacedObject) -> LocalDetailInstance {
+    let (sin, cos) = fable_data::local_detail::place::fast_sin_cos(object.angle);
+    LocalDetailInstance {
+        rotation: [cos * object.scale, sin * object.scale, 0.0, 0.0],
+        offset: [
+            object.transform[3][0],
+            object.transform[3][1],
+            object.transform[3][2],
+            object.scale,
+        ],
+        ground_normal: [object.normal[0], object.normal[1], object.normal[2], 0.0],
     }
 }
 
