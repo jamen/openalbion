@@ -3,7 +3,9 @@ use fable_data::{
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
     def::binary::{DefBinary, DefBody},
     def::names::Names,
+    def::EngineDef,
     def::EngineGraphic,
+    def::EngineLocalDetailGeneratorDef,
     def::EngineThemeDef,
     def::SkyDef,
     environment::{EnvironmentConfig, EnvironmentTheme},
@@ -32,8 +34,80 @@ pub struct Files {
     pub environment: Option<EnvironmentConfig>,
     pub engine_themes: HashMap<String, EngineThemeDef>,
     /// Every def that can be a thing's `DefinitionType` and draws something, keyed by
-    /// instance name — what `.tng` placements resolve through. See [`Self::load_thing_graphics`].
+    /// instance name — what `.tng` placements resolve through. See [`Defs::read`].
     pub thing_graphics: HashMap<String, EngineGraphic>,
+    /// `LOCAL_DETAIL_GENERATOR` defs by global entry index, which is how an `ENGINE_THEME`
+    /// names one.
+    local_detail_generators: HashMap<i32, EngineLocalDetailGeneratorDef>,
+    engine_def: Option<EngineDef>,
+    sky_def: Option<SkyDef>,
+}
+
+/// Everything read out of `game.bin`, in one pass over its entries.
+///
+/// Each of these used to open and re-parse `names.bin` and `game.bin` for itself.
+#[derive(Default)]
+struct Defs {
+    engine_themes: HashMap<String, EngineThemeDef>,
+    thing_graphics: HashMap<String, EngineGraphic>,
+    local_detail_generators: HashMap<i32, EngineLocalDetailGeneratorDef>,
+    engine_def: Option<EngineDef>,
+    sky_def: Option<SkyDef>,
+}
+
+impl Defs {
+    /// Read every def type the engine needs, in one pass.
+    ///
+    /// A def entry's `def_name` is its *class* (`"ENGINE_THEME"`); the instance name is
+    /// `file_name`. Themes and thing graphics are keyed by instance name because that is what
+    /// a `.lev` palette and a `.tng` `DefinitionType` name them with; generators are keyed by
+    /// global index because that is what an `ENGINE_THEME` references them with.
+    ///
+    /// Four def types carry a `Graphic` and between them cover every placed thing that draws:
+    /// `OBJECT` (2,849 defs), `CREATURE` (517), `BUILDING` (321) and `MARKER` (57). Reading
+    /// all four uniformly is what makes buildings work without a second code path.
+    fn read(compiled: Option<&(Names, DefBinary)>) -> Defs {
+        let mut defs = Defs::default();
+        let Some((names, def_binary)) = compiled else {
+            return defs;
+        };
+
+        for entry in def_binary.entries(names) {
+            match &entry.record.body {
+                DefBody::EngineThemeDef(def) => {
+                    if let Some(name) = entry.file_name {
+                        defs.engine_themes.insert(name.to_string(), def.clone());
+                    }
+                }
+                DefBody::EngineLocalDetailGeneratorDef(def) => {
+                    defs.local_detail_generators
+                        .insert(entry.global_index as i32, def.clone());
+                }
+                DefBody::Engine(def) => defs.engine_def = Some(def.clone()),
+                DefBody::SkyDef(def) => defs.sky_def = Some(def.clone()),
+                body => {
+                    let graphic = match body {
+                        DefBody::ThingObjectDef(def) => &def.graphic,
+                        DefBody::ThingBuildingDef(def) => &def.graphic,
+                        DefBody::ThingMarkerDef(def) => &def.graphic,
+                        DefBody::ThingCreatureDef(def) => &def.graphic,
+                        _ => continue,
+                    };
+                    if let Some(name) = entry.file_name {
+                        defs.thing_graphics.insert(name.to_string(), graphic.clone());
+                    }
+                }
+            }
+        }
+
+        tracing::info!(
+            "game.bin: {} ENGINE_THEME, {} thing graphics, {} LOCAL_DETAIL_GENERATOR",
+            defs.engine_themes.len(),
+            defs.thing_graphics.len(),
+            defs.local_detail_generators.len(),
+        );
+        defs
+    }
 }
 
 #[derive(Debug, Display, Error)]
@@ -96,41 +170,33 @@ impl Files {
             lighting_lut_bytes.len()
         );
 
+        // The compiled defs, parsed once. Every def-backed lookup below reads this one
+        // `DefBinary` — the loaders used to open and re-parse `names.bin` + `game.bin` per
+        // call, which AGENTS.md §4 flagged and which a fourth caller would have made worse.
+        let compiled_defs = Self::load_compiled_defs(fable_directory);
+
         // Load sky environment themes — prefer CompiledDefs/game.bin (retail binary format),
         // fall back to the debug-only text environment.def.
         let environment = {
-            let names_path = fable_directory.join("data/CompiledDefs/names.bin");
-            let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
-
-            let from_binary = (|| -> Result<EnvironmentConfig, String> {
-                let names = Names::load(&names_path).map_err(|e| format!("names.bin: {e:?}"))?;
-                let def_binary = DefBinary::load_with_names(&game_bin_path, &names)
-                    .map_err(|e| format!("game.bin: {e:?}"))?;
-
-                Ok(EnvironmentConfig::from_binary_defs(
-                    &def_binary,
-                    &names,
-                    |id| {
-                        textures
-                            .bank("GBANK_MAIN_PC")
-                            .and_then(|b| b.asset_by_id(id as u32))
-                            .map(|a| a.symbol_name.to_string())
-                    },
-                ))
-            })();
+            let from_binary = compiled_defs.as_ref().map(|(names, def_binary)| {
+                EnvironmentConfig::from_binary_defs(def_binary, names, |id| {
+                    textures
+                        .bank("GBANK_MAIN_PC")
+                        .and_then(|b| b.asset_by_id(id as u32))
+                        .map(|a| a.symbol_name.to_string())
+                })
+            });
 
             match from_binary {
-                Ok(environment) => {
+                Some(environment) => {
                     tracing::info!(
                         "Loaded environment themes from game.bin ({} themes)",
                         environment.themes.len()
                     );
                     Some(environment)
                 }
-                Err(bin_error) => {
-                    tracing::warn!(
-                        "Failed to load binary defs, falling back to environment.def: {bin_error}"
-                    );
+                None => {
+                    tracing::warn!("No compiled defs, falling back to environment.def");
 
                     match Self::try_read_paths(&[fable_directory.join("data/Defs/environment.def")])
                     {
@@ -161,8 +227,7 @@ impl Files {
             }
         };
 
-        let engine_themes = Self::load_engine_themes(fable_directory);
-        let thing_graphics = Self::load_thing_graphics(fable_directory);
+        let defs = Defs::read(compiled_defs.as_ref());
 
         Ok(Self {
             fable_directory: fable_directory.to_path_buf(),
@@ -170,46 +235,33 @@ impl Files {
             graphics,
             lighting_lut_bytes,
             environment,
-            engine_themes,
-            thing_graphics,
+            engine_themes: defs.engine_themes,
+            thing_graphics: defs.thing_graphics,
+            local_detail_generators: defs.local_detail_generators,
+            engine_def: defs.engine_def,
+            sky_def: defs.sky_def,
         })
     }
 
-    /// Load every `ENGINE_THEME` def from `game.bin`, keyed by its instance name.
-    ///
-    /// Name, not index: `CMap::LoadFromFile` resolves a `.lev`'s theme palette through
-    /// `GetDefGlobalIndexFromName` (`fablelib/map.cpp:2561`), and the index stored in the
-    /// palette is stale in retail data. Note that a def entry's `def_name` is its *class*
-    /// (`"ENGINE_THEME"`); the instance name is `file_name`.
-    fn load_engine_themes(fable_directory: &Path) -> HashMap<String, EngineThemeDef> {
+    /// `names.bin` + `game.bin`, or nothing if either is missing.
+    fn load_compiled_defs(fable_directory: &Path) -> Option<(Names, DefBinary)> {
         let names_path = fable_directory.join("data/CompiledDefs/names.bin");
         let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
 
         let names = match Names::load(&names_path) {
-            Ok(n) => n,
-            Err(e) => {
-                tracing::warn!("names.bin not found, terrain textures disabled: {e:?}");
-                return HashMap::new();
+            Ok(names) => names,
+            Err(error) => {
+                tracing::warn!("names.bin not read, everything def-backed is disabled: {error:?}");
+                return None;
             }
         };
-        let def_binary = match DefBinary::load_with_names(&game_bin_path, &names) {
-            Ok(db) => db,
-            Err(e) => {
-                tracing::warn!("game.bin not found, terrain textures disabled: {e:?}");
-                return HashMap::new();
-            }
-        };
-
-        let mut map = HashMap::new();
-        for entry in def_binary.entries(&names) {
-            if let DefBody::EngineThemeDef(def) = &entry.record.body {
-                if let Some(name) = entry.file_name {
-                    map.insert(name.to_string(), def.clone());
-                }
+        match DefBinary::load_with_names(&game_bin_path, &names) {
+            Ok(def_binary) => Some((names, def_binary)),
+            Err(error) => {
+                tracing::warn!("game.bin not read, everything def-backed is disabled: {error:?}");
+                None
             }
         }
-        tracing::info!("Loaded {} ENGINE_THEME defs from game.bin", map.len());
-        map
     }
 
     /// An `ENGINE_THEME` def by its instance name, e.g. `"GROUND_GRASS"`.
@@ -217,50 +269,19 @@ impl Files {
         self.engine_themes.get(name)
     }
 
-    /// Every def a `.tng` thing can name that carries a `Graphic`, keyed by instance name.
+    /// A `LOCAL_DETAIL_GENERATOR` def by the global entry index a theme references it with.
     ///
-    /// Four def types have one, and between them they cover every placed thing that draws:
-    /// `OBJECT` (2,849 defs), `CREATURE` (517), `BUILDING` (321) and `MARKER` (57). Reading
-    /// all four uniformly is what makes buildings work without a second code path.
-    ///
-    /// `Graphic.BankIndex` is an asset id in `graphics.big` — not an index into anything,
-    /// and not a symbol name. Across Witchwood, LookoutPoint and Arena every non-zero index
-    /// resolves to a mesh-typed asset, which is why the text `objects.def` bridge this
-    /// replaced is no longer needed.
-    fn load_thing_graphics(fable_directory: &Path) -> HashMap<String, EngineGraphic> {
-        let names_path = fable_directory.join("data/CompiledDefs/names.bin");
-        let game_bin_path = fable_directory.join("data/CompiledDefs/game.bin");
+    /// Index, not name — and that is worth stating, because the `.lev` theme palette's
+    /// stored index is stale in retail data and has to be re-resolved by name (§3.4). This
+    /// reference is not: `CEngineThemeDef::LocalDetailGeneratorDef` resolves directly for all
+    /// 79 themes in retail `game.bin` that name a generator.
+    pub fn local_detail_generator(&self, index: i32) -> Option<&EngineLocalDetailGeneratorDef> {
+        self.local_detail_generators.get(&index)
+    }
 
-        let names = match Names::load(&names_path) {
-            Ok(n) => n,
-            Err(e) => {
-                tracing::warn!("names.bin not found, level things disabled: {e:?}");
-                return HashMap::new();
-            }
-        };
-        let def_binary = match DefBinary::load_with_names(&game_bin_path, &names) {
-            Ok(db) => db,
-            Err(e) => {
-                tracing::warn!("game.bin not found, level things disabled: {e:?}");
-                return HashMap::new();
-            }
-        };
-
-        let mut map = HashMap::new();
-        for entry in def_binary.entries(&names) {
-            let graphic = match &entry.record.body {
-                DefBody::ThingObjectDef(def) => &def.graphic,
-                DefBody::ThingBuildingDef(def) => &def.graphic,
-                DefBody::ThingMarkerDef(def) => &def.graphic,
-                DefBody::ThingCreatureDef(def) => &def.graphic,
-                _ => continue,
-            };
-            if let Some(name) = entry.file_name {
-                map.insert(name.to_string(), graphic.clone());
-            }
-        }
-        tracing::info!("Loaded {} thing graphics from game.bin", map.len());
-        map
+    /// The `ENGINE` def, which carries the engine-wide defaults local detail falls back to.
+    pub fn engine_def(&self) -> Option<&EngineDef> {
+        self.engine_def.as_ref()
     }
 
     /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.
@@ -328,24 +349,13 @@ impl Files {
         self.environment.as_ref()?.themes.get(name)
     }
 
-    /// Load the SKY def from game.bin containing sun/moon texture indices.
+    /// The `SKY` def, carrying sun/moon texture indices.
     ///
     /// Unused until sun/moon rendering is ported from `RenderSun`/`RenderMoon`
     /// (AGENTS.md step 4.2).
     #[allow(dead_code)]
-    pub fn load_sky_def(&self) -> Option<SkyDef> {
-        let names_path = self.fable_directory.join("data/CompiledDefs/names.bin");
-        let game_bin_path = self.fable_directory.join("data/CompiledDefs/game.bin");
-
-        let names = Names::load(&names_path).ok()?;
-        let def_binary = DefBinary::load_with_names(&game_bin_path, &names).ok()?;
-
-        for entry in def_binary.entries(&names) {
-            if let DefBody::SkyDef(def) = &entry.record.body {
-                return Some(def.clone());
-            }
-        }
-        None
+    pub fn sky_def(&self) -> Option<&SkyDef> {
+        self.sky_def.as_ref()
     }
 
     /// Read a texture asset by its numeric ID from the textures big.
