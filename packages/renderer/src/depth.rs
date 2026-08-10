@@ -15,7 +15,9 @@ pub struct DepthTexture {
 impl DepthTexture {
     pub const FORMAT: TextureFormat = TextureFormat::Depth32Float;
 
-    pub fn new(device: &Device, size: [u32; 2]) -> Self {
+    /// `sample_count` must match the colour attachment's — a render pass whose depth and
+    /// colour attachments disagree is invalid.
+    pub fn new(device: &Device, size: [u32; 2], sample_count: u32) -> Self {
         let texture = device.create_texture(&TextureDescriptor {
             label: Some(type_name::<Self>()),
             size: Extent3d {
@@ -24,7 +26,7 @@ impl DepthTexture {
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count,
             dimension: TextureDimension::D2,
             format: Self::FORMAT,
             usage: TextureUsages::RENDER_ATTACHMENT,

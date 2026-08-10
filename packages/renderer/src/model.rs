@@ -11,6 +11,7 @@
 //! D3D9's default `D3DCULL_CCW`. See the note on the pipeline.
 
 use crate::image::TextureImage;
+use crate::TargetFormats;
 use crate::texture::{repeat_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
@@ -19,7 +20,7 @@ use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType,
     BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, CompareFunction, DepthBiasState,
-    DepthStencilState, Device, Extent3d, Face, FragmentState, FrontFace, IndexFormat, MultisampleState,
+    DepthStencilState, Device, Extent3d, Face, FragmentState, FrontFace, IndexFormat,
     PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline,
     RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages, StencilState,
     TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
@@ -282,12 +283,11 @@ impl ModelPipelines {
         device: &Device,
         layout: &ModelPipelineLayout,
         shader: &ModelShader,
-        target_format: TextureFormat,
-        depth_format: TextureFormat,
+        targets: TargetFormats,
     ) -> Self {
         let make = |blend: bool, cull: bool| {
             let color_target = ColorTargetState {
-                format: target_format,
+                format: targets.colour,
                 blend: blend.then_some(BlendState::ALPHA_BLENDING),
                 write_mask: if blend {
                     ColorWrites::ALL
@@ -322,13 +322,13 @@ impl ModelPipelines {
                     ..Default::default()
                 },
                 depth_stencil: Some(DepthStencilState {
-                    format: depth_format,
+                    format: targets.depth,
                     depth_write_enabled: !blend,
                     depth_compare: CompareFunction::Less,
                     stencil: StencilState::default(),
                     bias: DepthBiasState::default(),
                 }),
-                multisample: MultisampleState::default(),
+                multisample: targets.multisample(),
                 multiview_mask: None,
                 cache: None,
             })
@@ -402,14 +402,13 @@ impl ModelPass {
     pub fn new(
         device: &Device,
         queue: &Queue,
-        surface_format: TextureFormat,
-        depth_format: TextureFormat,
+        targets: TargetFormats,
     ) -> Self {
         let shader = ModelShader::new(device);
         let frame_layout = ModelFrameBindGroupLayout::new(device);
         let material_layout = ModelMaterialBindGroupLayout::new(device);
         let layout = ModelPipelineLayout::new(device, &frame_layout, &material_layout);
-        let pipelines = ModelPipelines::new(device, &layout, &shader, surface_format, depth_format);
+        let pipelines = ModelPipelines::new(device, &layout, &shader, targets);
         // D3D9's default addressing is WRAP, and a third of the mesh library needs it: 501
         // of 1500 meshes sampled out of graphics.big carry UVs outside 0..1.
         let sampler = repeat_sampler(device, "model_sampler");

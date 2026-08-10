@@ -9,8 +9,8 @@
 ## 0. Where we are
 
 > **Session summary — 2026-08-10, branch `texture-sampling`.**
-> **Derived: texture sampling** (new §3.12, §5 step 7) — the aliasing at distance is three
-> separate causes, and two are faithfulness bugs. **We never uploaded a mip level.** The
+> **Landed: texture sampling** (new §3.12, §5 step 7) — mip chains, anisotropy 4 and 4× MSAA.
+> The aliasing at distance was three separate causes, and two were faithfulness bugs. **We never uploaded a mip level.** The
 > chains were never missing: they ship in `textures.big`, uncompressed below level 0, and
 > `Texture::parse` already reads them into `raw_image_data` — 3,978 of 4,000 assets carry a
 > complete chain matching `CalculateTextureSize` exactly, and `get_top_mip_bcn_image` threw
@@ -1039,9 +1039,16 @@ mesh failures, and `placed + skipped == every thing in the file` as a test invar
 - 6.12 `.wld`-driven world placement. `MapX`/`MapY` only matter once neighbouring maps load —
   the twin of 5.10.
 
-### Step 7 — Sampling: mip chains, anisotropy, MSAA
+### Step 7 — Sampling — **LANDED (2026-08-10)**, branch `texture-sampling`
 
 Derivations in §3.12. Four commits, one mechanism each.
+
+*Evidence:* 6,242 of the 6,245 2D block-compressed assets in `textures.big` yield a complete
+chain — 42,265 levels, 6.8 per asset — with level 0 byte-identical to the old top-mip
+accessor. On LookoutPoint, MSAA drops hard luminance steps (`|ΔL| > 60` between horizontal
+neighbours) from **537 to 108** while the mean gradient is unchanged (4.353 → 4.251): the
+jaggies go, the image is not blurred. No terrain seams appeared from per-sample depth on the
+coplanar layer passes — the risk flagged below did not materialise.
 
 - 7.1 **The format tag mapping**, first, because it changes *which* assets reach the upload
   path — landing it after 7.2 would confuse attribution of any visual delta. Map only the
@@ -1083,9 +1090,15 @@ reintroduce exactly the seam leakage that pinned the blend mode in the first pla
 - 7.7 `SetMaxTextureSize` / `ReduceMipmapLevel` as a quality knob. The mechanism is understood
   (§3.12) and is a two-line skip once 7.2 exists; there is no reason to want it yet.
 
-*Watch for, when 7.4 lands:* the landscape draws coplanar layer passes over a blackout pass
-with `cull_mode: None`. Per-sample depth testing can change edge behaviour where those layers
-meet. Seams that appear at 4× and not at 1× are that, not the mip change.
+*Watched for when 7.4 landed, and did not happen:* the landscape draws coplanar layer passes
+over a blackout pass with `cull_mode: None`, so per-sample depth testing could have changed
+edge behaviour where those layers meet. It did not — no seams at 4× that were absent at 1×.
+Kept here because it is still the first thing to suspect if seams ever appear.
+
+*The one structural choice worth knowing:* the resolve is its own pass, not a `resolve_target`
+on the last drawing pass. Resolving in every pass would resolve three times for nothing, and
+resolving in one of them would make that pass silently load-bearing — reorder the passes and
+the frame goes blank.
 
 ## 6. ~~The mirror~~ — comparing against the original *(historical)*
 
@@ -1715,7 +1728,7 @@ Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:
 
 ## 10. History
 
-- **2026-08-10** — **Texture sampling derived.** §3.12, §5 step 7, branch `texture-sampling`.
+- **2026-08-10** — **Texture sampling landed.** §3.12, §5 step 7, branch `texture-sampling`.
   The renderer had never uploaded a mip level: `mip_level_count: 1` everywhere,
   `mipmap_filter` at its `Nearest` default, and a decode path named `get_top_mip_*` that
   discarded the rest. The chains were in the archive all along — 3,978 of 4,000

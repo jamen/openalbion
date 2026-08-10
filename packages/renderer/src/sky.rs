@@ -9,15 +9,16 @@
 //! texture — the unimplemented half is visible rather than faked.
 
 use crate::image::TextureImage;
+use crate::TargetFormats;
 use crate::texture::{linear_clamp_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
-    CommandEncoder, Device, FragmentState, IndexFormat, MultisampleState, PipelineLayout,
+    CommandEncoder, Device, FragmentState, IndexFormat, PipelineLayout,
     PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPassDescriptor, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages, TextureFormat,
+    RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages,
     TextureSampleType, TextureView, TextureViewDimension, VertexAttribute, VertexBufferLayout,
     VertexState, VertexStepMode, include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
@@ -312,7 +313,7 @@ impl OuterSkyPipeline {
         device: &Device,
         layout: &OuterSkyPipelineLayout,
         shader: &OuterSkyShader,
-        target_format: TextureFormat,
+        targets: TargetFormats,
     ) -> Self {
         Self(device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some(type_name::<Self>()),
@@ -327,14 +328,14 @@ impl OuterSkyPipeline {
                 module: &shader.0,
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
-                targets: &[Some(target_format.into())],
+                targets: &[Some(targets.colour.into())],
             }),
             primitive: PrimitiveState {
                 cull_mode: None,
                 ..Default::default()
             },
             depth_stencil: None,
-            multisample: MultisampleState::default(),
+            multisample: targets.multisample(),
             multiview_mask: None,
             cache: None,
         }))
@@ -353,12 +354,12 @@ pub struct OuterSkyPass {
 }
 
 impl OuterSkyPass {
-    pub fn new(device: &Device, surface_format: TextureFormat) -> Self {
+    pub fn new(device: &Device, targets: TargetFormats) -> Self {
         let shader = OuterSkyShader::new(device);
         let uniform_layout = SkyUniformBindGroupLayout::new(device);
         let texture_layout = SkyTextureBindGroupLayout::new(device);
         let layout = OuterSkyPipelineLayout::new(device, &uniform_layout, &texture_layout);
-        let pipeline = OuterSkyPipeline::new(device, &layout, &shader, surface_format);
+        let pipeline = OuterSkyPipeline::new(device, &layout, &shader, targets);
 
         // 36 segments: engine_sky_renderer.cpp:616 loops `while (uVar13 < 0x24)`.
         let (dome_vertices, dome_indices) = build_outer_sky_mesh(36);

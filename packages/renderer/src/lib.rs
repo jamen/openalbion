@@ -39,6 +39,42 @@ pub use self::model::{
 };
 pub use self::terrain::{TerrainData, TerrainDraw, TerrainVertex};
 
+/// 4× MSAA, the sample count every pass is built for when the adapter supports it.
+///
+/// **A deliberate divergence** (AGENTS.md §3.12, §6.3 `ACCEPTED`). Multisampling is
+/// device-level in the original — `CDisplayManager::SetDisplayMode` takes an
+/// `ESurfaceMultisampleType` and `ConsoleSetAntialiasing` re-creates the device — and the
+/// shipped configuration has it **off**: both `SetAntialiasing` lines in `~/Fable/dbugst.ini`
+/// are commented out. We turn it on because it looks better, not because the game does it.
+const MSAA_SAMPLES: u32 = 4;
+
+/// The attachment formats and sample count every pipeline in a frame must agree on.
+///
+/// Bundled rather than passed separately because a pipeline that disagrees with the
+/// attachments on *any* of the three fails at draw time, not at creation — so they travel
+/// together and are set in one place.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct TargetFormats {
+    pub colour: TextureFormat,
+    pub depth: TextureFormat,
+    pub sample_count: u32,
+}
+
+impl TargetFormats {
+    /// The `MultisampleState` every pipeline built for these targets must use.
+    pub fn multisample(&self) -> wgpu::MultisampleState {
+        wgpu::MultisampleState {
+            count: self.sample_count,
+            ..Default::default()
+        }
+    }
+
+    /// Whether drawing goes through a multisampled texture that must then be resolved.
+    pub fn is_multisampled(&self) -> bool {
+        self.sample_count > 1
+    }
+}
+
 /// Where a `Renderer` draws. Windowed presentation and offscreen capture share every pass;
 /// only the colour attachment and what happens after submit differ.
 enum Target<'t> {
@@ -56,9 +92,73 @@ pub struct Renderer<'target> {
     device: Device,
     queue: Queue,
     format: TextureFormat,
+    targets: TargetFormats,
     depth_texture: DepthTexture,
+    /// The multisampled colour attachment every pass draws into, resolved into the
+    /// presentable texture at the end of the frame. `None` when MSAA is unavailable, in which
+    /// case the passes draw into the presentable texture directly.
+    msaa_texture: Option<MsaaTexture>,
     passes: RenderPasses,
     target: Target<'target>,
+}
+
+/// The multisampled colour attachment. Recreated on resize alongside the depth buffer, which
+/// must always match it in sample count as well as size.
+struct MsaaTexture {
+    #[allow(dead_code)]
+    texture: Texture,
+    view: TextureView,
+}
+
+impl MsaaTexture {
+    fn new(device: &Device, format: TextureFormat, size: [u32; 2], sample_count: u32) -> Self {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("msaa_colour"),
+            size: Extent3d {
+                width: size[0].max(1),
+                height: size[1].max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        Self { texture, view }
+    }
+}
+
+/// The sample count to build for: [`MSAA_SAMPLES`] when the adapter supports it for *both*
+/// the colour and depth formats, otherwise 1.
+///
+/// Checked rather than assumed. A pipeline built for a sample count the format cannot carry
+/// fails at texture creation, and the fallback is a working frame without antialiasing —
+/// which is the original's own configuration anyway (AGENTS.md §3.12).
+fn supported_sample_count(
+    adapter: &wgpu::Adapter,
+    colour: TextureFormat,
+    depth: TextureFormat,
+) -> u32 {
+    let supported = |format: TextureFormat| {
+        adapter
+            .get_texture_format_features(format)
+            .flags
+            .sample_count_supported(MSAA_SAMPLES)
+    };
+
+    if supported(colour) && supported(depth) {
+        tracing::info!("MSAA: {MSAA_SAMPLES}x");
+        MSAA_SAMPLES
+    } else {
+        tracing::warn!(
+            "MSAA: disabled — the adapter does not support {MSAA_SAMPLES} samples for \
+             {colour:?} and {depth:?}"
+        );
+        1
+    }
 }
 
 impl<'target> Renderer<'target> {
@@ -114,13 +214,24 @@ impl<'target> Renderer<'target> {
         }
         tracing::info!("Surface format: {surface_format:?}");
 
-        let passes = RenderPasses::new(&device, &queue, surface_format, DepthTexture::FORMAT);
-        let depth_texture = DepthTexture::new(&device, [1, 1]);
+        let targets = TargetFormats {
+            colour: surface_format,
+            depth: DepthTexture::FORMAT,
+            sample_count: supported_sample_count(&adapter, surface_format, DepthTexture::FORMAT),
+        };
+
+        let passes = RenderPasses::new(&device, &queue, targets);
+        let depth_texture = DepthTexture::new(&device, [1, 1], targets.sample_count);
 
         Ok(Self {
             target: Target::Surface(surface),
             format: surface_format,
+            targets,
             depth_texture,
+            // Sized on the first `resize_surface`, like the depth buffer.
+            msaa_texture: targets
+                .is_multisampled()
+                .then(|| MsaaTexture::new(&device, surface_format, [1, 1], targets.sample_count)),
             device,
             queue,
             passes,
@@ -149,14 +260,23 @@ impl<'target> Renderer<'target> {
             .map_err(E::RequestDevice)?;
 
         let format = TextureFormat::Rgba8Unorm;
-        let passes = RenderPasses::new(&device, &queue, format, DepthTexture::FORMAT);
-        let depth_texture = DepthTexture::new(&device, size);
+        let targets = TargetFormats {
+            colour: format,
+            depth: DepthTexture::FORMAT,
+            sample_count: supported_sample_count(&adapter, format, DepthTexture::FORMAT),
+        };
+        let passes = RenderPasses::new(&device, &queue, targets);
+        let depth_texture = DepthTexture::new(&device, size, targets.sample_count);
         let target = Self::make_offscreen(&device, format, size);
 
         Ok(Renderer {
             target,
             format,
+            targets,
             depth_texture,
+            msaa_texture: targets
+                .is_multisampled()
+                .then(|| MsaaTexture::new(&device, format, size, targets.sample_count)),
             device,
             queue,
             passes,
@@ -197,9 +317,21 @@ impl<'target> Renderer<'target> {
     }
 
     pub fn resize_surface(&mut self, size: [u32; 2]) {
+        // The multisampled colour attachment must track the target's size and the depth
+        // buffer's sample count, so all three are rebuilt together.
+        self.msaa_texture = self.targets.is_multisampled().then(|| {
+            MsaaTexture::new(
+                &self.device,
+                self.format,
+                size,
+                self.targets.sample_count,
+            )
+        });
+
         let Target::Surface(surface) = &self.target else {
             self.target = Self::make_offscreen(&self.device, self.format, size);
-            self.depth_texture = DepthTexture::new(&self.device, size);
+            self.depth_texture =
+                DepthTexture::new(&self.device, size, self.targets.sample_count);
             return;
         };
         surface.configure(
@@ -216,7 +348,7 @@ impl<'target> Renderer<'target> {
             },
         );
 
-        self.depth_texture = DepthTexture::new(&self.device, size);
+        self.depth_texture = DepthTexture::new(&self.device, size, self.targets.sample_count);
     }
 
     pub fn set_terrain(&mut self, terrain: &TerrainData) {
@@ -294,18 +426,32 @@ impl<'target> Renderer<'target> {
         );
     }
 
-    /// Record every pass into `view`. Shared by the windowed and offscreen paths so a
-    /// capture is the same frame the viewer would show.
+    /// Record every pass, ending with `view` holding the finished frame. Shared by the
+    /// windowed and offscreen paths so a capture is the same frame the viewer would show.
+    ///
+    /// Under MSAA the passes draw into the multisampled texture and [`ResolvePass`] resolves
+    /// it into `view`; without it they draw into `view` directly.
     fn encode(&mut self, view: &TextureView) -> CommandEncoder {
         let mut cmd = self.device.create_command_encoder(&Default::default());
-        self.passes.clear.pass(&mut cmd, view);
-        self.passes.sky.pass(&mut cmd, view);
+
+        let colour = match &self.msaa_texture {
+            Some(msaa) => &msaa.view,
+            None => view,
+        };
+
+        self.passes.clear.pass(&mut cmd, colour);
+        self.passes.sky.pass(&mut cmd, colour);
         self.passes
             .terrain
-            .pass(&mut cmd, view, self.depth_texture.view());
+            .pass(&mut cmd, colour, self.depth_texture.view());
         self.passes
             .model
-            .pass(&mut cmd, view, self.depth_texture.view());
+            .pass(&mut cmd, colour, self.depth_texture.view());
+
+        if let Some(msaa) = &self.msaa_texture {
+            self.passes.resolve.pass(&mut cmd, &msaa.view, view);
+        }
+
         cmd
     }
 
@@ -435,25 +581,22 @@ pub enum NewRendererError {
     CreateSurface(CreateSurfaceError),
 }
 
-pub struct RenderPasses {
+struct RenderPasses {
     clear: ClearPass,
     sky: OuterSkyPass,
     terrain: TerrainPass,
     model: ModelPass,
+    resolve: ResolvePass,
 }
 
 impl RenderPasses {
-    pub fn new(
-        device: &Device,
-        queue: &Queue,
-        surface_format: TextureFormat,
-        depth_format: TextureFormat,
-    ) -> Self {
+    fn new(device: &Device, queue: &Queue, targets: TargetFormats) -> Self {
         Self {
             clear: ClearPass,
-            sky: OuterSkyPass::new(device, surface_format),
-            terrain: TerrainPass::new(device, surface_format, depth_format),
-            model: ModelPass::new(device, queue, surface_format, depth_format),
+            sky: OuterSkyPass::new(device, targets),
+            terrain: TerrainPass::new(device, targets),
+            model: ModelPass::new(device, queue, targets),
+            resolve: ResolvePass,
         }
     }
 }
@@ -471,6 +614,36 @@ impl ClearPass {
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+}
+
+/// Resolves the multisampled colour texture down into the presentable one.
+///
+/// A pass of its own rather than a `resolve_target` on the last drawing pass: resolving in
+/// every pass would resolve three times for nothing, and resolving in *one* of them would
+/// make that pass silently load-bearing — reorder the passes and the frame goes blank. This
+/// draws nothing; the resolve happens because the attachment has a `resolve_target`, and
+/// `StoreOp::Discard` then throws the multisampled contents away.
+struct ResolvePass;
+
+impl ResolvePass {
+    fn pass(&mut self, cmd: &mut CommandEncoder, multisampled: &TextureView, target: &TextureView) {
+        cmd.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("resolve"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: multisampled,
+                depth_slice: None,
+                resolve_target: Some(target),
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Discard,
                 },
             })],
             depth_stencil_attachment: None,

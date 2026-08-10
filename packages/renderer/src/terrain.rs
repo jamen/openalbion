@@ -7,6 +7,7 @@
 //! [`TerrainDraw`] per distinct (texture, mapping direction), over a shared vertex and index
 //! buffer. Building it from a `.lev` lives on the other side of the crate boundary.
 
+use crate::TargetFormats;
 use crate::image::TextureImage;
 use bytemuck::{Pod, Zeroable};
 use std::any::type_name;
@@ -14,10 +15,10 @@ use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType,
     BufferUsages, CommandEncoder, CompareFunction, DepthBiasState, DepthStencilState, Device,
-    Extent3d, FilterMode, FragmentState, FrontFace, IndexFormat, MultisampleState, PipelineLayout,
+    Extent3d, FilterMode, FragmentState, FrontFace, IndexFormat, PipelineLayout,
     PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
     SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderStages, StencilState,
-    TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
+    TextureDescriptor, TextureDimension, TextureSampleType,
     TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
     VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
@@ -226,15 +227,13 @@ impl TerrainPipeline {
         device: &Device,
         layout: &TerrainPipelineLayout,
         shader: &TerrainShader,
-        target_format: TextureFormat,
-        depth_format: TextureFormat,
+        targets: TargetFormats,
     ) -> Self {
         Self(Self::build(
             device,
             layout,
             shader,
-            target_format,
-            depth_format,
+            targets,
             "vs_main",
             "fs_main",
             Some(BlendState {
@@ -262,15 +261,13 @@ impl TerrainPipeline {
         device: &Device,
         layout: &TerrainPipelineLayout,
         shader: &TerrainShader,
-        target_format: TextureFormat,
-        depth_format: TextureFormat,
+        targets: TargetFormats,
     ) -> Self {
         Self(Self::build(
             device,
             layout,
             shader,
-            target_format,
-            depth_format,
+            targets,
             "vs_blackout",
             "fs_blackout",
             None,
@@ -284,8 +281,7 @@ impl TerrainPipeline {
         device: &Device,
         layout: &TerrainPipelineLayout,
         shader: &TerrainShader,
-        target_format: TextureFormat,
-        depth_format: TextureFormat,
+        targets: TargetFormats,
         vs: &str,
         fs: &str,
         blend: Option<BlendState>,
@@ -306,7 +302,7 @@ impl TerrainPipeline {
                 entry_point: Some(fs),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: target_format,
+                    format: targets.colour,
                     blend,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -317,13 +313,13 @@ impl TerrainPipeline {
                 ..Default::default()
             },
             depth_stencil: Some(DepthStencilState {
-                format: depth_format,
+                format: targets.depth,
                 depth_write_enabled,
                 depth_compare,
                 stencil: StencilState::default(),
                 bias: DepthBiasState::default(),
             }),
-            multisample: MultisampleState::default(),
+            multisample: targets.multisample(),
             multiview_mask: None,
             cache: None,
         })
@@ -357,13 +353,13 @@ pub struct TerrainPass {
 }
 
 impl TerrainPass {
-    pub fn new(device: &Device, surface_format: TextureFormat, depth_format: TextureFormat) -> Self {
+    pub fn new(device: &Device, targets: TargetFormats) -> Self {
         let shader = TerrainShader::new(device);
         let layouts = TerrainBindGroupLayouts::new(device);
         let layout = TerrainPipelineLayout::new(device, &layouts);
-        let pipeline = TerrainPipeline::new(device, &layout, &shader, surface_format, depth_format);
+        let pipeline = TerrainPipeline::new(device, &layout, &shader, targets);
         let blackout_pipeline =
-            TerrainPipeline::new_blackout(device, &layout, &shader, surface_format, depth_format);
+            TerrainPipeline::new_blackout(device, &layout, &shader, targets);
 
         // The ground texture tiles, and is the one thing here that is projected onto a
         // surface: trilinear and anisotropic, at the shipped `SetMaxAnisotropy(4)`
