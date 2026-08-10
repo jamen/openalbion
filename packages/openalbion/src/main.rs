@@ -13,7 +13,13 @@ use crate::files::{Files, NewFilesError};
 use renderer::{NewRendererError, Renderer};
 use argh::FromArgs;
 use derive_more::{Display, Error};
-use std::{borrow::Cow, collections::HashSet, path::Path, sync::Arc, time::Instant};
+use std::{
+    borrow::Cow,
+    collections::{BTreeSet, HashMap, HashSet},
+    path::Path,
+    sync::Arc,
+    time::Instant,
+};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use wgpu::SurfaceError;
@@ -332,7 +338,7 @@ impl App {
 
         // Populate the level from its .tng. Never fatal — a level with unresolvable things
         // still shows its landscape.
-        self.load_things(renderer);
+        self.load_things(renderer, &lev);
 
         Ok(())
     }
@@ -368,13 +374,13 @@ impl App {
         blend
     }
 
-    /// Populate the level from its `.tng`: every thing whose def draws a static mesh, at its
-    /// own transform, one upload per distinct mesh.
+    /// Populate the level: every `.tng` thing whose def draws a static mesh, plus the local
+    /// detail its ground themes generate, at their own transforms and one upload per mesh.
     ///
     /// Nothing here is fatal. A level that cannot resolve some of its things should still
     /// render the rest and say what it dropped — a missing object must be visible in the log
     /// even when it is invisible on screen.
-    fn load_things(&mut self, renderer: &mut Renderer<'_>) {
+    fn load_things(&mut self, renderer: &mut Renderer<'_>, lev: &fable_data::lev::Lev) {
         renderer.clear_models();
 
         if self.mesh_name.is_some() {
@@ -393,16 +399,61 @@ impl App {
         let things = scene::resolve_things(&tng, &self.files.thing_graphics);
         let resolved_placements = things.placement_count();
 
+        // A thing and a local detail object are the same kind of draw — the engine puts both
+        // through `AddStaticMesh` — so they share one instance buffer per mesh rather than
+        // two passes over the same asset.
+        let mut instances_by_mesh: HashMap<u32, Vec<renderer::ModelInstance>> = things
+            .by_mesh
+            .iter()
+            .map(|(&mesh_id, placements)| {
+                let instances = placements
+                    .iter()
+                    .map(|p| renderer::ModelInstance {
+                        transform: p.transform,
+                        // The per-object colour (`c0`) is opaque white until fade distance
+                        // lands; that leaves the material exactly as authored.
+                        ..Default::default()
+                    })
+                    .collect();
+                (mesh_id, instances)
+            })
+            .collect();
+
+        // Provenance: which defs became which mesh (AGENTS.md §6.8).
+        let mut sources: HashMap<u32, BTreeSet<String>> = HashMap::new();
+        for (&mesh_id, placements) in &things.by_mesh {
+            let entry = sources.entry(mesh_id).or_default();
+            for placement in placements {
+                entry.insert(placement.definition_type.clone());
+            }
+        }
+
+        let local_detail = scene::build_local_detail(
+            &self.files,
+            lev,
+            self.files.level_origin(&self.level_name),
+        );
+        for (mesh_id, mut objects) in local_detail.by_mesh {
+            sources
+                .entry(mesh_id)
+                .or_default()
+                .insert("local detail".to_string());
+            instances_by_mesh
+                .entry(mesh_id)
+                .or_default()
+                .append(&mut objects);
+        }
+
         let mut uploaded_meshes = 0usize;
         let mut placed = 0usize;
         let mut failed_meshes = 0usize;
 
         // Deterministic order so two runs log the same thing.
-        let mut mesh_ids: Vec<u32> = things.by_mesh.keys().copied().collect();
+        let mut mesh_ids: Vec<u32> = instances_by_mesh.keys().copied().collect();
         mesh_ids.sort_unstable();
 
         for mesh_id in mesh_ids {
-            let placements = &things.by_mesh[&mesh_id];
+            let instances = &instances_by_mesh[&mesh_id];
             let name = self
                 .files
                 .mesh_name_by_id(mesh_id)
@@ -411,7 +462,7 @@ impl App {
             let (mesh, textures) = match self.files.read_mesh_by_id(mesh_id) {
                 Ok(loaded) => loaded,
                 Err(error) => {
-                    tracing::warn!("Mesh {name} ({mesh_id}): {error} — {} placements dropped", placements.len());
+                    tracing::warn!("Mesh {name} ({mesh_id}): {error} — {} placements dropped", instances.len());
                     failed_meshes += 1;
                     continue;
                 }
@@ -423,38 +474,24 @@ impl App {
             let model = match scene::build_model(&mesh, &textures) {
                 Ok(model) => model,
                 Err(error) => {
-                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", placements.len());
+                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", instances.len());
                     failed_meshes += 1;
                     continue;
                 }
             };
 
-            let instances: Vec<renderer::ModelInstance> = placements
-                .iter()
-                .map(|p| renderer::ModelInstance {
-                    transform: p.transform,
-                    // The per-object colour (`c0`) is opaque white until fade distance
-                    // lands; that leaves the material exactly as authored.
-                    ..Default::default()
-                })
-                .collect();
-
-            match renderer.add_model(&model, &instances) {
+            match renderer.add_model(&model, instances) {
                 Ok(()) => {
                     uploaded_meshes += 1;
                     placed += instances.len();
-                    // Provenance: which defs became which mesh (AGENTS.md §6.8).
-                    let mut defs: Vec<&str> =
-                        placements.iter().map(|p| p.definition_type.as_str()).collect();
-                    defs.sort_unstable();
-                    defs.dedup();
                     tracing::debug!(
-                        "{name} (id {mesh_id}) ← {} placements from {defs:?}",
+                        "{name} (id {mesh_id}) ← {} placements from {:?}",
                         instances.len(),
+                        sources.get(&mesh_id).map(|s| s.iter().collect::<Vec<_>>()),
                     );
                 }
                 Err(error) => {
-                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", placements.len());
+                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", instances.len());
                     failed_meshes += 1;
                 }
             }
@@ -462,9 +499,10 @@ impl App {
 
         let skipped = &things.skipped;
         tracing::info!(
-            "Things: placed {placed} of {resolved_placements} static-mesh placements over \
+            "Things: placed {placed} of {} placements over \
              {uploaded_meshes} meshes ({failed_meshes} meshes failed); skipped {} things — \
              {} no def, {} not drawable, {} without a placement, {:?} by graphic type",
+            resolved_placements + local_detail.counts.drawn(),
             skipped.total(),
             skipped.no_def,
             skipped.not_drawable,

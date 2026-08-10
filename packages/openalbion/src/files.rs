@@ -14,6 +14,7 @@ use fable_data::{
     tga::{Tga, TgaError},
     tng::Tng,
     wad::{ReadContentError, WadReader, WadReaderError},
+    wld::Wld,
 };
 use std::{
     collections::HashMap,
@@ -41,6 +42,8 @@ pub struct Files {
     local_detail_generators: HashMap<i32, EngineLocalDetailGeneratorDef>,
     engine_def: Option<EngineDef>,
     sky_def: Option<SkyDef>,
+    /// `FinalAlbion.wld` — where each level sits in the world, and which levels see which.
+    world: Option<Wld>,
 }
 
 /// Everything read out of `game.bin`, in one pass over its entries.
@@ -240,7 +243,26 @@ impl Files {
             local_detail_generators: defs.local_detail_generators,
             engine_def: defs.engine_def,
             sky_def: defs.sky_def,
+            world: Self::load_world(fable_directory),
         })
+    }
+
+    /// `FinalAlbion.wld`, which places every level in the world.
+    fn load_world(fable_directory: &Path) -> Option<Wld> {
+        let path = fable_directory.join("data/Levels/FinalAlbion.wld");
+        let text = std::fs::read_to_string(&path)
+            .map_err(|error| tracing::warn!("{}: {error}", path.display()))
+            .ok()?;
+        match Wld::parse(&text) {
+            Ok(world) => {
+                tracing::info!("FinalAlbion.wld: {} maps", world.maps.len());
+                Some(world)
+            }
+            Err(error) => {
+                tracing::warn!("FinalAlbion.wld: {error:?}");
+                None
+            }
+        }
     }
 
     /// `names.bin` + `game.bin`, or nothing if either is missing.
@@ -282,6 +304,27 @@ impl Files {
     /// The `ENGINE` def, which carries the engine-wide defaults local detail falls back to.
     pub fn engine_def(&self) -> Option<&EngineDef> {
         self.engine_def.as_ref()
+    }
+
+    /// A level's origin in world cells — `CEngineMap::WorldPosX`/`WorldPosY`, which
+    /// `FinalAlbion.wld` calls `MapX`/`MapY`.
+    ///
+    /// Local detail needs it because its random draws are indexed by **world** cell, not by
+    /// map cell: the same terrain at a different world position grows different foliage. In
+    /// the shipped world every origin is a multiple of 32 — they are the cell coordinates of
+    /// `CEngineWorldMap`'s 32×32 tile grid — so in practice this never shifts the pattern's
+    /// phase, but it is threaded rather than assumed.
+    ///
+    /// `(0, 0)` when there is no `.wld`, or no entry for this level.
+    pub fn level_origin(&self, level_name: &str) -> (i32, i32) {
+        self.world
+            .as_ref()
+            .and_then(|wld| wld.map_for_level(level_name))
+            .map(|map| (map.map_x, map.map_y))
+            .unwrap_or_else(|| {
+                tracing::debug!("No .wld entry for {level_name}, placing it at the world origin");
+                (0, 0)
+            })
     }
 
     /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.
