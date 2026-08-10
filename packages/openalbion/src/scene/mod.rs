@@ -16,9 +16,9 @@ pub mod terrain;
 pub mod texture;
 pub mod things;
 
-pub use self::local_detail::{LevelLocalDetail, build_local_detail};
+pub use self::local_detail::{LevelLocalDetail, build_local_detail, merge_local_detail};
 pub use self::model::build_model;
 pub use self::sky::{sky_textures_at_time, upload_sky_textures};
-pub use self::terrain::build_terrain;
+pub use self::terrain::build_region_terrain;
 pub use self::texture::decode_texture;
-pub use self::things::resolve_things;
+pub use self::things::{merge_things, resolve_things};

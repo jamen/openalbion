@@ -33,10 +33,30 @@ use std::collections::HashMap;
 const MESH_UNITS_PER_WORLD_UNIT: f32 = 0.01;
 
 /// Every placement in a level that resolves to a static mesh, grouped by mesh asset id.
+#[derive(Default)]
 pub struct LevelThings {
     /// `graphics.big` asset id → the object matrices to draw it with.
     pub by_mesh: HashMap<u32, Vec<Placement>>,
     pub skipped: Skipped,
+}
+
+/// Combine several maps' resolved things into one, for a region loaded as a unit. Placements
+/// merge by mesh id — global asset ids, so the same mesh placed on two different maps is
+/// still one upload — and skip counts sum.
+pub fn merge_things(things: Vec<LevelThings>) -> LevelThings {
+    let mut merged = LevelThings::default();
+    for level in things {
+        for (mesh_id, mut placements) in level.by_mesh {
+            merged.by_mesh.entry(mesh_id).or_default().append(&mut placements);
+        }
+        merged.skipped.no_def += level.skipped.no_def;
+        merged.skipped.not_drawable += level.skipped.not_drawable;
+        merged.skipped.no_placement += level.skipped.no_placement;
+        for (kind, count) in level.skipped.other_graphic_type {
+            *merged.skipped.other_graphic_type.entry(kind).or_default() += count;
+        }
+    }
+    merged
 }
 
 /// One placement of one mesh.
@@ -76,7 +96,16 @@ impl Skipped {
 /// bones and the palette-skinning shaders, and sprites and generated effects are their own
 /// primitive managers; all three are counted in [`Skipped::other_graphic_type`] rather than
 /// approximated.
-pub fn resolve_things(tng: &Tng, graphics: &HashMap<String, EngineGraphic>) -> LevelThings {
+///
+/// `origin` is the map's position in world cells (`MapX`/`MapY`, AGENTS.md §6.12), added to
+/// each placement's translation so things from multiple maps land in one world rather than
+/// stacking at (0, 0). `.tng` positions are map-local (AGENTS.md §3.11), so this is the only
+/// place the offset belongs — `(0, 0)` for a level loaded on its own.
+pub fn resolve_things(
+    tng: &Tng,
+    graphics: &HashMap<String, EngineGraphic>,
+    origin: (i32, i32),
+) -> LevelThings {
     let mut by_mesh: HashMap<u32, Vec<Placement>> = HashMap::new();
     let mut skipped = Skipped::default();
 
@@ -114,13 +143,15 @@ pub fn resolve_things(tng: &Tng, graphics: &HashMap<String, EngineGraphic>) -> L
             .unwrap_or(1.0);
         let scale = graphic.render_size_x * object_scale * MESH_UNITS_PER_WORLD_UNIT;
 
-        let Some(transform) = thing
+        let Some(mut transform) = thing
             .placement()
             .and_then(|p| p.object_matrix(scale))
         else {
             skipped.no_placement += 1;
             continue;
         };
+        transform[3][0] += origin.0 as f32;
+        transform[3][1] += origin.1 as f32;
 
         by_mesh
             .entry(graphic.bank_index as u32)

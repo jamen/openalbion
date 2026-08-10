@@ -230,6 +230,25 @@ pub struct LandscapeMap<'a> {
     height: i32,
 }
 
+/// One neighbouring map, for a query that lands outside this map's own cell grid —
+/// `CEngineWorldMap`'s "first try the loaded map, then walk into the neighbouring map"
+/// (`PeekLandscapeHeight` et al., AGENTS.md §3.4), ported only as far as a loaded region
+/// needs it (§6.12).
+///
+/// Carries the neighbour's own [`mesh::ThemeSource`] alongside its `map`, not just the map:
+/// a `.lev`'s theme palette is independently authored per file, so a raw palette slot from
+/// this map means nothing read through a *different* map's palette. Resolving a boundary
+/// vertex's theme has to happen through the map that owns it — see [`mesh::ThemeSource`]'s
+/// callers in `mesh::read_themes_and_create_layers` — which is why `Neighbour` carries a
+/// `ThemeSource` at all, where a plain height/normal query would not need one.
+pub struct Neighbour<'n> {
+    pub map: &'n LandscapeMap<'n>,
+    pub themes: &'n dyn mesh::ThemeSource,
+    /// This map's local `(x, y)` plus `offset` is the neighbour's own local coordinate for
+    /// the same world vertex — i.e. `this_origin - neighbour_origin`.
+    pub offset: (i32, i32),
+}
+
 impl<'a> LandscapeMap<'a> {
     pub fn new(lev: &'a Lev) -> LandscapeMap<'a> {
         LandscapeMap {
@@ -355,6 +374,36 @@ impl<'a> LandscapeMap<'a> {
         ]
     }
 
+    /// [`Self::cell`], but resolved against `neighbours` when `(x, y)` falls outside this
+    /// map's own cell grid, instead of clamping — `PeekLandscapeHeight` et al.'s "first try
+    /// the loaded map, then walk into the neighbouring map" (AGENTS.md §3.4), now that a
+    /// region loads several maps together (§6.12). Falls back to the ordinary clamp when
+    /// nothing covers the query — the outer edge of the loaded world, or a neighbour that
+    /// failed to load — which is exactly [`Self::cell`]'s behaviour for an isolated map.
+    ///
+    /// Height has no per-map identity to lose crossing a boundary this way — a world-space
+    /// height is a world-space height regardless of which `.lev` it came from. A palette
+    /// slot does not have that property (see [`mesh::Neighbour`]), which is why only the
+    /// height/normal accessors take a plain neighbour list and the theme ones do not.
+    fn cell_stitched<'s>(&'s self, x: i32, y: i32, neighbours: &[Neighbour<'s>]) -> &'s LevHeightCell {
+        if x >= 0 && x < self.width && y >= 0 && y < self.height {
+            return self.cell(x, y);
+        }
+        for n in neighbours {
+            let (nx, ny) = (x + n.offset.0, y + n.offset.1);
+            if nx >= 0 && nx < n.map.width && ny >= 0 && ny < n.map.height {
+                return n.map.cell(nx, ny);
+            }
+        }
+        self.cell(x, y)
+    }
+
+    /// [`Self::height_at`], neighbour-aware — see [`Self::cell_stitched`].
+    pub fn height_at_stitched(&self, x: i32, y: i32, neighbours: &[Neighbour]) -> f32 {
+        let raw = self.cell_stitched(x, y, neighbours).height * HEIGHT_SCALE;
+        (raw * 128.0).round() * (1.0 / 128.0)
+    }
+
     /// The palette entry name for a slot, or `""` for the empty sentinel.
     ///
     /// The `.lev` palette stores a name beside a def index, and `CMap::LoadFromFile`
@@ -377,6 +426,18 @@ impl<'a> LandscapeMap<'a> {
 mod tests {
     use super::*;
     use crate::lev::{LevHeader, LevNavigation, ThemePalette, ThemePaletteEntry};
+
+    /// A [`mesh::ThemeSource`] that resolves nothing — for tests exercising height/normal
+    /// stitching, which needs a `Neighbour` but not an actual theme palette.
+    struct NoThemes;
+    impl mesh::ThemeSource for NoThemes {
+        fn base(&self, _slot: u8) -> Option<mesh::LayerTextures> {
+            None
+        }
+        fn cliff(&self, _slot: u8) -> Option<mesh::LayerTextures> {
+            None
+        }
+    }
 
     fn cell(height: f32, theme: (u8, u8, u8), strength: (u8, u8)) -> LevHeightCell {
         LevHeightCell {
@@ -493,6 +554,46 @@ mod tests {
         assert_eq!(map.height_at(-1, 0), map.height_at(0, 0));
         assert_eq!(map.height_at(0, 3), map.height_at(0, 2));
     }
+
+    /// With a loaded neighbour, the seam column reads the neighbour's true data instead of
+    /// clamping — the mechanism AGENTS.md §6.12 was written to close, now that a region loads
+    /// more than one map at once.
+    #[test]
+    fn stitched_samples_read_the_neighbour_instead_of_clamping() {
+        let lev_a = map_of(4, 4);
+        let lev_b = map_of(4, 4);
+        let map_a = LandscapeMap::new(&lev_a);
+        let map_b = LandscapeMap::new(&lev_b);
+
+        // B sits 4 cells east of A (world origins (0, 0) and (4, 0)): A's far edge column,
+        // local x = 4, is B's near column, local x = 0. offset = A's origin - B's origin.
+        let (a_origin, b_origin) = ((0, 0), (4, 0));
+        let no_themes = NoThemes;
+        let neighbours = [Neighbour {
+            map: &map_b,
+            themes: &no_themes,
+            offset: (a_origin.0 - b_origin.0, a_origin.1 - b_origin.1),
+        }];
+
+        // Unstitched, x = 4 is still just the clamp onto x = 3.
+        assert_eq!(map_a.height_at(4, 2), map_a.height_at(3, 2));
+
+        // Stitched, it is B's real local (0, 2) — a different value, not a repeat of A's own.
+        let stitched = map_a.height_at_stitched(4, 2, &neighbours);
+        assert_eq!(stitched, map_b.height_at(0, 2));
+        assert_ne!(stitched, map_a.height_at(3, 2));
+
+        // Interior samples are untouched by having neighbours at all.
+        assert_eq!(map_a.height_at_stitched(2, 2, &neighbours), map_a.height_at(2, 2));
+
+        // No neighbour covers the query (e.g. the world's outer edge) — same clamp as always.
+        assert_eq!(map_a.height_at_stitched(4, 2, &[]), map_a.height_at(4, 2));
+    }
+
+    // Theme stitching (which map's *palette* a boundary vertex resolves through) is tested
+    // in `mesh::tests` — unlike height, a raw palette slot has no meaning outside the map
+    // that authored it, so that fix lives at the layer that resolves against a
+    // [`mesh::ThemeSource`], not here. See `mesh::Neighbour`.
 
     /// `cell->Height = <file f32> * 2048.0f` (`fablelib/map.cpp:2594`), then quantised to
     /// 1/128 by `PeekLandscapeHeight`.

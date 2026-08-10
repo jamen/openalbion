@@ -9,18 +9,66 @@
 use crate::files::Files;
 use fable_data::def::EngineThemeDef;
 use fable_data::landscape::{
-    BLEND_TABLE_SIZE, LandscapeMap, MappingDirection, build_blend_table,
+    BLEND_TABLE_SIZE, LandscapeMap, MappingDirection, Neighbour, build_blend_table,
     mesh::{self, LayerTextures, ThemeSource},
 };
 use fable_data::lev::Lev;
+use fable_data::wld::RegionMap;
 use renderer::{ImageFormat, TerrainData, TerrainDraw, TerrainVertex, TextureImage};
 use std::collections::HashMap;
 
-/// Build the landscape's geometry, layer passes and textures for `lev`.
-pub fn build_terrain(files: &mut Files, lev: &Lev) -> TerrainData {
-    let map = LandscapeMap::new(lev);
-    let themes = PaletteThemes::resolve(files, lev);
+/// Build and merge a whole region's terrain in one pass — every map in `maps`, its own
+/// `LandscapeMap` and theme palette resolved once, then queried across its own boundary into
+/// whichever of the others actually borders it (AGENTS.md §3.4/§6.12). `maps` is exactly
+/// [`Files::region_maps`]'s output: the requested level's `ContainsMap`s and `SeesMap`
+/// fillers alike draw the same way — the `.wld`'s region *is* the input, not an
+/// after-the-fact neighbour list assembled by the caller.
+///
+/// Resolving every map's data up front (rather than one at a time) is what makes the
+/// boundary queries possible at all: a vertex on map A's outer edge needs map B's heightmap
+/// *and* map B's own theme palette, both already built, before A's mesh can be assembled.
+pub fn build_region_terrain(files: &mut Files, maps: &[(RegionMap, Lev)]) -> TerrainData {
+    let landscape_maps: Vec<LandscapeMap> = maps.iter().map(|(_, lev)| LandscapeMap::new(lev)).collect();
+    let themes: Vec<PaletteThemes> = maps.iter().map(|(_, lev)| PaletteThemes::resolve(files, lev)).collect();
 
+    let mut terrains = Vec::with_capacity(maps.len());
+    for i in 0..maps.len() {
+        let neighbours: Vec<Neighbour> = (0..maps.len())
+            .filter(|&j| j != i)
+            .map(|j| Neighbour {
+                map: &landscape_maps[j],
+                themes: &themes[j],
+                offset: (maps[i].0.origin.0 - maps[j].0.origin.0, maps[i].0.origin.1 - maps[j].0.origin.1),
+            })
+            .collect();
+        terrains.push(build_one(
+            files,
+            &landscape_maps[i],
+            &themes[i],
+            maps[i].0.origin,
+            &neighbours,
+        ));
+    }
+
+    merge(terrains)
+}
+
+/// Build one map's geometry, layer passes and textures.
+///
+/// `origin` is the map's position in world cells (`MapX`/`MapY`, AGENTS.md §6.12) — added to
+/// every vertex so multiple maps assemble into one world rather than stacking at (0, 0).
+///
+/// `neighbours` are the other loaded maps in this map's region. Without them, every vertex
+/// on this map's own outer edge clamps to a repeat of its own last row instead of reading
+/// the neighbour's true height, normal and theme there, which is what showed up first as a
+/// crack and then as a mismatched texture at the seam between adjacent maps.
+fn build_one(
+    files: &mut Files,
+    map: &LandscapeMap,
+    themes: &PaletteThemes,
+    origin: (i32, i32),
+    neighbours: &[Neighbour],
+) -> TerrainData {
     // One mesh per patch, then merged across patches by (texture, mapping direction) so the
     // whole level draws in as many passes as it has distinct layers rather than as many as
     // it has patches. The original sorts its patches for the same reason
@@ -29,7 +77,7 @@ pub fn build_terrain(files: &mut Files, lev: &Lev) -> TerrainData {
 
     for patch_y in 0..map.patch_grid_height() {
         for patch_x in 0..map.patch_grid_width() {
-            let patch = mesh::build_patch(&map, &themes, patch_x, patch_y);
+            let patch = mesh::build_patch(map, themes, patch_x, patch_y, neighbours);
 
             for layer in &patch.layers {
                 if layer.indices.is_empty() {
@@ -41,13 +89,16 @@ pub fn build_terrain(files: &mut Files, lev: &Lev) -> TerrainData {
 
                 let base = batch.vertices.len() as u32;
                 batch.vertices.extend(layer.vertices.iter().map(|v| {
+                    // Map-local for the height/normal lookups, which index this map's own
+                    // heightmap; world for the position the vertex actually draws at.
                     let (x, y) = (
                         patch.origin_x + v.x as i32,
                         patch.origin_y + v.y as i32,
                     );
+                    let (wx, wy) = (x + origin.0, y + origin.1);
                     TerrainVertex {
-                        position: [x as f32, y as f32, map.height_at(x, y)],
-                        normal: mesh::vertex_normal(&map, x, y),
+                        position: [wx as f32, wy as f32, map.height_at_stitched(x, y, neighbours)],
+                        normal: mesh::vertex_normal_stitched(map, x, y, neighbours),
                         blend: v.blend as f32 / 255.0,
                         // The blend table is addressed over its whole extent, so the packed
                         // byte maps straight onto 0..1.
@@ -61,7 +112,50 @@ pub fn build_terrain(files: &mut Files, lev: &Lev) -> TerrainData {
         }
     }
 
-    assemble(files, batches, &themes)
+    assemble(files, batches, themes)
+}
+
+/// Concatenate several maps' terrain into one upload, so a region draws through one
+/// `TerrainPass::set_terrain` call rather than one per map.
+///
+/// Ground textures are rebased per map (each map has its own theme palette, so they are not
+/// shared); the five direction blend tables are pure data — [`MappingDirection::ALL`] built
+/// with no map-specific input — so every map's are byte-identical and only the first map's
+/// copy is kept, with every draw's `blend_table` index (already `0..5`) left alone.
+fn merge(terrains: Vec<TerrainData>) -> TerrainData {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    let mut textures = Vec::new();
+    let mut draws = Vec::new();
+    let mut blend_tables = Vec::new();
+
+    for terrain in terrains {
+        let vertex_base = vertices.len() as u32;
+        let index_base = indices.len() as u32;
+        let texture_base = textures.len() as u32;
+
+        vertices.extend(terrain.vertices);
+        indices.extend(terrain.indices.iter().map(|&i| i + vertex_base));
+        textures.extend(terrain.textures);
+
+        draws.extend(terrain.draws.into_iter().map(|draw| TerrainDraw {
+            first_index: draw.first_index + index_base,
+            texture: draw.texture + texture_base,
+            ..draw
+        }));
+
+        if blend_tables.is_empty() {
+            blend_tables = terrain.blend_tables;
+        }
+    }
+
+    TerrainData {
+        vertices,
+        indices,
+        draws,
+        textures,
+        blend_tables,
+    }
 }
 
 #[derive(Default)]
@@ -224,4 +318,78 @@ fn load_ground_texture(files: &mut Files, texture_id: i32) -> Result<TextureImag
 /// Flat magenta — an obviously wrong texture beats a silently missing layer.
 fn placeholder_texture() -> TextureImage {
     TextureImage::single(4, 4, ImageFormat::Rgba8, [255u8, 0, 255, 255].repeat(16))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vertex(x: f32) -> TerrainVertex {
+        TerrainVertex {
+            position: [x, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            blend: 1.0,
+            cliff_uv: [0.0, 0.0],
+        }
+    }
+
+    /// One map, one vertex, one triangle-less draw — just enough to check `merge`'s
+    /// index and texture rebasing without needing a `.lev` or a GPU.
+    fn one_map(x: f32, texture_id: u32) -> TerrainData {
+        TerrainData {
+            vertices: vec![vertex(x), vertex(x + 1.0)],
+            indices: vec![0, 1],
+            draws: vec![TerrainDraw {
+                first_index: 0,
+                index_count: 2,
+                texture: texture_id,
+                blend_table: 2,
+                uv_transform_u: [1.0, 0.0, 0.0, 0.0],
+                uv_transform_v: [0.0, 1.0, 0.0, 0.0],
+            }],
+            textures: vec![placeholder_texture()],
+            blend_tables: MappingDirection::ALL
+                .iter()
+                .map(|&d| {
+                    TextureImage::single(
+                        BLEND_TABLE_SIZE as u32,
+                        BLEND_TABLE_SIZE as u32,
+                        ImageFormat::R8,
+                        build_blend_table(d),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    /// Vertices and indices concatenate with indices rebased onto the growing vertex buffer,
+    /// and each map's own ground textures shift by the running texture count.
+    #[test]
+    fn concatenates_vertices_and_rebases_indices_and_textures() {
+        let merged = merge(vec![one_map(0.0, 0), one_map(100.0, 0)]);
+
+        assert_eq!(merged.vertices.len(), 4);
+        assert_eq!(merged.vertices[2].position[0], 100.0);
+
+        assert_eq!(merged.draws.len(), 2);
+        assert_eq!(merged.draws[0].first_index, 0);
+        assert_eq!(merged.draws[0].texture, 0);
+        assert_eq!(merged.draws[1].first_index, 2);
+        assert_eq!(merged.draws[1].texture, 1, "second map's texture must rebase past the first");
+        assert_eq!(
+            &merged.indices[2..4],
+            &[2, 3],
+            "second map's indices must rebase onto the growing vertex buffer"
+        );
+    }
+
+    /// The five direction blend tables are pure data — the same five tables regardless of
+    /// which map built them — so merging N maps must not upload N copies.
+    #[test]
+    fn blend_tables_are_not_duplicated_per_map() {
+        let merged = merge(vec![one_map(0.0, 0), one_map(1.0, 0), one_map(2.0, 0)]);
+        assert_eq!(merged.blend_tables.len(), 5);
+        // Every draw's blend_table index is untouched — it already indexes the shared five.
+        assert!(merged.draws.iter().all(|d| d.blend_table == 2));
+    }
 }

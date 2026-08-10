@@ -306,25 +306,28 @@ impl Files {
         self.engine_def.as_ref()
     }
 
-    /// A level's origin in world cells — `CEngineMap::WorldPosX`/`WorldPosY`, which
-    /// `FinalAlbion.wld` calls `MapX`/`MapY`.
+    /// Every map to load alongside `level_name` — its `.wld` region, each positioned at its
+    /// own world origin (AGENTS.md §6.12/§5.10).
     ///
-    /// Local detail needs it because its random draws are indexed by **world** cell, not by
-    /// map cell: the same terrain at a different world position grows different foliage. In
-    /// the shipped world every origin is a multiple of 32 — they are the cell coordinates of
-    /// `CEngineWorldMap`'s 32×32 tile grid — so in practice this never shifts the pattern's
-    /// phase, but it is threaded rather than assumed.
-    ///
-    /// `(0, 0)` when there is no `.wld`, or no entry for this level.
-    pub fn level_origin(&self, level_name: &str) -> (i32, i32) {
-        self.world
-            .as_ref()
-            .and_then(|wld| wld.map_for_level(level_name))
-            .map(|map| (map.map_x, map.map_y))
-            .unwrap_or_else(|| {
-                tracing::debug!("No .wld entry for {level_name}, placing it at the world origin");
-                (0, 0)
-            })
+    /// Falls back to `level_name` alone (at its own origin, or `(0, 0)`) when there is no
+    /// `.wld` or no region names it — see [`Wld::maps_for_region_of`].
+    pub fn region_maps(&self, level_name: &str) -> Vec<fable_data::wld::RegionMap> {
+        let maps = match &self.world {
+            Some(world) => world.maps_for_region_of(level_name),
+            None => vec![fable_data::wld::RegionMap {
+                level_name: level_name.to_string(),
+                origin: (0, 0),
+                populated: true,
+            }],
+        };
+
+        let populated = maps.iter().filter(|m| m.populated).count();
+        tracing::info!(
+            "{level_name}: region has {populated} populated map(s) and {} filler(s)",
+            maps.len() - populated,
+        );
+
+        maps
     }
 
     /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.

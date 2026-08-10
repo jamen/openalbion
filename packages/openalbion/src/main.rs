@@ -285,60 +285,116 @@ impl App {
         Ok(())
     }
 
-    /// Load the level: landscape, then the things standing on it, then frame the camera on
-    /// what was loaded. Shared by the windowed and offscreen paths so a screenshot is the
-    /// same scene the viewer shows.
+    /// Load the level's `.wld` region: every `ContainsMap` populated from its `.tng` and local
+    /// detail, every `SeesMap` filler as terrain only, each at its own `MapX`/`MapY` world
+    /// position (AGENTS.md §6.12/§5.10) — then frame the camera on the requested level.
+    /// Shared by the windowed and offscreen paths so a screenshot is the same scene the
+    /// viewer shows.
+    ///
+    /// A level absent from the `.wld` — or with no `.wld` at all — loads alone, at the world
+    /// origin, exactly as a single level always has.
     fn load_scene(&mut self, renderer: &mut Renderer<'_>) -> Result<(), TryResumedError> {
         use TryResumedError as E;
 
-        let lev = self
-            .files
-            .load_level(&self.level_name)
-            .map_err(E::LoadLevel)?;
-        let span_x = lev.header.width as f32 + 1.0;
-        let span_z = lev.header.height as f32 + 1.0;
+        let region = self.files.region_maps(&self.level_name);
+        let primary = region
+            .iter()
+            .find(|m| m.level_name.eq_ignore_ascii_case(&self.level_name))
+            .cloned()
+            .unwrap_or_else(|| fable_data::wld::RegionMap {
+                level_name: self.level_name.clone(),
+                origin: (0, 0),
+                populated: true,
+            });
 
-        let raw_min = lev
+        // The requested level is the one load failure that's fatal; every other map in its
+        // region is best-effort — a missing neighbour narrows the view, it does not stop the
+        // primary level from showing.
+        let primary_lev = self
+            .files
+            .load_level(&primary.level_name)
+            .map_err(E::LoadLevel)?;
+
+        let mut maps: Vec<(fable_data::wld::RegionMap, fable_data::lev::Lev)> =
+            vec![(primary.clone(), primary_lev)];
+        for map in region {
+            if map.level_name.eq_ignore_ascii_case(&primary.level_name) {
+                continue;
+            }
+            match self.files.load_level(&map.level_name) {
+                Ok(lev) => maps.push((map, lev)),
+                Err(error) => {
+                    tracing::warn!("{}: {error} — dropped from the region", map.level_name);
+                }
+            }
+        }
+
+        // Frame the camera on the requested level specifically, in world space.
+        let scale = fable_data::landscape::HEIGHT_SCALE;
+        let primary_lev = &maps[0].1;
+        let span_x = primary_lev.header.width as f32 + 1.0;
+        let span_z = primary_lev.header.height as f32 + 1.0;
+        let raw_min = primary_lev
             .heightmap_cells
             .iter()
             .map(|c| c.height)
             .fold(f32::INFINITY, f32::min);
-        let raw_max = lev
+        let raw_max = primary_lev
             .heightmap_cells
             .iter()
             .map(|c| c.height)
             .fold(f32::NEG_INFINITY, f32::max);
-        let scale = fable_data::landscape::HEIGHT_SCALE;
         let mid_z = (raw_min + raw_max) * 0.5 * scale;
+        let (origin_x, origin_y) = (primary.origin.0 as f32, primary.origin.1 as f32);
 
         // Z-up: the heightmap spans X/Y and height is Z. AGENTS.md §3.6.
-        self.terrain_center = glam::Vec3::new(span_x * 0.5, span_z * 0.5, mid_z);
+        self.terrain_center =
+            glam::Vec3::new(origin_x + span_x * 0.5, origin_y + span_z * 0.5, mid_z);
         self.terrain_radius = span_x.max(span_z) * 0.5;
-        let world_span = span_x.max(span_z).max((raw_max - raw_min).abs() * scale);
+
+        // The far plane and fly speed must cover every loaded map, not just the primary one,
+        // or a region's filler hills at the edge get clipped.
+        let mut world_min = glam::Vec2::new(origin_x, origin_y);
+        let mut world_max = glam::Vec2::new(origin_x + span_x, origin_y + span_z);
+        for (map, lev) in &maps[1..] {
+            let (mx, my) = (map.origin.0 as f32, map.origin.1 as f32);
+            world_min = world_min.min(glam::Vec2::new(mx, my));
+            world_max = world_max.max(glam::Vec2::new(
+                mx + lev.header.width as f32 + 1.0,
+                my + lev.header.height as f32 + 1.0,
+            ));
+        }
+        let world_span = (world_max - world_min)
+            .max_element()
+            .max((raw_max - raw_min).abs() * scale);
         self.camera.set_world_extents(world_span);
         // Position camera above and back from the terrain centre for a good initial view.
         self.camera.position = self.terrain_center
             + glam::Vec3::new(world_span * 0.3, world_span * 0.5, world_span * 0.4);
         self.camera.look_at(self.terrain_center);
         self.camera.fly_speed = world_span * 0.1;
-        renderer.set_terrain(&scene::build_terrain(&mut self.files, &lev));
+
+        // Every map's terrain, built and stitched across its region in one call — see
+        // `scene::build_region_terrain` for how a boundary vertex reads the neighbouring
+        // map's height, normal and theme instead of clamping to its own edge (AGENTS.md
+        // §3.4/§6.12).
+        renderer.set_terrain(&scene::build_region_terrain(&mut self.files, &maps));
         tracing::info!(
-            "Uploaded terrain to GPU (size {}x{} cells, height raw=[{:.4}, {:.4}] scaled=[{:.1}, {:.1}], center=({:.1}, {:.1}, {:.1}), radius={:.1}, world_span={world_span:.1})",
-            lev.header.width,
-            lev.header.height,
-            raw_min,
-            raw_max,
-            raw_min * scale,
-            raw_max * scale,
+            "Uploaded terrain to GPU: {} map(s) ({} populated), primary {} at {:?}, \
+             center=({:.1}, {:.1}, {:.1}), radius={:.1}, world_span={world_span:.1}",
+            maps.len(),
+            maps.iter().filter(|(m, _)| m.populated).count(),
+            primary.level_name,
+            primary.origin,
             self.terrain_center.x,
             self.terrain_center.y,
             self.terrain_center.z,
             self.terrain_radius,
         );
 
-        // Populate the level from its .tng. Never fatal — a level with unresolvable things
-        // still shows its landscape.
-        self.load_things(renderer, &lev);
+        // Populate the region from its `.tng`s. Never fatal — unresolvable things still
+        // leave the landscape showing.
+        self.load_things(renderer, &maps);
 
         Ok(())
     }
@@ -374,13 +430,20 @@ impl App {
         blend
     }
 
-    /// Populate the level: every `.tng` thing whose def draws a static mesh, plus the local
-    /// detail its ground themes generate, at their own transforms and one upload per mesh.
+    /// Populate the region: every `.tng` thing whose def draws a static mesh, plus the local
+    /// detail its ground themes generate, at their own transforms and one upload per mesh —
+    /// across every populated (`ContainsMap`) map in `maps`. A `SeesMap` filler contributes
+    /// terrain only (AGENTS.md §3.4): the original never loads a `GameMap` for one either, so
+    /// it stays unpopulated here too.
     ///
     /// Nothing here is fatal. A level that cannot resolve some of its things should still
     /// render the rest and say what it dropped — a missing object must be visible in the log
     /// even when it is invisible on screen.
-    fn load_things(&mut self, renderer: &mut Renderer<'_>, lev: &fable_data::lev::Lev) {
+    fn load_things(
+        &mut self,
+        renderer: &mut Renderer<'_>,
+        maps: &[(fable_data::wld::RegionMap, fable_data::lev::Lev)],
+    ) {
         renderer.clear_models();
 
         if self.mesh_name.is_some() {
@@ -388,15 +451,29 @@ impl App {
             return;
         }
 
-        let tng = match self.files.load_tng(&self.level_name) {
-            Ok(tng) => tng,
-            Err(error) => {
-                tracing::warn!("No .tng for {}: {error} — level will be bare", self.level_name);
-                return;
-            }
-        };
+        let mut all_things = Vec::new();
+        let mut all_local_detail = Vec::new();
 
-        let things = scene::resolve_things(&tng, &self.files.thing_graphics);
+        for (map, lev) in maps {
+            if !map.populated {
+                continue;
+            }
+
+            match self.files.load_tng(&map.level_name) {
+                Ok(tng) => all_things.push(scene::resolve_things(
+                    &tng,
+                    &self.files.thing_graphics,
+                    map.origin,
+                )),
+                Err(error) => {
+                    tracing::warn!("No .tng for {}: {error} — it will be bare", map.level_name);
+                }
+            }
+
+            all_local_detail.push(scene::build_local_detail(&self.files, lev, map.origin));
+        }
+
+        let things = scene::merge_things(all_things);
         let resolved_placements = things.placement_count();
 
         // A thing and a local detail object are the same kind of draw — the engine puts both
@@ -428,11 +505,7 @@ impl App {
             }
         }
 
-        let local_detail = scene::build_local_detail(
-            &self.files,
-            lev,
-            self.files.level_origin(&self.level_name),
-        );
+        let local_detail = scene::merge_local_detail(all_local_detail);
         self.load_repeated_meshes(renderer, &local_detail);
         for (mesh_id, mut objects) in local_detail.by_mesh {
             sources

@@ -11,7 +11,9 @@
 //! blend table (`super::build_blend_table`), which the vertex indexes with its packed normal
 //! (`cliff_u` / `cliff_v`). The two multiply in the pixel shader.
 
-use super::{LandscapeMap, MappingDirection, PATCH_CELLS, PATCH_VERTS, mapping_direction_blend};
+use super::{
+    LandscapeMap, MappingDirection, Neighbour, PATCH_CELLS, PATCH_VERTS, mapping_direction_blend,
+};
 
 /// The textures a theme contributes to one set of layers.
 ///
@@ -127,6 +129,37 @@ pub fn vertex_normal(map: &LandscapeMap, x: i32, y: i32) -> [f32; 3] {
     }
 }
 
+/// [`vertex_normal`], neighbour-aware — see [`LandscapeMap::height_at_stitched`].
+///
+/// A vertex on a map's outer row or column samples one cell past its own edge in both of
+/// these axes, which is exactly the neighbouring map's territory — without this, every
+/// boundary vertex's normal is computed against a clamped, repeated height instead of the
+/// neighbour's true slope, and the seam reads as a lighting crease even where the heights
+/// themselves already match.
+pub fn vertex_normal_stitched(
+    map: &LandscapeMap,
+    x: i32,
+    y: i32,
+    neighbours: &[Neighbour],
+) -> [f32; 3] {
+    let normalise2 = |a: f32, b: f32| {
+        let len = (a * a + b * b).sqrt();
+        if len > 0.0 { (a / len, b / len) } else { (0.0, 1.0) }
+    };
+
+    let h = |x: i32, y: i32| map.height_at_stitched(x, y, neighbours);
+    let (hor_x, hor_y) = normalise2(h(x - 1, y) - h(x + 1, y), 2.0);
+    let (ver_x, ver_y) = normalise2(h(x, y - 1) - h(x, y + 1), 2.0);
+
+    let z = hor_y * ver_y;
+    let len = (hor_x * hor_x + ver_x * ver_x + z * z).sqrt();
+    if len > 0.0 {
+        [hor_x / len, ver_x / len, z / len]
+    } else {
+        [0.0, 0.0, 1.0]
+    }
+}
+
 /// Which layer a `(direction, texture set)` belongs to, and the per-vertex state we
 /// accumulate for it before turning it into a mesh.
 struct Layer {
@@ -153,17 +186,23 @@ impl Layer {
 ///
 /// `CEngineLandscapeMeshBuilder::BuildPatchMesh` (`:1321`): mask, then layers, then a mesh
 /// per layer.
+///
+/// `neighbours` is threaded down to every map sample this function makes — see
+/// [`LandscapeMap::height_at_stitched`] — so a patch at the map's own outer edge reads the
+/// neighbouring map's true data there instead of a clamped repeat of its own last row.
+/// Empty for a level with no loaded neighbours, which reproduces the old single-map clamp.
 pub fn build_patch(
     map: &LandscapeMap,
     themes: &dyn ThemeSource,
     patch_x: i32,
     patch_y: i32,
+    neighbours: &[Neighbour],
 ) -> Patch {
     let origin_x = patch_x * PATCH_CELLS as i32;
     let origin_y = patch_y * PATCH_CELLS as i32;
 
-    let mask = DirectionMask::build(map, origin_x, origin_y);
-    let layers = read_themes_and_create_layers(map, themes, &mask, origin_x, origin_y);
+    let mask = DirectionMask::build(map, origin_x, origin_y, neighbours);
+    let layers = read_themes_and_create_layers(map, themes, &mask, origin_x, origin_y, neighbours);
 
     Patch {
         patch_x,
@@ -188,7 +227,12 @@ struct DirectionMask {
 }
 
 impl DirectionMask {
-    fn build(map: &LandscapeMap, origin_x: i32, origin_y: i32) -> DirectionMask {
+    fn build(
+        map: &LandscapeMap,
+        origin_x: i32,
+        origin_y: i32,
+        neighbours: &[Neighbour],
+    ) -> DirectionMask {
         let mut mask = DirectionMask {
             cliff: [[(0, 0); PATCH_VERTS]; PATCH_VERTS],
             faces: [[[false; 5]; PATCH_VERTS]; PATCH_VERTS],
@@ -204,7 +248,12 @@ impl DirectionMask {
                 // normal, which is exact, sourced, and describes the same surface. The two
                 // differ only in smoothing, which shifts how sharply a slope crosses between
                 // ground and cliff textures. Revisit if the transition looks wrong.
-                let normal = vertex_normal(map, origin_x + x as i32, origin_y + y as i32);
+                let normal = vertex_normal_stitched(
+                    map,
+                    origin_x + x as i32,
+                    origin_y + y as i32,
+                    neighbours,
+                );
                 mask.cliff[x][y] = super::pack_normal_xy(normal);
                 for dir in MappingDirection::ALL {
                     mask.faces[x][y][dir.index()] = mapping_direction_blend(dir, normal) > 0.0;
@@ -214,6 +263,63 @@ impl DirectionMask {
 
         mask
     }
+}
+
+/// One texture set's three levels, resolved and merged — [`merge_levels`]'s own return shape.
+type MergedLevels = ([Option<LayerTextures>; 3], [u8; 3]);
+
+/// A vertex's resolved layer contributions — `(base, cliff)`.
+///
+/// Reads `(x, y)` from whichever map owns it — `map`, or one of `neighbours` — and resolves
+/// its raw palette slots through **that map's own** [`ThemeSource`]. This is the one place a
+/// cross-map query cannot reuse [`LandscapeMap::height_at_stitched`]'s plain "read the
+/// neighbour's cell" shape: a `.lev`'s theme palette is independently authored per file
+/// (AGENTS.md §3.4), so slot 5 in this map's palette and slot 5 in a neighbour's are
+/// unrelated theme names. Resolving `themes.base(slot)`/`themes.cliff(slot)` with the wrong
+/// map's `themes` silently draws whatever texture *that* palette happens to have at the
+/// borrowed number — the seam then reads as a mismatched, not just a discontinuous, texture.
+/// `PeekThemeId` avoids this by resolving on the owning side; so does this.
+fn vertex_theme_layers(
+    map: &LandscapeMap,
+    themes: &dyn ThemeSource,
+    x: i32,
+    y: i32,
+    neighbours: &[Neighbour],
+) -> (MergedLevels, MergedLevels) {
+    let (owner_map, owner_themes, ox, oy) =
+        if x >= 0 && x < map.cell_width() && y >= 0 && y < map.cell_height() {
+            (map, themes, x, y)
+        } else {
+            neighbours
+                .iter()
+                .find_map(|n| {
+                    let (nx, ny) = (x + n.offset.0, y + n.offset.1);
+                    (nx >= 0 && nx < n.map.cell_width() && ny >= 0 && ny < n.map.cell_height())
+                        .then_some((n.map, n.themes, nx, ny))
+                })
+                // No neighbour covers it (the loaded world's outer edge, or a neighbour that
+                // failed to load) — the ordinary clamp, resolved through our own palette.
+                .unwrap_or((map, themes, x, y))
+        };
+
+    let slots = [
+        owner_map.theme_slot(ox, oy, 0),
+        owner_map.theme_slot(ox, oy, 1),
+        owner_map.theme_slot(ox, oy, 2),
+    ];
+    // The second layer resolving to nothing collapses the weights onto the first.
+    let has_second = owner_themes.base(slots[1]).is_some() || owner_themes.cliff(slots[1]).is_some();
+    let blends = owner_map.theme_blends(ox, oy, has_second);
+
+    // Levels that would produce identical layers are merged and their weights summed, so a
+    // vertex whose three themes share a texture contributes once at full strength instead of
+    // three times at a third each. The original runs this as two passes over the level
+    // triple, one keyed on the base texture set and one on the cliff set, each with its own
+    // weight array (`:900-980`).
+    (
+        merge_levels(&slots, &blends, |s| owner_themes.base(s)),
+        merge_levels(&slots, &blends, |s| owner_themes.cliff(s)),
+    )
 }
 
 /// Read the three themes at every vertex and accumulate them into layers.
@@ -226,6 +332,7 @@ fn read_themes_and_create_layers(
     mask: &DirectionMask,
     origin_x: i32,
     origin_y: i32,
+    neighbours: &[Neighbour],
 ) -> Vec<Layer> {
     let mut layers: Vec<Layer> = Vec::new();
     // (direction, texture set) -> layer index. The original threads this through
@@ -248,22 +355,8 @@ fn read_themes_and_create_layers(
         for x in 0..PATCH_VERTS {
             let (mx, my) = (origin_x + x as i32, origin_y + y as i32);
 
-            let slots = [
-                map.theme_slot(mx, my, 0),
-                map.theme_slot(mx, my, 1),
-                map.theme_slot(mx, my, 2),
-            ];
-            // The second layer resolving to nothing collapses the weights onto the first.
-            let has_second = themes.base(slots[1]).is_some() || themes.cliff(slots[1]).is_some();
-            let blends = map.theme_blends(mx, my, has_second);
-
-            // Levels that would produce identical layers are merged and their weights
-            // summed, so a vertex whose three themes share a texture contributes once at
-            // full strength instead of three times at a third each. The original runs this
-            // as two passes over the level triple, one keyed on the base texture set and one
-            // on the cliff set, each with its own weight array (`:900-980`).
-            let (base, base_blends) = merge_levels(&slots, &blends, |s| themes.base(s));
-            let (cliff, cliff_blends) = merge_levels(&slots, &blends, |s| themes.cliff(s));
+            let ((base, base_blends), (cliff, cliff_blends)) =
+                vertex_theme_layers(map, themes, mx, my, neighbours);
 
             for level in 0..3 {
                 if let (Some(textures), blend) = (base[level], base_blends[level]) {
@@ -455,7 +548,7 @@ mod tests {
         let lev = flat_map(32, 32, 0.0, (1, 1, 1), (255, 0));
         let map = LandscapeMap::new(&lev);
 
-        let patch = build_patch(&map, &BaseAndCliff, 0, 0);
+        let patch = build_patch(&map, &BaseAndCliff, 0, 0, &[]);
 
         let top: Vec<_> = patch
             .layers
@@ -485,7 +578,7 @@ mod tests {
         let lev = flat_map(32, 32, 0.0, (1, 1, 1), (255, 0));
         let map = LandscapeMap::new(&lev);
 
-        let patch = build_patch(&map, &OneTheme, 0, 0);
+        let patch = build_patch(&map, &OneTheme, 0, 0, &[]);
 
         for layer in &patch.layers {
             for &i in &layer.indices {
@@ -522,7 +615,7 @@ mod tests {
             let lev = flat_map(32, 32, 0.0, (1, 2, 2), strength);
             let map = LandscapeMap::new(&lev);
 
-            let patch = build_patch(&map, &TexturePerSlot, 0, 0);
+            let patch = build_patch(&map, &TexturePerSlot, 0, 0, &[]);
             let drawn = |texture: i32| {
                 patch
                     .layers
@@ -544,7 +637,7 @@ mod tests {
         let lev = flat_map(32, 32, 0.0, (1, 2, 2), (100, 50));
         let map = LandscapeMap::new(&lev);
 
-        let patch = build_patch(&map, &TexturePerSlot, 0, 0);
+        let patch = build_patch(&map, &TexturePerSlot, 0, 0, &[]);
         let blend_of = |texture: i32| {
             patch
                 .layers
@@ -564,7 +657,7 @@ mod tests {
         let lev = flat_map(32, 32, 0.0, (1, 1, 1), (100, 50));
         let map = LandscapeMap::new(&lev);
 
-        let patch = build_patch(&map, &OneTheme, 0, 0);
+        let patch = build_patch(&map, &OneTheme, 0, 0, &[]);
 
         assert_eq!(patch.layers.len(), 1);
         assert_eq!(patch.layers[0].mapping_direction, MappingDirection::Top);
@@ -576,7 +669,7 @@ mod tests {
         let lev = flat_map(64, 64, 0.0, (1, 1, 1), (255, 0));
         let map = LandscapeMap::new(&lev);
 
-        let patch = build_patch(&map, &OneTheme, 2, 3);
+        let patch = build_patch(&map, &OneTheme, 2, 3, &[]);
         assert_eq!((patch.origin_x, patch.origin_y), (32, 48));
     }
 
@@ -607,5 +700,69 @@ mod tests {
         let n = vertex_normal(&map, 8, 8);
         assert!(n[0] < 0.0, "expected the normal to lean towards -X, got {n:?}");
         assert!(n[2] > 0.0, "{n:?}");
+    }
+
+    /// A theme that always resolves to the same texture, whatever the slot — for telling two
+    /// maps' palettes apart even when they happen to store the same raw slot number.
+    struct FixedTexture(i32);
+
+    impl ThemeSource for FixedTexture {
+        fn base(&self, slot: u8) -> Option<LayerTextures> {
+            (slot != 0).then_some(LayerTextures {
+                foreground: self.0,
+                background: 0,
+                bump_map: 0,
+                self_illumination: 0.0,
+            })
+        }
+        fn cliff(&self, _slot: u8) -> Option<LayerTextures> {
+            None
+        }
+    }
+
+    /// The regression this module exists for: a boundary vertex must resolve through the
+    /// map that actually owns it, not through the requesting map's palette. Two
+    /// independently-authored `.lev`s can agree on a raw slot number by pure coincidence —
+    /// here both store slot 5 — and if a stitched query resolved it against the *caller's*
+    /// `ThemeSource`, the seam would draw whichever texture the caller's palette happens to
+    /// have at slot 5, which is a different, unrelated theme (AGENTS.md §3.4/§6.12).
+    #[test]
+    fn boundary_theme_resolves_through_the_neighbours_own_palette() {
+        let lev_a = flat_map(32, 32, 0.0, (5, 0, 0), (255, 0));
+        let lev_b = flat_map(32, 32, 0.0, (5, 0, 0), (255, 0));
+        let map_a = LandscapeMap::new(&lev_a);
+        let map_b = LandscapeMap::new(&lev_b);
+        let theme_a = FixedTexture(100);
+        let theme_b = FixedTexture(999);
+
+        // B sits 32 cells east of A: A's far edge (global x = 32) is B's near column (x = 0).
+        let neighbours = [Neighbour {
+            map: &map_b,
+            themes: &theme_b,
+            offset: (0 - 32, 0),
+        }];
+
+        let has_texture = |patch: &Patch, texture: i32| {
+            patch
+                .layers
+                .iter()
+                .any(|l| l.textures.foreground == texture && !l.indices.is_empty())
+        };
+
+        // The patch at the map's own far edge: patch_x = 1 covers local x 16..32, so its
+        // last column (global x = 32) is the only one outside A's own cell grid.
+        let stitched = build_patch(&map_a, &theme_a, 1, 0, &neighbours);
+        assert!(has_texture(&stitched, 100), "A's own territory must still use A's theme");
+        assert!(
+            has_texture(&stitched, 999),
+            "the boundary column must resolve through B's own ThemeSource, not A's",
+        );
+
+        // Without a neighbour, the seam clamps to A's own edge and never sees B's theme.
+        let unstitched = build_patch(&map_a, &theme_a, 1, 0, &[]);
+        assert!(
+            !has_texture(&unstitched, 999),
+            "unstitched must never see the neighbour's theme",
+        );
     }
 }

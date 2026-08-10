@@ -386,3 +386,57 @@ fn parse_final_albion_wld() {
         unplaced.join("\n  ")
     );
 }
+
+/// [`Wld::maps_for_region_of`] against the shipped world — the region a level needs to load
+/// alongside itself, not just the region parser it is built on.
+#[test]
+fn resolves_lookoutpoint_s_region_from_the_real_world() {
+    let Some(data_dir) = fable_data_dir() else {
+        eprintln!("skipping: no Fable data dir (set FABLE_DATA or symlink ~/Fable)");
+        return;
+    };
+    let path = data_dir.join("Levels/FinalAlbion.wld");
+    let Ok(bytes) = std::fs::read(&path) else {
+        eprintln!("skipping: {path:?} not found");
+        return;
+    };
+
+    let text = String::from_utf8_lossy(&bytes);
+    let wld = Wld::parse(&text).expect("parse FinalAlbion.wld");
+
+    let maps = wld.maps_for_region_of("LookoutPoint");
+
+    // Region 1 "LookoutPoint": 3 `ContainsMap` (BowerstoneBridge, LookoutPoint,
+    // GuildExterior), 11 `SeesMap` fillers — read straight off the shipped `.wld`.
+    let populated: Vec<&str> = maps
+        .iter()
+        .filter(|m| m.populated)
+        .map(|m| m.level_name.as_str())
+        .collect();
+    let fillers = maps.iter().filter(|m| !m.populated).count();
+    assert_eq!(populated.len(), 3, "populated maps: {populated:?}");
+    assert_eq!(fillers, 11);
+    assert!(populated.contains(&"BowerstoneBridge"));
+    assert!(populated.contains(&"LookoutPoint"));
+    assert!(populated.contains(&"GuildExterior"));
+
+    // The requested level keeps its own `.wld` origin, not (0, 0) — the whole point of
+    // resolving the region is to place every map correctly relative to the others.
+    let lookout = maps.iter().find(|m| m.level_name == "LookoutPoint").unwrap();
+    assert_eq!(lookout.origin, (3232, 3488));
+
+    // A filler is present and marked unpopulated, never confused with a `ContainsMap`.
+    let filler = maps
+        .iter()
+        .find(|m| m.level_name == "LookoutPoint_Filler_01")
+        .expect("LookoutPoint_Filler_01 should be a SeesMap filler");
+    assert!(!filler.populated);
+
+    // Asking from any populated member of the region returns the same set (§ the region is
+    // a symmetric relation, not "whichever level you happened to ask about").
+    let mut from_lookout = maps.clone();
+    let mut from_bridge = wld.maps_for_region_of("BowerstoneBridge");
+    from_lookout.sort_by(|a, b| a.level_name.cmp(&b.level_name));
+    from_bridge.sort_by(|a, b| a.level_name.cmp(&b.level_name));
+    assert_eq!(from_lookout, from_bridge);
+}

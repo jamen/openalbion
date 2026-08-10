@@ -113,6 +113,96 @@ impl Wld {
                 .is_some_and(|file| file == wanted)
         })
     }
+
+    /// Every map in `level_name`'s region, positioned in world cells — what a level needs to
+    /// load alongside itself rather than alone.
+    ///
+    /// Unions every region whose `ContainsMap` list names `level_name` (there is usually
+    /// exactly one): the union of their `ContainsMap` entries load and populate
+    /// (`populated: true`), the union of their `SeesMap` entries — minus anything already
+    /// `ContainsMap` — are terrain-only fillers (`populated: false`, AGENTS.md §3.4). A named
+    /// map with no matching `NewMap` entry is silently dropped rather than guessed at —
+    /// logging that belongs to the caller (AGENTS.md §6.8), not this parser.
+    ///
+    /// `level_name` names no region — an isolated or debug-only level, or a `.wld` that
+    /// doesn't cover it — falls back to `level_name` alone, at its own origin if the `.wld`
+    /// places it or `(0, 0)` otherwise. That fallback is what keeps a single-level load
+    /// identical to today's behaviour when there is nothing to join it to.
+    pub fn maps_for_region_of(&self, level_name: &str) -> Vec<RegionMap> {
+        let wanted = format!("{level_name}.lev").to_lowercase();
+        let names_level = |path: &str| {
+            path.to_lowercase()
+                .rsplit(['\\', '/'])
+                .next()
+                .is_some_and(|file| file == wanted)
+        };
+
+        let mut contains: Vec<&str> = Vec::new();
+        let mut sees: Vec<&str> = Vec::new();
+        for region in &self.regions {
+            if region.contains_maps.iter().any(|m| names_level(m)) {
+                contains.extend(region.contains_maps.iter().map(String::as_str));
+                sees.extend(region.sees_maps.iter().map(String::as_str));
+            }
+        }
+
+        if contains.is_empty() {
+            let origin = self
+                .map_for_level(level_name)
+                .map(|m| (m.map_x, m.map_y))
+                .unwrap_or((0, 0));
+            return vec![RegionMap {
+                level_name: level_name.to_string(),
+                origin,
+                populated: true,
+            }];
+        }
+
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for (path, populated) in contains
+            .into_iter()
+            .map(|p| (p, true))
+            .chain(sees.into_iter().map(|p| (p, false)))
+        {
+            let key = path.to_lowercase();
+            if !seen.insert(key) {
+                continue;
+            }
+            let Some(map) = self.maps.iter().find(|m| names_level_path(m, path)) else {
+                continue;
+            };
+            let name = trailing_stem(path);
+            out.push(RegionMap {
+                level_name: name.to_string(),
+                origin: (map.map_x, map.map_y),
+                populated,
+            });
+        }
+        out
+    }
+}
+
+/// One map to load alongside a level, resolved from its region.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionMap {
+    /// The level's bare name, e.g. `"BowerstoneBridge"` — what [`Files::load_level`] takes.
+    pub level_name: String,
+    /// The map's origin in world cells (`MapX`/`MapY`).
+    pub origin: (i32, i32),
+    /// `true` for a `ContainsMap` entry (loaded, walkable, populated from its `.tng` and
+    /// local detail); `false` for a `SeesMap` filler (terrain only, AGENTS.md §3.4).
+    pub populated: bool,
+}
+
+fn names_level_path(map: &WldMap, path: &str) -> bool {
+    map.level_name.to_lowercase() == path.to_lowercase()
+}
+
+/// The bare level name from a `.wld` path like `FinalAlbion\BowerstoneBridge.lev`.
+fn trailing_stem(path: &str) -> &str {
+    let file = path.rsplit(['\\', '/']).next().unwrap_or(path);
+    file.strip_suffix(".lev").unwrap_or(file)
 }
 
 fn map(block: &text::Block<'_>) -> WldMap {
@@ -201,6 +291,24 @@ mod tests {
         IsSea FALSE;\n\
         LoadedOnPlayerProximity TRUE;\n\
         EndMap;\n\
+        NewMap 3;\n\
+        MapX 3232;\n\
+        MapY 3616;\n\
+        LevelName \"FinalAlbion\\BowerstoneBridge.lev\";\n\
+        LevelScriptName \"BowerstoneBridge\";\n\
+        MapUID 784595;\n\
+        IsSea FALSE;\n\
+        LoadedOnPlayerProximity TRUE;\n\
+        EndMap;\n\
+        NewMap 4;\n\
+        MapX 3200;\n\
+        MapY 3456;\n\
+        LevelName \"FinalAlbion\\LookoutPoint_Filler_01.lev\";\n\
+        LevelScriptName \"LookoutPoint_Filler_01\";\n\
+        MapUID 111111;\n\
+        IsSea FALSE;\n\
+        LoadedOnPlayerProximity FALSE;\n\
+        EndMap;\n\
         NewRegion 1;\n\
         RegionName \"LookoutPoint\";\n\
         NewDisplayName \"TXT_REGION_LOOKOUT_POINT\";\n\
@@ -217,7 +325,7 @@ mod tests {
     #[test]
     fn parses_maps() {
         let wld = Wld::parse(WLD).unwrap();
-        assert_eq!(wld.maps.len(), 2);
+        assert_eq!(wld.maps.len(), 4);
         assert_eq!(wld.maps[0].map_number, 1);
         assert_eq!(wld.maps[0].map_x, 3232);
         assert_eq!(wld.maps[0].map_y, 3488);
@@ -260,5 +368,77 @@ mod tests {
         assert_eq!(wld.map_for_level("LookoutPoint").unwrap().map_number, 1);
         assert_eq!(wld.map_for_level("picnicarea").unwrap().map_number, 2);
         assert!(wld.map_for_level("Nowhere").is_none());
+    }
+
+    #[test]
+    fn resolves_a_level_s_region() {
+        let wld = Wld::parse(WLD).unwrap();
+        let mut maps = wld.maps_for_region_of("LookoutPoint");
+        maps.sort_by(|a, b| a.level_name.cmp(&b.level_name));
+
+        assert_eq!(
+            maps,
+            vec![
+                RegionMap {
+                    level_name: "BowerstoneBridge".to_string(),
+                    origin: (3232, 3616),
+                    populated: true,
+                },
+                RegionMap {
+                    level_name: "LookoutPoint".to_string(),
+                    origin: (3232, 3488),
+                    populated: true,
+                },
+                RegionMap {
+                    level_name: "LookoutPoint_Filler_01".to_string(),
+                    origin: (3200, 3456),
+                    populated: false,
+                },
+            ]
+        );
+    }
+
+    /// Asking from either member of the same region gives the same set — the union is over
+    /// every region that names the level, not just the first one found.
+    #[test]
+    fn region_lookup_is_symmetric_within_a_region() {
+        let wld = Wld::parse(WLD).unwrap();
+        let mut from_lookout = wld.maps_for_region_of("LookoutPoint");
+        let mut from_bridge = wld.maps_for_region_of("BowerstoneBridge");
+        from_lookout.sort_by(|a, b| a.level_name.cmp(&b.level_name));
+        from_bridge.sort_by(|a, b| a.level_name.cmp(&b.level_name));
+        assert_eq!(from_lookout, from_bridge);
+    }
+
+    /// A level no region names — the fixture's `PicnicArea` isn't in any `ContainsMap`/
+    /// `SeesMap` list — falls back to itself alone, at its own `.wld` origin.
+    #[test]
+    fn falls_back_to_the_level_alone_when_no_region_names_it() {
+        let wld = Wld::parse(WLD).unwrap();
+        let maps = wld.maps_for_region_of("PicnicArea");
+        assert_eq!(
+            maps,
+            vec![RegionMap {
+                level_name: "PicnicArea".to_string(),
+                origin: (3104, 3520),
+                populated: true,
+            }]
+        );
+    }
+
+    /// And a level neither the maps nor the regions have ever heard of still returns
+    /// something loadable, at the world origin, rather than an empty list.
+    #[test]
+    fn falls_back_to_the_world_origin_when_the_wld_has_no_entry_at_all() {
+        let wld = Wld::parse(WLD).unwrap();
+        let maps = wld.maps_for_region_of("Nowhere");
+        assert_eq!(
+            maps,
+            vec![RegionMap {
+                level_name: "Nowhere".to_string(),
+                origin: (0, 0),
+                populated: true,
+            }]
+        );
     }
 }

@@ -60,9 +60,42 @@ impl Counts {
     pub fn drawn_as_models(&self) -> usize {
         self.mesh + self.hybrid
     }
+
+    fn add(&mut self, other: &Counts) {
+        self.slots += other.slots;
+        self.generators += other.generators;
+        self.placed += other.placed;
+        self.mesh += other.mesh;
+        self.hybrid += other.hybrid;
+        self.repeated += other.repeated;
+    }
+}
+
+/// Combine several maps' local detail into one, for a region loaded as a unit. Instances
+/// merge by mesh id — global asset ids, so foliage sharing a mesh across two maps is still
+/// one upload — and counts sum.
+pub fn merge_local_detail(details: Vec<LevelLocalDetail>) -> LevelLocalDetail {
+    let mut merged = LevelLocalDetail::default();
+    for detail in details {
+        merged.counts.add(&detail.counts);
+        for (mesh_id, mut instances) in detail.by_mesh {
+            merged.by_mesh.entry(mesh_id).or_default().append(&mut instances);
+        }
+        for (key, mut instances) in detail.repeated {
+            merged.repeated.entry(key).or_default().append(&mut instances);
+        }
+    }
+    merged
 }
 
 /// Generate `lev`'s local detail and group it by mesh.
+///
+/// `origin` (`MapX`/`MapY`, AGENTS.md §6.12) reaches [`place_map`]'s random draws — which
+/// plant matters is a property of world position — but its objects come back **map-local**
+/// (`place_map`'s own doc, and pinned by `local_detail_test.rs`'s
+/// `the_origin_moves_the_draws_and_not_the_objects`). This function adds `origin` a second
+/// time, only to the returned instances' translations, so the result lands in world space
+/// without touching that invariant.
 pub fn build_local_detail(files: &Files, lev: &Lev, origin: (i32, i32)) -> LevelLocalDetail {
     let map = LandscapeMap::new(lev);
     let (generators, slots) = resolve_generators(files, lev);
@@ -98,7 +131,7 @@ pub fn build_local_detail(files: &Files, lev: &Lev, origin: (i32, i32)) -> Level
                     .repeated
                     .entry((object_type.mesh as u32, object_type.alpha_ref))
                     .or_default()
-                    .push(repeated_instance(object));
+                    .push(repeated_instance(object, origin));
                 continue;
             }
         }
@@ -107,7 +140,7 @@ pub fn build_local_detail(files: &Files, lev: &Lev, origin: (i32, i32)) -> Level
             .by_mesh
             .entry(object_type.mesh as u32)
             .or_default()
-            .push(model_instance(object));
+            .push(model_instance(object, origin));
     }
 
     tracing::info!(
@@ -131,9 +164,15 @@ pub fn build_local_detail(files: &Files, lev: &Lev, origin: (i32, i32)) -> Level
 /// The per-object colour (`c0`) stays opaque white, exactly as `.tng` placements do: the
 /// engine passes `0xff` for it here too, and the distance fade that would modulate it is its
 /// own step.
-fn model_instance(object: &PlacedObject) -> ModelInstance {
+///
+/// `origin` places the object in world space — `object.transform` is map-local, per
+/// [`build_local_detail`]'s doc.
+fn model_instance(object: &PlacedObject, origin: (i32, i32)) -> ModelInstance {
+    let mut transform = object.transform;
+    transform[3][0] += origin.0 as f32;
+    transform[3][1] += origin.1 as f32;
     ModelInstance {
-        transform: object.transform,
+        transform,
         ..Default::default()
     }
 }
@@ -145,13 +184,15 @@ fn model_instance(object: &PlacedObject) -> ModelInstance {
 /// `(cos(Angle) * Scale, sin(Angle) * Scale, 0, 0)` and `(E41, E42, E43, Scale)`. The
 /// difference is visible — a repeated mesh whose def sets `TiltToSlope` still stands upright,
 /// because the tilt never survives into those four floats.
-fn repeated_instance(object: &PlacedObject) -> LocalDetailInstance {
+///
+/// `origin` places the object in world space, same as [`model_instance`].
+fn repeated_instance(object: &PlacedObject, origin: (i32, i32)) -> LocalDetailInstance {
     let (sin, cos) = fable_data::local_detail::place::fast_sin_cos(object.angle);
     LocalDetailInstance {
         rotation: [cos * object.scale, sin * object.scale, 0.0, 0.0],
         offset: [
-            object.transform[3][0],
-            object.transform[3][1],
+            object.transform[3][0] + origin.0 as f32,
+            object.transform[3][1] + origin.1 as f32,
             object.transform[3][2],
             object.scale,
         ],

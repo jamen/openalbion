@@ -80,7 +80,7 @@ fn every_placement_resolves_to_a_mesh_asset() {
         let tng = Tng::parse(&text).unwrap();
         assert_eq!(tng.things().count(), total, "{level}: things in file");
 
-        let resolved = things::resolve_things(&tng, &graphics);
+        let resolved = things::resolve_things(&tng, &graphics, (0, 0));
         assert_eq!(
             resolved.placement_count(),
             placements,
@@ -115,7 +115,7 @@ fn repeated_meshes_group_into_one_entry() {
 
     let graphics = thing_graphics(&retail);
     let text = std::fs::read_to_string(levels.join("LookoutPoint.tng")).unwrap();
-    let resolved = things::resolve_things(&Tng::parse(&text).unwrap(), &graphics);
+    let resolved = things::resolve_things(&Tng::parse(&text).unwrap(), &graphics, (0, 0));
 
     let most = resolved.by_mesh.values().map(Vec::len).max().unwrap();
     assert_eq!(most, 50, "MESH_SMALL_WALL_CURVED_POST_01 is placed 50 times");
@@ -146,7 +146,7 @@ fn placements_sit_on_the_terrain() {
         let map = fable_data::landscape::LandscapeMap::new(&lev);
 
         let text = std::fs::read_to_string(levels.join(format!("{level}.tng"))).unwrap();
-        let resolved = things::resolve_things(&Tng::parse(&text).unwrap(), &graphics);
+        let resolved = things::resolve_things(&Tng::parse(&text).unwrap(), &graphics, (0, 0));
 
         let mut deltas: Vec<f32> = Vec::new();
         for placement in resolved.by_mesh.values().flatten() {
@@ -173,4 +173,39 @@ fn placements_sit_on_the_terrain() {
             "{level}: median height above terrain is {median:.2}, expected within {tolerance}"
         );
     }
+}
+
+/// A map's `.wld` origin reaches every placement's translation, and nothing else — the
+/// mechanism multiple loaded maps depend on to land in one world rather than stacking at
+/// (0, 0). Rotation and scale (the matrix's other three columns) must be untouched.
+#[test]
+fn origin_translates_every_placement_and_nothing_else() {
+    let Some((retail, levels)) = fixtures() else {
+        eprintln!("skipping: no Fable install");
+        return;
+    };
+
+    let graphics = thing_graphics(&retail);
+    let text = std::fs::read_to_string(levels.join("LookoutPoint.tng")).unwrap();
+    let tng = Tng::parse(&text).unwrap();
+
+    let at_origin = things::resolve_things(&tng, &graphics, (0, 0));
+    let in_world = things::resolve_things(&tng, &graphics, (3232, 3488));
+
+    let mut checked = 0usize;
+    for (mesh_id, placements) in &at_origin.by_mesh {
+        let shifted = &in_world.by_mesh[mesh_id];
+        assert_eq!(placements.len(), shifted.len(), "mesh {mesh_id}: placement count changed");
+        for (a, b) in placements.iter().zip(shifted) {
+            for row in 0..4 {
+                let expected = match row {
+                    3 => [a.transform[3][0] + 3232.0, a.transform[3][1] + 3488.0, a.transform[3][2], a.transform[3][3]],
+                    _ => a.transform[row],
+                };
+                assert_eq!(b.transform[row], expected, "mesh {mesh_id} row {row}");
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 100, "only checked {checked} placements");
 }
