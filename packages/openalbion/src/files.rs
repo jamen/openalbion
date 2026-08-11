@@ -1,13 +1,11 @@
 use derive_more::{Display, Error};
 use fable_data::{
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
-    def::binary::{DefBinary, DefBody},
-    def::names::Names,
-    def::EngineDef,
-    def::EngineGraphic,
-    def::EngineLocalDetailGeneratorDef,
-    def::EngineThemeDef,
-    def::SkyDef,
+    def::{
+        EngineDef, EngineGraphic, EngineLocalDetailGeneratorDef, EngineThemeDef, SkyDef,
+        binary::{DefBinary, DefBody},
+        names::Names,
+    },
     environment::{EnvironmentConfig, EnvironmentTheme},
     lev::{Lev, LevError},
     mesh::{Mesh, MeshError},
@@ -97,7 +95,8 @@ impl Defs {
                         _ => continue,
                     };
                     if let Some(name) = entry.file_name {
-                        defs.thing_graphics.insert(name.to_string(), graphic.clone());
+                        defs.thing_graphics
+                            .insert(name.to_string(), graphic.clone());
                     }
                 }
             }
@@ -405,10 +404,7 @@ impl Files {
     }
 
     /// Read a texture asset by its numeric ID from the textures big.
-    pub fn read_texture_by_id(
-        &mut self,
-        tex_id: u32,
-    ) -> Result<(AssetMetadata, Vec<u8>), String> {
+    pub fn read_texture_by_id(&mut self, tex_id: u32) -> Result<(AssetMetadata, Vec<u8>), String> {
         let asset = self
             .find_texture_asset(tex_id)
             .ok_or_else(|| format!("texture id {tex_id} not found in textures.big"))?;

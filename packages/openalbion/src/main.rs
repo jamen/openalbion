@@ -296,6 +296,12 @@ struct App {
     keys: HashSet<KeyCode>,
     /// Whether the cursor is locked (mouse look active).
     cursor_locked: bool,
+    /// Whether we should be trying to lock the cursor — set on startup/click/Enter, cleared by
+    /// Escape. `set_cursor_grab` can fail (observed under Wine: the OS clip/hide calls silently
+    /// no-op while `GetActiveWindow` hasn't caught up with a just-received focus event yet), so
+    /// this drives a retry on the next `WindowEvent::Focused(true)` rather than trusting the
+    /// first attempt.
+    cursor_lock_desired: bool,
     /// Frame counter to detect first load.
     first_frame: bool,
     /// The richest scripted camera spline found in the loaded region, if any
@@ -340,6 +346,7 @@ impl App {
             sky_textures: None,
             keys: HashSet::new(),
             cursor_locked: false,
+            cursor_lock_desired: true,
             first_frame: true,
             flythrough_path: None,
             flythrough_spline_index: cli.flythrough_spline.unwrap_or(0),
@@ -837,25 +844,17 @@ impl App {
             } => {
                 if state == ElementState::Pressed {
                     if keycode == KeyCode::Escape {
-                        if let Some(window) = &self.window {
-                            if self.cursor_locked {
-                                window.set_cursor_visible(true);
-                                let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-                                self.cursor_locked = false;
-                            } else {
-                                window.set_cursor_visible(false);
-                                let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
-                                self.cursor_locked = true;
-                            }
+                        if self.cursor_locked {
+                            self.unlock_cursor();
+                        } else {
+                            self.cursor_lock_desired = true;
+                            self.try_lock_cursor();
                         }
                         return Ok(());
                     }
                     if keycode == KeyCode::Enter && !self.cursor_locked {
-                        if let Some(window) = &self.window {
-                            window.set_cursor_visible(false);
-                            let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
-                            self.cursor_locked = true;
-                        }
+                        self.cursor_lock_desired = true;
+                        self.try_lock_cursor();
                         return Ok(());
                     }
                     if keycode == KeyCode::KeyF && self.flythrough_path.is_some() {
@@ -876,12 +875,8 @@ impl App {
                     && button == MouseButton::Left
                     && !self.cursor_locked
                 {
-                    if let Some(window) = &self.window {
-                        window.set_cursor_visible(false);
-                        let _ =
-                            window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
-                        self.cursor_locked = true;
-                    }
+                    self.cursor_lock_desired = true;
+                    self.try_lock_cursor();
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -889,10 +884,42 @@ impl App {
                 // (handled via raw device events for locked mode).
                 let _ = position;
             }
+            WindowEvent::Focused(true) => {
+                // A grab attempted before the window was focused (startup, or a click that
+                // hadn't yet activated the window) can fail without erroring — `set_cursor_grab`
+                // silently no-ops on Windows while `GetActiveWindow` doesn't yet agree this
+                // window is active. Retry now that we have a real activation transition.
+                if self.cursor_lock_desired && !self.cursor_locked {
+                    self.try_lock_cursor();
+                }
+            }
             _ => {}
         }
 
         Ok(())
+    }
+
+    /// Attempts to hide and grab the cursor, only committing `cursor_locked` on success.
+    /// `set_cursor_grab`/`set_cursor_visible` can fail silently on Windows when the window
+    /// hasn't been marked active yet — see `cursor_lock_desired`, which drives a retry.
+    fn try_lock_cursor(&mut self) {
+        let Some(window) = &self.window else { return };
+        window.set_cursor_visible(false);
+        match window.set_cursor_grab(winit::window::CursorGrabMode::Locked) {
+            Ok(()) => self.cursor_locked = true,
+            Err(error) => {
+                window.set_cursor_visible(true);
+                tracing::warn!("Cursor grab failed, will retry on next focus: {error}");
+            },
+        }
+    }
+
+    fn unlock_cursor(&mut self) {
+        self.cursor_lock_desired = false;
+        let Some(window) = &self.window else { return };
+        window.set_cursor_visible(true);
+        let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+        self.cursor_locked = false;
     }
 
     fn device_event(
@@ -941,11 +968,7 @@ impl App {
         // On first frame, lock cursor for fly camera.
         if self.first_frame {
             self.first_frame = false;
-            if let Some(window) = &self.window {
-                window.set_cursor_visible(false);
-                let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Locked);
-                self.cursor_locked = true;
-            }
+            self.try_lock_cursor();
         }
 
         // Either the camera flies the level's scripted spline, or WASD drives it — never
