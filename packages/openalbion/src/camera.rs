@@ -15,8 +15,10 @@ pub struct Camera {
     /// `CAMERA_MODE` an `FOV`, and `CAMERA_MODE_TEMPLATE` defaults to 70. AGENTS.md §3.10.
     pub fov_h: f32,
     pub aspect: f32,
+    /// Near plane, world units. There is no far plane — [`Self::projection_matrix`] uses an
+    /// infinite-far reverse-Z projection (see its doc comment for why), so this is the only
+    /// depth-range knob left.
     pub near: f32,
-    pub far: f32,
     /// Current fly speed (world units per second).
     pub fly_speed: f32,
     /// Accumulated mouse delta for look input.
@@ -39,7 +41,6 @@ impl Camera {
             fov_h: 70.0_f32.to_radians(),
             aspect: 16.0 / 9.0,
             near: 0.1,
-            far: 1000.0,
             fly_speed: 10.0,
             mouse_delta: (0.0, 0.0),
             mouse_sensitivity: 0.003,
@@ -97,8 +98,24 @@ impl Camera {
         2.0 * ((self.fov_h * 0.5).tan() / self.aspect).atan()
     }
 
+    /// Infinite-far, reverse-Z: `near` maps to depth `1`, infinity to depth `0` (`Greater`
+    /// is thus "closer" — every depth-test `CompareFunction` in the renderer is flipped to
+    /// match, and the depth buffer clears to `0.0`, not `1.0`).
+    ///
+    /// A level's world span can be several hundred units with the camera getting as close
+    /// as centimetres to a mesh, so `near`/`far` easily spans five-plus orders of magnitude.
+    /// A standard (`near` → depth `0`, `far` → depth `1`) projection compresses almost all
+    /// of the `[0, 1]` depth range into the first few world units in front of the camera —
+    /// terrain a hundred units out and terrain three hundred units out end up mapped to
+    /// depth values a `Depth32Float` buffer can't tell apart, and different draws round
+    /// differently frame to frame, which is exactly what showed up as shimmering on
+    /// mid-to-far terrain and buildings whenever the camera moved. Reverse-Z with an
+    /// infinite far plane is the standard fix: it keeps depth precision roughly
+    /// proportional to distance instead of collapsing it at range, and removes the far
+    /// plane (and its arbitrary `world_span * 10`) entirely — nothing can be
+    /// far-plane-clipped anymore either.
     pub fn projection_matrix(&self) -> Mat4 {
-        Mat4::perspective_rh(self.fov_y(), self.aspect, self.near, self.far)
+        Mat4::perspective_infinite_reverse_rh(self.fov_y(), self.aspect, self.near)
     }
 
     /// `c5..c8` for geometry that arrives in **absolute world coordinates** — the static
@@ -180,10 +197,9 @@ impl Camera {
         self.position += velocity * dt;
     }
 
-    /// Update near/far planes based on world extents.
+    /// Update the near plane based on world extents.
     pub fn set_world_extents(&mut self, world_span: f32) {
         self.near = world_span * 0.0001;
-        self.far = world_span * 10.0; // covers the full world plus sky
     }
 }
 

@@ -251,7 +251,7 @@ impl TerrainPipeline {
             // Depth was written by the blackout pass over the same geometry, so every layer
             // sits exactly on it.
             false,
-            CompareFunction::LessEqual,
+            CompareFunction::GreaterEqual,
         ))
     }
 
@@ -272,7 +272,7 @@ impl TerrainPipeline {
             "fs_blackout",
             None,
             true,
-            CompareFunction::Less,
+            CompareFunction::Greater,
         ))
     }
 
@@ -597,8 +597,9 @@ impl TerrainPass {
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_texture_view,
+                // Reverse-Z: `0.0` is "nothing here yet", not `1.0` (`Camera::projection_matrix`).
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: wgpu::LoadOp::Clear(0.0),
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,

@@ -324,7 +324,8 @@ impl ModelPipelines {
                 depth_stencil: Some(DepthStencilState {
                     format: targets.depth,
                     depth_write_enabled: !blend,
-                    depth_compare: CompareFunction::Less,
+                    // Reverse-Z (`Camera::projection_matrix`): closer is a *greater* depth.
+                    depth_compare: CompareFunction::Greater,
                     stencil: StencilState::default(),
                     bias: DepthBiasState::default(),
                 }),
