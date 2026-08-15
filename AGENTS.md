@@ -1443,6 +1443,12 @@ nix shell "nixpkgs#vulkan-tools" --command vulkaninfo --summary
 
 # one offscreen frame, for a pixel-identical before/after
 cargo run -p openalbion -- --level LookoutPoint --screenshot out.ppm
+
+# see text rendering, live — fly with WASD, Escape releases the cursor (§13.7 step 3)
+cargo run -p openalbion -- --level LookoutPoint --text-demo
+
+# ...or as a still, without a window
+cargo run -p openalbion -- --level LookoutPoint --text-demo --screenshot text.ppm
 ```
 
 ---
@@ -2281,8 +2287,14 @@ something should.
    for. Also pinned: nothing draws until text is set and `set_text(&[])` restores the frame
    byte-for-byte; a repeated key reuses its slot; and §13.2a's hazard is a gate, not a comment —
    a scene load invalidates glyph slots and drawing across one trips the assert. Driven
-   end-to-end through the real app once: **114 glyphs over LookoutPoint in a single draw, 53
-   distinct glyph slots on top of the scene's 229** — §13.2's budget, confirmed on hardware.
+   end-to-end through the real app by **`--text-demo`** (§8), which draws a live overlay over
+   whatever level is loaded: 303 glyphs as 606 quads — each drawn twice, once as a drop shadow —
+   in **one draw**, and **338 of 4096 slots**, being LookoutPoint's 229 plus 109 glyphs across
+   two sizes. §13.2's budget, confirmed on hardware. The overlay is a stand-in for the console
+   and step 4 replaces it; it exists so the text path can be looked at rather than described,
+   and it shows the two things a still image cannot — values that change every frame, so the
+   cache fills in as you fly and then stops doing anything, and two sizes, so the `px` half of
+   the key is visible as two sets of registrations.
 4. **`openalbion::console`** — toggle key, input line, scrollback, command table, with
    `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` as the first commands (§13.5). This is
    what gives text something to say — `--text-demo` (§8) is a stand-in for it and this step

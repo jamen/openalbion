@@ -64,6 +64,10 @@ struct Cli {
     /// camera target for --screenshot, as `x,y,z` (default: the terrain centre)
     #[argh(option)]
     look_at: Option<String>,
+
+    /// draw the text-rendering demonstration overlay (AGENTS.md §13.7 step 3)
+    #[argh(switch)]
+    text_demo: bool,
 }
 
 /// How much of a level's texture work the bindless registry saves (AGENTS.md §12.6).
@@ -188,6 +192,10 @@ fn capture(
 
     app.renderer = Some(renderer);
     let sky_blend = app.refresh_sky();
+    // Twice: the overlay reports its own glyph count, which only exists once it has been laid
+    // out. A live window gets that for free from the previous frame; a single capture does not.
+    app.update_text_demo();
+    app.update_text_demo();
 
     let camera_relative_view_proj = app
         .camera
@@ -217,6 +225,97 @@ fn capture(
     Ok(())
 }
 
+/// The `--text-demo` overlay: what the text path can do, on screen, so it can be looked at
+/// rather than described (AGENTS.md §13.7 step 3).
+///
+/// **A stand-in for the console, not a design for it.** Step 4 replaces it. It deliberately
+/// shows the two things a still image cannot: values that change every frame, so glyphs
+/// register as new digits appear, and two sizes, so the `px` half of the cache key is visible.
+mod demo {
+    use crate::text::{self, Font};
+    use renderer::{GlyphInstance, Renderer};
+
+    /// Body text size, and the heading's. Two sizes because `(char, px)` is the cache key, so
+    /// the same character at two sizes is two slots — visible here as two registrations.
+    const BODY_PX: u32 = 17;
+    const HEADING_PX: u32 = 26;
+    /// Inset from the top-left corner, in pixels.
+    const MARGIN: f32 = 18.0;
+
+    const TEXT_COLOUR: [f32; 4] = [0.93, 0.95, 0.90, 1.0];
+    /// A one-pixel drop shadow, so the overlay stays readable over both the bright sky and the
+    /// dark ground. Not a text feature — just the same glyphs drawn twice.
+    const SHADOW_COLOUR: [f32; 4] = [0.0, 0.0, 0.0, 0.8];
+    const SHADOW_OFFSET: f32 = 1.0;
+
+    /// Lay out `heading` and `body`, register whatever glyphs are new, and hand the whole
+    /// overlay to the renderer as one batch.
+    ///
+    /// The order matters and is the §13.3 shape: rasterize and register *every* new glyph
+    /// first, then draw. Registering dirties the bindless array, and `encode` rebuilds it once
+    /// per frame — so a glyph at a time would rebuild it once per character.
+    pub fn draw(renderer: &mut Renderer, font: &Font, heading: &str, body: &[String]) {
+        let mut placed = Vec::new();
+        text::layout_line(font, HEADING_PX, heading, [MARGIN, MARGIN], &mut placed);
+        placed.extend(text::layout_lines(
+            font,
+            BODY_PX,
+            body,
+            [MARGIN, MARGIN + font.cell(HEADING_PX).1],
+        ));
+
+        // Shadows in one pass and text in another, rather than interleaved per glyph: within a
+        // draw the instances blend in order, so a neighbour's shadow would otherwise land on
+        // top of the glyph before it.
+        let mut shadows = Vec::with_capacity(placed.len());
+        let mut text = Vec::with_capacity(placed.len());
+
+        for glyph in &placed {
+            // A space has no outline. Not an error — the pen advanced, there is nothing to draw.
+            let Some(raster) = font.rasterize(glyph.key) else {
+                continue;
+            };
+
+            let key = glyph.key.id();
+            // Ask every frame rather than caching: the registry is scene-scoped and a level
+            // load invalidates every slot (§13.2a). A miss costs a re-register, not a
+            // re-rasterize, because the bitmap is right here.
+            let index = match renderer.glyph_index(key) {
+                Some(index) => index,
+                None => match renderer.add_glyph(key, &raster.image) {
+                    Ok(index) => index,
+                    Err(error) => {
+                        tracing::warn!("text demo: {:?} did not register: {error}", glyph.key.ch);
+                        continue;
+                    }
+                },
+            };
+
+            let rect = [
+                glyph.pen_x + raster.left,
+                glyph.baseline_y + raster.top,
+                raster.image.width as f32,
+                raster.image.height as f32,
+            ];
+            shadows.push(GlyphInstance {
+                rect: [rect[0] + SHADOW_OFFSET, rect[1] + SHADOW_OFFSET, rect[2], rect[3]],
+                colour: SHADOW_COLOUR,
+                texture_index: index,
+                _pad: [0; 3],
+            });
+            text.push(GlyphInstance {
+                rect,
+                colour: TEXT_COLOUR,
+                texture_index: index,
+                _pad: [0; 3],
+            });
+        }
+
+        shadows.append(&mut text);
+        renderer.set_text(&shadows);
+    }
+}
+
 struct App {
     files: Files,
     renderer: Option<Renderer<'static>>,
@@ -242,6 +341,11 @@ struct App {
     cursor_lock_desired: bool,
     /// Frame counter to detect first load.
     first_frame: bool,
+    /// The embedded font, loaded only for `--text-demo`. `None` means the overlay is off, which
+    /// is the default and what keeps `--screenshot` byte-comparable (AGENTS.md §13.6).
+    demo_font: Option<text::Font>,
+    /// Smoothed frames per second, for the overlay to have something that moves.
+    fps: f32,
 }
 
 #[derive(Debug, Display)]
@@ -282,6 +386,14 @@ impl App {
             cursor_locked: false,
             cursor_lock_desired: true,
             first_frame: true,
+            demo_font: cli.text_demo.then(text::Font::new).transpose().map_or_else(
+                |error| {
+                    tracing::error!("--text-demo: {error}");
+                    None
+                },
+                |font| font,
+            ),
+            fps: 0.0,
         })
     }
 }
@@ -957,6 +1069,17 @@ impl App {
             .to_cols_array_2d();
         let view_proj = self.camera.view_projection_matrix().to_cols_array_2d();
 
+        // Smoothed, so the number is readable rather than flickering every frame.
+        if delta_time > 0.0 {
+            let instant = 1.0 / delta_time;
+            self.fps = if self.fps > 0.0 {
+                self.fps * 0.9 + instant * 0.1
+            } else {
+                instant
+            };
+        }
+        self.update_text_demo();
+
         let window = self.window.as_ref().ok_or(E::NoWindow)?;
         let renderer = self.renderer.as_mut().ok_or(E::NoRenderer)?;
 
@@ -977,6 +1100,64 @@ impl App {
         window.request_redraw();
 
         Ok(())
+    }
+}
+
+impl App {
+    /// Build the `--text-demo` overlay and hand it to the renderer. A no-op without the flag.
+    ///
+    /// Split from [`demo::draw`] because the strings come from `&self` and the drawing needs
+    /// `&mut self.renderer` — so the borrow ends before the renderer's begins.
+    fn update_text_demo(&mut self) {
+        let Some(font) = self.demo_font.take() else {
+            return;
+        };
+
+        let (slots, capacity) = self.renderer.as_ref().map_or((0, 0), Renderer::bindless_stats);
+        let (meshes, placements) = self.renderer.as_ref().map_or((0, 0), Renderer::model_stats);
+        let (_, foliage) = self
+            .renderer
+            .as_ref()
+            .map_or((0, 0), Renderer::local_detail_stats);
+
+        let heading = format!("OpenAlbion — {}", self.level_name);
+        let body = vec![
+            String::new(),
+            // These change every frame, which is the point: each new digit is a glyph that was
+            // not resident, so the cache fills in as you fly and then stops doing anything.
+            format!(
+                "camera    {:9.1} {:9.1} {:9.1}",
+                self.camera.position.x, self.camera.position.y, self.camera.position.z,
+            ),
+            format!("time      {:5.2}h", self.time_of_day),
+            format!(
+                "fps       {}",
+                if self.fps > 0.0 {
+                    format!("{:.0}", self.fps)
+                } else {
+                    "n/a".to_string()
+                },
+            ),
+            String::new(),
+            format!("bindless  {slots}/{capacity} slots"),
+            format!("meshes    {meshes} assets, {placements} placements"),
+            format!("foliage   {foliage} instances"),
+            // The previous frame's, necessarily: this line is part of what gets counted, so a
+            // number describing the frame it appears in cannot be known before it is laid out.
+            format!(
+                "glyphs    {} quads, one draw",
+                self.renderer.as_ref().map_or(0, Renderer::text_stats),
+            ),
+            String::new(),
+            "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(),
+            "0123456789  !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~".to_string(),
+            "|....|....|....|....|....|....|....|....|  <- monospace grid".to_string(),
+        ];
+
+        if let Some(renderer) = self.renderer.as_mut() {
+            demo::draw(renderer, &font, &heading, &body);
+        }
+        self.demo_font = Some(font);
     }
 }
 
