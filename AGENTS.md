@@ -30,24 +30,33 @@ inert where it has not — deliberately, per §2 rule 5.
 | Sky | **Partial.** Textures, keyframe blend and the gradient lerp are right; the gradients themselves are zero pending the environment layer, and the base band draws through the wrong pipeline | §3.2, §3.3, step 3 |
 | Environment layer | **Half.** Themes and keyframes are read; **the colour LUT is not** — `lighting_colours.tga` is loaded into `Files` and consumed by nothing | §3.1, step 2 |
 
-**Two things gate everything else, and they are independent.**
+**Bindless rendering (§12) is done** — all five passes draw through one texture array, every
+step verified byte-identical, and the texture cache it bought is measured at 2.5–3.9× redundant
+work removed (§12.1, §12.8).
 
-1. **The environment layer (§5 step 2)** is the highest-value *faithfulness* work left. Sky
+**Two things are left, and they are independent.**
+
+1. **The dev console (§13.7 step 4).** Text rendering itself is **built** — the renderer draws
+   monospace glyph runs in one instanced draw, `openalbion::text` rasterizes and lays them out,
+   and both are tested. What is left is the console that gives them something to say: a
+   toggleable overlay, an input line, scrollback, and the `Enable*` subsystem toggles (§13.5).
+2. **The environment layer (§5 step 2)** is the highest-value *faithfulness* work left. Sky
    gradients, landscape lighting and mesh lighting are the same four LUT rows, all three
    currently running the same neutral placeholder (§9). It is now **one constant** to change —
    `LightingUniforms::NEUTRAL` — since §12.7 landed.
-2. **Bindless rendering (§12)** is the highest-value *engineering* work left, and is what
-   Jamen has asked for next. It is a prerequisite for font rendering and the dev console
-   (§13), and it pays for itself independently by giving the renderer a texture cache it does
-   not have today.
 
-**Bindless comes first**, then fonts and the console, then the environment layer — Jamen's
-call, 2026-08-15.
+**The console comes first**, then the environment layer — Jamen's call, 2026-08-15.
 
 **A trap that cost a session, now fixed and worth not reintroducing:** `cargo check` does not
 link, so a broken host link can hide indefinitely. It did — `mingw.stdenv.cc` in the devshell's
 `packages` exported a bare `CC`/`AR` for the Windows target, and `packages/lzo` built a COFF
 object the Linux host link could not resolve. **Run `cargo build`, not just `cargo check`.**
+
+The flake fix does not reach a shell that was already open, or a cached `direnv` environment —
+both still export the old `CC`/`AR` and reproduce the failure exactly
+(`undefined symbol: lzo1x_decompress_safe`). If it recurs, check `env | grep -E '^(CC|AR)='`
+before suspecting the flake; `unset CC AR` plus `cargo clean -p lzo` clears it, and re-entering
+the devshell clears it properly.
 
 ---
 
@@ -1011,6 +1020,58 @@ at the world origin. So the origin must reach the random draws (it decides *whic
 grows) and nothing else, or a level's foliage stands thousands of cells off its own hillside.
 Every shipped origin is a multiple of 32 and the draws mask to five bits, so the two readings
 are indistinguishable by eye and only a test tells them apart.
+
+### 3.14 The game's own fonts — pre-rasterized GDI atlases, and no monospace among them
+
+Read out of the shipped data 2026-08-15, because §13 had to decide whether to use them.
+
+`Data/lang/English/fonts.big` (53,822,286 bytes) holds **26 assets in three banks**:
+`FONT_ENGLISH_MAIN` (8 static fonts), `STREAMING_FONT_ENGLISH_PC` and
+`STREAMING_FONT_ENGLISH_XBOX` (8 fonts each plus a 25,968,640-byte `GlyphData` blob for CJK).
+`Data/Defs/DevHeaders/fonts.h` enumerates them.
+
+| Asset | Bytes | Atlas | Name field |
+|---|---|---|---|
+| `ENG_TAHOMA_10`, `ENG_TAHOMA_12` | 67,734 | 128 × 128 | Tahoma |
+| `ENG_ARIAL_12` | 67,733 | 128 × 128 | Arial |
+| `ENG_ARIAL_16`, `ENG_ARIAL_18` | 133,269 | 128 × 256 | Arial |
+| `ENG_ARIAL_24` | 264,341 | 256 × 256 | Arial |
+| `ENG_ARIAL_28` | 526,485 | 256 × 512 | Arial |
+| `ENG_TIMES_NEW_ROMAN_16` | 133,269 | 128 × 256 | **Arial** |
+
+**`ENG_TIMES_NEW_ROMAN_16` is byte-for-byte identical to `ENG_ARIAL_16`** — same length, same
+header, `"Arial"` in its own name field. The shipped Times bank is a mislabelled Arial. Nothing
+depends on this; it is recorded so the next reader does not spend the afternoon we did
+reconciling two files that are one file.
+
+A static bank is: a null-terminated name, then `FontHeight`, `Weight` (400 = `FW_NORMAL` for
+all but `ENG_ARIAL_18`, which is 700), `Italics`, `MaxHeight`, `TextureSize`, `MinChar` (32),
+`MaxChar` (127) — matching `CStaticFontBank` (`bbblibrary/lib_font_bank.hpp:1066`) — then 96
+`CGlyph` records (`:1045`; `Left/Top/Right/Bottom` f32 UV rect plus `Offset/Width/Advance`
+i16, 22 bytes) and finally the atlas as raw 32bpp with **all four channels equal**, four times
+the bytes a coverage bitmap needs. The packing is variable-width and row-major, so the UV rects
+are load-bearing — it is not a grid.
+
+**They are baked from Microsoft's fonts by Windows GDI at build time.**
+`CStaticFontBank::GenerateFont(name, height, weight, italics, out)` and its helper
+`DetermineTextureSize(HDC__*, HFONT__*, tagGLYPHSET*, C2DExtentsI&)` (`:1099-1101`) are the
+producer. The streaming variant keys glyphs by
+`{ font_name, font_height, font_weight, italics, wchar_t ch }` (`_misc/font.hpp:17`) — the same
+shape a glyph cache wants, arrived at independently.
+
+Four consequences, which together are why §13 embeds a font instead:
+
+1. **There is no monospace font in the game's data.** Arial and Tahoma only.
+2. They are licensed Microsoft fonts. Readable from a user's install; not redistributable, so
+   they cannot be a fallback.
+3. They are **language-scoped** — a non-English install ships different banks.
+4. The original's console does not settle the question either: it is *handed* a font,
+   `CConsole::Initialise(char, EInputKey, const CFontBank*)`
+   (`bbblibrary/lib_console2.cpp:1772`).
+
+**When this becomes worth parsing:** in-game UI — dialogue, HUD, menus — where §2 rule 1
+applies and the right glyphs are the shipped ones. A dev console is not that (§13.1).
+
 ---
 
 ## 4. *(retired)*
@@ -1419,6 +1480,45 @@ Newest first, one entry per working session: what landed, and the correction wor
 Anything a session *established* is a present-tense fact in §3, §5 or §9 instead — this is the
 record of how it got there, not a second copy of it.
 
+- **2026-08-15** — **Text renders** (§13.7 steps 1–3). Inconsolata embedded and rasterized by
+  `ab_glyph`, laid out monospace in `openalbion::text`, and drawn by a `TextPass` as one
+  instanced draw of screen-space quads after the resolve. **§12.9's last gate closed with it**:
+  non-uniform indexing had been requested since §12.8 step 1 and used by nothing, and the two
+  quads reading back 255 and 128 from different slots in one draw is the proof it asked for.
+  Smaller than feared — naga emits the `NonUniform` decoration itself, so there is no WGSL
+  annotation. **The correction worth keeping:** `ab_glyph`'s `PxScale` is an ascent-to-descent
+  pixel height, not an em size, so handing it `16.0` gives Inconsolata a 7.626 px advance rather
+  than 8.0 — 5% narrow, and it reads as a condensed font rather than as a bug. The metrics test
+  caught it before anything drew, which is the §6.9 middle layer doing its job. **Two unplanned
+  fixes:** `TerrainPass` asserted its bindless generation *before* the early return for having
+  no terrain, so any `clear_scene` without a following `set_terrain` tripped a guard about
+  indices it would not use; and `Renderer` consumed its surface size and dropped it, which
+  screen-space work needs.
+- **2026-08-15** — **Fonts and the console, derived** (§13). No code. The two questions Jamen
+  raised were both answered by measurement rather than argument. **Texture slots are not scarce:**
+  LookoutPoint's region — the worst measured case — registers **229 of 4096**, so a console's 95
+  glyphs are 2.3% of capacity. **The game's own glyphs are the wrong source:** `fonts.big` ships
+  pre-rasterized GDI atlases of Arial and Tahoma and **nothing monospace** (§3.14), licensed,
+  language-scoped, and needing a new parser — so Inconsolata is embedded instead (OFL, no
+  Reserved Font Name, 105,628 B, `advance = 500/1000 em` for all of ASCII, verified from the
+  file). **Two findings changed the plan.** The layered-texture idea is *dominated*, not merely
+  unnecessary: a `D2Array` view cannot join the existing binding array, so it needs a binding of
+  its own — the per-pass special case §12 exists to delete. And **the registry's level scope is
+  wrong for glyphs** (§13.2a): `clear_scene` wipes them on every level load, the same hazard
+  §12.8 step 4 caught for terrain, and §12.11 q1's reasoning ("indices are valid only between one
+  clear and the next") does not hold for a console that outlives scenes. §13.2 was re-examined
+  against the monospace scoping — which does void its original argument, since monospace makes
+  packing two integer ops — and **re-affirmed by Jamen**, on slots being measured-plentiful and
+  on closing §12.9's non-uniform-indexing gate; the reasoning is written down so it is not opened
+  a third time. Smaller: naga emits the `NonUniform` decoration itself, so no WGSL annotation is
+  needed; `ab_glyph` is already in the tree via winit; and `TerrainPass` owns the depth clear,
+  which must move before any `Enable*` toggle works. Incidental: `ENG_TIMES_NEW_ROMAN_16` is
+  byte-for-byte `ENG_ARIAL_16`.
+- **2026-08-15** — **Bindless landed, all six steps** (§12.8). Every pass draws through one
+  texture array; every step verified byte-identical on LookoutPoint and Witchwood. The ordering
+  hazard the plan predicted was real and the generation guard caught it on the first run —
+  terrain registers inside `set_terrain`, which ran *before* the scene clear that wiped its
+  slots, so `clear_models` became `clear_scene` and moved ahead of it.
 - **2026-08-15** — **Guide restructured; bindless planned, reviewed and measured.** No renderer
   code. This document was cumulative (2,442 lines, mostly session narrative and abandoned
   tooling) and is now current-only, with §3.9 and this section carrying what remains of the
@@ -1880,9 +1980,11 @@ shaders at module creation so the two language's layouts cannot drift. The four 
   not do it, and none of the verification above depends on it. Draw-call count will fall anyway
   (one `set_immediates` beats one `set_bind_group`), but **do not claim a speedup without
   measuring** (§6.6).
-- **Exercising non-uniform indexing.** Requested from day one, unexercised until §13. Being
-  *granted* the feature does not prove the shader path works: give it its own small test — two
-  quads in one instanced draw, each indexing a different slot — before font rendering leans on it.
+- ~~**Exercising non-uniform indexing.**~~ **DONE**, by §13.7 step 3 — the text pass *is* the
+  two-quads-in-one-draw test this asked for, and `renderer/tests/text_test.rs` keeps it a gate.
+  Smaller than expected: naga detects a non-uniform binding-array index and emits the
+  `NonUniform` decoration itself (`naga-28.0.0/src/back/spv/block.rs:598`, `:2259`), so there is
+  no WGSL annotation to write and the feature request in `REQUIRED_FEATURES` is the whole of it.
 - **Growing past the chosen capacity at runtime.** §12.3 picks a number that makes this
   unnecessary. If it ever is necessary, it means rebuilding the layout and every pipeline.
 - **Bindless buffers or storage textures.** Nothing needs either.
@@ -1927,22 +2029,66 @@ cheap to revisit and neither has a caller yet.
 
 ---
 
-## 13. Font rendering & the dev console — decisions recorded, work deferred
+## 13. Font rendering & the dev console — **text is built; the console is next**
 
-Not started, and deliberately behind §12. This section exists so the decisions already made are
-not re-litigated when the work starts.
+§12 is complete, and §13.7 steps 1–3 landed 2026-08-15. Step 4, the console, is the current
+work. §2 rules 1 and 3 do not apply (there is no
+oracle — the original engine had a console, but we are not reproducing it, §13.5); rules 2, 4,
+5 and 6 do.
 
-### 13.1 Parsing and rasterization: `fontdue`
+**Scope, from Jamen: monospace text only**, expanding to UI elements later. That scoping is
+load-bearing for §13.2 and is the reason §13.2 was re-examined and re-affirmed rather than
+assumed.
 
-Decided 2026-08-15 (Jamen). Pulls a TTF/OTF and rasterizes individual glyphs to 8-bit alpha
-coverage bitmaps at a requested pixel size, on demand. No shaping engine — no ligatures, no
+### 13.1 Parsing and rasterization: a TTF, embedded — not the game's fonts
+
+Decided 2026-08-15 (Jamen). Pull a TTF/OTF and rasterize individual glyphs to 8-bit coverage
+bitmaps at a requested pixel size, on demand. No shaping engine — no ligatures, no
 complex-script layout — which is fine for a dev console and Latin UI text; revisit only if a
 real HUD or dialogue system needs it.
 
 The bitmaps are R8, which is already an `ImageFormat` the renderer accepts (`image.rs:23`) and
 already satisfies §12.2 fact 6's sample-type invariant. No new upload path is needed.
 
-### 13.2 No texture atlas — bindless per-glyph textures
+**Why not the game's own glyphs**, which it does ship pre-rasterized: §3.14 has the reading.
+The short form is that `fonts.big` contains Arial and Tahoma and **nothing monospace**, the
+banks are GDI bakes of licensed Microsoft fonts, they are scoped to the install's language, and
+they would need a new `fable-data` parser. A dev console is the tool used to debug parsing; it
+must not depend on parsing. §3.14 records when they *do* become worth reading: in-game UI,
+where §2 rule 1 applies and the shipped glyphs are the correct ones.
+
+**The font: Inconsolata Regular**, static instance, **105,628 bytes**, SIL OFL 1.1 with **no
+Reserved Font Name** declared — embeddable and modifiable provided `OFL.txt` and the copyright
+line ship with it. Measured from the file: 1000 upem, **`advance = 500` for every glyph in
+`0x20..0x7E`** (monospace confirmed, not assumed), line height 1.049 em. So the cell is
+`ceil(0.5·px) × ceil(1.049·px)` — 8 × 17 at 16 px. An ASCII subset would be ~20 KB if the
+binary size ever matters; the variable font is 347 KB and is not what to embed.
+
+**The rasterizer is `ab_glyph`**, decided at implementation over §13's first draft's `fontdue`.
+`ab_glyph 0.2.32` is **already compiled into `openalbion`** — winit → `sctk-adwaita` (Wayland
+decorations) → `ab_glyph` → `ab_glyph_rasterizer` + `owned_ttf_parser` → `ttf-parser 0.25.1`,
+all four already in `Cargo.lock`. On Linux it is zero new crates; `fontdue` would add two or
+three. Its `outline_glyph(g).draw(|x, y, coverage|)` callback writes coverage without an
+intermediate `Vec`. The caveat: `sctk-adwaita` is Unix-only, so on the
+`x86_64-pc-windows-gnu` target `ab_glyph` *is* a new dependency — small, but check
+`cargo tree --target` before claiming otherwise.
+
+> **⚠ `ab_glyph`'s `PxScale` is not an em size, and the difference is silent.** It is the
+> *ascent-to-descent pixel height*: `h_scale_factor` is `scale / height_unscaled`
+> (`ab_glyph-0.2.32/src/scale.rs:88`), where the em reading — `fontdue`'s, and the one every
+> number in this section is quoted at — divides by `units_per_em`. Passing `16.0` straight in
+> gives Inconsolata a **7.626 px** advance instead of the 8.0 that `500/1000 em` predicts. That
+> is 5% narrow, which reads as a slightly condensed font rather than as a bug. `Font::scaled`
+> converts once, at the boundary, and every metric downstream is em-relative:
+> `PxScale = px · height_unscaled / units_per_em`.
+
+**Rejected: embedding a pre-rasterized bitmap and dropping the rasterizer entirely.** It is
+otherwise attractive for something "rudimentary on purpose" (§13.5), and it is what the game
+does (§3.14). It fixes the glyph size at build time, and §13.6 lists DPI handling as
+unresolved — a 16 px bitmap console on a 4K display is unreadable. A runtime rasterizer keeps
+that question open for the cost of one small crate.
+
+### 13.2 No texture atlas — bindless per-glyph textures. **Re-examined and re-affirmed.**
 
 Decided 2026-08-15 (Jamen), explicitly rejecting the conventional answer. An atlas — pack every
 glyph into one shared texture, address by UV rect — is the standard approach and deliberately not
@@ -1951,12 +2097,67 @@ removes, and by the time this starts §12's registry already exists to use inste
 bitmap (well under 64×64) becomes its own texture in the same `BindlessTextures` array game
 meshes and terrain use, keyed by `(FontId, char, px_size)`.
 
-**The cost, quantified so it is a choice and not an oversight:** one `wgpu::Texture` and one
-`TextureView` per glyph. A dev console's printable ASCII at one size is ~95 textures — against
-§12.3's measured level peak of ~100 and a capacity of 4096, that is noise. It stops being noise
-if a UI ever wants many sizes or a CJK range; at that point the atlas question is worth
-reopening, and reopening it is not a reversal of this decision but a change in what the decision
-was about.
+**Re-affirmed 2026-08-15 (Jamen) against the monospace scoping**, which weakens the original
+argument and so deserved a second look rather than an assumption. Recorded in full so it is not
+opened a third time:
+
+- **The slot budget is measured, not feared.** LookoutPoint's region — §12.3's worst case, 14
+  maps, 1,002 placements, 21,827 foliage instances — registers **229 of 4096 slots**
+  (`Textures: 227/4096` at load, `229/4096` once the sky's pair lands). **3,867 free.** Printable
+  ASCII at one size is 95, or **2.3%**; three sizes is 7%. Room for ~40 font/size combinations
+  before capacity is a question at all.
+- **The pixel cost is identical either way**, so it does not discriminate: at 16 px, 95 separate
+  glyphs is 12,920 B and the equivalent 16 × 6 grid atlas is 13,056 B (§13.1's metrics).
+- **The argument that genuinely weakened:** under monospace the cell is constant and the
+  character set closed, so "packing" is `col = (c-0x20) % 16; row = (c-0x20) / 16` — two integer
+  ops, not bookkeeping. A fixed-grid atlas would cost **one** slot and need no non-uniform
+  indexing. That option is real and was declined, not overlooked.
+- **Why it was declined anyway:** slots are not scarce (above), the per-glyph path generalizes to
+  the proportional UI text this is explicitly a step toward, and it closes §12.9's standing gate
+  — non-uniform indexing is requested but unexercised, and this is where it gets exercised.
+- **Neither choice forecloses the other, which is why this is low-stakes.** The pass is identical
+  under both: a glyph instance carries `(screen rect, uv rect, bindless index)`. Per-glyph, the
+  index varies per instance and uv is 0..1; grid-atlas, every instance shares one index and uv
+  comes from the grid. Same vertex format, same shader, same pipeline. Switching is a change of
+  *glyph source*, not an architecture change.
+
+**Also considered and rejected: a `texture_2d_array`, one layer per glyph.** It is dominated. All
+layers must share size and format, so it needs the same fixed-cell rasterization a grid atlas
+does — and then a **`D2Array` view cannot join `binding_array<texture_2d<f32>>`** (§12.2 fact 6;
+`bindless.rs:134` declares `view_dimension: D2`), so it needs a binding of its own, which is the
+per-pass special case §12 exists to delete. `Limits::default().max_texture_array_layers` is
+**256** (`wgpu-types-28.0.0/src/limits.rs:368`); this RX 580 reports `maxImageArrayLayers = 2048`.
+More constraint than the grid atlas, for no gain over it.
+
+**The trigger to revisit remains what it was:** many sizes, or a CJK range. Reopening then is not
+a reversal but a change in what the decision is about.
+
+### 13.2a Glyph slots outlive the scene — the registry does not
+
+**Found 2026-08-15, before any code, and it is the one thing in §13 that needs a decision in
+`bindless.rs` rather than in the text pass.**
+
+§12.11 q1 made the registry **level-scoped** on the reasoning that "indices are valid only
+between one clear and the next, which is already true of every `GpuModel` that holds them".
+**Glyphs falsify that premise.** A dev console outlives scene loads by definition, and
+`Renderer::clear_scene` calls `bindless.clear()` on every one (`lib.rs:471`, `main.rs`'s load
+path). Left alone, each level load drops the console's glyph registrations *and* leaves its
+cached indices pointing at whatever the new scene's textures take those slots — which renders as
+plausible garbage, exactly the failure §12.8 step 4 caught for terrain.
+
+Two answers, both small:
+
+- **Re-register on generation change (recommended, and needs no change to `bindless.rs`).** The
+  text pass already has to record `BindlessFrame::generation` like `TerrainPass` does; on
+  mismatch it re-registers every glyph it holds. It still owns the `TextureView`s, so **nothing
+  is re-rasterized and nothing is re-uploaded** — it is a `HashMap` insert per glyph and one
+  `rebuild_if_dirty`. Uses the mechanism that already exists, for the case it was built for.
+- **A persistent region.** Hand persistent keys out from the top of the array downward (just
+  below `fallback_index`) and scene keys from the bottom up; `clear` resets only `next_free`. No
+  per-load work and no free list, at the cost of two allocation cursors instead of one.
+
+Start with the first. It is strictly less machinery and the second is a drop-in if per-load cost
+ever shows up in a measurement — which, at 95 hash inserts, it will not.
 
 ### 13.3 Rasterize on demand, cache, rebuild in batches
 
@@ -1980,6 +2181,13 @@ of a few hundred glyphs that is very likely fast enough. **Start there**, and mo
 instanced draw when there is a reason — the feature is already requested either way, so nothing
 is blocked by choosing the simple path first.
 
+**The WGSL side needs no annotation, which makes this smaller than §12.9 implies.** naga's
+SPIR-V backend detects a non-uniform binding-array index itself and emits the `NonUniform`
+decoration — `self.fun_info[index].uniformity.non_uniform_result.is_some()`
+(`naga-28.0.0/src/back/spv/block.rs:598`, `:2259`, guarded at `:2138`). There is no
+`nonuniformEXT`-equivalent keyword to write. Indexing by a per-instance attribute is ordinary
+WGSL; the feature request in `lib.rs`'s `REQUIRED_FEATURES` is the whole of what is needed.
+
 ### 13.5 The dev console: rudimentary and basic, on purpose
 
 Scope, as stated by Jamen: a basic development console, not a reproduction of Fable's own
@@ -1993,19 +2201,102 @@ A `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}`-shaped toggle set is more 
 convenience: it is the subsystem isolation that made comparing against the original possible at
 all (§3.9), and it is genuinely useful for this renderer's own debugging.
 
-### 13.6 Open — resolve when the work starts
+### 13.6 Settled by the design review, and what is still open
 
-- **Where the module lives.** The text *pass* belongs in `renderer`, which by then owns bindless
-  textures and pipelines. `fontdue` must **not** become a `renderer` dependency — rasterization
-  is asset conversion, the same category as `scene`'s job, and §11.1's rule is the whole reason
-  that boundary holds. So font and console state belong beside `scene`, or in a new
-  `openalbion::console` module playing the same "real input in, plain renderer input out" role.
-  The renderer receives `TextureImage`s and glyph quads, exactly as it receives `Model`s today.
-- **Text geometry.** One quad per glyph, instanced, each instance carrying a bindless index —
-  either `ModelInstance`'s pattern extended or a parallel `GlyphInstance`. Decide once §12.8's
-  model-pass migration has a working answer to copy.
-- **Screen-space projection and DPI handling.** Not investigated. The console draws after the
-  resolve pass, into the presentable texture, so it is the one pass that is *not* multisampled —
-  which is what you want for text anyway.
-- **Shader transcription convention (§6.7).** `text.wgsl` will be the first WGSL in the project
-  with no original to transcribe. Its header should say so explicitly.
+**Settled:**
+
+- **Where the module lives.** The text *pass* belongs in `renderer`, which owns bindless textures
+  and pipelines. The **rasterizer must not** become a `renderer` dependency — rasterization is
+  asset conversion, the same category as `scene`'s job, and §11.1's rule is the whole reason that
+  boundary holds. Font and console state belong beside `scene`: `openalbion::text` (font, glyph
+  cache, layout) and `openalbion::console` (state, input, commands), both playing the "real input
+  in, plain renderer input out" role. The renderer receives `TextureImage`s and glyph instances,
+  exactly as it receives `Model`s today — and per §6.9's provenance layer that makes the layout
+  and the cache **testable with no GPU and no Fable install**.
+- **Text geometry.** A parallel `GlyphInstance`, not `ModelInstance` extended: nothing about a
+  screen-space quad shares a field with a world placement. `(screen rect, uv rect, colour,
+  bindless index)` — the same shape either §13.2 option produces.
+- **`text.wgsl` is not a transcription** and its header says so explicitly, which is what makes
+  the absence of an asm block a statement rather than an omission (§6.7).
+
+**Prerequisites found in the renderer while deriving this — each is a separate commit under §2
+rule 2, and each is verifiable byte-identical on its own:**
+
+1. **`TerrainPass` owns the depth clear** (`terrain.rs:552`, `LoadOp::Clear(0.0)`), and
+   early-returns *before* it when it has no buffers (`:532`). So `EnableLandscape false` would
+   leave the model and local-detail passes depth-testing against the previous frame. **Move the
+   depth clear into `ClearPass`**, which already owns the colour clear and is not toggleable.
+   This gates §13.5's toggle set and is worth landing first regardless.
+2. **The text pass is the one pipeline built with `sample_count: 1`** while `TargetFormats`
+   carries 4. It draws after `ResolvePass` into the presentable texture — correct for text, and
+   correct generally, but an explicit exception to the invariant `TargetFormats` exists to
+   enforce ("a pipeline that disagrees with the attachments on any of the three fails at draw
+   time", `lib.rs:60`). It must be visible in the type, not buried in the pass.
+3. **The console must default to off.** `encode` is shared by `render` and `render_to_image`
+   (`lib.rs:591`), so anything the console draws lands in `--screenshot` — and the
+   byte-identical capture is the whole verification method §12.8 used and §13 will use.
+4. **`Renderer` does not store its surface size.** `resize_surface` takes it and drops it
+   (`lib.rs:421`); only the offscreen target keeps one. Screen-space text needs it in a frame
+   uniform.
+
+**Still open:**
+
+- **DPI.** winit reports `scale_factor` and `WindowEvent::ScaleFactorChanged`; `main.rs` handles
+  neither today. The px size handed to the rasterizer should be `requested_pt · scale_factor`,
+  which means a scale change re-rasterizes at a new `px_size` — already a distinct cache key
+  (§13.3), so the cache handles it. Not investigated further.
+- **Rasterizer crate** — `ab_glyph` or `fontdue`, per §13.1. Decide at implementation.
+- **Where command output goes.** The console's scrollback and `tracing` (§6.8) are two sinks for
+  the same text. A `tracing` layer feeding the scrollback is the obvious move and is not yet a
+  decision.
+
+**Resolved by implementing steps 1–3:** the rasterizer crate (`ab_glyph`, §13.1), the instance
+shape (`renderer::GlyphInstance` — rect, colour, slot; **no uv rect**, since a per-glyph texture
+is sampled across the whole `0..1` range and a rect would be `(0,0,1,1)` on every instance), and
+where the glyph cache lives (nowhere yet — `Renderer::glyph_index` is asked every frame, which
+is what makes §13.2a's scene-scoped lifetime a non-issue rather than a special case).
+
+### 13.7 Step order
+
+Each step is one mechanism (§2 rule 2), and each ends with the §7 evidence shape — for §13 that
+is a byte-identical `--screenshot` where nothing should have changed, and a test where
+something should.
+
+1. ~~**Depth clear moves to `ClearPass`.**~~ **DONE.** §13.6 prerequisite 1. `ClearPass` now
+   takes the depth view and clears it to the reverse-Z `0.0`; `TerrainPass` only loads, like
+   every other drawing pass. *Verify:* LookoutPoint (`md5 4137e8a4…`) and Witchwood
+   byte-identical.
+2. ~~**`openalbion::text`.**~~ **DONE.** Inconsolata and its `OFL.txt` embedded, `ab_glyph`
+   rasterizing to R8 coverage, and a monospace pen for layout. Pure CPU — no GPU, no Fable
+   install (§6.9). *Verify:* 10 tests. The font's metrics are pinned to what §13.1 read out of
+   the file; **uniform advance across printable ASCII is checked, not assumed**; glyph ids are
+   checked injective; and a composite test lays "Ag" into a bitmap and asserts 'A' sits on the
+   baseline while 'g' hangs below it — which is what catches a flipped Y or a missing ascent
+   without looking at a screen (§2 rule 4).
+3. ~~**`TextPass`.**~~ **DONE, and §12.9's gate closed with it.** Instanced glyph quads, alpha
+   blended, no depth, one sample, after the resolve. The quad's corners come from
+   `vertex_index`, so it has no vertex or index buffer. *Verify:* 5 tests against a real device.
+   **Two quads in one draw with coverage 255 and 128 read back as 255 and 128** — if the index
+   collapsed to one slot they would match, so this is the non-uniform-indexing proof §12.9 asked
+   for. Also pinned: nothing draws until text is set and `set_text(&[])` restores the frame
+   byte-for-byte; a repeated key reuses its slot; and §13.2a's hazard is a gate, not a comment —
+   a scene load invalidates glyph slots and drawing across one trips the assert. Driven
+   end-to-end through the real app once: **114 glyphs over LookoutPoint in a single draw, 53
+   distinct glyph slots on top of the scene's 229** — §13.2's budget, confirmed on hardware.
+4. **`openalbion::console`** — toggle key, input line, scrollback, command table, with
+   `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` as the first commands (§13.5). This is
+   what gives text something to say — `--text-demo` (§8) is a stand-in for it and this step
+   replaces it. Verify: `--screenshot` still
+   byte-identical with the console closed (§13.6 prerequisite 3), and each toggle demonstrably
+   removes exactly its own subsystem.
+
+**Two things fixed on the way, neither planned:**
+
+- **`TerrainPass::pass` ran its generation `debug_assert` before the early return** for having
+  no terrain, so any `clear_scene` not followed by a `set_terrain` tripped a guard about indices
+  it was not going to use. The game always does follow it, so this was invisible until a test
+  drove the renderer without a level. The sky pass already had the two the right way round;
+  terrain now matches.
+- **`Renderer` consumed its surface size and dropped it** (§13.6 prerequisite 4). It now keeps
+  it, and `Renderer::size()` exposes it — screen-space work needs it and there was nowhere to
+  ask.
