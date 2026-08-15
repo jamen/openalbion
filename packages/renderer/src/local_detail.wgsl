@@ -86,14 +86,8 @@
 struct Frame {
     // c5..c8
     view_proj: mat4x4<f32>,
-    // c3 / PrimitiveAmbientColour
-    ambient: vec4<f32>,
-    // c19 / DiffuseVector
-    light_dir: vec4<f32>,
-    // c20 / PrimitiveDiffuseColour
-    diffuse: vec4<f32>,
-    // c35 / PrimitiveBacklightColour
-    backlight: vec4<f32>,
+    // c3 / c19 / c20 / c35 — see lighting.wgsl
+    lighting: Lighting,
 };
 
 struct Material {
@@ -160,10 +154,10 @@ fn vs_main(
     // mov oD0.xyz, c[a + 51] — CalcSWLightingNoClip's expression, over the ground normal.
     // The vertex normal is declared by the shader and never read, so it is discarded here.
     _ = normal;
-    let n_dot_l = dot(ground_normal.xyz, -frame.light_dir.xyz);
+    let n_dot_l = dot(ground_normal.xyz, -frame.lighting.light_dir.xyz);
     let lit = max(n_dot_l, 0.0);
     let back = min(n_dot_l, 0.0);
-    out.light = frame.ambient.rgb + lit * lit * frame.diffuse.rgb - back * frame.backlight.rgb;
+    out.light = frame.lighting.ambient.rgb + lit * lit * frame.lighting.diffuse.rgb - back * frame.lighting.backlight.rgb;
 
     // mov oT0, v2
     out.uv = uv;

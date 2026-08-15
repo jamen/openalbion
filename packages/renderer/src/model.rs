@@ -11,6 +11,7 @@
 //! D3D9's default `D3DCULL_CCW`. See the note on the pipeline.
 
 use crate::image::TextureImage;
+use crate::lighting::{LIGHTING_WGSL, LightingUniforms};
 use crate::TargetFormats;
 use crate::texture::{repeat_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
@@ -25,7 +26,7 @@ use wgpu::{
     RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages, StencilState,
     TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
     TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
-    VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
+    VertexBufferLayout, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -146,31 +147,15 @@ impl ModelVertex {
 struct FrameUniforms {
     /// `c5..c8`
     view_proj: [[f32; 4]; 4],
-    /// `c3`
-    ambient: [f32; 4],
-    /// `c19`
-    light_dir: [f32; 4],
-    /// `c20`
-    diffuse: [f32; 4],
-    /// `c35`
-    backlight: [f32; 4],
+    /// `c3`/`c19`/`c20`/`c35`, shared with the landscape and the repeated meshes.
+    lighting: LightingUniforms,
 }
 
-/// The lighting the pass runs with until the environment layer lands (AGENTS.md step 2).
-///
-/// UNVERIFIED, and deliberately inert rather than plausible — the same stand-in
-/// `TerrainPass` uses, for the same reason: an `Ambient` of 0.5 cancels the pixel shader's
-/// `mul_x2` exactly, so meshes show their textures at their authored colour with no
-/// directional term at all. The mechanism is fully wired; step 2 changes only these values.
 impl FrameUniforms {
     fn new(view_proj: [[f32; 4]; 4]) -> FrameUniforms {
         FrameUniforms {
             view_proj,
-            // UNVERIFIED: neutral stand-in — see above.
-            ambient: [0.5, 0.5, 0.5, 1.0],
-            light_dir: [0.0, 0.0, -1.0, 0.0],
-            diffuse: [0.0, 0.0, 0.0, 0.0],
-            backlight: [0.0, 0.0, 0.0, 0.0],
+            lighting: LightingUniforms::NEUTRAL,
         }
     }
 }
@@ -248,7 +233,12 @@ pub struct ModelShader(ShaderModule);
 
 impl ModelShader {
     pub fn new(device: &Device) -> Self {
-        Self(device.create_shader_module(include_wgsl!("model.wgsl")))
+        Self(device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("model.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(
+                format!("{LIGHTING_WGSL}\n{}", include_str!("model.wgsl")).into(),
+            ),
+        }))
     }
 }
 

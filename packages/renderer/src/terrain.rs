@@ -9,6 +9,7 @@
 
 use crate::TargetFormats;
 use crate::image::TextureImage;
+use crate::lighting::{LIGHTING_WGSL, LightingUniforms};
 use bytemuck::{Pod, Zeroable};
 use std::any::type_name;
 use wgpu::{
@@ -20,7 +21,7 @@ use wgpu::{
     SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderStages, StencilState,
     TextureDescriptor, TextureDimension, TextureSampleType,
     TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
-    VertexBufferLayout, VertexState, VertexStepMode, include_wgsl,
+    VertexBufferLayout, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -91,34 +92,18 @@ struct FrameUniforms {
     view_proj: [[f32; 4]; 4],
     /// `c4`
     camera_pos: [f32; 4],
-    /// `c3`
-    ambient: [f32; 4],
-    /// `c19`
-    light_dir: [f32; 4],
-    /// `c20`
-    diffuse: [f32; 4],
-    /// `c35`
-    backlight: [f32; 4],
+    /// `c3`/`c19`/`c20`/`c35`, shared with the static meshes and the repeated meshes.
+    lighting: LightingUniforms,
     /// `c42`
     fade_transform: [f32; 4],
 }
 
-/// The lighting the pass runs with until the environment layer lands (AGENTS.md step 2).
-///
-/// UNVERIFIED, and deliberately inert rather than plausible: `Ambient` of 0.5 cancels the
-/// pixel shader's `mul_x2` exactly, so the landscape shows its textures at their authored
-/// colour with no directional term at all. The mechanism is fully wired — when step 2
-/// supplies rows 1/0/3 of the environment LUT, only these four values change.
 impl FrameUniforms {
     fn new(view_proj: [[f32; 4]; 4], camera_pos: [f32; 3]) -> FrameUniforms {
         FrameUniforms {
             view_proj,
             camera_pos: [camera_pos[0], camera_pos[1], camera_pos[2], 0.0],
-            // UNVERIFIED: neutral stand-in — see above.
-            ambient: [0.5, 0.5, 0.5, 1.0],
-            light_dir: [0.0, 0.0, -1.0, 0.0],
-            diffuse: [0.0, 0.0, 0.0, 0.0],
-            backlight: [0.0, 0.0, 0.0, 0.0],
+            lighting: LightingUniforms::NEUTRAL,
             // Fade disabled, expressed in the real mechanism rather than bypassed:
             // `dot(dist, 0) + 1` saturates to 1 at every distance.
             // `ForegroundFadeStart`/`End` are set by a console command whose defaults are
@@ -196,7 +181,12 @@ pub struct TerrainShader(ShaderModule);
 
 impl TerrainShader {
     pub fn new(device: &Device) -> Self {
-        Self(device.create_shader_module(include_wgsl!("terrain.wgsl")))
+        Self(device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("terrain.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(
+                format!("{LIGHTING_WGSL}\n{}", include_str!("terrain.wgsl")).into(),
+            ),
+        }))
     }
 }
 

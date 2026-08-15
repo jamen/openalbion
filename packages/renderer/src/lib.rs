@@ -14,6 +14,7 @@
 
 mod depth;
 mod image;
+mod lighting;
 mod local_detail;
 mod model;
 mod sky;

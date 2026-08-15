@@ -65,14 +65,8 @@ struct Frame {
     view_proj: mat4x4<f32>,
     // c4
     camera_pos: vec4<f32>,
-    // c3
-    ambient: vec4<f32>,
-    // c19
-    light_dir: vec4<f32>,
-    // c20
-    diffuse: vec4<f32>,
-    // c35
-    backlight: vec4<f32>,
+    // c3 / c19 / c20 / c35 — see lighting.wgsl
+    lighting: Lighting,
     // c42
     fade_transform: vec4<f32>,
 };
@@ -126,12 +120,12 @@ fn vs_main(
     let distance = length(position - frame.camera_pos.xyz);
 
     // dp3 r4, v2, -c19 ; max r4.x, r4.x, 0 ; min r4.y, r4.y, 0 ; mul r4.x, r4.x, r4.x
-    let n_dot_l = dot(normal, -frame.light_dir.xyz);
+    let n_dot_l = dot(normal, -frame.lighting.light_dir.xyz);
     let lit = max(n_dot_l, 0.0);
     let back = min(n_dot_l, 0.0);
 
     // mul r3, r4.x*r4.x, c20 ; mad r3, -r4.y, c35, r3 ; add r3, r3, c3
-    out.light = lit * lit * frame.diffuse.rgb - back * frame.backlight.rgb + frame.ambient.rgb;
+    out.light = lit * lit * frame.lighting.diffuse.rgb - back * frame.lighting.backlight.rgb + frame.lighting.ambient.rgb;
 
     // dp3 r5, r2, c42 ; add r4, r5, c42.w ; min r4, c0.y
     let fade = min(

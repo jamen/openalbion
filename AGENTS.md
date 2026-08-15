@@ -34,8 +34,8 @@ inert where it has not — deliberately, per §2 rule 5.
 
 1. **The environment layer (§5 step 2)** is the highest-value *faithfulness* work left. Sky
    gradients, landscape lighting and mesh lighting are the same four LUT rows, all three
-   currently running the same neutral placeholder (§9). It is one change to three passes —
-   which is only true if the placeholder lives in one place, hence §12.7.
+   currently running the same neutral placeholder (§9). It is now **one constant** to change —
+   `LightingUniforms::NEUTRAL` — since §12.7 landed.
 2. **Bindless rendering (§12)** is the highest-value *engineering* work left, and is what
    Jamen has asked for next. It is a prerequisite for font rendering and the dev console
    (§13), and it pays for itself independently by giving the renderer a texture cache it does
@@ -44,20 +44,10 @@ inert where it has not — deliberately, per §2 rule 5.
 **Bindless comes first**, then fonts and the console, then the environment layer — Jamen's
 call, 2026-08-15.
 
-**Known blocker, unrelated to either: the workspace does not link.** `cargo check` passes;
-`cargo build` and `cargo test` fail with `undefined symbol: lzo1x_decompress_safe`. The
-devshell puts `mingw.stdenv.cc` in `packages`, whose setup hook exports bare
-`CC=x86_64-w64-mingw32-gcc` / `AR=x86_64-w64-mingw32-ar`, so `packages/lzo`'s `cc` build
-produces a **Windows COFF object** for a Linux host link.
-
-**The fix is one line, and it is tested:** delete `mingw.stdenv.cc` from `devShells.default`'s
-`packages`. The flake's *target-scoped* `CC_x86_64_pc_windows_gnu` already points at the
-absolute store path (`${mingwBin}gcc`), so the cross compiler never needed to be on `PATH`.
-Checked in an isolated copy of the flake: with that line removed the shell reports `CC=gcc`,
-`AR=ar`, and `CC_x86_64_pc_windows_gnu` still resolves to the mingw wrapper — so Windows
-cross-compilation keeps working.
-
-**Fix this before §12 starts**: every verification step in §12.8 is a rendered frame.
+**A trap that cost a session, now fixed and worth not reintroducing:** `cargo check` does not
+link, so a broken host link can hide indefinitely. It did — `mingw.stdenv.cc` in the devshell's
+`packages` exported a bare `CC`/`AR` for the Windows target, and `packages/lzo` built a COFF
+object the Linux host link could not resolve. **Run `cargo build`, not just `cargo check`.**
 
 ---
 
@@ -1402,7 +1392,7 @@ Track anything that could not be sourced. Empty is the goal.
 
 | Location | Value | Status |
 |---|---|---|
-| `renderer/src/terrain.rs`, `model.rs`, `local_detail.rs` | `FrameUniforms` ambient/diffuse/backlight/light dir | placeholder — neutral by construction (`Ambient` 0.5 cancels the shader's `mul_x2`), replaced wholesale by step 2's LUT rows 1/0/3. **Copy-pasted three times; unify first (§12.7)** |
+| `renderer/src/lighting.rs` | `LightingUniforms::NEUTRAL` — ambient/light dir/diffuse/backlight | placeholder — neutral by construction (`Ambient` 0.5 cancels the shaders' `mul_x2`), replaced wholesale by step 2's LUT rows 1/0/3. **One definition, shared by all three world passes (§12.7)**, so step 2 is one edit |
 | `renderer/src/terrain.rs` | `fade_transform = (0,0,0,1)` | fade disabled through the real mechanism; `ForegroundFadeStart`/`End` arrive from a console command whose defaults the decomp does not show (`CLandscapeSettings`' ctor is inlined away) |
 | `renderer/src/terrain.rs` | additive layer blend + blackout pass | **derived, not transcribed.** `SetupForegroundStates` goes through a render-state cache Ghidra reduces to offset arithmetic, so the `D3DRS_*` values are unreadable — but the blend mode is forced by the alphas summing to 1, and by the existence of `VSHADER_LANDSCAPE_FOREGROUND_BLACKOUT_PASS`. Confirmed on screen: alpha-over leaked sky between themes, additive-over-black does not |
 | `fable-data/src/landscape/mesh.rs` | `DirectionMask::build` normal | **DIVERGENCE**, marked in place: `BuildMapDirMask` weights up to eight face normals; that arithmetic is too mangled to transcribe, so `PeekMapNormal` is used instead. Same surface, different smoothing |
@@ -1805,17 +1795,21 @@ Two independent caches, and the *upper* one is the bigger win:
 Note that the two caches are *not* redundant: (1) dedups within one renderer, (2) dedups the
 CPU work before the renderer is ever called. Do (2).
 
-### 12.7 Unify `FrameUniforms` — do this first, it is a five-minute change
+### 12.7 Unify the lighting registers — **DONE**
 
-Independent of bindless but touching the same three files. `FrameUniforms` — `ambient` = `c3`,
-`light_dir`/`diffuse` = `c19`/`c20`, `backlight` = `c35` (§3.8) — is defined **identically** in
-`model.rs:146`, `terrain.rs` and `local_detail.rs`, each with its own copy of the same neutral
-placeholder constructor (§9).
+`c3`/`c19`/`c20`/`c35` (§3.8) were declared in `model.rs`, `terrain.rs` and `local_detail.rs`,
+each with its own copy of the same neutral placeholder — and the same four fields restated in
+three `.wgsl` files. §5 step 2 says the environment layer "lights meshes and terrain in one
+change", which was only true if there was one place to make it.
 
-§5 step 2 says the environment layer "lights meshes and terrain in one change". That is only
-true if there is one place to make it. Unify into `renderer::lighting::LightingUniforms`, used
-by all three passes' frame bind groups. **Land it before either §12.8 or step 2** — it is the
-cheapest item in this document and it makes both of them smaller.
+Now `renderer::lighting::LightingUniforms` + `lighting.wgsl`, the latter prepended to all three
+shaders at module creation so the two language's layouts cannot drift. The four registers are
+`vec4`s, so embedding the struct left every byte offset where it was.
+
+*Evidence:* LookoutPoint's `--screenshot` frame is **byte-identical** before and after
+(`md5 4137e8a4…`), and `cargo test --workspace` is green.
+
+**This is the shape step 2 now edits: one constant, `LightingUniforms::NEUTRAL`.**
 
 ### 12.8 Migration order — one pass per commit
 
@@ -1863,9 +1857,8 @@ cheapest item in this document and it makes both of them smaller.
 
 Small, independent, and each makes the migration or the next subsystem smaller:
 
-- **Fix the devshell link failure first** (§0). Nothing in §12.8 can be verified until
-  `cargo build` works.
-- **§12.7's `FrameUniforms` unification.** Do it second.
+- ~~Fix the devshell link failure~~ (§0) — **done**, `mingw.stdenv.cc` off `PATH`.
+- ~~§12.7's lighting unification~~ — **done**.
 - **The mesh cache** (§12.6 item 3). Independent of everything.
 - **Step 6.9 — drop index-degenerate triangles at decode.** 474,048 of 998,466 measured
   triangles are strip stitches that rasterise nothing. Halving every index buffer is free, safe,

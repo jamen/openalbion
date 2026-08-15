@@ -15,6 +15,7 @@
 use crate::TargetFormats;
 use crate::image::TextureImage;
 use crate::model::{Model, ModelVertex};
+use crate::lighting::{LIGHTING_WGSL, LightingUniforms};
 use crate::texture::{repeat_sampler, upload_texture};
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
@@ -27,7 +28,6 @@ use wgpu::{
     PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
     SamplerBindingType, ShaderModule, ShaderStages, StencilState, TextureSampleType, TextureView,
     TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
-    include_wgsl,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -80,28 +80,17 @@ impl Default for LocalDetailInstance {
 struct FrameUniforms {
     /// `c5..c8`
     view_proj: [[f32; 4]; 4],
-    /// `c3`
-    ambient: [f32; 4],
-    /// `c19`
-    light_dir: [f32; 4],
-    /// `c20`
-    diffuse: [f32; 4],
-    /// `c35`
-    backlight: [f32; 4],
+    /// `c3`/`c19`/`c20`/`c35`, shared with the landscape and the static meshes — and shared
+    /// by construction here, since `CalcSWLightingNoClip` is `VSHADER_STATIC_DIRLIGHT`'s own
+    /// expression over these registers (AGENTS.md §3.13).
+    lighting: LightingUniforms,
 }
 
 impl FrameUniforms {
-    /// The same neutral stand-in `ModelPass` and `TerrainPass` run with until step 2: an
-    /// `Ambient` of 0.5 cancels the pixel shader's `mul_x2` exactly, so objects show their
-    /// textures at their authored colour with no directional term.
     fn new(view_proj: [[f32; 4]; 4]) -> FrameUniforms {
         FrameUniforms {
             view_proj,
-            // UNVERIFIED: neutral stand-in — see above.
-            ambient: [0.5, 0.5, 0.5, 1.0],
-            light_dir: [0.0, 0.0, -1.0, 0.0],
-            diffuse: [0.0, 0.0, 0.0, 0.0],
-            backlight: [0.0, 0.0, 0.0, 0.0],
+            lighting: LightingUniforms::NEUTRAL,
         }
     }
 }
@@ -155,7 +144,12 @@ pub struct LocalDetailPass {
 
 impl LocalDetailPass {
     pub fn new(device: &Device, queue: &Queue, targets: TargetFormats) -> Self {
-        let shader: ShaderModule = device.create_shader_module(include_wgsl!("local_detail.wgsl"));
+        let shader: ShaderModule = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("local_detail.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(
+                format!("{LIGHTING_WGSL}\n{}", include_str!("local_detail.wgsl")).into(),
+            ),
+        });
 
         let frame_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("local_detail_frame_layout"),
