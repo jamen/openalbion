@@ -7,6 +7,7 @@
 mod camera;
 mod files;
 mod scene;
+mod text;
 
 use crate::camera::Camera;
 use crate::files::{Files, NewFilesError};

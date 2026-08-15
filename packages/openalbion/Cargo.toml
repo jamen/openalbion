@@ -7,6 +7,12 @@ publish = false
 # The engine recreation — the project's main binary. Drawing comes from `renderer`,
 # asset formats from `fable-data`; this crate is what joins them.
 [dependencies]
+# Glyph outlines and rasterization for the dev console (AGENTS.md §13.1). Deliberately here
+# and not in `renderer`: rasterizing a font is asset conversion, the same category as
+# `scene`'s job, and §11.1's rule is that the renderer receives pixels it cannot produce
+# itself. Chosen over `fontdue` because winit already pulls it in on Unix
+# (winit -> sctk-adwaita -> ab_glyph), so on Linux it costs no new crates.
+ab_glyph = "0.2.32"
 argh = "0.1.13"
 derive_more = { version = "2.1.1", features = ["error", "display"] }
 fable-data = { path = "../fable-data" }
