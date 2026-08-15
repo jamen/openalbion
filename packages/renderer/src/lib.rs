@@ -12,6 +12,7 @@
 //!
 //! World space is Z-up, matching the game (AGENTS.md §3.6).
 
+mod bindless;
 mod depth;
 mod image;
 mod lighting;
@@ -21,6 +22,7 @@ mod sky;
 mod terrain;
 mod texture;
 
+use self::bindless::BindlessTextures;
 use self::depth::DepthTexture;
 use self::local_detail::LocalDetailPass;
 use self::model::ModelPass;
@@ -35,6 +37,7 @@ use wgpu::{
     TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, TextureView,
 };
 
+pub use self::bindless::{MAX_BINDLESS_TEXTURES, MIN_BINDLESS_TEXTURES};
 pub use self::image::{ImageFormat, TextureImage};
 pub use self::local_detail::{AddLocalDetailError, LocalDetailInstance};
 pub use self::model::{
@@ -103,6 +106,13 @@ pub struct Renderer<'target> {
     /// case the passes draw into the presentable texture directly.
     msaa_texture: Option<MsaaTexture>,
     passes: RenderPasses,
+    /// The one texture array every pass will draw through (AGENTS.md §12).
+    ///
+    /// Landed unused: no pass registers anything yet, so every slot holds the fallback and
+    /// the array is exercised only by being built and validated. That is the point of
+    /// §12.8 step 1 — the features, the limits and the layout are proven before any
+    /// behaviour depends on them.
+    bindless: BindlessTextures,
     target: Target<'target>,
 }
 
@@ -133,6 +143,94 @@ impl MsaaTexture {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         Self { texture, view }
     }
+}
+
+/// Everything the renderer requires of a device, and it is a **hard requirement** — there is
+/// no non-bindless fallback path (AGENTS.md §12.2). Keeping two texture-binding paths alive
+/// would reintroduce exactly the per-pass duplication bindless exists to remove, and
+/// `TEXTURE_COMPRESSION_BC` was already a hard requirement, so this is the same kind of
+/// demand rather than a new kind. The cost is GL and WebGPU, neither of which this targets.
+///
+/// `SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING` is requested from day one
+/// even though nothing needs it yet: every pass draws one material per draw, so its texture
+/// index is dynamically uniform and `TEXTURE_BINDING_ARRAY` alone would do. Only §13's glyph
+/// batching indexes per instance. It is supported on exactly the platforms
+/// `TEXTURE_BINDING_ARRAY` is, so asking now costs nothing and saves a second migration.
+const REQUIRED_FEATURES: Features = Features::TEXTURE_COMPRESSION_BC
+    .union(Features::TEXTURE_BINDING_ARRAY)
+    .union(Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING)
+    .union(Features::IMMEDIATES);
+
+/// Bytes of per-draw immediate data (wgpu's name for push constants) a pipeline may declare.
+///
+/// One `vec4`-sized struct is enough for every per-draw constant the passes carry — a bindless
+/// index or two, and the alpha-test pair the model pass keeps in a per-material uniform buffer
+/// today. Vulkan guarantees 128, DX12 256, Metal 4096.
+const MAX_IMMEDIATE_SIZE: u32 = 16;
+
+/// The device request, shared by the windowed and offscreen paths so they cannot drift.
+///
+/// `required_limits` is the trap worth naming: it defaults to `Limits::default()`, whose
+/// binding-array and immediate limits are **0**, and wgpu validates against *what was asked
+/// for*, never what the adapter can do — so a granted `TEXTURE_BINDING_ARRAY` plus default
+/// limits creates a device on which the array's bind group layout cannot be built
+/// (AGENTS.md §12.2).
+async fn request_device(adapter: &wgpu::Adapter) -> Result<(Device, Queue, u32), NewRendererError> {
+    let missing = REQUIRED_FEATURES - adapter.features();
+    if !missing.is_empty() {
+        return Err(NewRendererError::MissingFeatures(missing));
+    }
+
+    let adapter_limits = adapter.limits();
+    let capacity = bindless::BindlessTextures::capacity_for(
+        adapter_limits.max_binding_array_elements_per_shader_stage,
+    )
+    .ok_or(NewRendererError::BindingArrayTooSmall(
+        adapter_limits.max_binding_array_elements_per_shader_stage,
+    ))?;
+    if adapter_limits.max_immediate_size < MAX_IMMEDIATE_SIZE {
+        return Err(NewRendererError::ImmediatesTooSmall(
+            adapter_limits.max_immediate_size,
+        ));
+    }
+
+    let (device, queue) = adapter
+        .request_device(&DeviceDescriptor {
+            required_features: REQUIRED_FEATURES,
+            required_limits: wgpu::Limits {
+                max_binding_array_elements_per_shader_stage: capacity,
+                max_immediate_size: MAX_IMMEDIATE_SIZE,
+                ..wgpu::Limits::default()
+            },
+            ..Default::default()
+        })
+        .await
+        .map_err(NewRendererError::RequestDevice)?;
+
+    // Assert what was granted rather than assume it. Requesting a feature and getting a
+    // device is not proof the device has it, and a limit silently left at its default is the
+    // failure this whole function exists to prevent — it would surface much later, as a bind
+    // group layout that will not validate.
+    let granted = device.limits();
+    assert!(
+        device.features().contains(REQUIRED_FEATURES),
+        "device was created without the features it was asked for: missing {:?}",
+        REQUIRED_FEATURES - device.features(),
+    );
+    assert!(
+        granted.max_binding_array_elements_per_shader_stage >= capacity
+            && granted.max_immediate_size >= MAX_IMMEDIATE_SIZE,
+        "device limits were not granted: binding array {} (wanted {capacity}), immediates {} \
+         (wanted {MAX_IMMEDIATE_SIZE})",
+        granted.max_binding_array_elements_per_shader_stage,
+        granted.max_immediate_size,
+    );
+    tracing::info!(
+        "Device: bindless {capacity} textures, {MAX_IMMEDIATE_SIZE}B immediates, \
+         non-uniform indexing available",
+    );
+
+    Ok((device, queue, capacity))
 }
 
 /// The sample count to build for: [`MSAA_SAMPLES`] when the adapter supports it for *both*
@@ -181,13 +279,7 @@ impl<'target> Renderer<'target> {
             .await
             .map_err(E::RequestAdapter)?;
 
-        let (device, queue) = adapter
-            .request_device(&DeviceDescriptor {
-                required_features: Features::TEXTURE_COMPRESSION_BC,
-                ..Default::default()
-            })
-            .await
-            .map_err(E::RequestDevice)?;
+        let (device, queue, bindless_capacity) = request_device(&adapter).await?;
 
         let surface_capabilities = surface.get_capabilities(&adapter);
 
@@ -236,6 +328,7 @@ impl<'target> Renderer<'target> {
             msaa_texture: targets
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, surface_format, [1, 1], targets.sample_count)),
+            bindless: BindlessTextures::new(&device, &queue, bindless_capacity),
             device,
             queue,
             passes,
@@ -255,13 +348,7 @@ impl<'target> Renderer<'target> {
             .request_adapter(&RequestAdapterOptions::default())
             .await
             .map_err(E::RequestAdapter)?;
-        let (device, queue) = adapter
-            .request_device(&DeviceDescriptor {
-                required_features: Features::TEXTURE_COMPRESSION_BC,
-                ..Default::default()
-            })
-            .await
-            .map_err(E::RequestDevice)?;
+        let (device, queue, bindless_capacity) = request_device(&adapter).await?;
 
         let format = TextureFormat::Rgba8Unorm;
         let targets = TargetFormats {
@@ -281,6 +368,7 @@ impl<'target> Renderer<'target> {
             msaa_texture: targets
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, format, size, targets.sample_count)),
+            bindless: BindlessTextures::new(&device, &queue, bindless_capacity),
             device,
             queue,
             passes,
@@ -318,6 +406,14 @@ impl<'target> Renderer<'target> {
             size,
             padded_bytes_per_row,
         }
+    }
+
+    /// `(textures registered, capacity)` in the bindless array (AGENTS.md §12).
+    ///
+    /// Zero registered is the correct answer until §12.8 step 2 migrates the model pass; the
+    /// capacity is what proves the array was built at the size the limits were requested for.
+    pub fn bindless_stats(&self) -> (u32, u32) {
+        self.bindless.stats()
     }
 
     pub fn resize_surface(&mut self, size: [u32; 2]) {
@@ -616,6 +712,19 @@ pub enum NewRendererError {
     RequestAdapter(RequestAdapterError),
     RequestDevice(RequestDeviceError),
     CreateSurface(CreateSurfaceError),
+    #[display(
+        "this GPU is missing {_0:?}. OpenAlbion's renderer is bindless and has no fallback \
+         path; it needs a DX12, Vulkan or Metal 2.0+ adapter (AGENTS.md §12.2)"
+    )]
+    MissingFeatures(#[error(not(source))] Features),
+    #[display(
+        "this GPU allows only {_0} textures in a binding array, and the renderer needs at \
+         least {}. That is Metal argument-buffers Tier 1 territory (AGENTS.md §12.3)",
+        bindless::MIN_BINDLESS_TEXTURES
+    )]
+    BindingArrayTooSmall(#[error(not(source))] u32),
+    #[display("this GPU allows only {_0} bytes of immediate data; the renderer needs {MAX_IMMEDIATE_SIZE}")]
+    ImmediatesTooSmall(#[error(not(source))] u32),
 }
 
 struct RenderPasses {

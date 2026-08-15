@@ -1813,17 +1813,19 @@ shaders at module creation so the two language's layouts cannot drift. The four 
 
 ### 12.8 Migration order — one pass per commit
 
-1. **Land `BindlessTextures`, the features and the limits — unused.** No behavioural change: a
-   pass that registers nothing only exercises the fallback fill.
-   *Verify three things, not one:*
-   (a) `--screenshot` on a fixed scene (fixed level, camera, time of day) is **byte-identical**
-   to a capture taken before the change — the same check that verified the 2026-08-08 crate
-   split as a visual no-op;
-   (b) the device actually **granted** every requested feature and limit (assert, don't assume —
-   `request_device` succeeding with `Limits::default()` is exactly the fact-3 trap);
-   (c) `rebuild_if_dirty` produces a bind group of the declared length. Without (b) and (c),
-   "unused" and "silently broken" look the same.
-2. **Model pass.** The worst bind-group churn and the clearest key (§3.11). Replace
+1. ~~**Land `BindlessTextures`, the features and the limits — unused.**~~ **DONE.**
+   `renderer/src/bindless.rs`, plus one shared `request_device` replacing the block `new` and
+   `new_headless` each had a copy of. Capacity is `MAX_BINDLESS_TEXTURES` (4096) clamped to
+   `adapter.limits()`, refusing below `MIN_BINDLESS_TEXTURES` (256) rather than downgrading
+   into a failure at some later draw.
+   *All three verifications passed:*
+   (a) LookoutPoint's `--screenshot` frame is **byte-identical** to before (`md5 4137e8a4…`);
+   (b) the device **granted** what was asked — `Device: bindless 4096 textures, 16B immediates,
+   non-uniform indexing available`, behind a hard `assert!` rather than a hope;
+   (c) the array built and validated at its declared capacity — `Bindless textures: 4096 slots`
+   — which only happens because `max_binding_array_elements_per_shader_stage` was raised.
+   `renderer/tests/bindless_test.rs` keeps (b) and (c) as gates.
+2. **Model pass — next.** The worst bind-group churn and the clearest key (§3.11). Replace
    `ModelMaterialBindGroupLayout` and the per-material `BindGroup` with `DrawConstants` per
    sub-mesh draw. Dedup (§12.6) lands here first. *Verify:* byte-identical screenshot again, plus
    a logged registered-texture count matching §12.3's measured number for that level.
@@ -1874,13 +1876,19 @@ Small, independent, and each makes the migration or the next subsystem smaller:
 
 ### 12.11 Open questions — resolve at the §7 derivation review, before code
 
-1. **Registry lifetime** — level-scoped clear, or generation-tagged indices? (§12.4) *Recommend
-   level-scoped.*
-2. **Capacity** — 4096, or a smaller number plus an `adapter.limits()` clamp for Metal Tier 1?
-   (§12.3) *Recommend 4096 with the clamp, since the clamp is three lines.*
+Questions 1 and 2 were answered by implementing step 1, on the recommendations below; both are
+cheap to revisit and neither has a caller yet.
+
+1. ~~**Registry lifetime**~~ — **level-scoped**. `BindlessTextures::clear` drops every
+   registration and returns the slots, and `BindlessIndex` stays a bare `u32` whose validity
+   runs from one clear to the next — the same lifetime the `GpuModel`s holding them already
+   have. `clear` still needs wiring into `Renderer::clear_models` when step 2 gives it
+   something to clear; **until then a scene reload would leak, so do not skip that.**
+2. ~~**Capacity**~~ — **4096, clamped to `adapter.limits()`**, floor 256.
 3. **Does the sky pass migrate at all?** It has two textures and one sampler and gains almost
    nothing. Migrating it buys uniformity — one texture path in the renderer, no exceptions —
-   which is worth something on its own. *Recommend yes, last, for that reason alone.*
+   which is worth something on its own. *Recommend yes, last, for that reason alone.* Still
+   open.
 
 ---
 

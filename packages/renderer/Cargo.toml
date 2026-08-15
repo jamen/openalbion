@@ -12,3 +12,7 @@ derive_more = { version = "2.1.1", features = ["error", "display"] }
 glam = "0.31.0"
 tracing = "0.1.44"
 wgpu = "28.0.0"
+
+[dev-dependencies]
+# The headless tests drive the async device request from a sync test fn.
+pollster = "0.4.0"
