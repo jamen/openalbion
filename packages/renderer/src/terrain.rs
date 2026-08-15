@@ -521,18 +521,24 @@ impl TerrainPass {
         target_texture_view: &TextureView,
         depth_texture_view: &TextureView,
     ) {
+        let (Some(vertex_buffer), Some(index_buffer)) = (&self.vertex_buffer, &self.index_buffer)
+        else {
+            return;
+        };
         // Terrain registers its textures in `set_terrain`, which runs before the scene's
         // models load. A clear between the two would leave every layer pass sampling whatever
         // took its slot next — silently, and looking almost right (AGENTS.md §12.4).
+        //
+        // **After the early return, not before.** A pass with no terrain has no indices to be
+        // stale, and asserting first fired on any `clear_scene` that was not followed by a
+        // `set_terrain` — which the game always does, but a test or a renderer used for
+        // something other than a level does not. Matches the sky pass, which had it this way
+        // round already.
         debug_assert_eq!(
             self.generation, bindless.generation,
             "terrain's bindless indices are from a cleared generation — \
              set_terrain must run after the scene is cleared, not before",
         );
-        let (Some(vertex_buffer), Some(index_buffer)) = (&self.vertex_buffer, &self.index_buffer)
-        else {
-            return;
-        };
 
         let mut rpass = cmd.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some(type_name::<Self>()),

@@ -35,7 +35,7 @@ fn the_array_is_built_and_empty() {
     let Some(renderer) = headless() else { return };
 
     let (registered, capacity) = renderer.bindless_stats();
-    assert_eq!(registered, 0, "no pass registers a texture yet (§12.8 step 2)");
+    assert_eq!(registered, 0, "a fresh renderer has registered nothing");
     assert!(
         (MIN_BINDLESS_TEXTURES..=MAX_BINDLESS_TEXTURES).contains(&capacity),
         "capacity {capacity} outside {MIN_BINDLESS_TEXTURES}..={MAX_BINDLESS_TEXTURES}",

@@ -63,6 +63,14 @@ pub enum TextureKey {
     /// asset behind it and must still get a slot of its own rather than collapse into the
     /// white fallback.
     Ground(u32),
+    /// One rasterized glyph (AGENTS.md §13.2), keyed by an **opaque** identifier the text layer
+    /// packs — `openalbion::text::GlyphKey::id`. The renderer must not know what a font, a
+    /// character or a pixel size is (§11.1), so it is handed a number it only ever compares.
+    ///
+    /// **Glyph slots are the one kind that outlives the scene that registered them** (§13.2a),
+    /// and [`BindlessTextures::clear`] takes them with everything else. The text pass carries
+    /// the generation and re-registers rather than drawing with stale indices.
+    Glyph(u64),
 }
 
 /// A slot in the bindless array.

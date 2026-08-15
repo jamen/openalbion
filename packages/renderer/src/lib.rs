@@ -20,6 +20,7 @@ mod local_detail;
 mod model;
 mod sky;
 mod terrain;
+mod text;
 mod texture;
 
 use self::bindless::{BindlessTextures, TextureKey};
@@ -28,6 +29,7 @@ use self::local_detail::LocalDetailPass;
 use self::model::ModelPass;
 use self::sky::OuterSkyPass;
 use self::terrain::TerrainPass;
+use self::text::TextPass;
 use derive_more::{Display, Error};
 use wgpu::{
     BufferDescriptor, BufferUsages, CommandEncoder, CompositeAlphaMode, CreateSurfaceError, Device,
@@ -45,6 +47,7 @@ pub use self::model::{
     ModelVertex,
 };
 pub use self::terrain::{TerrainData, TerrainDraw, TerrainVertex};
+pub use self::text::{AddGlyphError, GlyphInstance};
 
 /// 4× MSAA, the sample count every pass is built for when the adapter supports it.
 ///
@@ -74,6 +77,18 @@ impl TargetFormats {
             count: self.sample_count,
             ..Default::default()
         }
+    }
+
+    /// The `MultisampleState` for a pipeline that draws **after** [`ResolvePass`], into the
+    /// presentable texture rather than the multisampled one.
+    ///
+    /// Always one sample, whatever `sample_count` says — and it is a method rather than an
+    /// inline `count: 1` so the exception is stated where the rule is. Only [`text::TextPass`]
+    /// uses it: glyphs arrive already antialiased by coverage, so running them through MSAA
+    /// would spend samples to change nothing, and the resolve has happened by then regardless
+    /// (AGENTS.md §13.6).
+    pub fn post_resolve_multisample(&self) -> wgpu::MultisampleState {
+        wgpu::MultisampleState::default()
     }
 
     /// Whether drawing goes through a multisampled texture that must then be resolved.
@@ -113,6 +128,9 @@ pub struct Renderer<'target> {
     /// does, on a keyframe change — carries the generation it registered under and checks it
     /// at draw time (§12.4).
     bindless: BindlessTextures,
+    /// The target's size in physical pixels. Kept because screen-space passes need it and
+    /// `resize_surface` is the only place it is known — it used to be consumed and dropped.
+    size: [u32; 2],
     target: Target<'target>,
 }
 
@@ -330,6 +348,7 @@ impl<'target> Renderer<'target> {
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, surface_format, [1, 1], targets.sample_count)),
             bindless,
+            size: [1, 1],
             device,
             queue,
             passes,
@@ -361,6 +380,9 @@ impl<'target> Renderer<'target> {
         let passes = RenderPasses::new(&device, targets, &bindless);
         let depth_texture = DepthTexture::new(&device, size, targets.sample_count);
         let target = Self::make_offscreen(&device, format, size);
+        // The headless path never calls `resize_surface`, so this is its only chance to tell
+        // the screen-space passes how big the target is.
+        passes.text.set_viewport(&queue, size);
 
         Ok(Renderer {
             target,
@@ -371,6 +393,7 @@ impl<'target> Renderer<'target> {
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, format, size, targets.sample_count)),
             bindless,
+            size,
             device,
             queue,
             passes,
@@ -420,6 +443,9 @@ impl<'target> Renderer<'target> {
     }
 
     pub fn resize_surface(&mut self, size: [u32; 2]) {
+        self.size = size;
+        self.passes.text.set_viewport(&self.queue, size);
+
         // The multisampled colour attachment must track the target's size and the depth
         // buffer's sample count, so all three are rebuilt together.
         self.msaa_texture = self.targets.is_multisampled().then(|| {
@@ -530,6 +556,55 @@ impl<'target> Renderer<'target> {
         )
     }
 
+    /// The target's size in physical pixels — the space [`GlyphInstance::rect`] is measured in.
+    pub fn size(&self) -> [u32; 2] {
+        self.size
+    }
+
+    /// The bindless slot holding the glyph registered under `key`, if it is still resident.
+    ///
+    /// **Ask every frame rather than caching the answer.** The registry is scene-scoped and
+    /// `clear_scene` takes glyph slots with everything else, so an index kept across a level
+    /// load is stale (AGENTS.md §13.2a). A `None` here means "rasterize and re-add", which is
+    /// cheap because the caller still holds the bitmap.
+    pub fn glyph_index(&self, key: u64) -> Option<u32> {
+        self.bindless.index_of(TextureKey::Glyph(key))
+    }
+
+    /// Upload one rasterized glyph and give it a slot, or return the slot it already has.
+    ///
+    /// `key` is opaque — the renderer compares it and nothing else. Batch every glyph a frame
+    /// newly needs before drawing rather than adding them one at a time: each registration
+    /// dirties the whole array, and `encode` rebuilds it once (§13.3).
+    pub fn add_glyph(
+        &mut self,
+        key: u64,
+        image: &TextureImage,
+    ) -> Result<u32, AddGlyphError> {
+        self.passes.text.add_glyph(
+            &self.device,
+            &self.queue,
+            &mut self.bindless,
+            key,
+            image,
+        )
+    }
+
+    /// Replace the text drawn over the frame. An empty slice draws nothing.
+    ///
+    /// Indices in `instances` must come from [`Self::add_glyph`] or [`Self::glyph_index`] in
+    /// the *current* generation; the pass records which one and asserts on it at draw time.
+    pub fn set_text(&mut self, instances: &[GlyphInstance]) {
+        self.passes
+            .text
+            .set_text(&self.device, &self.bindless, instances);
+    }
+
+    /// Glyphs queued to draw this frame.
+    pub fn text_stats(&self) -> u32 {
+        self.passes.text.glyph_count()
+    }
+
     pub fn update_terrain_uniforms(&self, view_proj: [[f32; 4]; 4], camera_pos: glam::Vec3) {
         self.passes
             .terrain
@@ -622,6 +697,11 @@ impl<'target> Renderer<'target> {
         if let Some(msaa) = &self.msaa_texture {
             self.passes.resolve.pass(&mut cmd, &msaa.view, view);
         }
+
+        // Text last, into `view` rather than `colour`: it draws over the *resolved* frame, so
+        // it is the one pass that is not multisampled (AGENTS.md §13.6). With MSAA off the two
+        // are the same texture and this is simply the last pass.
+        self.passes.text.pass(&mut cmd, bindless, view);
 
         cmd
     }
@@ -765,6 +845,8 @@ pub enum NewRendererError {
     ImmediatesTooSmall(#[error(not(source))] u32),
 }
 
+/// In frame order. `clear` and `resolve` draw nothing; the four in between draw the world into
+/// the multisampled texture, and `text` draws over the resolved result.
 struct RenderPasses {
     clear: ClearPass,
     sky: OuterSkyPass,
@@ -772,6 +854,7 @@ struct RenderPasses {
     model: ModelPass,
     local_detail: LocalDetailPass,
     resolve: ResolvePass,
+    text: TextPass,
 }
 
 impl RenderPasses {
@@ -783,6 +866,7 @@ impl RenderPasses {
             model: ModelPass::new(device, targets, bindless),
             local_detail: LocalDetailPass::new(device, targets, bindless),
             resolve: ResolvePass,
+            text: TextPass::new(device, targets, bindless),
         }
     }
 }
