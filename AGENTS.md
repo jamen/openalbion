@@ -1447,6 +1447,10 @@ cargo run -p openalbion -- --level LookoutPoint --screenshot out.ppm
 # see text rendering, live — fly with WASD, Escape releases the cursor (§13.7 step 3)
 cargo run -p openalbion -- --level LookoutPoint --text-demo
 
+# the heaviest level in the shipped data — 306 slots, 196 mesh assets, 29k foliage (§12.3a).
+# Use --release: a debug build measures the wrong thing.
+cargo run --release -p openalbion -- --level OakValeEast_v2 --text-demo
+
 # ...or as a still, without a window
 cargo run -p openalbion -- --level LookoutPoint --text-demo --screenshot text.ppm
 ```
@@ -1795,6 +1799,53 @@ will not exceed a few thousand.
 **Pin these counts as a test with the implementation.** They are a pure function of the shipped
 data, exactly like §5 step 8's placement counts, so they belong in the suite rather than in this
 paragraph.
+
+#### 12.3a The estimate above, replaced by a full sweep — **every level, measured**
+
+The table above is a sample and an extrapolation. On 2026-08-15 the built renderer was run
+against **all 397 `.lev` files** — `--screenshot` per level, reading the registry's own count —
+which turns "will not exceed a few thousand" into a number.
+
+> **Peak: 342 of 4096 slots, on `Darkwood_5`. A 12× margin, and the capacity is never in
+> question.** Median level 43, p90 224, p95 316.
+
+**The distribution is more useful than the peak, because the two ends stress different things:**
+
+| Level | maps | slots | ground | mesh assets | placements | foliage | indices |
+|---|---|---|---|---|---|---|---|
+| `Darkwood_5` / `_6` | 57 | **342** | 284 | 50 | 917 | 1,931 | 3.87 M |
+| `OakValeEast_v2` | 16 | **306** | 107 | **196** | 1,063 | 29,292 | 1.99 M |
+| `BowerstoneSlums_v2` | **1** | 229 | **12** | **201** | 581 | 10,937 | 0.19 M |
+| `ExecutionTree` | 34 | 276 | 227 | 21 | 105 | 6,873 | **6.07 M** |
+| `OrchardFarm` | 11 | 184 | 81 | 86 | 1,227 | **48,191** | 1.84 M |
+| `LookoutPoint` (the old reference) | 14 | 227 | 110 | 74 | 1,002 | 21,827 | 2.66 M |
+
+**The finding that matters: ground textures are the slot cost, not meshes.** Across every level
+above 50 slots, ground textures are **50% of the registry on average**, and at the peak they are
+284 of 342 — because a `.wld` region loads up to 57 maps and each brings its own theme palette,
+while only two to four of them are populated with things at all. Slot pressure scales with
+**region size**, which is a `.wld` property, not with how much is *in* a level.
+
+`BowerstoneSlums_v2` is the counter-example that proves it: **one** map, 12 ground textures, and
+201 distinct mesh assets — 217 of its 229 slots are mesh textures. It is the only shape in the
+shipped data where the mesh half dominates, and it is also where the §12.6 dedup pays most:
+**230 of 447 material references already resident (51%)**.
+
+**Recommended stress levels**, by what they stress:
+
+- `Darkwood_5` — most slots, most maps, most ground textures. The registry stressor.
+- `OakValeEast_v2` — the balanced worst case: high on *both* axes, 196 mesh assets and 107
+  ground, plus 29k foliage. **The best single level to run.**
+- `BowerstoneSlums_v2` — the mesh/dedup stressor, and the only one where ground is negligible.
+- `ExecutionTree` — 6.07 M terrain indices, the geometry stressor. §12.3's "largest region" by
+  mesh count, but only 21 mesh assets once actually loaded.
+- `OrchardFarm` — 48,191 foliage instances, the local-detail stressor, and the slowest to load
+  at 3.7 s.
+
+**Found by the sweep, and not a bindless problem:** `HauntedHouse_Filler_01.lev` **fails to
+parse** — `Unexpected end of input`, reproducible with
+`fool lev info .../HauntedHouse_Filler_01.lev`. 396 of 397 levels load; this one is a
+`fable-data` bug, logged here because a full sweep is the only thing that would have found it.
 
 ### 12.4 Architecture — `BindlessTextures`
 
