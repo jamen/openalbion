@@ -218,6 +218,14 @@ async fn request_device(adapter: &wgpu::Adapter) -> Result<(Device, Queue, u32),
             required_limits: wgpu::Limits {
                 max_binding_array_elements_per_shader_stage: capacity,
                 max_immediate_size: MAX_IMMEDIATE_SIZE,
+                // Whatever the adapter allows, rather than the 256 MiB default
+                // (`limits.rs:383`). One region's terrain fits in the default comfortably; the
+                // *whole world* does not — all 398 maps in one scene want a 374 MB vertex
+                // buffer, and asking for the default turns that into a validation error at
+                // `create_buffer` rather than an out-of-memory. This machine's RADV reports
+                // ~4 GB. Raising it costs nothing on a device that cannot honour it, because
+                // this takes the adapter's own number.
+                max_buffer_size: adapter_limits.max_buffer_size,
                 ..wgpu::Limits::default()
             },
             ..Default::default()

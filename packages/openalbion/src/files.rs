@@ -329,6 +329,27 @@ impl Files {
         maps
     }
 
+    /// Every map the `.wld` places — the whole world in one scene, rather than one region.
+    ///
+    /// Falls back to `level_name`'s region when there is no `.wld`, so the caller gets a
+    /// working scene rather than an empty one.
+    pub fn world_maps(&self, level_name: &str) -> Vec<fable_data::wld::RegionMap> {
+        let Some(world) = &self.world else {
+            tracing::warn!("No FinalAlbion.wld — falling back to {level_name}'s region");
+            return self.region_maps(level_name);
+        };
+
+        let maps = world.all_maps();
+        let populated = maps.iter().filter(|m| m.populated).count();
+        tracing::info!(
+            "Whole world: {} map(s), {populated} populated and {} filler(s)",
+            maps.len(),
+            maps.len() - populated,
+        );
+
+        maps
+    }
+
     /// Load and parse a level by name (e.g. "Witchwood") from `FinalAlbion.wad`.
     pub fn load_level(&self, name: &str) -> Result<Lev, LoadLevelError> {
         use LoadLevelError as E;

@@ -181,6 +181,41 @@ impl Wld {
         }
         out
     }
+
+    /// **Every** map the `.wld` places, as one scene — the whole of Albion rather than one
+    /// region.
+    ///
+    /// Nothing in the original engine does this: it streams a region at a time, which is what
+    /// [`Self::maps_for_region_of`] models. This exists to answer how much of the world fits
+    /// at once — the resident set a texture-streaming design has to budget for — and as a
+    /// standing stress case for the renderer.
+    ///
+    /// A map is `populated` if **any** region lists it in `ContainsMap`; the rest are the
+    /// terrain-only fillers every region sees. Ordered with the populated maps first, so a
+    /// caller that gives up part way through still has the levels with things in them.
+    pub fn all_maps(&self) -> Vec<RegionMap> {
+        let mut contains: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for region in &self.regions {
+            for path in &region.contains_maps {
+                contains.insert(trailing_stem(path).to_lowercase());
+            }
+        }
+
+        let mut out: Vec<RegionMap> = self
+            .maps
+            .iter()
+            .map(|map| {
+                let name = trailing_stem(&map.level_name);
+                RegionMap {
+                    level_name: name.to_string(),
+                    origin: (map.map_x, map.map_y),
+                    populated: contains.contains(&name.to_lowercase()),
+                }
+            })
+            .collect();
+        out.sort_by_key(|m| !m.populated);
+        out
+    }
 }
 
 /// One map to load alongside a level, resolved from its region.

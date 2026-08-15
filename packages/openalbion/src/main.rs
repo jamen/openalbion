@@ -68,6 +68,11 @@ struct Cli {
     /// draw the text-rendering demonstration overlay (AGENTS.md §13.7 step 3)
     #[argh(switch)]
     text_demo: bool,
+
+    /// load every map in FinalAlbion.wld at once instead of --level's region, and report what
+    /// the whole world costs (AGENTS.md §12.3b). Needs a release build and patience.
+    #[argh(switch)]
+    world: bool,
 }
 
 /// How much of a level's texture work the bindless registry saves (AGENTS.md §12.6).
@@ -346,6 +351,8 @@ struct App {
     demo_font: Option<text::Font>,
     /// Smoothed frames per second, for the overlay to have something that moves.
     fps: f32,
+    /// `--world`: load every map at once rather than `--level`'s region.
+    load_world: bool,
 }
 
 #[derive(Debug, Display)]
@@ -394,6 +401,7 @@ impl App {
                 |font| font,
             ),
             fps: 0.0,
+            load_world: cli.world,
         })
     }
 }
@@ -448,7 +456,11 @@ impl App {
     fn load_scene(&mut self, renderer: &mut Renderer<'_>) -> Result<(), TryResumedError> {
         use TryResumedError as E;
 
-        let region = self.files.region_maps(&self.level_name);
+        let region = if self.load_world {
+            self.files.world_maps(&self.level_name)
+        } else {
+            self.files.region_maps(&self.level_name)
+        };
         let primary = region
             .iter()
             .find(|m| m.level_name.eq_ignore_ascii_case(&self.level_name))

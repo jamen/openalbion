@@ -1451,6 +1451,9 @@ cargo run -p openalbion -- --level LookoutPoint --text-demo
 # Use --release: a debug build measures the wrong thing.
 cargo run --release -p openalbion -- --level OakValeEast_v2 --text-demo
 
+# the whole of Albion at once — 397 maps, 3215/4096 slots, ~72 s to load (§12.3b)
+cargo run --release -p openalbion -- --world --level LookoutPoint --text-demo
+
 # ...or as a still, without a window
 cargo run -p openalbion -- --level LookoutPoint --text-demo --screenshot text.ppm
 ```
@@ -1847,6 +1850,54 @@ parse** — `Unexpected end of input`, reproducible with
 `fool lev info .../HauntedHouse_Filler_01.lev`. 396 of 397 levels load; this one is a
 `fable-data` bug, logged here because a full sweep is the only thing that would have found it.
 
+#### 12.3b The whole of Albion, in one scene — **it fits**
+
+`--world` loads every map `FinalAlbion.wld` places instead of one region (`Wld::all_maps`).
+Nothing in the original engine does this; it exists to answer what a texture-streaming design
+has to budget for, and it is the standing worst case for the renderer.
+
+Run 2026-08-15 on the RX 580, and it renders:
+
+| | |
+|---|---|
+| Maps | **397** loaded of 398 (`HauntedHouse_Filler_01` is the parse failure above) |
+| **Bindless slots** | **3,215 of 4,096 — 78%, with 881 to spare** |
+| Ground textures | 2,011 |
+| Terrain layer passes | 4,291 |
+| Terrain geometry | 10,393,362 vertices / 49,161,738 indices — **16.4 M triangles** |
+| Thing placements | 62,858 over **1,270 distinct meshes** |
+| Local detail | 492,162 instances over 50 batches |
+| Texture dedup | **2,247 of 3,473 material references already resident (65%)** |
+| Load | 72 s wall, 1.63 GB peak RSS |
+
+**§12.3's extrapolation was close and slightly high**: it predicted 1,331 distinct meshes for
+the whole world against 1,270 measured, and "not exceed a few thousand" textures against 3,215.
+**4096 was the right number** — it fits the entire game world at once, which was the property it
+was chosen for, and there is no plausible scene larger than this one.
+
+**What this settles for streaming:** eviction is not needed for *correctness* at any scale
+Fable has. A streaming design can be about load time and memory — 72 s and 1.63 GB are the real
+constraints — rather than about running out of slots. `BindlessTextures` already has the pieces:
+`index_of` dedups, `clear` returns slots, and the generation catches indices that outlive their
+registration. What it lacks is per-slot release, and §12.9 was right to defer it.
+
+**One limit had to be raised to get here**, and it is not about textures.
+`Limits::default().max_buffer_size` is 256 MiB (`limits.rs:383`) and the world's terrain wants a
+**374 MB** vertex buffer, which fails validation at `create_buffer` rather than out of memory.
+`request_device` now asks for `adapter.limits().max_buffer_size` — this machine reports ~4 GB —
+which is §12.2 fact 3's own rule applied one field further along: start from what the adapter
+has, not from the default. A device that cannot honour it is unaffected, because the number
+comes from the device.
+
+**Two things worth knowing before this becomes a design:**
+
+- **4,291 terrain layer passes is 4,291 draw calls**, before models and foliage. That, not slot
+  count, is what a whole-world view actually costs, and it is what §12.9's deferred "merging
+  draws" would address. Do not claim a number for it without measuring (§6.6).
+- **Every map came back `populated`** — all 398 are in some region's `ContainsMap`, so
+  `--world` loads things and foliage for all of them. There is no cheap "terrain only" whole
+  world.
+
 ### 12.4 Architecture — `BindlessTextures`
 
 A new `renderer/src/bindless.rs`, owning:
@@ -2045,8 +2096,12 @@ shaders at module creation so the two language's layouts cannot drift. The four 
 - **Growing past the chosen capacity at runtime.** §12.3 picks a number that makes this
   unnecessary. If it ever is necessary, it means rebuilding the layout and every pipeline.
 - **Bindless buffers or storage textures.** Nothing needs either.
-- **Cross-frame slot eviction.** §12.3's measurement says a level, a region, and plausibly the
-  whole world fit. Revisit only if the resident set becomes genuinely unbounded.
+- **Cross-frame slot eviction.** §12.3's measurement said a level, a region, and *plausibly* the
+  whole world fit; §12.3b removed the "plausibly" by loading all 397 maps at once — **3,215 of
+  4,096 slots**. So eviction is not needed for correctness at any scale this game has, and
+  streaming (Jamen's interest, 2026-08-15) is a load-time and memory question rather than a slot
+  question. The missing piece if it is ever wanted is **per-slot release**: `clear` is
+  all-or-nothing today, and a free list plus the existing generation would be the shape.
 
 ### 12.10 Worth doing alongside, cheaply
 

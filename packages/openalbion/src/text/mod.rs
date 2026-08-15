@@ -10,7 +10,6 @@
 //! there is no shaping, no kerning and no bidi, because the console does not need them and
 //! inventing them now would be a mechanism with nothing to check it against.
 
-
 pub mod font;
 pub mod layout;
 
