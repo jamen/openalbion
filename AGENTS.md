@@ -1,104 +1,63 @@
-# OpenAlbion — agent guide & renderer plan
+# OpenAlbion — agent guide
 
-> **Note (2026-08-05):** the previous `AGENTS.md` was never committed and is gone from disk.
-> This is a fresh, renderer-focused reconstitution. The def-compiler/architecture chapters of
-> the old document were not recovered; re-add them here when that work resumes.
+A recreation of Fable: The Lost Chapters' engine, ported from oracles rather than guessed at.
+This document is the working agreement: what is settled, what is next, and how to tell the
+difference between the two.
+
+**It is current, not cumulative.** A fact belongs here stated as a fact, in the present tense,
+with its citation — not as a story about when it was discovered. §10 keeps the session record,
+compressed to what each one *corrected*, and is the only place narrative lives.
+
+**A note on section numbers.** Source comments cite this document heavily (~90 references).
+Numbering is therefore stable and is not renumbered on edit. One inherited ambiguity: in code
+comments, `§N.M` for `N ≥ 5` usually means *step N, item M* of §5's subsystem list — `§6.12` is
+step 6's item 12 (`.wld` world placement), not §6 item 12. §6.3/§6.6/§6.7/§6.8/§6.9 are the
+exception and do mean §6's own subsections.
 
 ---
 
 ## 0. Where we are
 
-> **Session summary — 2026-08-10, branch `local-detail`.**
-> **Landed: levels have foliage** (new §3.13, §5 step 8) — grass, bracken, flowers, brambles
-> and trees, generated rather than read. `fable-data::local_detail` ports
-> `CEngineLocalDetailGenerator` and the placement half of `CLocalDetailCacheMap`; static-mesh
-> objects go through the existing model pass because that is literally the call the engine
-> makes for them, and repeated meshes get a transcribed `SHADERS_REPEATED_MESH` pass.
-> LookoutPoint grows **15,845 objects over 24 meshes** where it had 374 things.
-> **It is exactly reproducible**, which was the point: the whole subsystem is deterministic
-> off one five-instruction PRNG — `GFROR13` is a rotate-right-13 — so the foliage is a pure
-> function of the defs and the heightmap, and the counts are pinned as tests rather than
-> judged by eye. **The `.stb` cache is not needed and was not touched.**
-> **Two corrections found by implementing:** the engine positions objects in *world* cells
-> because its terrain carries the same offset and ours does not, so a level's foliage stood
-> 3,232 cells off its own hillside until the world origin was confined to the random draws;
-> and `TiltToSlope` does nothing at all to a repeated mesh, because only
-> `(cos·Scale, sin·Scale, 0, 0)` survives into its four-float object matrix.
-> **Next is the distance fade** (§5.8.5). Grass currently draws to the horizon; the original
-> dithers it out in screen space under an alpha test, and the stipple pattern is *procedural*
-> — `BuildAlphaStippleTexture` builds a 32×32 ordered dither at startup from the same PRNG,
-> so there is no asset to find.
->
-> **Session summary — 2026-08-10, branch `texture-sampling`.**
-> **Landed: texture sampling** (new §3.12, §5 step 7) — mip chains, anisotropy 4 and 4× MSAA.
-> The aliasing at distance was three separate causes, and two were faithfulness bugs. **We never uploaded a mip level.** The
-> chains were never missing: they ship in `textures.big`, uncompressed below level 0, and
-> `Texture::parse` already reads them into `raw_image_data` — 3,978 of 4,000 assets carry a
-> complete chain matching `CalculateTextureSize` exactly, and `get_top_mip_bcn_image` threw
-> every level but the first away. Anisotropy is **4**, read off the shipped `user.ini`, not
-> chosen. MSAA is the one thing here the original does *not* do (`dbugst.ini` has it
-> commented out), so it lands as an `ACCEPTED` divergence rather than a transcription.
-> **The lesson worth keeping:** the parser had the data the whole time and the accessor's
-> name — `get_top_mip_*` — made the loss look intentional. A field parsed and read by nothing
-> (`TextureMetadata::mip_maps`) is the tell.
->
-> **Session summary — 2026-08-10.**
-> **Landed: levels are populated** (§5 step 6, new §3.11). `.tng` things resolve to static
-> meshes through retail `game.bin`, placed with a ported `CalcObjectMatrix` and drawn
-> instanced through a transcribed `VSHADER_STATIC_DIRLIGHT`.
-> **Three corrections, two of them to things §3 called verified:** the landscape was
-> **mirrored in Y** — §3.4's row-order reading missed that the load loop applies the same
-> flip on write, so the two cancel; meshes are **clockwise-front**, so the model pass was
-> drawing interiors; and the landscape pass was double-subtracting the camera position.
-> **§3.8's last open item is closed** — the light register offsets are read, not
-> hypothesised — which retires the final row of §9's original table.
-> **The lesson worth keeping:** the landscape had no independent witness, so a mirrored
-> terrain stayed self-consistent and invisible for a week. `.tng` placements are that
-> witness, and they are now a gate.
-> **Next renderer work is still step 2, the environment layer.** It now gates three
-> subsystems: sky gradients, landscape lighting and mesh lighting are the same four LUT rows,
-> and all three run with the same neutral placeholder until it lands.
+Four subsystems draw a level today. The renderer is faithful where it has been derived and
+inert where it has not — deliberately, per §2 rule 5.
 
-> **Session summary — 2026-08-09, branch `landscape-texturing`.**
-> **Landed: the landscape is textured** (§5 step 5, rewritten §3.4). The foreground layer
-> passes work — triplanar ground textures masked by normal-indexed blend tables — over a
-> ported `CEngineLandscapeMeshBuilder` and a new `fable-data::landscape`.
-> **Corrected:** §3.4's reading of `CliffU`/`CliffV` and of the second texture stage were
-> both wrong; the composited-surface story belonged to the *background* LOD path, not the
-> foreground. `HEIGHT_SCALE = 2048` is now sourced, and `texture_scale` is read from the
-> binary, not guessed.
-> **Still standing** from 2026-08-08: the renderer is its own crate with a data-only input
-> boundary (§11); the mirror is abandoned and §5 step 1, §6 and §7.1 are history, not plan;
-> the oracles (§1) and ground rules (§2) are unchanged and are the only verification route.
-> **Next renderer work: step 2, the environment layer.** It now blocks *both* remaining
-> subsystems — the sky's gradient colours and the landscape's lighting are the same four LUT
-> rows, and both are running with neutral placeholders until it lands.
+| Subsystem | State | §  |
+|---|---|---|
+| Landscape (foreground) | **Built.** Triplanar layers over normal-indexed blend tables, additive over a blackout pass | §3.4, step 5 |
+| Things (static meshes) | **Built.** `.tng` → def `Graphic` → `graphics.big` asset, instanced | §3.11, step 6 |
+| Texture sampling | **Built.** Shipped mip chains, anisotropy 4, MSAA 4× | §3.12, step 7 |
+| Local detail (foliage) | **Built.** Generated, deterministic, exactly reproducible | §3.13, step 8 |
+| Sky | **Partial.** Textures, keyframe blend and the gradient lerp are right; the gradients themselves are zero pending the environment layer, and the base band draws through the wrong pipeline | §3.2, §3.3, step 3 |
+| Environment layer | **Half.** Themes and keyframes are read; **the colour LUT is not** — `lighting_colours.tga` is loaded into `Files` and consumed by nothing | §3.1, step 2 |
 
+**Two things gate everything else, and they are independent.**
 
-Two renderer subsystems have been attempted — **sky** and **landscape**. Both render
-*something*, neither renders *accurately*. The last ~12 commits are a tight loop of
-`fix:` / `diagnostic:` / `debug:` on visual symptoms:
+1. **The environment layer (§5 step 2)** is the highest-value *faithfulness* work left. Sky
+   gradients, landscape lighting and mesh lighting are the same four LUT rows, all three
+   currently running the same neutral placeholder (§9). It is one change to three passes —
+   which is only true if the placeholder lives in one place, hence §12.7.
+2. **Bindless rendering (§12)** is the highest-value *engineering* work left, and is what
+   Jamen has asked for next. It is a prerequisite for font rendering and the dev console
+   (§13), and it pays for itself independently by giving the renderer a texture cache it does
+   not have today.
 
-```
-27d7fda debug: dump multiple LUT rows at once to verify indexing
-25a8dcc diagnostic: log LUT colours each frame, clamp gradient alpha to 0.4
-370aa0a fix: default LUT rows to 13-16 when ENVIRONMENT def returns zero
-48ffc56 fix: LUT linear interpolation, dome top cap, production shader
-23c2150 fix: rebuild dome as triangle-strip cylinder with proper UV wrap
-a53d300 debug: UV visualisation shader, fan-only dome mesh
-```
+**Bindless comes first**, then fonts and the console, then the environment layer — Jamen's
+call, 2026-08-15.
 
-**Root cause of the loop:** we have been tuning *constants* inside an *architecture we
-guessed at*, and validating by eye. When the picture still looks wrong there is no way to
-tell whether the mesh, the data lookup, the shader, or the colour space is at fault — so
-the next commit guesses again.
+**Known blocker, unrelated to either: the workspace does not link.** `cargo check` passes;
+`cargo build` and `cargo test` fail with `undefined symbol: lzo1x_decompress_safe`. The
+devshell puts `mingw.stdenv.cc` in `packages`, whose setup hook exports bare
+`CC=x86_64-w64-mingw32-gcc` / `AR=x86_64-w64-mingw32-ar`, so `packages/lzo`'s `cc` build
+produces a **Windows COFF object** for a Linux host link.
 
-Meanwhile we already own four oracles that answer these questions exactly (§1). We were
-not using them.
+**The fix is one line, and it is tested:** delete `mingw.stdenv.cc` from `devShells.default`'s
+`packages`. The flake's *target-scoped* `CC_x86_64_pc_windows_gnu` already points at the
+absolute store path (`${mingwBin}gcc`), so the cross compiler never needed to be on `PATH`.
+Checked in an isolated copy of the flake: with that line removed the shell reports `CC=gcc`,
+`AR=ar`, and `CC_x86_64_pc_windows_gnu` still resolves to the mingw wrapper — so Windows
+cross-compilation keeps working.
 
-**The fix is procedural, not technical:** derive → verify → implement → review, one
-mechanism at a time, with the ground truth quoted in the commit. §2 is the rules, §6 is the
-tooling that makes off-screen verification possible, §7 is the review protocol.
+**Fix this before §12 starts**: every verification step in §12.8 is a rendered frame.
 
 ---
 
@@ -110,11 +69,12 @@ the question.
 | # | Resource | What it settles | Notes |
 |---|---|---|---|
 | 1 | `~/git/fable-reimpl/src/**/*.hpp` | Class layouts, field names, offsets, method signatures, **shader constant register maps** | Generated from CodeView debug info. **Authoritative** — if a decompiled body contradicts a header, the header wins. |
-| 2 | `~/dl/Fable Shader Disassembly.md` | Exact per-vertex/per-pixel maths | 465 shaders, complete. Grouped by `## SHADERS_*`, each in a `<details><summary><strong>NAME</strong>` block. Provenance unverified — see §5 step 1. |
-| 3 | `~/doc/.../Fable/Data/shaders/*.bbb` | The shaders as the game actually ships them: name, bytecode, source path | Compiled banks. Format decoded in §3.7. Lets us regenerate #2 ourselves. |
+| 2 | `~/dl/Fable Shader Disassembly.md` | Exact per-vertex/per-pixel maths | 465 shaders, complete. Grouped by `## SHADERS_*`, each in a `<details><summary><strong>NAME</strong>` block. Provenance unverified; §3.7 says how it could be regenerated. |
+| 3 | `~/doc/.../Fable/Data/shaders/*.bbb` | The shaders as the game ships them: name, bytecode, source path | Compiled banks. Format decoded in §3.7. |
 | 4 | `~/doc/.../Fable/Data/Defs/*.def` | Real authored data (rows, columns, textures, tuning) | Debug build ships text `.def`; retail ships only `CompiledDefs/*.bin`. |
 | 5 | `~/git/fable-reimpl/src/**/*.cpp` | Algorithms, control flow, constants | Ghidra output — noisy. Trust literals and structure; be sceptical of types and register artifacts. |
 | 6 | `~/git/fable-decomp` | Raw decomp inputs / sidecars | For when #5 is unreadable. |
+| 7 | `~/Fable`, `~/doc/Fable_Anniversary-2013-02-25` | The engine, running | §3.9. Expensive; nothing currently depends on it. |
 
 Key fixture paths:
 
@@ -127,6 +87,7 @@ Key fixture paths:
   Data/Levels/FinalAlbion.wad
   Data/graphics/{graphics.big,pc/textures.big}
   Ego_d.exe + Ego_d.pdb                     # debug build + symbols
+~/Fable/data/                               # retail TLC art; the Anniversary tree symlinks to it
 ```
 
 Renderer files worth knowing in the decomp:
@@ -147,6 +108,12 @@ fablelib/defs/engine_sky_def.hpp                 # CSkyDef
 
 ## 2. Ground rules
 
+These exist because of a specific failure. Two subsystems were once tuned by eye through a
+long `fix:`/`diagnostic:`/`debug:` loop — constants adjusted inside an architecture that had
+been *guessed at*, with no way to tell whether the mesh, the lookup, the shader or the colour
+space was at fault. Four oracles already answered every one of those questions. The rules are
+what stop that recurring.
+
 1. **No invented constants.** Every magic number in the renderer must be traceable to a def
    field, a decomp literal, or a named shader constant register — cited in a comment. If a
    value genuinely cannot be sourced, mark it `// UNVERIFIED:` and log it in §9.
@@ -161,11 +128,16 @@ fablelib/defs/engine_sky_def.hpp                 # CSkyDef
 6. **Jamen reviews the derivation before implementation** on each numbered step. §7.
 7. **Coordinates are Z-up.** Settled — see §3.6.
 
+Rules 1 and 3 do not apply to §12 and §13: bindless rendering and font rendering have no
+oracle, because the original engine did neither. Rules 2, 4, 5 and 6 carry over unchanged, and
+rule 4 there means *pixel-identical*, not *looks right*.
+
 ---
 
 ## 3. Verified ground truth
 
-Everything here was read out of the oracles during the 2026-08-05 review. Citations are exact.
+Read out of the oracles, with exact citations. This is the knowledge base — everything
+below is a present-tense fact about *the game*, not about our progress.
 
 ### 3.1 The environment colour LUT — *this is the big one*
 
@@ -217,10 +189,11 @@ Time interpolation happens *after* the fetch:
 bracketing `time` and calls `CBlendedEnvironmentTheme::Blend(a, b, t)` over the whole
 already-fetched colour set.
 
-**Current code is wrong here.** `renderer/sky.rs:728` computes `fx = time_of_day / 24.0 *
-width` and bilinearly interpolates along X — it walks across *other themes'* columns as the
-clock advances and filters between unrelated themes. No row-index tweak or `* 0.4` clamp can
-rescue that. This single bug accounts for most of the sky-colour thrash.
+> **The reading to avoid**, because it was implemented once and cost weeks: treating X as
+> time-of-day and bilinearly interpolating along it. That walks across *other themes'* columns
+> as the clock advances and filters between unrelated themes, and no row-index tweak or alpha
+> clamp rescues it. It was deleted rather than tuned (§2 rule 5); the gradients read zero
+> today.
 
 `CBlendedEnvironmentTheme::Colours[]` (`fablelib/environment_theme.hpp:873`) is indexed by a
 stable enum, *not* by LUT row — read off `BuildFromSource`:
@@ -286,28 +259,23 @@ lrp r0, r1.w, v0, r0                ; lerp(that, gradient, saturate(gradient.a))
 (D3D `lrp dst, s0, s1, s2` = `s2 + s0·(s1 − s2)` = `lerp(s2, s1, s0)`. Note pixel-shader `c0`
 is a *pixel* constant and unrelated to the vertex `c0` preset.)
 
-Against `renderer/sky/outer_sky.wgsl`:
-
-- ✅ vertex-side gradient lerp is correct.
-- ❌ `mix(tex0, tex1, 0.5)` — the blend factor is **`c0.w`**, i.e.
-  `CEnvironmentThemeDef::SkyTexture1Blend` (and the keyframe blend), not `0.5`.
-- ❌ the `* 0.4` clamp on gradient alpha in `sky.rs:768` has no counterpart in the shader.
-- ❌ the header comment claims "TEMPORARY DEBUG MODE: outputs UV coordinates as colours" —
-  stale, the body does not do that. Actively misleading.
+Against `renderer/sky/outer_sky.wgsl`: the vertex-side gradient lerp is a correct
+transcription, and `c0.w` is fed the real blend factor from
+`CEnvironmentThemeDef::SkyTexture1Blend` and the keyframe blend. The gradients behind
+`c92`/`c93` are zero until step 2.
 
 `VSHADER_SKY_BASE_BAND` is **`mov oD0, c92`** — flat top-gradient colour, no texture, no
-vertex colour. We currently draw the base band through the *outer sky* pipeline, which
-samples sky textures. Wrong shader.
+vertex colour. The base band is still drawn through the *outer sky* pipeline, which samples
+sky textures. Wrong shader; step 4.1.
 
 `VSHADER_SKY_SPRITE` is `mov oD0, v1; mov oT0, v2` + the standard transform — matches our
 `sky_sprite.wgsl`.
 
 ### 3.4 Landscape — triplanar layers over a normal-indexed blend table
 
-> **Rewritten 2026-08-09.** The earlier reading of this section was wrong in one decisive
-> way: it took `CliffU`/`CliffV` for texture coordinates and the second texture stage for a
-> composited surface. Both are wrong, and correcting them made the subsystem *simpler*.
-> Implemented on branch `landscape-texturing`.
+> **Two readings to avoid, both of which cost weeks once.** `CliffU`/`CliffV` are *not*
+> texture coordinates, and the second texture stage is *not* a composited surface. The
+> composited-surface story belongs to the **background** LOD path, which we do not implement.
 
 `CLandscapeLayerMesh::CVertex` (`engine_landscape_layer_mesh.hpp:71`):
 
@@ -368,26 +336,28 @@ vertex/index buffer.
 
 **The `.rdata` tables** (`MappingDirNormals`, `PositionToTextureUVTransformU/V`,
 `MappingDirectionToUVLocalisationTableIndexForU/V`) are initialised data and so absent from
-the decomp. They were read out of `ego_r.exe` via `Ego_r.pdb` — see
-`tools/landscape-statics.md` and `tools/pdbsyms.py`. `MappingDirNormals` is
+the decomp. They were read out of `ego_r.exe` via `Ego_r.pdb`. **The extraction script and its
+write-up (`tools/pdbsyms.py`, `tools/landscape-statics.md`) were never committed and are gone**
+— `fable-data/src/landscape/mod.rs` still cites them and the RVAs it quotes (`.data`
+`0x00e188d0`) are the surviving provenance. `MappingDirNormals` is
 `TOP=+Z FRONT=−Y BACK=+Y LEFT=−X RIGHT=+X` (a third confirmation of Z-up), and the UV
 transforms put **one texture tile across 8 world cells**.
 
 **The `.lev` side** carries everything needed, with three traps, all now handled in
 `fable-data/src/landscape/`:
 
-- ~~the cell array is indexed `(SizeY − y) * (SizeX + 1) + x` — row 0 is maximum Y~~
-  **WRONG, corrected 2026-08-10: world Y is the file's row index, with no flip.** The
-  accessors do read `(SizeY − y) * (SizeX + 1) + x` (`map.cpp:2135`,
-  `map_render.cpp:119`) — but the **load loop applies the same flip on write**
+- **world Y is the file's row index, with no flip** — and the obvious reading of the decomp
+  says otherwise, which is the trap. The accessors do read `(SizeY − y) * (SizeX + 1) + x`
+  (`map.cpp:2135`, `map_render.cpp:119`), but the **load loop applies the same flip on write**
   (`fablelib/map.cpp:2600`): it walks the file sequentially and stores file row `f` at array
   row `SizeY − f`. Reading world `Y` from array row `SizeY − Y` therefore returns file row
-  `Y`. `(SizeY − y)` describes the engine's in-memory layout, not the file's. We keep cells
-  in file order, so applying the read-side flip alone **mirrored the landscape in Y** — which
-  it was, from the moment it was textured until §5 step 6 drew something else in world space
-  to disagree with it. See §3.11;
+  `Y`. `(SizeY − y)` describes the engine's in-memory layout, not the file's. We keep cells in
+  file order, so applying the read-side flip alone mirrors the landscape in Y — and a mirrored
+  terrain is self-consistent and invisible until something else is drawn in world space to
+  disagree with it. `.tng` placements are that witness (§3.11), and `placement_test.rs` keeps
+  it a gate;
 - height is `<file f32> * 2048.0` on load (`fablelib/map.cpp:2594`) then quantised to 1/128
-  by `PeekLandscapeHeight` — `HEIGHT_SCALE` was right, and is now sourced;
+  by `PeekLandscapeHeight`;
 - the theme palette's stored def index is **stale** in retail data (off by a constant 702 for
   every LookoutPoint entry). `CMap::LoadFromFile` re-resolves it from the entry's *name*
   (`GetDefGlobalIndexFromName`, `:2561`), and so must we. Resolving by index finds nothing,
@@ -485,8 +455,8 @@ the same register assignments. That is §3.8, and it is the real prize.
   and role are unambiguous.
 - The source paths reveal the engine's own shader taxonomy (`shaders/vertex/*.vsh`).
 
-**Verdict:** worth a small extractor (§5 step 1) — half a day, and it de-risks oracle #2 for
-every subsequent subsystem. Not worth more than that.
+**Verdict:** worth a small extractor — half a day, and it would de-risk oracle #2 for every
+subsequent subsystem. Not worth more than that, and nothing currently depends on it.
 
 ### 3.8 The shader constant register map — named, with exact numbers
 
@@ -537,8 +507,7 @@ shaders: `LightArray.Count = 0xc` with `LightSize = 2` (→ 6 lights × 2 regist
 `ShadowedSpotlightAttenuation` at `c36`, `ShadowedSpotlightColour` at `c37`,
 `User` at `c38`–`c95`.
 
-**Settled 2026-08-10 — the hypothesis was exactly right.** Read off the constructor body
-(`engine_vs_layout_lights.cpp:56-90`):
+Read off the constructor body (`engine_vs_layout_lights.cpp:56-90`):
 
 | Range | Register | Value |
 |---|---|---|
@@ -561,51 +530,116 @@ at `c21` and `c23`, exactly light[1] and light[2] ✓; its `mov r8, c32` lands i
 The landscape and static mesh passes both name `c19`/`c20`/`c35` on this basis, and they are
 no longer a hypothesis.
 
-### 3.9 The original engine is controllable — the comparison surface
+### 3.9 The original engine as a reference
 
-`~/Fable` is not a plain retail install. It is an instrumented dev setup, and it changes
-what verification is possible.
+Not a plan, and nothing currently depends on it. The comparison harness that used this
+(`packages/mirror`) was abandoned 2026-08-08 and deleted, along with `capture-retail.sh`,
+`capture-dev.sh` and `pdbsyms.py`. What survives is the knowledge, because rediscovering it
+cost days: which binary, how to launch it, what its console can do, and where the symbols are.
 
-**It runs here.** Fable: The Lost Chapters (Steam 204030) with Proton 10.0 / Experimental /
-Hotfix, and `steamapps/compatdata/204030`, `204030-debug`, `204030-debug2` prefixes already
-exist. `Fable.exe` is **PE32 (32-bit x86)**.
+**`ego_r.exe` is the reference engine** — the dev *release* build in
+`~/doc/Fable_Anniversary-2013-02-25/Fable/`, 16 MB, with `Ego_r.pdb` (134 MB) beside it.
+**Not `FableWin.exe`**: its PE imports name `MSVCR100D.dll`/`MSVCP100D.dll`, the VS2010 *debug*
+CRT, which is non-redistributable and has no Wine builtin — the loader fails before any code
+runs, with no window and no log. `ego_r.exe` imports the release CRT and `d3dx9_43.dll`, all
+Wine builtins under Proton Experimental, and carries the same full command set.
 
-**Console command script.** `~/Fable/user.ini` is executed as console commands at boot
-(`SetMaxAnisotropy(4); RunScript("joystick.ini"); ActivateQuest("Gameflow");`). Commands
-found in `Fable.exe` include:
+**The Anniversary tree is dev engine + retail TLC art.** Its `Data/` symlinks `graphics.big`,
+`pc/textures.big`, `pc/frontend.big`, `shaders/pc/shaders.big` and the English text at
+`~/Fable/data/...`; native to the tree are `FinalAlbion.wad`/`.stb`, `meshdata.bbb`,
+`CompiledDefs`, `Defs`, `LightingTable`. The art is **not** remastered, so colour comparison
+against this build would be valid, not merely structural — and `~/git/fable-reimpl` is a decomp
+of this same binary, so oracle and reference would be the same thing.
 
-| Command | Use |
+**Launching it (Linux/NixOS), five things that each broke it:**
+
+1. **NixOS needs `steam-run`** — `proton` and `pressure-vessel-wrap` are dynamically linked
+   for a generic distro.
+2. **Use the Proton the prefix was built with.** `compatdata/204030` is at `11.0-100` =
+   Experimental. An older Proton rebuilds the prefix and silently discards the EULA acceptance
+   and graphics-detection registry values.
+3. **Go through `SteamLinuxRuntime_4/_v2-entry-point`** — Experimental's `toolmanifest.vdf`
+   requires appid 4183110. Bare Proton gives a Wine with no FreeType and every dialog renders
+   as an empty stub.
+4. **Set `DISPLAY`, not `WAYLAND_DISPLAY`** (Wine is X11), and *unset* `WAYLAND_DISPLAY` so the
+   window cannot escape onto the real desktop.
+5. **Nested headless sway works** and provides XWayland. The prefix must live inside Steam's
+   `compatdata` tree — pressure-vessel does not map `/tmp`.
+
+**Five more for the dev build specifically**, each of which also bit:
+
+1. Both `default_userst.ini` and `userst.ini` are read, in that order, so the latter overrides.
+2. `SkipConfigDetection(TRUE)` stops `ConfigDetect.dll` loading and the "0MB RAM" warning.
+3. The "did not exit correctly" dialog is a **registry flag**, not an error: `GFConfigDetection`
+   writes `HKCU\…\Fable TLC\GFX_RESET = 1` every boot and clears it only on a clean exit
+   (`main.cpp:281`), so a harness that kills the game re-arms it every run.
+4. **`AllowBackgroundProcessing(TRUE)` is mandatory headless.** `main.cpp:1142` sets
+   `WaitWhileInactive = !GAllowBackgroundProcessing`; without it the game ignores all input and
+   exits after ~7 minutes.
+5. **One instance per prefix.** `WinMain` takes a global mutex (`main.cpp:363`) and a second
+   instance `return 0`s immediately — no window, no log, indistinguishable from a crash.
+
+With those in place it boots **fully unattended to a rendering 1280×720 window, zero dialogs**.
+
+**The console vocabulary is the durable prize, and §13.5 should borrow from it.** Every engine
+component has a `CEngineComponent::GetConsoleEnableFunctionName()`. Retail `Fable.exe` has
+`Enable{Sky,Landscape,Water,Weather,Shadows,AnimatedMeshes,StaticMeshes,RepeatedMeshes,Sprites,
+SpriteTrails,Decals,GroupDecals,Lines,Primitives,ChangingPrimitives,FlareSprites,WeaponTrails,
+Sounds}` and `EnableScreenEffect{ColourFilter,GlowRenderer,OutlineGlow}`. `ego_r.exe` adds
+`Enable{Clouds,Sea,Textures,CompositeTextures,LandscapeBumpMapping,LandscapeFog,
+LandscapeTesselation,LandscapeLODUpdate,Glow,Particles,ParticleRendering,LocalLights,
+ShadowedSpotLights,Dithering,MouseCursor,Foreground,Background,EngineScreenshotMode}`, the free
+camera as console commands (`SetFreeCam`, `SetFreeCamPos`, `SetFreeCamLookVector`,
+`SetFreeCamFOV`, `SetFreeCamHeightLock`, `FreeCamOnWithPlayer`), `GlobalDrawGUI` for the HUD,
+`TakeScreenshot` (gated on `AllowMovieRecording`; writes `data\movies\shot%06d.tga` off the back
+buffer), `SetResolution`, `SetMaxTextureSize`, `PauseTime`, `SetTimeOfDay`, and input
+record/playback (`SetInputSave`/`SetInputLoad` + `AutomatedMode`).
+
+> **`EnableLandscapeTesselation` and `EnableLandscapeLODUpdate` being separate toggles is why
+> §5 step 5.6 is a supported configuration rather than a shortcut.**
+
+**Retail has no working console.** `ConsoleAlpha`/`ConsoleListContaining` are remnants of one
+that was stripped — long-established in the modding community, confirmed by Jamen 2026-08-06.
+Do not chase it.
+
+**Symbol resolution.** `llvm-pdbutil` refuses `Ego_r.pdb` ("Too many directory blocks": block
+size 1024, stream directory spans 512 blocks, so its block map needs 2 and LLVM supports 1); the
+container is otherwise an ordinary MSF 7.00, and a direct reader extracted 116,172 public
+symbols. **That reader was never committed and is gone** — this table is what survives of it:
+
+| RVA | Symbol |
 |---|---|
-| `EnableSky`, `EnableLandscape`, `EnableWater`, `EnableWeather`, `EnableShadows`, `EnableFlareSprites` | **per-subsystem isolation** |
-| `EnableScreenEffect{ColourFilter,GlowRenderer,OutlineGlow,RadialBlurRenderer}` | disable post effects |
-| `DebugCamera`, `PauseTime`, `SetTimeOfDay` | deterministic framing |
+| `0x0073fc50` | `CConsole::RunTextCommand(const CCharString&)` |
+| `0x0073fdb0` | `CConsole::RunScript(const CWideString&)` |
+| `0x006fa5b0` | `CCharString::CCharString(const char*, long)` |
+| `0x00016da7` / `0x000162ff` | `CMainGameComponent::Update()` / `::Render()` — per-frame hook points |
+| `0x00e6d184` / `0x00df8568` | `GTakeScreenshot` (long) / `GAllowMovieRecording` (bool) |
+| `0x00e6d15b` | `GSkipFrontend` (bool) |
+| `0x00e6d19d` / `0x00e6d1a8` | `GOverridePlayerStartPosFromConsole` / `GOverridePlayerStartPos` |
+| `0x00e6d1c4` / `0x00e6d1a5` | `GForceStartingHolySite` / `GFreeCamOnWithPlayer` |
+| `~0x00df87e8` | 101 × `NGlobalConsole::*` bools, contiguous |
 
-These correspond to `CEngineComponent::GetConsoleEnableFunctionName()` — every engine
-component has one. **Subsystem isolation is the single most useful lever here:** with
-`EnableLandscape(0)`, `EnableWater(0)`, `EnableWeather(0)`, `EnableShadows(0)` the original
-renders sky only, which is directly comparable to what we have today. Without it we would be
-diffing our stub landscape against the real one and drowning in noise.
+RVA = `.text` offset + `0x1000`; resolve in-process as `GetModuleHandleW(NULL) + RVA`.
+**The decomp's addresses are `FableWin.exe`'s, not `ego_r.exe`'s** — always resolve against
+`Ego_r.pdb` for the binary actually run. No `CConsole` instance is in the public symbols, so
+writing the globals directly is the safe first milestone; calling `RunTextCommand` needs the
+object found another way.
 
-**Scripted camera and clock.** `FableScriptExtender.dll` (Jamen's, integrated with
-`~/git/EgoCore`) binds the game's script API to Lua. Relevant bindings, from the DLL's
-symbol strings:
+**Where it stopped, and what would unblock it.** `SetSkipFrontend(TRUE)` makes `ego_r.exe` exit
+silently ~5 s after the window appears — reproduced 4×, with and without a profile, nothing
+logged, and not diagnosable from outside (`bbb.log` stays empty and `WINEDEBUG=+debugstr`
+captures nothing, so `LIB_ERROR`/`LIB_TRACE` route nowhere). `ShowDevFrontEnd TRUE` *does* reach
+a keyboard-driven menu, but **no synthetic keystroke lands**: wlroots' headless backend creates
+no input devices, so the seat advertises no keyboard and XWayland gets none. XTEST *pointer*
+events still work. Xvfb has keyboard support but no Vulkan, so DXVK cannot create a device.
+The two real leads are (a) nest sway inside the real session with `WLR_BACKENDS=wayland` so it
+inherits a seat — needed once, if it creates a persisting Debug Profile — or (b) record the
+front-end walk once on a real display and replay it with `SetInputLoad` + `AutomatedMode`.
 
-```
-CameraMoveToPosAndLookAtPos      CameraMoveBetweenLookFromAndLookTo
-CameraMoveToPosAndLookAtThing    CameraMoveBetweenLookingAt
-CameraUseCameraPoint             CameraDefault / CameraResetToViewBehindHero
-SetTimeOfDay / GetTimeOfDay      SetTimeAsStopped
-```
-
-So a Lua script can place the camera at an exact position looking at an exact point, freeze
-the clock at an exact time of day, and hold it. **That is the basis of the testbed:** both
-engines can be given the same camera and the same clock, by construction rather than by eye.
-
-**Capture.** `grim` (Wayland) and OBS are installed. RenderDoc 1.45 is installed but is
-**x64-only and supports Vulkan/GL/GLES** — it cannot attach to a 32-bit PE, so capturing
-Fable's D3D9 (even DXVK-translated) is not available without a 32-bit capture library.
-Numeric extraction should therefore go through the ASI/hook route that is already proven in
-this setup (`DebugThingListHook.asi` and friends), not RenderDoc.
+**Capture.** `grim` (Wayland) and OBS are installed. **RenderDoc cannot help**: 1.45 is x64-only
+and Vulkan/GL/GLES-only, and Fable is a 32-bit PE — so shader constants would have to come from
+an in-process hook (the route `DebugThingListHook.asi` already proves in this setup), not a
+graphics debugger.
 
 ### 3.10 Camera and projection — FOV is data, and it is *horizontal*
 
@@ -641,7 +675,7 @@ already modelled in `~/git/fable-defs/packages/defs/src/def/camera_mode.rs:15`.
 
 At 70° horizontal and 16:9 the vertical FOV is **~43°**, not 70°. We were feeding the def's
 number straight into `perspective_rh` as a *vertical* FOV, giving a far too wide view — so
-this was never a constant to fit against a reference (as §7.1 originally proposed), it was a
+this was never a constant to fit against a reference, it was a
 constant to read. `Camera::fov_y` (`openalbion/src/camera.rs`) derives it, with the
 derivation as a unit test; `Camera::fov_h` holds the horizontal value.
 
@@ -649,8 +683,8 @@ Two residuals, both flagged on `Camera::fov_y`:
 - The argument to `_CItan()` is register-passed and invisible in the decomp, so half-angle vs
   full-angle is inferred rather than read. Half-angle is near-certain: full-angle would make
   `ScaleX = 1/tan(70°) = 0.36`, an implausibly wide view, where half-angle gives 1.43.
-  A reference capture would settle it definitively — but see step 1: there is no capture
-  route any more, so this stands on the arithmetic alone.
+  A reference capture would settle it definitively, but there is no capture route any more
+  (§5 step 1), so this stands on the arithmetic alone.
 - *Which* camera mode is active in a given shot is not yet established, so `fov_h` defaults
   to `CAMERA_MODE_TEMPLATE`'s 70 and should be read from `camera_mode.def` per mode once the
   camera system lands.
@@ -659,8 +693,6 @@ Two residuals, both flagged on `Camera::fov_y`:
 camera (`ENGINE.FOV_2D`) and does not apply to the world camera.
 
 ### 3.11 Things — placing a level's static meshes
-
-> Landed 2026-08-10. `.tng` placements → instanced static meshes; §5 step 6.
 
 **`c5..c8` carries a rotation-only view, and the camera translation is applied per-geometry.**
 Three shaders pin this between them and only one reading satisfies all three:
@@ -671,11 +703,11 @@ supplies the translation itself with `add r1, r0, -c4` (`c4` = `CameraPos`);
 the world and `CombinedProjectionMatrix = Projection × View × World`
 (`CShaderRenderManager::UpdateWorldTransform`, `lib_shader_render_manager.cpp:2960-3090`).
 
-> **This was a live bug.** `main.rs` fed the landscape pass a view-projection that *already*
-> contained the camera translation while `terrain.wgsl` subtracted `c4` as well, displacing the
-> terrain by `-camera_pos` every frame. It went unnoticed because nothing else was drawn in
-> world space to disagree with it. `Camera` now has both matrices, and a unit test asserts a
-> world point lands on the same pixel through either.
+> **So there are two matrices, and mixing them up is silent.** Feeding a camera-relative pass a
+> view-projection that already contains the camera translation, while its shader subtracts `c4`
+> as well, displaces that geometry by `-camera_pos` every frame — and nothing complains unless
+> something else is drawn in world space to disagree. `Camera` carries both, and a unit test
+> asserts a world point lands on the same pixel through either.
 
 **The object matrix.** `CEngineInternalPrimitiveMeshBase::CalcObjectMatrix`
 (`engine_primitive_manager_mesh_base.cpp:557`) writes a row-vector `CMatrix3x4`:
@@ -758,9 +790,10 @@ mismatches are animated meshes, which carry no static blocks.)
 
 ### 3.12 Texture sampling — mip chains, anisotropy, and where MSAA stands
 
-> Derived 2026-08-10, for §5 step 7. The symptom that prompted it: distant terrain and
-> meshes alias into a pixelated mess. Three separate causes, only two of them faithfulness
-> bugs.
+> **The lesson worth keeping.** Distant terrain aliasing had three separate causes, and the
+> parser had the data for two of them all along — the accessor's name, `get_top_mip_*`, made
+> the loss look intentional. **A field that is parsed and read by nothing**
+> (`TextureMetadata::mip_maps`) **is the tell.**
 
 **The engine samples the mip chain that ships in the archive — it does not build one.**
 `CTextureManager::ReduceMipmapLevel(CGraphicFrame, CManagedTexture, ulong skip_levels)`
@@ -864,14 +897,11 @@ So enabling it is an improvement, not a transcription: §6.3 `ACCEPTED`, with th
 written down — not a `// UNVERIFIED:` constant, and not a default smuggled in silently.
 
 **What none of this fixes.** The landscape runs the foreground triplanar pass at every
-distance (§5.6, deferred). The original does not sample these textures far away at all — it
+distance (step 5.6, deferred). The original does not sample these textures far away at all — it
 draws per-patch `RenderProceduralTexture` composites. Mipmaps take distant terrain from
 *aliased* to *correct but over-blurred and over-drawn*; the background LOD is its own step.
 
 ### 3.13 Local detail — a level's foliage, generated
-
-> Derived and landed 2026-08-10, for §5 step 8. The full derivation note this condenses was
-> reviewed before implementation; the corrections below are what implementing it found.
 
 **A ground theme names a generator, and every level already has everything needed.**
 `CEngineThemeDef::LocalDetailGeneratorDef` (`fablelib/defs/engine_theme_def.hpp:900`) points
@@ -890,7 +920,7 @@ it, and `fable-defs` already modelled every field.
 |---|---|---|---|
 | `MESH` | 92 | `AddStaticMesh` — the *same call* a `.tng` thing makes (`engine_local_detail_primitives.cpp:484`) | the existing model pass, unchanged |
 | `REPEATED_MESH` | 88 | `SHADERS_REPEATED_MESH`, 16 instances per draw | `LocalDetailPass`, transcribed |
-| `HYBRID_MESH_ZSPRITE` | 47 | mesh near, generated billboard impostor far | the mesh half; impostor deferred (§5.8.7) |
+| `HYBRID_MESH_ZSPRITE` | 47 | mesh near, generated billboard impostor far | the mesh half; impostor deferred (step 8.7) |
 
 So half of local detail needs **no new pipeline at all**, and that is faithfulness rather than
 a shortcut.
@@ -991,79 +1021,44 @@ at the world origin. So the origin must reach the random draws (it decides *whic
 grows) and nothing else, or a level's foliage stands thousands of cells off its own hillside.
 Every shipped origin is a multiple of 32 and the draws mask to five bits, so the two readings
 are indistinguishable by eye and only a test tells them apart.
+---
+
+## 4. *(retired)*
+
+The 2026-08-05 audit that drove step 0 (§10). Every row of it has been actioned. The pattern it
+named is worth keeping in mind, because it recurred twice more: **the geometry is usually roughly right, and the data lookup is invented.**
+That is where the effort goes, and §11.1 is the structural answer to it.
 
 ---
 
-## 4. Assessment of the current renderer
-
-> **Historical (2026-08-05).** This audit drove step 0, which is complete — every
-> "Delete" row has been actioned. Paths are pre-split: the renderer now lives in
-> `packages/renderer/src/` (§11), and `files.rs` in each binary. Kept because the
-> *pattern* it names is the thing to keep watching.
-
-| Area | Verdict |
-|---|---|
-| `renderer.rs` pass/pipeline plumbing, `texture.rs`, `depth.rs` | **Keep.** Structurally fine. |
-| Sky dome & base-band mesh geometry | **Keep**, fix U step to 1/35, interleave to match. |
-| Outer sky vertex-side gradient lerp | **Keep** — matches `VSHADER_OUTER_SKY`. |
-| `sky.rs:728 lut_lookup` (time→column, bilinear) | **Delete.** Wrong axis, wrong filtering (§3.1). |
-| `sky.rs:768` `* 0.4` alpha clamp | **Delete.** Pure fudge. |
-| `sky.rs:771` per-frame `tracing::info!` row dump | **Delete.** |
-| `outer_sky.wgsl` `mix(tex0, tex1, 0.5)` | **Replace** with the real blend constant. |
-| `outer_sky.wgsl` stale "DEBUG MODE" header | **Delete.** Actively misleading. |
-| `sky.rs:842 sun_direction` / `moon_direction` | **Delete.** Invented orbit maths; replace from `RenderSun`/`RenderMoon` (`engine_sky_renderer.cpp:1617`/`:1812`). |
-| Base band drawn through the outer-sky pipeline | **Fix.** Needs its own `mov oD0, c92` shader. |
-| `sky/inner_sky.wgsl`, `sky_base_band.wgsl`, `sky_screen_space_sprite.wgsl`, `sky_star_field.wgsl` | **Delete.** All four are 0 bytes. |
-| `terrain.wgsl` 3-way `mix`, hardcoded `light_dir`, `slope_f` | **Delete.** No counterpart in the original (§3.4). |
-| `terrain.rs:93` `cliff_u` from `atan` of gradient | **Delete.** |
-| `terrain.rs` `HEIGHT_SCALE = 2048.0`, `CELL_SIZE = 1.0` | **Mark `UNVERIFIED`.** |
-| `files.rs load_lut_rows` / `load_sky_def` | **Refactor.** Each re-opens and re-parses `names.bin` + `game.bin` per call. |
-| `Renderer::set_lut_rows(top, top_alpha, bottom, bottom_alpha)` | **Delete.** Signature encodes the wrong model. |
-
-Note the pattern: in both subsystems the geometry is roughly right and the **data lookup is
-invented**. That is where the effort goes.
-
----
-
-## 5. The plan
+## 5. Subsystems — what is built, and what is deliberately not
 
 Each step: derivation posted for review → implementation → verification artefact → commit
-citing the oracle.
+citing the oracle (§7).
 
-### Step 0 — Strip back and level the ground *(no new features)*
+**"Deliberately not done" lists are load-bearing.** They are the difference between a decision
+and a drift, and they are the first place to look before starting anything — the answer to
+"why doesn't X work" is usually a numbered item here with a reason attached.
 
-- 0.1 Remove everything in the "Delete" column of §4.
-- 0.2 Drop `add_srgb_suffix()` from the surface view (§3.5). **Its own commit**, so the
-  visual delta is attributable.
-- 0.3 Convert to native Z-up (§3.6): view matrix `up = +Z`, remove per-subsystem flips.
-- 0.4 Mark surviving unsourced constants `// UNVERIFIED:` and list them in §9.
+- **Step 0 — strip back.** Done. Deleted every invented mechanism, dropped `add_srgb_suffix()`
+  (§3.5), converted to native Z-up (§3.6).
+- **Step 1 — the mirror.** **Abandoned 2026-08-08.** A comparison testbed driving the original
+  engine headlessly needed far more setup than it returned; `packages/mirror` and `scenes.toml`
+  are deleted. What was learned about the game itself is §3.9. Verification went back to §2's own
+  rules, which never depended on it. What survived: the lib/bin split became §11's crate split,
+  and `Renderer::new_headless` + `render_to_image` became `--screenshot`.
 
-*Exit:* builds clean; sky is an untextured gradient or nothing; terrain is untextured-lit.
-Ugly is fine — nothing invented remains.
-
-### Step 1 — ~~The mirror~~ **ABANDONED (2026-08-08)**
-
-Building a comparison testbed against the original engine — drive retail or the dev build
-headlessly, park the camera, freeze the clock, capture a reference frame, diff ours against
-it — turned out to need far more setup than it returned. `packages/mirror` and `scenes.toml`
-are deleted. §6 and §7.1 remain as a record of what was learned; **neither is a plan.**
-
-What was real and is kept:
-
-- **1.1 landed and then some** — the lib/bin split became the crate split in §11.
-- **1.7 is still open** but no longer blocking: the `LightArray` / `LightGlobals` register
-  offsets (§3.8). Nothing renders lighting yet, so it is due when step 5.4 needs it.
-
-**What replaces it.** Nothing symmetrical, deliberately. Verification goes back to §2's
-own rules, which never depended on the harness: derive from the oracles, check the numbers
-in a test or a dump, *then* look at the screen. §6.9's test table still applies — the
-oracle-pinned and provenance layers are ordinary unit tests, and the crate boundary in §11
-is what makes them possible without a GPU or a Fable install.
-
-### Step 2 — The environment layer *(data only, no rendering)*
+### Step 2 — The environment layer — **HALF BUILT**, and it is the next faithfulness work
 
 A faithful port of `CEnvironmentThemeSetDay` / `CBlendedEnvironmentTheme` into
-`fable-data/src/environment.rs`:
+`fable-data/src/environment.rs`. Derivation is §3.1 and is complete; nothing blocks this but
+time.
+
+**Half of it already exists.** `fable_data::environment` reads `ENVIRONMENT_THEME_DAY`
+keyframes and brackets them by time (`keyframes_at_time`, `sky_textures_at_time`), and
+`Files` loads `lighting_colours.tga` into memory. **What is missing is everything that touches
+the LUT** — `ColourLookupColumn` is read by nothing, and the loaded TGA has no consumer. Items
+2.1–2.4 below are the gap; 2.5 largely exists as `keyframes_at_time`.
 
 - 2.1 `LookupTexture` — load `lighting_colours.tga`, expose `fetch(column, row) -> [f32; 3]`.
   **Integer fetch, no filtering** (§3.1).
@@ -1078,213 +1073,166 @@ A faithful port of `CEnvironmentThemeSetDay` / `CBlendedEnvironmentTheme` into
 with provenance; unit tests pin a few times against texels read straight out of the TGA.
 **Checked numerically, never on screen.**
 
-### Step 3 — Outer sky, faithfully
+*Why it gates three subsystems:* the sky's gradient colours, the landscape's lighting and the
+static meshes' lighting are the same four LUT rows (1/0/3 plus the light direction), and all
+three run the same neutral placeholder today (§9). It lands as one change **only if
+`FrameUniforms` is one type first** — see §12.7.
+
+### Step 3 — Outer sky, faithfully — **PARTIAL**
+
+**Nothing here is faked.** The invented time→column LUT walk and its `* 0.4` alpha fudge were
+deleted in step 0 rather than tuned (§2 rule 5), so the gradients are passed as **zero** and
+the sky shows its raw texture — the unimplemented half is visible rather than plausible.
+`scene::sky_textures_at_time` resolves the real texture pair and the real keyframe blend from
+`ENVIRONMENT_THEME1`. What is left is the LUT fetch behind `c92`/`c93`, which is step 2's job.
+
+*One thing to fix while here:* the theme name `"ENVIRONMENT_THEME1"` is hardcoded in
+`main.rs:427`. Which theme a level uses is data.
 
 - 3.1 Rebuild the mesh to match `BuildOuterSkyMesh` exactly (interleaved pairs, U step 1/35,
-  Z-up). Assert vertex/index counts against the decomp's loop bounds in a test.
-  **Observed (2026-08-06, via the since-deleted mirror harness):** our apex UV is `(0.5, 0.0)`
-  where the original is `(-DELTA_NOTIONAL_ZERO, -DELTA_NOTIONAL_ZERO)` — effectively `(0, 0)`
-  under clamp addressing (`engine_sky_renderer.cpp:581`). The cap renders as a flat disc
-  either way (V is 0 across it in both), but the sampled column differs. Fix here, with the
-  rest of the mesh.
+  Z-up). Assert vertex/index counts against the decomp's loop bounds in a test. Our apex UV is
+  `(0.5, 0.0)` where the original is `(-DELTA_NOTIONAL_ZERO, -DELTA_NOTIONAL_ZERO)` —
+  effectively `(0, 0)` under clamp addressing (`engine_sky_renderer.cpp:581`). The cap renders
+  as a flat disc either way (V is 0 across it in both), but the sampled column differs.
 - 3.2 Rewrite `outer_sky.wgsl` as a literal transcription of `VSHADER_OUTER_SKY` +
-  `PSHADER_OUTER_SKY`, with each WGSL line commented with the asm it came from (§6.6).
+  `PSHADER_OUTER_SKY`, with each WGSL line commented with the asm it came from (§6.7).
 - 3.3 Feed `c92`/`c93` from step 2's `BlendedTheme`.
-- 3.4 Feed the pixel-shader `c0.w` from the real texture blend factor.
-- 3.5 Resolve and upload `SkyTexture0` / `SkyTexture1` per keyframe.
+- 3.4 ~~Feed the pixel-shader `c0.w` from the real texture blend factor~~ — **done**, from
+  `EnvironmentTheme::sky_textures_at_time`.
+- 3.5 ~~Resolve and upload `SkyTexture0` / `SkyTexture1` per keyframe~~ — **done**, re-uploaded
+  only when the active pair changes.
 - 3.6 Land the first golden images: sky at 00:00, 06:00, 12:00, 18:00.
 
-### Step 4 — Base band, sun, moon, stars, clouds
+### Step 4 — Base band, sun, moon, stars, clouds — **NOT STARTED**
 
-- 4.1 Base band: own pipeline, `mov oD0, c92`.
-- 4.2 Sun/moon: port `RenderSun` (`:1617`) and `RenderMoon` (`:1812`); read `CSkyDef`
-  (`fablelib/defs/engine_sky_def.hpp`) for the real orbit/size/texture fields.
+- 4.1 Base band: own pipeline, `mov oD0, c92`. It draws through the *outer sky* pipeline
+  today, which samples sky textures — the wrong shader (§3.3).
+- 4.2 Sun/moon: port `RenderSun` (`engine_sky_renderer.cpp:1617`) and `RenderMoon` (`:1812`);
+  read `CSkyDef` for the real orbit/size/texture fields.
 - 4.3 Star field: `BuildStarFieldVB` (`:3559`) + `RenderStarField` (`:3824`).
 - 4.4 Clouds: `BuildCloudMesh` (`:434`) + `RenderClouds` (`:2636`) — largest remaining sky
   piece; defer until 4.1–4.3 land.
 
-### Step 5 — Landscape — **LANDED (2026-08-09)**, foreground only
+### Step 5 — Landscape — **BUILT** (foreground only)
 
-Done on branch `landscape-texturing`, in this order:
-
-- 5.1 **The `.rdata` statics**, read out of `ego_r.exe` through `Ego_r.pdb`
-  (`tools/pdbsyms.py`, `tools/landscape-statics.md`). This was the gate: without it the
-  texture scale would have been invented.
-- 5.2 **`fable-data::landscape`** — `CEngineMap`'s accessors over a `.lev`: the Y-flipped row
-  indexing, the `*2048` height scale and 1/128 quantisation, the cell-grid clamp, and the
-  three-weights-from-two-bytes renormalisation.
-- 5.3 **`GetMappingDirectionBlend`** and the five blend tables, pinned by a partition-of-unity
-  test.
-- 5.4 **`CEngineLandscapeMeshBuilder`** — `BuildMapDirMask`, `ReadThemesAndCreateLayers`,
-  `GetPassFromTexture`, `AddPolysSurroundingPointWithMask`, `BuildLayerMesh`.
-- 5.5 **The foreground pass** — `TerrainData` is one draw per `(texture, mapping direction)`;
-  `terrain.wgsl` transcribes `VSHADER`/`PSHADER_LANDSCAPE_FOREGROUND` line by line.
+Derivation §3.4. `fable-data::landscape` ports `CEngineLandscapeMeshBuilder`; `TerrainData` is
+one draw per `(texture, mapping direction)`; `terrain.wgsl` transcribes `VSHADER`/
+`PSHADER_LANDSCAPE_FOREGROUND` line by line.
 
 *Evidence:* LookoutPoint resolves 38 of 38 palette slots (previously 0) into 26 layer passes
-over 48,955 vertices with no placeholder textures, and renders textured.
+over 48,955 vertices with no placeholder textures.
 
-**Deliberately not done**, so it is a decision rather than a drift:
+**Deliberately not done:**
 
 - 5.6 Background LOD — the quadtree, tesselation, edge strips and per-patch procedural
   textures. We run foreground everywhere; the original has `EnableLandscapeTesselation` and
   `EnableLandscapeLODUpdate` as their own toggles, so this is a supported configuration.
 - 5.7 Bump mapping (`PSHADER_LANDSCAPE_FOREGROUND_BUMP`) and every shadowed/spot variant.
 - 5.8 Water — `CWaterPatchDescriptors`, and the theme's `WaterHeight`/`WaterType`.
-- 5.9 Local detail (grass, flowers) — **its own subsystem, and it landed as step 8.**
-- 5.10 Loading neighbouring maps, which is what makes the seam row real rather than clamped.
+- 5.9 Local detail — became its own subsystem, step 8.
+- 5.10 ~~Loading neighbouring maps~~ — **done**, with step 6.12. A region's `ContainsMap` and
+  `SeesMap` entries load together and stitch across their shared boundary.
 
-**The lighting is the next thing that matters.** The pass runs the real
-`Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` with neutral constants, so the
-landscape is flat-lit until **step 2** supplies environment LUT rows 1/0/3. That is now the
-highest-value remaining work for the landscape, and it is shared with the sky.
+**Lighting is neutral** pending step 2, running the real
+`Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` with placeholder constants.
 
-### Step 6 — Things — **LANDED (2026-08-10)**, static meshes only
+### Step 6 — Things — **BUILT** (static meshes only)
 
-Levels are populated from their `.tng`. Derivations in §3.11; done in this order:
+Derivation §3.11. `.tng` placements → def `Graphic` → `graphics.big` asset id, placed with a
+ported `CalcObjectMatrix`, drawn instanced through a transcribed `VSHADER_STATIC_DIRLIGHT` +
+`PSHADER_TEXTURE_DIFFUSE` over the same lighting constants the landscape reads.
 
-- 6.1 **The space** — `c5..c8` is rotation-only for camera-relative geometry (sky, landscape)
-  and full for world-space geometry (meshes). Fixed the landscape's double camera subtraction
-  and pinned the equivalence with a unit test.
-- 6.2 **`CalcObjectMatrix`** — `Placement::object_matrix(scale)` in `fable-data`, with the
-  basis mapping, the scale/translation split and a right-handedness check as tests.
-- 6.3 **Resolution** — `scene::things` maps `DefinitionType` → def `Graphic` → asset id over
-  all four thing def types, with the `RenderSizeX × ObjectScale × 0.01` scale. Deleted the
-  text `objects.def` bridge and `fable_data::object` with it.
-- 6.4 **The pass, transcribed** — `model.wgsl` is now `VSHADER_STATIC_DIRLIGHT` +
-  `PSHADER_TEXTURE_DIFFUSE` line by line, reading the same `c3`/`c19`/`c20`/`c35` the
-  landscape does, so **step 2 lights meshes and terrain in one change**.
-- 6.5 **Instancing** — a `Model` is a mesh asset uploaded once; a `ModelInstance` places it.
-  Geometry, materials and textures upload per *mesh*, not per placement, and the frame
-  constants are one buffer for the pass rather than one per model.
-- 6.6 **`--screenshot`** — one offscreen frame to a PPM through the existing
-  `new_headless` + `render_to_image`, which nothing had used since the mirror was deleted.
+*Evidence:* Witchwood 38/38, LookoutPoint 192/192 over 44 meshes, Arena 57/57 over 4 — no mesh
+failures, and `placed + skipped == every thing in the file` as a test invariant.
 
-*Evidence:* Witchwood 38/38, LookoutPoint 192/192 over 44 meshes, Arena 57/57 over 4 — no
-mesh failures, and `placed + skipped == every thing in the file` as a test invariant.
+**Deliberately not done:**
 
-**Deliberately not done**, so it is a decision rather than a drift:
-
-- 6.7 Animated/skinned meshes (`ENGINE_GRAPHIC_ANIMATING_MESH`, `SHADERS_PALSKIN`). They are
-  9 of 288 things in LookoutPoint but **91 of 355 in Arena**, and they are counted and logged
-  per graphic type rather than approximated in bind pose.
+- 6.7 Animated/skinned meshes (`ENGINE_GRAPHIC_ANIMATING_MESH`, `SHADERS_PALSKIN`). 9 of 288
+  things in LookoutPoint but **91 of 355 in Arena** — counted and logged per graphic type
+  rather than approximated in bind pose.
 - 6.8 Sprites, 3D sprites and generated effects — their own primitive managers.
-- 6.6a Dropping index-degenerate triangles at decode. Half of every static mesh's triangles
-  are strip stitches with two equal indices (474,048 of 998,466 measured) and the
-  `degenerate_triangles` block flag is clear everywhere, so `expand_block` keeps them all.
-  They rasterise nothing — pure waste, safe to drop, not yet done.
-- 6.9 Frustum culling and `RenderFadeDistance` (`CEngineFadeDistance`,
+- 6.9 Dropping index-degenerate triangles at decode. Half of every static mesh's triangles are
+  strip stitches with two equal indices (474,048 of 998,466 measured) and the
+  `degenerate_triangles` block flag is clear everywhere, so `expand_block` keeps them all. They
+  rasterise nothing — pure waste, safe to drop, not yet done. **Cheap and worth doing; see
+  §12.10.**
+- 6.10 Frustum culling and `RenderFadeDistance` (`CEngineFadeDistance`,
   `UpdateStaticMeshAlpha`). The per-instance `colour` that carries the fade is already in the
   vertex layout and is opaque white; expect the fade constants to be `UNVERIFIED`-shaped, as
-  `SetupRenderModeShadersAndConstants` is the same render-state-cache mangle that defeated
-  the landscape blend modes.
-- 6.10 Local lights: the 2/4/5-point-light shader variants and the 113 `CTCPhysicsLight`
+  `SetupRenderModeShadersAndConstants` is the same render-state-cache mangle that defeated the
+  landscape blend modes.
+- 6.11 Local lights: the 2/4/5-point-light shader variants and the 113 `CTCPhysicsLight`
   things. The register layout is known exactly (§3.8); `c21`–`c34` are simply zero.
-- 6.11 Decals, shadows, outline/glow and every `_ENV_`/`_BUMP_` variant.
-- 6.12 `.wld`-driven world placement. `MapX`/`MapY` only matter once neighbouring maps load —
-  the twin of 5.10.
+- 6.12 ~~`.wld`-driven world placement~~ — **done**, with 5.10. `MapX`/`MapY` position each map
+  in world cells, and a boundary vertex reads the neighbour's height, normal and theme rather
+  than clamping to its own edge.
+- 6.13 Decals, shadows, outline/glow and every `_ENV_`/`_BUMP_` variant.
 
-### Step 7 — Sampling — **LANDED (2026-08-10)**, branch `texture-sampling`
+### Step 7 — Texture sampling — **BUILT**
 
-Derivations in §3.12. Four commits, one mechanism each.
+Derivation §3.12. The format tag mapping, the shipped mip chain, trilinear + anisotropy 4, and
+MSAA 4× as an `ACCEPTED` divergence (§6.3).
 
 *Evidence:* 6,242 of the 6,245 2D block-compressed assets in `textures.big` yield a complete
-chain — 42,265 levels, 6.8 per asset — with level 0 byte-identical to the old top-mip
-accessor. On LookoutPoint, MSAA drops hard luminance steps (`|ΔL| > 60` between horizontal
-neighbours) from **537 to 108** while the mean gradient is unchanged (4.353 → 4.251): the
-jaggies go, the image is not blurred. No terrain seams appeared from per-sample depth on the
-coplanar layer passes — the risk flagged below did not materialise.
-
-- 7.1 **The format tag mapping**, first, because it changes *which* assets reach the upload
-  path — landing it after 7.2 would confuse attribution of any visual delta. Map only the
-  tags that occur (`31`/`32`/`35` → BC1/BC2/BC3), drop the invented `3`/`5`/`33`/`34`
-  aliases, and return `None` for `1` and `24` so the 9 non-BCn assets are a logged skip
-  rather than BC1-decoded noise.
-- 7.2 **The mip chain, archive to GPU.** `Texture::mip_levels()` walks `raw_image_data` with
-  `CalculateTextureSize`'s clamp, stopping at `mip_maps` levels, at 4×4, or when the bytes
-  run out — whichever comes first. `TextureImage` carries `levels: Vec<Vec<u8>>`;
-  `upload_texture` and `TerrainPass::upload` set `mip_level_count` and write one level each.
-  Ground textures move from `decode_texture_rgba` to `decode_texture`: the comment
-  justifying RGBA8 ("the terrain layer array…") is stale — `TerrainPass` uploads one
-  independent 2D texture per ground texture and binds it per draw, there is no array, and
-  keeping BC lets the shipped chain upload verbatim with no CPU resampling.
-- 7.3 **Trilinear + anisotropy 4** on the two world samplers. `mipmap_filter: Linear`,
-  `anisotropy_clamp: 4` (§3.12). wgpu requires all three filters `Linear` when anisotropy is
-  on, which is the same configuration `TEXTURE_FILTER_ANISOTROPIC` + `TEXTURE_MIPMAP_LINEAR`
-  describe — constraint and oracle agree.
-- 7.4 **MSAA 4×**, as an `ACCEPTED` divergence (§3.12, §6.3). Probe
-  `sample_count_supported(4)` for the colour *and* depth formats and fall back to 1 with a
-  warning. The MSAA colour texture lives beside the depth texture and is recreated with it;
-  `encode` hands every pass the multisampled view and sets `resolve_target` on **the last
-  pass only** — resolving in all four would resolve three times for nothing. `render_to_image`
-  needs no change: the resolve lands in the existing offscreen texture it already copies.
+chain — 42,265 levels, 6.8 per asset — with level 0 byte-identical to the old top-mip accessor.
+On LookoutPoint, MSAA drops hard luminance steps (`|ΔL| > 60` between horizontal neighbours)
+from **537 to 108** while the mean gradient is unchanged (4.353 → 4.251): the jaggies go, the
+image is not blurred.
 
 **Blend tables stay single-mip, deliberately.** They are CPU-built 128×128 R8 lookups indexed
-by the packed vertex normal (`oT0 = (CliffU, CliffV)`, §3.4), not by a surface
-parameterisation. §3.4's additive compositing is correct *only* because the five direction
-blends partition unity at every texel; mip-filtering that table would break the partition and
-reintroduce exactly the seam leakage that pinned the blend mode in the first place.
+by the packed vertex normal (`oT0 = (CliffU, CliffV)`, §3.4), not by a surface parameterisation.
+§3.4's additive compositing is correct *only* because the five direction blends partition unity
+at every texel; mip-filtering that table would break the partition and reintroduce exactly the
+seam leakage that pinned the blend mode in the first place. **This is why §12 keeps two named
+samplers rather than one** (§12.4).
 
-**Deliberately not done**, so it is a decision rather than a drift:
+**Deliberately not done:**
 
 - 7.5 `alpha_to_coverage_enabled`. Cutout materials `discard` at `ALPHA_CUTOFF = 0.5`, which
-  MSAA does not smooth, so foliage silhouettes still crawl. It would pair naturally with 7.4
-  but is a *second* divergence, and the mip chain is most of the foliage shimmer — land 7.2
-  first and judge what is left.
+  MSAA does not smooth, so foliage silhouettes still crawl. A *second* divergence; the
+  original's own answer to this is 8.5's stipple fade, which is a transcription rather than a
+  divergence — prefer that.
 - 7.6 The `frame_count > 1` animated textures and the 9 non-BCn assets. Nothing draws them.
-- 7.7 `SetMaxTextureSize` / `ReduceMipmapLevel` as a quality knob. The mechanism is understood
-  (§3.12) and is a two-line skip once 7.2 exists; there is no reason to want it yet.
+- 7.7 `SetMaxTextureSize` / `ReduceMipmapLevel` as a quality knob. Understood (§3.12), a
+  two-line skip; no reason to want it yet.
 
-*Watched for when 7.4 landed, and did not happen:* the landscape draws coplanar layer passes
-over a blackout pass with `cull_mode: None`, so per-sample depth testing could have changed
-edge behaviour where those layers meet. It did not — no seams at 4× that were absent at 1×.
-Kept here because it is still the first thing to suspect if seams ever appear.
+*The one structural choice worth knowing:* the MSAA resolve is its own pass, not a
+`resolve_target` on the last drawing pass. Resolving in every pass would resolve three times
+for nothing, and resolving in *one* of them would make that pass silently load-bearing —
+reorder the passes and the frame goes blank.
 
-*The one structural choice worth knowing:* the resolve is its own pass, not a `resolve_target`
-on the last drawing pass. Resolving in every pass would resolve three times for nothing, and
-resolving in one of them would make that pass silently load-bearing — reorder the passes and
-the frame goes blank.
+*Still the first thing to suspect if terrain seams ever appear:* the landscape draws coplanar
+layer passes over a blackout pass with `cull_mode: None`, so per-sample depth testing could
+change edge behaviour where those layers meet. It did not at 4×, but the mechanism is there.
 
-### Step 8 — Local detail — **LANDED (2026-08-10)**, branch `local-detail`
+### Step 8 — Local detail — **BUILT**
 
-Levels have foliage. Derivations in §3.13; done in this order, one mechanism per commit.
-
-- 8.1 **`fable-data::local_detail`**, data only — `rng` (the PRNG and the displacement table),
-  `grid` (the placement grid's dart throwing), `generator` (defs → layers, object types and
-  the object selection table), `place` (the per-cell placement loop over `LandscapeMap`).
-  Nothing here touches the renderer, so all of it is unit-testable with no GPU and no install.
-- 8.2 **Static-mesh objects through the existing model pass**, merged into the same per-mesh
-  instance buffers `.tng` things use. No renderer change, because the engine makes the same
-  call for both.
-- 8.3 **Hybrid objects as their mesh half**, counted and logged, with no impostor.
-- 8.4 **`LocalDetailPass`** — `local_detail.wgsl` transcribes `VSHADER_REPEATED_MESH` +
-  `PSHADER_REPEATED_MESH`, alpha-testing at the object type's `AlphaRef` and lighting from a
-  per-instance ground normal.
+Derivation §3.13. `fable-data::local_detail` ports `CEngineLocalDetailGenerator` and the
+placement half of `CLocalDetailCacheMap`; static-mesh objects go through the existing model
+pass because that is literally the call the engine makes for them; repeated meshes get a
+transcribed `SHADERS_REPEATED_MESH` pass.
 
 *Evidence:* Witchwood 691 objects (381 mesh / 90 hybrid / 220 repeated), Darkwood 1,147
 (486/51/610), LookoutPoint 15,845 (114/68/15,663), Arena 0 — pinned exactly as tests, since
 placement is a pure function of the defs, the heightmap and the PRNG. Every object stands on
-the terrain to within a millimetre, every mesh id resolves and decodes, two runs agree byte
-for byte, and the world origin is proved to move the draws and not the objects.
-
-*Also landed on the way:* `game.bin` is parsed once rather than per def type (the refactor §4
-asked for), and `FinalAlbion.wld` is loaded for the world origin — which is the first half of
-what §6.12 and §5.10 will need.
+the terrain to within a millimetre, two runs agree byte for byte, and the world origin is
+proved to move the draws and not the objects.
 
 **Next, and it is the visible gap:** 8.5 **the distance fade**. Grass draws to the horizon
 today. `VSHADER_REPEATED_MESH_STIPPLE_ALPHA` + `PSHADER_REPEATED_MESH_STIPPLE_ALPHA` dither it
 out in screen space under the alpha test, from `FadeStart`/`FadeEnd` (20–22 m for grass,
 100–140 m for trees) through `ModifyFadeDistanceForVideoOptions`. The stipple pattern is
 **procedural** (§3.13), so the only real work is porting `BuildAlphaStippleTexture`'s ordered
-dither — the render state it needs is not behind the render-state cache that defeated the
+dither — and the render state it needs is not behind the render-state cache that defeated the
 landscape blend modes, because it is all in the shader.
 
-**Deliberately not done**, so each is a decision rather than a drift:
+**Deliberately not done:**
 
 - 8.6 The `.stb` local detail cache. Retail ships the finished placements inside
-  `FinalAlbion_RT.stb` (a `BBBB` bank, §3.7) and `CLocalDetailCacheMap::OpenStaticMap` reads
-  them. **Decided 2026-08-10 (Jamen): generate instead**, on §3.4's precedent and because the
-  `.stb` has cost more than it returned before. It stays available as a tier-2 oracle — the
-  engine's own object matrices to diff ours against — if exactness is ever in question.
+  `FinalAlbion_RT.stb` (a `BBBB` bank, §3.7). **Decided 2026-08-10 (Jamen): generate instead**,
+  on §3.4's precedent and because the `.stb` has cost more than it returned before. It stays
+  available as a tier-2 oracle — the engine's own object matrices to diff ours against — if
+  exactness is ever in question.
 - 8.7 ZSprite impostors (`SHADERS_ZSPRITE`, `CEngineBillboardGenerator`,
   `CEnginePrimitiveManagerRepeatedZSprites`). Consequence, stated: trees keep full geometry to
   their fade distance instead of collapsing to a billboard at ~55 m. Costs triangles, looks
@@ -1294,121 +1242,45 @@ landscape blend modes, because it is all in the shader.
 - 8.9 Shadow meshes and `CastShadows` — 40 objects carry a distinct one, and nothing in the
   renderer casts a shadow yet.
 - 8.10 The cache/quadtree/streaming machinery, ~9,000 lines. Justified by the measured scale
-  (§3.13). Revisit when neighbouring maps load.
+  (§3.13): a whole map's objects fit in one instance buffer per mesh and generate in well under
+  a second. Revisit only if the resident set stops fitting.
 - 8.11 Dynamic areas (`AreaChanged`, `UpdateDynamicArea`, `ConsoleAddLocalDetail*`) — the
   editor path.
 - 8.12 Video-options fade scaling. `ModifyFadeDistanceForVideoOptions` is understood; factor
   1.0 and clamp 0.0 are the full-quality values, so it is a knob with nothing to turn.
-- 8.13 Local lights on foliage — the twin of 6.10. `CalcSWLightingNoClip` goes on to add the
+- 8.13 Local lights on foliage — the twin of 6.11. `CalcSWLightingNoClip` goes on to add the
   113 `CTCPhysicsLight` things' contributions, and we stop before that loop.
 
-## 6. ~~The mirror~~ — comparing against the original *(historical)*
+---
 
-> **Abandoned 2026-08-08 — see step 1.** Kept for §6.6–§6.9, which are still live: the
-> Tracy trigger, the shader transcription convention, the logging rules and the test
-> table do not depend on the harness. Everything in §6.1–§6.5 describes tooling that no
-> longer exists.
+## 6. Working practice
 
-The goal was **not** pixel-parity. Jamen wants room to improve the graphics, while not
-drifting far from the original's look. So the harness must distinguish *deliberate
-divergence* from *regression*, and it must be honest about which it is looking at.
+### 6.3 Classifying a difference
 
-### 6.1 Two tiers of ground truth
+Every deliberate departure from the original gets a class and a written reason, so
+"I improved it" and "it is broken" never look the same:
 
-**Tier 1 — images.** A screenshot of the original at a known camera, clock and subsystem
-mask, compared perceptually against our render of the same manifest scene. Answers "does it
-look right". Cheap, reliable, available today.
+- `OK` — matches, within the tolerance for the thing being compared.
+- `ACCEPTED` — differs, **with a written reason**, recorded in §9. MSAA is the standing
+  example: the original ships antialiasing off (`~/Fable/dbugst.ini:90-91`, both
+  `SetAntialiasing` lines commented out) and we turn it on because it looks better.
+- `BUG` — differs, unexplained. **A new unexplained difference is the regression signal**, and
+  must be explained or reverted before a step closes.
 
-**Tier 2 — numbers.** The actual shader constants the original feeds the GPU for that frame:
-`c92`/`c93` at a given theme and time, the dome's vertex buffer, the blend/depth/cull state.
-This is strictly better than tier 1 because it verifies the *data path* before a single pixel
-is drawn — exactly what rule 3 asks for. It would have caught the LUT column bug instantly.
+The original gate for this was a structural-similarity metric against captured reference
+frames; that harness is gone (§5 step 1). The classification survives it and is the part that
+mattered — the discipline is writing the reason down, not computing a number.
 
-Tier 2 is **not** available through RenderDoc: `Fable.exe` is 32-bit PE and the installed
-RenderDoc is x64/Vulkan-only. The realistic route is the ASI/hook infrastructure already
-proven in this setup (`DebugThingListHook.asi`, FSE) — a small 32-bit plugin that hooks
-`IDirect3DDevice9::SetVertexShaderConstantF` and logs `(register, values)` around the sky
-draw. Treat this as a **spike with its own go/no-go**, not a dependency: tier 1 plus an
-FSE-driven camera is the reliable path, and tier 2 is a large bonus if it lands.
+### 6.6 Profiling — still deferred
 
-### 6.2 The metric
+Our failures are accuracy, not frame time, and profiling an architecturally wrong renderer
+measures the wrong thing. The trigger to revisit: when a frame's draw-call count or GPU time
+becomes the thing blocking a subsystem. Then: `profiling` with `profile-with-tracy` (or
+`tracing-tracy` to bridge existing spans), plus `wgpu-profiler` for GPU timestamp scopes — the
+half that actually matters for a renderer.
 
-Compare at reduced resolution — downscale both images before measuring — so anti-aliasing,
-texture filtering and driver differences do not dominate.
-
-Then split the judgement in two:
-
-- **Gate on structure.** MS-SSIM or a gradient-domain metric over luminance. This measures
-  geometry, silhouettes, horizon placement, layout. A structural mismatch is a *bug*: the
-  dome is the wrong shape, the horizon is at the wrong height, the terrain is at the wrong
-  scale. There is no legitimate reason for structure to drift.
-- **Report, do not gate, on colour.** Per-channel mean and histogram distance. Colour is
-  where deliberate improvement lives, so a threshold here would fight the goal. Track it, plot
-  it over time, and let a human judge.
-
-This split is the whole answer to "not 1:1, but not too far": structure is held tightly,
-appearance is held loosely and visibly.
-
-**Implemented** in `packages/mirror/src/compare.rs`:
-
-```
-mirror compare <scene>                        # reference/<scene>.png vs out/<scene>.png
-mirror compare --a X.png --b Y.png            # any two images (before/after regressions)
-```
-
-Prints structure (gated, non-zero exit on failure) and colour (reported), and writes a
-contact sheet — `a | b | SSIM heatmap` — so a human sees *where* the difference is, not just
-how much. Structure is SSIM over Rec.601 luma, 8×8 windows at stride 4, computed on images
-box-downscaled to 512px on the long side; colour is measured at full resolution, since
-downscaling would hide banding and gradient errors.
-
-**The gate threshold is provisional at 0.95.** It has only ever been run against two of our
-own renders. Calibrate it once real references exist — a reimplementation against the
-original will not score like two builds of the same renderer.
-
-### 6.3 The Divergence Ledger
-
-Same pattern as the def compiler's semantic verification. Every scene that differs from its
-reference produces a ledger entry, and every entry is classified:
-
-```
-scene                     structure  colour   class     note
-witchwood-sky-0600        0.981      ΔE 4.2   ACCEPTED  gradient banding removed (16-bit LUT lerp)
-witchwood-sky-1200        0.994      ΔE 1.1   OK
-witchwood-land-0600       0.612      ΔE 9.8   BUG       horizon 40px low — HEIGHT_SCALE unsourced (§9)
-```
-
-- `OK` — within both thresholds.
-- `ACCEPTED` — differs, with a written reason. This is where "I improved it" gets recorded.
-- `BUG` — differs, unexplained. **A new unexplained entry is the regression signal.**
-
-The ledger is committed. A change that moves a scene from `OK` to `BUG`, or that adds a
-`BUG` row, must be explained or reverted before the step closes. A change that turns a `BUG`
-into `OK` is the point of the exercise.
-
-### 6.4 Subsystem isolation makes this usable now
-
-`EnableLandscape(0)`, `EnableWater(0)`, `EnableWeather(0)`, `EnableShadows(0)`,
-`EnableScreenEffect*(0)` on the original (§3.9) restrict the reference to the subsystem under
-test. This is what makes comparison viable *today*, with only the sky implemented — the
-alternative is diffing our stub landscape against the real one and learning nothing.
-
-Each manifest scene declares its `subsystems`, and the capture procedure derives the console
-prologue from it. As subsystems land, scenes are added that enable more.
-
-### 6.5 What this replaces
-
-The earlier plan put `shot` and `probe` on the openalbion binary. That was wrong: it grows the
-game's interface to serve the test harness, and it couples the two. Everything above lives in
-`packages/mirror` instead. The game keeps a viewer CLI; the library is the shared surface.
-
-### 6.6 Tracy — still deferred
-
-Unchanged from the earlier assessment: our failures are accuracy, not frame time, and
-profiling an architecturally wrong renderer measures the wrong thing. The trigger is step 5.2,
-when landscape starts drawing N alpha-blended layer passes per patch across a streamed grid.
-Then: `profiling` with `profile-with-tracy` (or `tracing-tracy` to bridge existing spans),
-plus `wgpu-profiler` for GPU timestamp scopes — the half that actually matters for a renderer.
+§12 will move the draw-call count without being asked to; **do not claim it made anything
+faster without measuring** (§12.9).
 
 ### 6.7 Shader transcription convention
 
@@ -1416,13 +1288,17 @@ Every WGSL file that transcribes an original shader carries the disassembly in i
 cites it per line — see `renderer/sky/outer_sky.wgsl` for the established form. This makes a
 shader reviewable by diffing against the asm rather than by reading WGSL and hoping.
 
+A WGSL file that is *not* a transcription (there are none today; §13's text shader will be the
+first) says so in its header, so the absence of an asm block is a statement rather than an
+omission.
+
 ### 6.8 Logging
 
 `tracing` + `tracing-subscriber` with `env-filter` are already in `openalbion`.
 
 - **Per-frame logging is banned at `info`.** Dump values from a test or a one-shot
   `debug` line instead.
-- Target-scoped filters: `RUST_LOG=openalbion::renderer::sky=debug`.
+- Target-scoped filters: `RUST_LOG=openalbion::scene::terrain=debug`.
 - `info` = lifecycle. `debug` = one-shot resolution decisions with values. `trace` = per-frame,
   off by default.
 - Log **decisions with provenance**, not observations:
@@ -1432,19 +1308,23 @@ shader reviewable by diffing against the asm rather than by reading WGSL and hop
 
 | Layer | What it tests | Example |
 |---|---|---|
-| Parser | Data reads back correctly | `lev`, `tga` round-trips (mostly exist) |
+| Parser | Data reads back correctly | `lev`, `tga`, `def` round-trips |
 | **Oracle-pinned** | A ported algorithm matches decomp literals | LUT column = `ColourLookupColumn + kf`; dome has 1 + 36*2 vertices |
 | **Provenance** | Values reach the GPU from the right byte | `scene::*` output, snapshot-tested — no GPU needed (§11.1) |
-| **Mirror** | Structure matches the original | §6.2, gated on structure only |
 
-The middle two are new and are the ones that would have caught the LUT bug. An oracle-pinned
-test reads like:
+The middle two are the ones that catch data-lookup bugs, which is where this project's bugs
+live. An oracle-pinned test reads like:
 
 ```rust
 // engine_sky_renderer.cpp:596 — radius literal 6.5e3, 36 segments (uVar13 < 0x24)
 assert_eq!(mesh.vertices.len(), 1 + 36 * 2);
 assert!((mesh.vertices[1].position.xy().length() - 6500.0).abs() < 0.01);
 ```
+
+Tests that need a Fable install **skip** rather than fail when there is not one
+(`fixtures() -> Option<_>`), so the suite runs anywhere.
+
+---
 
 ## 7. Working together
 
@@ -1457,417 +1337,25 @@ make the *derivation* the reviewable artefact, not the diff.
    and the conclusion. Short, §3-style. Jamen confirms or corrects the reading.
    *This is the gate; nothing is implemented before it passes.*
 2. **Implementation** — one mechanism, matching the approved derivation.
-3. **Evidence** — the numbers, attached rather than described: a unit test pinning the
-   ported value, or a `debug` dump of what `scene` produced. §11.1 is what makes this
-   cheap — the conversion layer is testable without a GPU or a Fable install.
+3. **Evidence** — the numbers, attached rather than described: a unit test pinning the ported
+   value, or a `debug` dump of what `scene` produced. §11.1 is what makes this cheap.
 4. **Commit** — message names the oracle:
    `sky: fetch gradient at ColourLookupColumn+keyframe (environment_theme.cpp:1862)`
 
-**Escalate immediately, don't guess, when:** two oracles disagree; a decomp body is too
-mangled to read confidently; a step needs an architectural choice the plan does not cover
-(step 5.1 is a known one); or a value cannot be sourced and would have to be invented.
+For §12/§13, which have no oracle, step 1 is a *design* note and step 3 is a
+pixel-identical capture or a measured count — same shape, different evidence.
+
+**Escalate immediately, don't guess, when:** two oracles disagree; a decomp body is too mangled
+to read confidently; a step needs an architectural choice the plan does not cover; or a value
+cannot be sourced and would have to be invented.
 
 **The tripwire:** if I am about to change a number to make the picture look better, stop.
 
-### 7.1 Reference capture — findings from the real runs *(historical)*
-
-> **Abandoned 2026-08-08.** None of the below is work to resume. It is kept because the
-> findings are hard-won and still true about the *game*, not about our plans: how to get
-> the retail and dev builds running under Proton on this machine, which binary is which,
-> what the dev console can do, and how to resolve symbols from `Ego_r.pdb`. If the engine
-> ever needs to be observed directly again, start here rather than rediscovering it.
-
-> **RESUME HERE (2026-08-06, later).** The debug build **runs** — the binary to use is
-> `ego_r.exe`, not `FableWin.exe` (the latter imports the non-redistributable VS2010 *debug*
-> CRT and can never load here). It boots unattended to a rendering 1280×720 window with zero
-> dialogs, and its console carries the free camera, HUD toggle, engine TGA screenshot and a
-> much finer subsystem-isolation set than retail — so **FSE/Lua is no longer needed and the
-> old "quest activation is the blocker" problem is moot.** One hop remains: getting past the
-> front end. `SetSkipFrontend(TRUE)` exits silently; `ShowDevFrontEnd TRUE` reaches a
-> keyboard menu that synthetic keys cannot reach, because the headless compositor's seat has
-> no keyboard. See "Debug build — it runs" below for the full state and ranked leads.
-
-
-**Status: retail launches, renders and reaches its main menu under automation. It does not
-yet reach gameplay unattended.** Everything below was learned by running it, not by reading.
-
-#### The launch environment (solved)
-
-```bash
-env -u WAYLAND_DISPLAY -u SDL_VIDEODRIVER DISPLAY="$NESTED_X" \
-    STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT" \
-    STEAM_COMPAT_DATA_PATH="$STEAM_ROOT/steamapps/compatdata/204030" \
-  steam-run "$STEAM_ROOT/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point" \
-    --verb=run -- "$PROTON_EXPERIMENTAL/proton" run "$HOME/Fable/Fable.exe"
-```
-
-Five things that each broke it, in the order they bite:
-
-1. **NixOS needs `steam-run`.** Both `proton` and `pressure-vessel-wrap` are dynamically
-   linked for a generic distro and fail with *"NixOS cannot run dynamically linked
-   executables"*.
-2. **Use the Proton the prefix was built with.** `compatdata/204030` is at `11.0-100` =
-   **Proton Experimental**. Launching with Proton 10.0 makes it *downgrade and rebuild the
-   prefix*, which silently discards the EULA acceptance and graphics-detection registry
-   values. Saves survive; those settings do not.
-3. **Go through Steam Linux Runtime 4.0** (`SteamLinuxRuntime_4/_v2-entry-point`) — Proton
-   Experimental's `toolmanifest.vdf` requires appid 4183110. Launching Proton bare gives a
-   Wine with no FreeType, and every dialog renders as an empty 75×50 stub.
-4. **Set `DISPLAY`, not `WAYLAND_DISPLAY`.** Wine uses X11, so `DISPLAY` decides which
-   compositor the window lands in. With only `WAYLAND_DISPLAY` set, the game opened *on the
-   user's desktop*. Unset `WAYLAND_DISPLAY` so it cannot escape the nested session.
-5. **Nested headless sway works** and provides XWayland. Get its `DISPLAY` by having the sway
-   config `exec` a command that writes `$DISPLAY` to a file.
-
-#### Dialogs on the way in
-
-| Dialog | Handling |
-|---|---|
-| EULA | **`Decline` holds the focus ring** — a blind `Return` declines and the game exits. Accept is `alt+a`. Persists once accepted. |
-| "Fable - Warning" (`0MB, 0M ATI` — Wine reports no RAM/VRAM) | Tick *Don't show this warning again* (311,504), then *Continue Anyway* (371,535). Persists. |
-| Title splash — *Press Left Mouse Button To Continue* | Not skipped by `SetSkipFrontend(TRUE)` as placed. |
-| Main menu — shows `11 - Continue Game` | Reached, but see below. |
-
-#### Front-end automation — **solved**
-
-Retail runs unattended from launch to in-game: dialogs, splash, main menu, save selection.
-The working script is `packages/mirror/capture-retail.sh`.
-
-**The key discovery: the game reads DirectInput *relative* mouse motion and tracks its own
-cursor.** Absolute `xdotool mousemove` is meaningless to it — which is why a move to
-(640,360) once left the drawn cursor at (710,370), and why clicking the "right" coordinates
-never worked. The fix is to slam the pointer into a corner so the game's cursor clamps to a
-known origin, then walk a known delta:
-
-```bash
-xdotool mousemove_relative -- -3000 -3000    # clamp its cursor to (0,0)
-xdotool mousemove_relative -- 640 340        # now at (640,340)
-xdotool click 1
-```
-
-Clicking two targets in sequence each pass walks the whole front end, and each is harmless
-empty space on the screen where it does not apply, so the pair is safe to repeat:
-
-| Target | Screen | Hits |
-|---|---|---|
-| `640 340` | main menu | `NN - Continue Game` |
-| `297 162` | Load Game | `AutoSave` |
-
-Hit regions run from an item's text down to the next item (~45px), so aim below the text
-baseline, not at it.
-
-#### Retail vs the dev build — different command sets
-
-`dbugst.ini`'s command list describes the **debug build**, not retail. Verified by string
-search:
-
-| Command | retail `Fable.exe` | dev `FableWin.exe` / `ego_r.exe` |
-|---|---|---|
-| `SetSkipFrontend`, `TakeScreenshot`, `SetInputLoad`/`Save`, `AutomatedMode`, `SetResolution`, `SetPlayerStartPos`, `ShowDevFrontEnd` | **absent** | present |
-| `EnableSky`, `EnableLandscape`, `PauseTime`, `SetTimeOfDay`, `DebugCamera`, `SetStartingHolySite` | present | present |
-
-So in retail there is **no** front-end skip, **no** engine screenshot and **no** input
-playback — the front end must be clicked through, and `grim` is the capture path. The
-commands that matter for the testbed (subsystem isolation, clock) *are* present.
-
-`~/doc/Fable_Anniversary-2013-02-25/Fable/FableWin.exe` (53M) is a **dev build with the full
-command set**, and `~/git/fable-reimpl` is a decomp of it (its source paths read
-`fable tlc build repository` / `Fable1_5MainPC` — Anniversary was built from the TLC
-codebase). Worth evaluating as a second reference engine: it would need no synthetic input
-at all, and it is the binary every constant we are porting actually came from. Unevaluated:
-whether it runs under Proton and what data it expects.
-
-#### Remaining for a reference capture
-
-The world loads and `MirrorCapture` registers, but the quest's `Main()` has not run — no
-`mirror:` lines appear in `FableScriptExtender.log`. `ActivateQuest("MirrorCapture")` in
-`user.ini` executes at boot, before the world exists. The same applies to the isolation
-commands: `EnableSky(1)`/`EnableLandscape(0)`/`PauseTime()` run at boot and do not survive
-into the loaded save — the proof screenshot still shows full landscape.
-
-So the open question is **how to run console commands and activate a quest after the save
-loads**. Leads, in order:
-1. Does an FSE quest with `AddQuestRegion` self-activate when the hero enters that region?
-   If so, no console activation is needed at all.
-2. Is there an in-game console key in retail, drivable with the same relative-motion input?
-3. Can FSE call the console, or expose the `Enable*` toggles directly?
-
-#### Capability survey for clean screenshots (2026-08-06)
-
-**1. FSE — sufficient for camera and clock, not for presentation.**
-1,275 exported symbols. Has: the whole `Camera*` family
-(`CameraMoveToPosAndLookAtPos`, `CameraMoveBetweenLookFromAndLookTo`,
-`CameraCircleAroundPos/Thing`, `CameraUseCameraPoint`, `CameraDefault`,
-`CameraUseScreenEffect`); clock (`SetTimeOfDay`, `SetTimeAsStopped`); world placement
-(`EntityTeleportToPosition`, `GainControlAndMoveToPosition`,
-`DontPopulateNextLoadedRegion`, `IsRegionLoaded`); and presentation
-(`StartMovieSequence`/`EndMovieSequence`, `EndLetterBox`, `FadeScreenIn`, `IsInCutscene`).
-Lacks: any HUD toggle, free camera, screenshot, render-state access, and file I/O
-(Lua has `coroutine/debug/math/package/string/table` — no `io`, no `os`).
-It is the *game script* API (`CGameScriptInterface`), not an engine API.
-
-**2. Retail console `Enable*` set is richer than assumed** — from `Fable.exe` strings:
-`EnableSky`, `EnableLandscape`, `EnableWater`, `EnableWeather`, `EnableShadows`,
-`EnableAnimatedMeshes`, `EnableStaticMeshes`, `EnableRepeatedMeshes`, `EnableSprites`,
-`EnableSpriteTrails`, `EnableDecals`, `EnableGroupDecals`, `EnableLines`,
-`EnablePrimitives`, `EnableChangingPrimitives`, `EnableFlareSprites`,
-`EnableWeaponTrails`, `DrawWeaponTrails`, `DrawProjectileWeaponTrails`,
-`EnableScreenEffect{ColourFilter,GlowRenderer,OutlineGlow}`, `EnableSounds`.
-These are `CEngineComponent::GetConsoleEnableFunctionName()` values.
-**No GUI/HUD toggle among them** — `GlobalDrawGUI` is debug-build only.
-
-**3. Free camera exists in the engine.** `CPlayer` (`fablelib/player.hpp:997-1231`):
-`CCamera CurrentFreeCamera / FreeCamera / OldFreeCamera`, `bool UsingFreeCamera /
-FreeCameraTrackingPlayer / ControllingFreeCamera`, `void SetUsingFreeCamera(bool)`,
-`bool IsUsingFreeCamera() const`, `void UpdateFreeCamera()`, plus
-`CInputProcessControlFreeCamera`. `SetUsingFreeCamera(bool)` is a clean hook target.
-**`DebugCamera` is a retail console command** — test it before writing any hook.
-
-**4. Resolution and quality are not console-settable in retail.** No `SetResolution`,
-no `SetMaxTextureSize`, no quality commands. They live in the registry under
-`HKCU\Software\Microsoft\Microsoft Games\Fable TLC` (vendor-keyed encoding) and are
-written by the in-game Options menu or `FableLauncher.exe`. Since synthetic input now
-works, driving Options once is viable and persists. No engine screenshot in retail, so
-`grim` on the nested output remains the capture path — lossless PNG of the real
-framebuffer, so quality is bounded only by the render resolution.
-
-**5. The dev build has all of it natively.** `FableWin.exe` / `ego_r.exe` in the
-Anniversary tree carry `SetResolution`, `TakeScreenshot`, `SetSkipFrontend`,
-`GlobalDrawGUI`, `FreeCamOnWithPlayer`, `AutomatedMode`, `SetPlayerStartPos`. If it
-runs, it sidesteps the HUD, free-cam, resolution and screenshot problems at once — and
-`~/git/fable-reimpl` is a decomp of that binary.
-
-#### Step 1 results — quest activation is the blocker
-
-Tested `StartMovieSequence` (HUD hide) and quest-driven camera parking. **Neither ran.**
-
-- **FSE quests register but never activate.** The log ends at *"Custom scripts registered
-  with the game"* and no `Init`/`Main` is ever called — probes placed in **both**
-  `MirrorCapture.lua` and `FSE_Master.lua` produced no output. `FSE_Master` is *not*
-  auto-active despite its comment.
-- **`ActivateQuest(...)` from `user.ini` is too early.** Console script runs at boot;
-  registration happens when the world loads (FSE log jumps 12 → 29 lines at that point).
-  Activating a quest that does not exist yet is a no-op.
-- So **every FSE capability is currently unreachable**, including the camera park. This is
-  the single blocker — not the camera API, not the HUD.
-
-**Retail has NO working console.** `Fable.exe` contains `ConsoleAlpha` and
-`ConsoleListContaining`, but these are remnants — the console was stripped and deactivated,
-long-established in the modding community (confirmed by Jamen 2026-08-06). **Do not chase
-it.** The debug build's console is real.
-
-**Keyboard input works in-world** — it opened the Logbook. So once the console key is
-known, driving it is already solved.
-
-**Options menu is reachable from the pause menu** (Inventory / Skills / Hero Status / Map /
-Photo Journal / **Options** / Return To Game). That is the route to max resolution and
-quality settings, which are registry-backed and persist (§7.1 question 4).
-
-#### Debug build evaluation (2026-08-06) — promising, not yet running
-
-Retail has **no working console** — the `ConsoleAlpha`/`ConsoleListContaining` strings are
-remnants of one that was stripped and deactivated (confirmed by Jamen; long-established in
-the modding community). Do not chase it. The **debug build does** have a console.
-
-**The Anniversary tree is already a hybrid, and it is the configuration we want.**
-`~/doc/Fable_Anniversary-2013-02-25/Fable/Data` symlinks its *art* to the retail TLC
-install — `graphics.big`, `pc/textures.big`, `pc/frontend.big`, `shaders/pc/shaders.big`,
-`Misc/pc/effects.big`, and the English fonts/text/dialogue all point at
-`/home/jamen/Fable/data/...`. Native to the tree: `FinalAlbion.wad`/`.stb`,
-`meshdata.bbb`, `CompiledDefs`, `Defs`, `LightingTable`. 5.0 GB total.
-
-That means **dev engine + retail TLC art**, which resolves the open worry: the art is *not*
-remastered, so colour comparison against this build is valid, not just structural
-comparison. Combined with `~/git/fable-reimpl` being a decomp of this binary, oracle and
-reference would finally be the same thing.
-
-**"Worse graphics" is configuration, confirmed.** `default_userst.ini` sets
-`SetMaxTextureSize(512)` where retail's `userst.ini` uses `2048`, plus
-`SetResolution(1024,768,16)` and `SetStaticMapQuality(2)`. All console-settable in this
-build, unlike retail.
-
-**Config files:** `FableWin.exe` (PE32) uses `user.ini`/`userst.ini`, created from the
-`default_user.ini`/`default_userst.ini` templates in the tree (there are also
-`deliverable_*` and `final_deliverable_*` variants). `default_userst.ini` documents
-`SetInputSave("packet_save.sav")` / `SetInputLoad(...)` for record/playback, and there is a
-`record_gameplay.ini` — the input-playback route that retail lacks.
-
-**Gotcha:** the Proton prefix must live **inside Steam's `compatdata` tree** — pressure-vessel
-does not map `/tmp`, so a prefix there fails with `FileNotFoundError: .../pfx.lock`. Pass
-`STEAM_COMPAT_MOUNTS` for any game directory outside the Steam tree.
-
-#### Debug build — **it runs. Use `ego_r.exe`, not `FableWin.exe`.** (2026-08-06)
-
-`FableWin.exe` was the wrong binary. Its PE import table names **`MSVCR100D.dll` /
-`MSVCP100D.dll`** — the *debug* CRT, which ships only with Visual Studio 2010, is not
-redistributable, has no Wine builtin, and is not in the tree's `dlls/` (that holds the
-VC7.1 pair, `msvcr71`/`msvcp71`, for a different binary). The loader therefore fails
-before any code runs: no window, no `bbb.log`. That was the whole mystery.
-
-`ego_r.exe` (16 MB, the dev **release** build) imports `MSVCR100.dll` / `MSVCP100.dll` /
-`d3dx9_43.dll` — **all three are Wine builtins in Proton Experimental**. It launches,
-renders, and carries the *same* full command set as `FableWin.exe` (verified by string
-search on all of `SetResolution`, `TakeScreenshot`, `SetSkipFrontend`, `GlobalDrawGUI`,
-`FreeCamOnWithPlayer`, `AutomatedMode`, `SetPlayerStartPos`, `EnableSky`, `SetTimeOfDay`).
-`Ego_r.pdb` (134 MB) sits beside it. **`ego_r.exe` is the reference engine.**
-
-Launcher: `packages/mirror/capture-dev.sh`. Config: `packages/mirror/dev-build-config/`
-(`user.ini` + `userst.ini`, mirrored into the game tree; neither existed before).
-
-**Solved, and each one bit:**
-
-1. **Both ini files are read**, `default_userst.ini` first then `userst.ini` (proven with
-   `WINEDEBUG=+file`). So `userst.ini` overrides the template. `boot.ini` is also looked
-   for and its absence is harmless — that AGENTS lead is closed.
-2. **`SkipConfigDetection(TRUE)` works** — `ConfigDetect.dll` is then never loaded, and
-   the "0MB RAM / 0M ATI" warning never appears.
-3. **The "did not exit correctly" dialog is a registry flag, not a real error.**
-   `GFConfigDetection` writes `HKCU\Software\Microsoft\Microsoft Games\Fable TLC\GFX_RESET
-   = 1` on **every** boot and clears it only on a clean exit (`main.cpp:281`). A harness
-   that kills the game therefore re-arms it every run. `capture-dev.sh` clears it in
-   `pfx/user.reg` while wineserver is down.
-4. **`AllowBackgroundProcessing(TRUE)` is mandatory headless.** `main.cpp:1142`:
-   `sys_init.WaitWhileInactive = !GAllowBackgroundProcessing`, and the comment says the
-   game "must have focus before it does anything at all, even during development". Without
-   it the game ignores all input and exits after ~7 minutes. This explained two separate
-   mystery symptoms at once.
-5. **Only one Fable at a time, per prefix.** `WinMain` takes a global mutex
-   (`main.cpp:363`) and a second instance `return 0`s immediately — no window, no log,
-   indistinguishable from a crash. `capture-dev.sh` refuses to start if one is up.
-
-With 1–4 in place the build boots **fully unattended to a rendering 1280×720 window with
-zero dialogs**.
-
-**`TakeScreenshot(Int)` is gated on `AllowMovieRecording`.** `display_engine.cpp:1191`
-only reaches `SaveAsTGA` when `GAllowMovieRecording` is set. Output is
-`data\movies\shot%06d.tga` — lossless, straight off the back buffer, so once we are
-in-world `grim` and the compositor drop out of the capture path entirely.
-
-**The isolation vocabulary is far richer than retail's** (from `ego_r.exe` strings) — this
-is the direct answer to "our renderer draws less than the original". Beyond retail's set:
-`EnableClouds`, `EnableSea`, `EnableTextures`, `EnableCompositeTextures`,
-`EnableLandscapeBumpMapping`, `EnableLandscapeFog`, `EnableLandscapeTesselation`,
-`EnableLandscapeLODUpdate`, `EnableGlow`, `EnableParticles`, `EnableParticleRendering`,
-`EnableLocalLights`, `EnableShadowedSpotLights`, `EnableDithering`, `EnableMouseCursor`,
-`EnableForeground`/`EnableBackground`, `EnableEngineScreenshotMode`. Plus the free camera
-as *console commands*, not an FSE binding: `SetFreeCam`, `SetFreeCamPos`,
-`SetFreeCamLookVector`, `SetFreeCamFOV` / `SetFreeCameraFov`, `SetFreeCamHeightLock`,
-`FreeCamOnWithPlayer`; and `GlobalDrawGUI` for the HUD. **FSE/Lua is no longer needed for
-any of this** — the §7.1 "quest activation is the blocker" problem is moot.
-
-**RESUME HERE — the one remaining hop: getting past the front end.**
-
-- `SetSkipFrontend(TRUE)` makes `ego_r.exe` exit silently ~5 s after the window appears.
-  Reproduced 4× — with and without `SkipProfileSelection`, `SetStartingHolySite`, and with
-  a user profile copied into the debug prefix from retail's
-  (`Documents/My Games/Fable/Saves/11/`). Cause not yet established; nothing is logged.
-- `ShowDevFrontEnd TRUE` (what the tree's own dev config uses) *does* work and reaches a
-  keyboard-driven text menu: `9 - Quit` / `A - [Debug Profile]` / `B - Create New Profile`.
-  Far more automatable than retail's mouse-only front end — **except that no synthetic
-  keystroke reaches it.**
-- **Why keys don't land:** wlroots' headless backend creates no input devices, so the seat
-  never advertises a keyboard capability and XWayland gets none. XTEST *pointer* events
-  still work — which is exactly why the retail mouse script works — but key events go
-  nowhere, and `wtype` reports success while doing nothing. The window genuinely has focus
-  (`xdotool getwindowfocus` returns it); the keyboard simply does not exist.
-- **Do not left-click the dev front end** — a click on the Select Profile screen quits the
-  game.
-- **Xvfb is not the fix.** It has full XTEST keyboard support, but no Vulkan, so DXVK
-  cannot create a device and the game dies at [5]. Falling back to WineD3D/llvmpipe would
-  also invalidate colour comparison, which is the whole point of this build.
-
-Ranked leads for next session:
-1. **Give the nested compositor a real keyboard.** Run sway with `WLR_BACKENDS=wayland`
-   nested inside Jamen's session (inherits the parent seat, keys work, costs a visible
-   window), or feed it a `uinput` device via `ydotool` with libinput enabled (drop
-   `WLR_LIBINPUT_NO_DEVICES=1`). Needed only *once* if it creates a Debug Profile that
-   persists.
-2. **Input playback.** `SetInputSave("packet_save.sav")` / `SetInputLoad(...)` +
-   `AutomatedMode(TRUE)` are documented in `default_userst.ini` and `record_gameplay.ini`.
-   Record the front-end walk once on a real display, replay it headlessly forever. This is
-   the deterministic answer and retail has no equivalent.
-3. **Find out why `SetSkipFrontend` dies** — with the profile question eliminated, the next
-   step is `GFMain`'s skip-frontend path in `main.cpp` / `main_game_component.cpp`.
-
-#### `SetPlayerStartPos` did not fix skip-frontend (2026-08-07)
-
-Tested `SetSkipFrontend(TRUE)` + `SetStartingHolySite("LookoutPointHSP")` +
-`SetPlayerStartPos(102.78125, 74.156006, 37.494278)` (the holy site's own position, from
-`Data/Levels/FinalAlbion/LookoutPoint.tng`). **Still exits silently at the same point.**
-So the missing hero-placement hypothesis from `CGame::Play` is wrong, or at least not the
-whole cause.
-
-Diagnostics that produced nothing: `SetDisplayErrors(true)` raises no dialog, `bbb.log`
-stays 0 bytes, and `WINEDEBUG=+debugstr` captures no `OutputDebugString` output at all —
-so `LIB_ERROR`/`LIB_TRACE` do not route anywhere reachable from outside the process.
-**The exit cannot be diagnosed from outside.** That is now the argument for doing the
-in-process hook first and using it to answer this question.
-
-#### Symbol resolution from `Ego_r.pdb` — solved, and it is the hook's foundation
-
-`llvm-pdbutil` refuses the file ("Too many directory blocks"): block size is 1024 and the
-stream directory spans 512 blocks, so the directory's block map needs 2 blocks, which LLVM
-only supports as 1. The container is otherwise an ordinary MSF 7.00.
-
-`packages/mirror/tools/pdbsyms.py` reads it directly and extracts **116,172 public
-symbols** with RVAs. Anchors captured in `packages/mirror/tools/egor-anchors.txt`:
-
-| RVA | Symbol | Use |
-|---|---|---|
-| `0x0073fc50` | `CConsole::RunTextCommand(const CCharString&)` | run any console command |
-| `0x0073fdb0` | `CConsole::RunScript(const CWideString&)` | run a whole ini script |
-| `0x006fa5b0` | `CCharString::CCharString(const char*, long)` | build the argument |
-| `0x00016da7` | `CMainGameComponent::Update()` | per-frame hook point (virtual) |
-| `0x000162ff` | `CMainGameComponent::Render()` | ″ |
-| `0x00e6d184` | `GTakeScreenshot` (long) | write N to capture N frames |
-| `0x00df8568` | `GAllowMovieRecording` (bool) | gate for the above |
-| `0x00e6d15b` | `GSkipFrontend` (bool) | |
-| `0x00e6d19d` | `GOverridePlayerStartPosFromConsole` (bool) | |
-| `0x00e6d1a8` | `GOverridePlayerStartPos` (C3DVector) | |
-| `0x00e6d1c4` | `GForceStartingHolySite` (CWideString) | |
-| `0x00e6d1a5` | `GFreeCamOnWithPlayer` (bool) | |
-| `~0x00df87e8` | 101 × `NGlobalConsole::*` bools | contiguous toggle block |
-
-**Gotcha: the decomp's addresses are `FableWin.exe`'s, not `ego_r.exe`'s.** `CGame::Play`
-is `LAB_00ac7d88`-adjacent in `~/git/fable-reimpl` but lives at RVA `0xf540` in `ego_r.exe`.
-Always resolve against `Ego_r.pdb` for the binary we actually run.
-
-Section base is `0x1000` (RVA = `.text` offset + `0x1000`); resolve in-process as
-`GetModuleHandleW(NULL) + RVA`.
-
-No `CConsole` instance appears in the public symbols, so the console object must be reached
-another way (a static local, or a member of an owning object) — that is the one open
-question for calling `RunTextCommand`. Writing the globals directly needs no instance and
-no calling convention, so it is the safe first milestone.
-
-#### Working practices
-
-- **No fixed iteration cap on capture runs.** A timeout that kills the run mid-investigation
-  destroys the state you were about to inspect. Loop until success or a stop file
-  (`touch /tmp/cap/stop`), and make cleanup unconditional via a trap.
-- **Never `pkill -f` / `pgrep -f` a pattern that also appears in your own command line** —
-  the shell running the command matches and kills itself (exit 144). This cost several
-  cycles. Write a PID file and kill that.
-- Resolve `xdotool` once with `nix build --print-out-paths` and call the binary; `nix run`
-  per call adds seconds to every loop iteration.
-- Back up `dbug.ini`, `dbugst.ini` and `FSE/quests.lua` before touching them, and restore on
-  exit via a trap.
-- Register the capture quest by adding a `MirrorCapture` entry to `FSE/quests.lua`
-  (`file = "MirrorCapture/MirrorCapture"`, unique `id`), and activate it from the console
-  script with `ActivateQuest("MirrorCapture")`.
-- The window title is `"Fable - The Lost Chapters "` — **with a trailing space**. An anchored
-  `$` regex will not match it.
-
-#### What is confirmed working
-
-- The game boots, renders at the nested output's resolution, and reaches its main menu with
-  the existing save profile visible.
-- FSE attaches and initialises its API pointers.
-- `grim` against the nested Wayland display captures the game's frames correctly.
-
 **Cadence:** one step per working session, ending with a written summary of what landed, what
-the evidence was, and what the next derivation note will cover. Steps 0 and 1.1–1.3 are
-mechanical and run with a lighter touch; step 2 onward gets the full protocol.
+the evidence was, and what the next derivation note will cover. That summary goes in
+§10, and anything it *establishes* is folded into §3, §5 or §9 in the present tense.
+
+---
 
 ## 8. Useful commands
 
@@ -1895,6 +1383,15 @@ grep -n "ColourLookupColumn" \
 
 # shader bank contents
 od -A d -t x1z ~/doc/Fable_Anniversary-2013-02-25/Fable/Data/shaders/vs_sky.bbb | head -40
+
+# wgpu/naga facts — read the vendored source, never assume the API
+ls -d ~/.cargo/registry/src/*/wgpu-types-28.0.0 ~/.cargo/registry/src/*/naga-28.0.0
+
+# what this adapter actually supports
+nix shell "nixpkgs#vulkan-tools" --command vulkaninfo --summary
+
+# one offscreen frame, for a pixel-identical before/after
+cargo run -p openalbion -- --level LookoutPoint --screenshot out.ppm
 ```
 
 ---
@@ -1905,189 +1402,95 @@ Track anything that could not be sourced. Empty is the goal.
 
 | Location | Value | Status |
 |---|---|---|
-| `renderer/src/terrain.rs` | `FrameUniforms` ambient/diffuse/backlight/light dir | placeholder — neutral by construction (`Ambient` 0.5 cancels the shader's `mul_x2`), replaced wholesale by step 2's LUT rows 1/0/3 |
+| `renderer/src/terrain.rs`, `model.rs`, `local_detail.rs` | `FrameUniforms` ambient/diffuse/backlight/light dir | placeholder — neutral by construction (`Ambient` 0.5 cancels the shader's `mul_x2`), replaced wholesale by step 2's LUT rows 1/0/3. **Copy-pasted three times; unify first (§12.7)** |
 | `renderer/src/terrain.rs` | `fade_transform = (0,0,0,1)` | fade disabled through the real mechanism; `ForegroundFadeStart`/`End` arrive from a console command whose defaults the decomp does not show (`CLandscapeSettings`' ctor is inlined away) |
 | `renderer/src/terrain.rs` | additive layer blend + blackout pass | **derived, not transcribed.** `SetupForegroundStates` goes through a render-state cache Ghidra reduces to offset arithmetic, so the `D3DRS_*` values are unreadable — but the blend mode is forced by the alphas summing to 1, and by the existence of `VSHADER_LANDSCAPE_FOREGROUND_BLACKOUT_PASS`. Confirmed on screen: alpha-over leaked sky between themes, additive-over-black does not |
 | `fable-data/src/landscape/mesh.rs` | `DirectionMask::build` normal | **DIVERGENCE**, marked in place: `BuildMapDirMask` weights up to eight face normals; that arithmetic is too mangled to transcribe, so `PeekMapNormal` is used instead. Same surface, different smoothing |
-| `renderer/src/model.rs` | `FrameUniforms` ambient/diffuse/backlight/light dir | placeholder — the same neutral stand-in the landscape uses, replaced wholesale by step 2's LUT rows 1/0/3 |
-| `renderer/src/model.rs` | `ALPHA_CUTOFF = 0.5` | unsourced |
+| `renderer/src/model.rs` | `ALPHA_CUTOFF = 0.5` | unsourced. Note the local-detail pass reads a *real* per-object-type `AlphaRef` — this is the static-mesh path only |
 | `renderer/src/model.wgsl` | world-space normal instead of object-space light | **DIVERGENCE**, marked in place: the original pre-transforms `c19` into each object's frame; we rotate the normal instead. Identical for the orthonormal matrices `CalcObjectMatrix` produces, and it keeps one light constant shared with the landscape |
-| `renderer/src/texture.rs`, `terrain.rs` | `mipmap_filter: Linear` | **inferred, not read.** `TEXTURE_MIPMAP_LINEAR` exists (`_misc/e.hpp:770`) but which value the engine sets is behind the same render-state cache §9 already records as defeating the landscape blend modes. Linear is *forced* anyway — wgpu requires it when `anisotropy_clamp > 1`, and §3.12 sources the anisotropy at 4 |
+| `renderer/src/texture.rs`, `terrain.rs` | `mipmap_filter: Linear` | **inferred, not read.** `TEXTURE_MIPMAP_LINEAR` exists (`_misc/e.hpp:770`) but which value the engine sets is behind the same render-state cache this table already records as unreadable. Linear is *forced* anyway — wgpu requires it when `anisotropy_clamp > 1`, and §3.12 sources the anisotropy at 4 |
 | `renderer/src/local_detail.rs` | per-instance vertex buffer instead of 16 instances in vertex constants | **DIVERGENCE**, marked in the shader: `VSHADER_REPEATED_MESH` indexes `c19`/`c35`/`c51` with the address register because vs_1_1 has no instancing. The arithmetic is transcribed unchanged; the batch size of 16 has no observable effect to preserve |
 | `renderer/src/local_detail.wgsl` | lighting evaluated in the vertex shader, not on the CPU | **DIVERGENCE**, marked in place: the original writes `CalcSWLightingNoClip`'s result into `LightingResults` per object. Both inputs are per instance either way, so the result is identical, and this keeps the lighting constants in one place for step 2 |
 | `fable-data/src/local_detail/place.rs` | the draw counter's third index | **UNVERIFIED**: `GetRandomDisplacement`'s third argument is register-passed and invisible in both call sites. That a counter is incremented immediately before each draw is visible; that it starts at zero once per cell, and that the theme draw increments it too, is the reading. Plausibility-neutral — it changes *which* object stands where, not whether the result looks right |
 | `fable-data/src/local_detail/grid.rs` | `cell = floor(x + 0.5)` | **derived, not read.** The `__ftol2_sse` arguments are FPU values, but the storage forces it: the encode is `floor((offset + 0.5) · 255)` and the decode is `byte / 255 − 0.5`, so the offset must land in `[−0.5, 0.5]`. Under `floor(x)` half of every grid would clamp to the cell's far edge and the ±16 wrap would never fire |
-| `renderer/src/lib.rs` | MSAA 4× | **DIVERGENCE**, `ACCEPTED` (§6.3): the original ships AA **off** (`~/Fable/dbugst.ini:90-91`, both `SetAntialiasing` lines commented out). Enabled deliberately as an improvement, per Jamen 2026-08-10; to be made configurable later |
+| `renderer/src/lib.rs` | MSAA 4× | **DIVERGENCE**, `ACCEPTED` (§6.3): the original ships AA **off**. Enabled deliberately as an improvement, per Jamen 2026-08-10; to be made configurable later |
 
-Also retired: the `LightArray` / `LightGlobals` / `LightAttenuations` offsets, read exactly
-out of `engine_vs_layout_lights.cpp:56-90` and cross-checked three ways (§3.8); and
-`model.wgsl`'s invented `0.3/0.7` shade, replaced by a transcription of
-`VSHADER_STATIC_DIRLIGHT`.
-
-Retired from this table: the sky dome's `36` segments (`engine_sky_renderer.cpp:616`,
-`while (uVar13 < 0x24)`) and its `7000` / `−500` / `6500` extents; the landscape's
-`HEIGHT_SCALE = 2048.0` (`fablelib/map.cpp:2594`) and `CELL_SIZE = 1.0`; and
-`texture_scale`, which was `0.0625` invented and is `0.125` read out of `ego_r.exe`
-(`tools/landscape-statics.md`). All are sourced and cited in place.
+Retired from this table, all now sourced and cited in place: the `LightArray`/`LightGlobals`/
+`LightAttenuations` register offsets (§3.8, cross-checked three ways); `model.wgsl`'s invented
+`0.3/0.7` shade; the sky dome's `36` segments and its `7000`/`−500`/`6500` extents; the
+landscape's `HEIGHT_SCALE = 2048.0` and `CELL_SIZE = 1.0`; and `texture_scale`, which was
+`0.0625` invented and is `0.125` read out of `ego_r.exe`.
 
 ---
 
 ## 10. History
 
-- **2026-08-10** — **Levels have foliage.** §3.13, §5 step 8, branch `local-detail`. Ported
-  `CEngineLocalDetailGenerator` and the placement half of `CLocalDetailCacheMap` into
-  `fable-data::local_detail`, and gave the repeated meshes a transcribed
-  `SHADERS_REPEATED_MESH` pass. **No new parser was needed** — retail `game.bin` already
-  carries 65 generators reaching 227 objects over 138 meshes, every theme reference resolves
-  by index (unlike the `.lev` palette's, §3.4) and every `Mesh` field is a `graphics.big`
-  asset id. The whole subsystem is deterministic off one PRNG (`GFROR13` = `ror32(x, 13)`
-  driving `seed = ror13(seed·0x24a1 + 0x24df)`), so Jamen's call was to **generate rather than
-  read the shipped `.stb` cache**, with counts pinned as tests: Witchwood 691, Darkwood 1,147,
-  LookoutPoint 15,845, Arena 0. Half of local detail needed no new pipeline at all — the
-  engine calls the same `AddStaticMesh` for it that a `.tng` thing uses. **Two corrections
-  from implementing it:** objects come out in map-local cells while the *random draws* stay in
-  world cells, because our landscape draws a map at the world origin and the engine's does
-  not — the foliage stood 3,232 cells off LookoutPoint's hillside until that was split; and
-  `TiltToSlope` cannot affect a repeated mesh, since only `(cos·Scale, sin·Scale, 0, 0)`
-  survives into its object matrix. Also established that the fade's stipple pattern is
-  procedural rather than an asset, and that the ~9,000 lines of cache/quadtree/streaming are
-  unnecessary at one map at a time — a whole level's foliage fits in one instance buffer per
-  mesh. Landed two things it needed on the way: `game.bin` parsed once (§4's refactor) and
-  `FinalAlbion.wld` loaded for the world origin.
-- **2026-08-10** — **Texture sampling landed.** §3.12, §5 step 7, branch `texture-sampling`.
-  The renderer had never uploaded a mip level: `mip_level_count: 1` everywhere,
-  `mipmap_filter` at its `Nearest` default, and a decode path named `get_top_mip_*` that
-  discarded the rest. The chains were in the archive all along — 3,978 of 4,000
-  `textures.big` assets carry a complete chain matching `CalculateTextureSize`
-  (`lib_texture_manager_2.cpp:1976`) exactly, with only level 0 LZO-compressed. Anisotropy
-  sourced at 4 from the shipped `user.ini`; MSAA recorded as an `ACCEPTED` divergence
-  because the original ships it off. Also caught: `dxt_compression == 1` is uncompressed
+Newest first, one entry per working session: what landed, and the correction worth remembering.
+Anything a session *established* is a present-tense fact in §3, §5 or §9 instead — this is the
+record of how it got there, not a second copy of it.
+
+- **2026-08-15** — **Guide restructured; bindless planned, reviewed and measured.** No renderer
+  code. This document was cumulative (2,442 lines, mostly session narrative and abandoned
+  tooling) and is now current-only, with §3.9 and this section carrying what remains of the
+  history. **Landed: the flythrough camera is gone** — `scene::camera_path`, the `--flythrough*`
+  flags, and the `App` state driving them; it served one sample video and had no other consumer.
+  §12's first draft was reviewed against the vendored wgpu 28 source and corrected on five
+  points: `max_binding_array_elements_per_shader_stage` **defaults to 0** and must be requested
+  (the layout would have failed validation on day one); the sampler binding array was
+  unnecessary and is dropped; the per-material bind group has a third entry (`MaterialUniforms`)
+  the plan did not account for; `clear_models` would have leaked the registry, so lifetime has
+  to be decided up front; and WGSL allows at most one `var<immediate>` per module.
+  `MAX_BINDLESS_TEXTURES` was **measured rather than guessed** (§12.3) — a level peaks at ~100
+  textures, the largest region at 359 meshes, the whole 402-level world at 1,331 — and the same
+  measurement quantified the missing texture cache at 2.5–3.9× redundant work per level.
+  **Found on the way: the workspace does not link** — the devshell exports a bare mingw `CC`, so
+  `packages/lzo` builds a Windows COFF object for a Linux host link (§0).
+- **2026-08-10** — **Levels have foliage** (§3.13, step 8). Ported `CEngineLocalDetailGenerator`
+  and the placement half of `CLocalDetailCacheMap`; repeated meshes got a transcribed
+  `SHADERS_REPEATED_MESH` pass. No new parser was needed — retail `game.bin` already carries 65
+  generators over 227 objects and 138 meshes. The whole subsystem is deterministic off one PRNG,
+  so Jamen's call was to **generate rather than read the shipped `.stb` cache**, with counts
+  pinned as tests. **Two corrections from implementing it:** objects come out in map-local cells
+  while the random draws stay in *world* cells (the foliage stood 3,232 cells off LookoutPoint's
+  hillside until that was split), and `TiltToSlope` cannot affect a repeated mesh because only
+  `(cos·Scale, sin·Scale, 0, 0)` survives into its object matrix. Landed on the way: `game.bin`
+  parsed once, and `FinalAlbion.wld` loaded for the world origin.
+- **2026-08-10** — **Texture sampling** (§3.12, step 7). The renderer had never uploaded a mip
+  level; the chains were in the archive all along, and the accessor's name — `get_top_mip_*` —
+  made the loss look intentional. Anisotropy sourced at 4 from the shipped `user.ini`; MSAA
+  recorded as an `ACCEPTED` divergence. Also caught: `dxt_compression == 1` is uncompressed
   32bpp, not DXT1, so 9 assets were decoding as noise, and four aliases in
   `bcn_encoding_from_dxt` were invented — no asset uses `3`, `5`, `33` or `34`.
-- **2026-08-10** — **Levels are populated.** §5 step 6. `.tng` things resolve through their
-  def's `Graphic` in retail `game.bin` to a `graphics.big` asset id — verified 38/38, 192/192
-  and 57/57 across Witchwood, LookoutPoint and Arena — so the text `objects.def` bridge and
-  `fable_data::object` are deleted. Ported `CalcObjectMatrix` for orientation (things had none
-  before) and sourced the missing 100× at `tc_graphic_appearance.cpp:4658`:
-  `RenderSizeX × ObjectScale × 0.01`. `Model` split into a mesh asset plus `ModelInstance`
-  placements, so a mesh placed 50 times uploads once. `model.wgsl` is now a transcription of
-  `VSHADER_STATIC_DIRLIGHT` + `PSHADER_TEXTURE_DIFFUSE` over the landscape's own lighting
-  constants, which puts models behind step 2 alongside the terrain and sky.
-  **Four latent bugs found on the way**, three of them in code that predated this work:
-  the landscape was **mirrored in Y** (§3.4's row order — the load loop applies the same
-  `(SizeY − y)` flip on write, so it cancels the read-side one); Fable's meshes are
-  **clockwise-front**, so `FrontFace::Ccw` culled their front faces and drew the interiors
-  (measured over 400 meshes: 385,787 triangles disagree with CCW, 1,082 agree); the landscape
-  pass was fed a view-projection that already contained the camera translation while its
-  shader subtracted `c4` as well; and the model sampler clamped where D3D9 wraps, smearing a
-  third of the mesh library. The first three were invisible while the landscape was the only
-  thing drawn in world space and drew with `cull_mode: None` — placements are the independent
-  witness that exposed them, and `placement_test.rs` now keeps them exposed. Closed
-  §3.8's last open item exactly — `LightArray` at `c19` count 12, `LightAttenuations` at
-  `c31`, `LightGlobals` (the backlight) at `c35` — cross-checked three ways. Added
-  `--screenshot`, which finally uses the headless path left over from the mirror.
-- **2026-08-09** — **The landscape is textured.** Branch `landscape-texturing`. §3.4 was
-  wrong in one decisive way: `CliffU`/`CliffV` are not texture coordinates but the vertex
-  normal, packed, indexing one of five 128×128 blend tables — and the second texture stage is
-  the layer's *own* ground texture under a triplanar planar projection, not a composited
-  surface. Correcting that made the subsystem simpler, not harder. Recovered the five `.rdata`
-  tables the pass needs from `ego_r.exe` via a new `tools/pdbsyms.py` (llvm-pdbutil refuses
-  this PDB), which pinned the texture scale at one tile per 8 cells. Ported the map accessors,
-  `GetMappingDirectionBlend`, the blend tables and `CEngineLandscapeMeshBuilder` into
-  `fable-data::landscape`, and rewrote the pass and shader. The bug that had kept the ground
-  white: the `.lev` theme palette's stored def index is stale in retail data (off by a
-  constant 702) and the engine resolves it by *name* — we were resolving by index and finding
-  nothing. LookoutPoint now resolves 38/38 slots into 26 layer passes. Established that retail
-  streams precomputed patches from `FinalAlbion_RT.stb` (a `BBBB` bank) and that porting the
-  builder is the right call, and that filler levels are `SeesMap` entries backed by
-  `CEngineStaticMapEdgeHeights`' 4-cell border. Lighting is wired but neutral pending step 2.
-- **2026-08-08** — **The renderer became its own crate, and the mirror was abandoned.**
-  `packages/renderer` now depends on wgpu/glam/bytemuck/tracing alone: passes take
-  `TerrainData`, `Model` and `TextureImage` instead of reaching into `Files`, `Lev`, `Mesh`
-  and the `.big` archives, so a pass can no longer invent a data lookup (§11.1). Asset
-  decoding and mesh building moved to a `scene` module. Verified as a visual no-op — three
-  scenes rendered byte-identically before and after — using `mirror` immediately before
-  deleting it. `openalbion` went back to being a plain binary. `packages/mirror` and
-  `scenes.toml` are gone: driving the original engine for reference screenshots cost more
-  than it returned, and §5 step 1 / §6 / §7.1 are now history rather than plan. A
-  `world-edit` binary was tried and removed the same day: it bought duplicated
-  `files`/`scene`/`camera` and nothing the engine could use, so world editing is deferred
-  and will be a **mode inside `openalbion`** if it happens. Its terrain-pick ray march and
-  tests are in `777bf94` if that mode ever wants them. The renderer crate was kept — it
-  stands on its own (§11.2), independent of the editor question that prompted it.
-- **2026-08-06** — **The dev build runs.** `FableWin.exe` was the wrong binary all along: it
-  imports `MSVCR100D`/`MSVCP100D`, the non-redistributable VS2010 debug CRT with no Wine
-  builtin, so the loader fails before any code executes — hence no window and no `bbb.log`.
-  `ego_r.exe` imports only builtins and boots. Four further blockers solved
-  (`SkipConfigDetection`, the `GFX_RESET` bad-exit registry flag, `AllowBackgroundProcessing`
-  for headless focus, the single-instance mutex); the build now reaches a rendering 1280×720
-  window with **zero dialogs, fully unattended**. Established that the dev console supersedes
-  FSE entirely — free camera, `GlobalDrawGUI`, `TakeScreenshot` (gated on
-  `AllowMovieRecording`, writes lossless TGA), and a much finer `Enable*` set that can turn
-  the original *down* to what OpenAlbion actually draws. Remaining: the front end —
-  `SetSkipFrontend` exits silently, and the dev front end's keyboard menu is unreachable
-  because the headless wlroots seat has no keyboard (pointer works, which is why the retail
-  mouse script does). Xvfb ruled out: no Vulkan for DXVK. Landed
-  `packages/mirror/capture-dev.sh` and `packages/mirror/dev-build-config/`.
-- **2026-08-05** — **Step 0 complete** on branch `renderer-refocus`: invented mechanisms
-  stripped (`dc165b1`), raw non-sRGB colour space (`8e59ee5`), native Z-up (`99f0d8d`),
-  unverified constants audited (§9), two self-inflicted bugs caught by smoke-running
-  and fixed. Sky now renders its raw texture with zeroed gradients; landscape renders
-  untextured flat-lit. Next: step 1 (tooling).
-- **2026-08-06** — **Retail front end solved.** The game reads DirectInput *relative* mouse
-  motion and tracks its own cursor, so absolute `mousemove` never worked; corner-slam plus a
-  known delta does. Retail now runs unattended from launch to in-game (dialogs, splash, menu,
-  save load) via `packages/mirror/capture-retail.sh`. Also established that retail lacks
-  `SetSkipFrontend`/`TakeScreenshot`/`SetInputLoad`/`SetResolution` entirely — that command
-  list is the dev build's. Remaining: activating the capture quest and the isolation commands
-  *after* the save loads.
-- **2026-08-06** — **Retail capture attempted for real.** Got the original launching,
-  rendering and reaching its main menu under full automation in a nested headless
-  compositor. Solved five environment blockers (steam-run, correct Proton, Steam Linux
-  Runtime, DISPLAY vs WAYLAND_DISPLAY, EULA/warning dialogs) — all recorded in §7.1.
-  Blocked on synthetic input being unreliable against DirectInput; the strong lead is that
-  startup commands belong in `dbugst.ini`, not `dbug.ini`. Prefix was accidentally
-  downgraded and rebuilt during this work (saves intact; EULA + graphics registry values
-  lost and re-accepted). Install restored afterwards.
-- **2026-08-06** — **Step 1.5: comparison landed.** `mirror compare` with SSIM-over-luma
-  structure (gated, non-zero exit) and full-resolution colour (reported), plus an
-  `a | b | heatmap` contact sheet. Exercised on the FOV correction, which it classified
-  correctly as structural (0.896) with a modest colour shift, localising the change to the
-  horizon band. Still to do in 1.5: the persistent Divergence Ledger file, and calibrating
-  the gate against a real reference.
-- **2026-08-06** — **Step 1.4 automated.** Found the game automates itself: `dbugst.ini`
-  documents the startup console command set, including `SetSkipFrontend`,
-  `SetPlayerStartPos` (which dissolves the region-residency problem that would otherwise
-  need a hand-loaded save per region), `SetResolution`, `AutomatedMode` and `TakeScreenshot`.
-  Verified nested headless sway brings up XWayland, and Proton can be launched directly
-  without the Steam client. `mirror capture-prep` now emits a boot ini, an FSE quest and a
-  one-command orchestration script. Four unknowns remain for a first real run (§7.1).
-- **2026-08-06** — **Step 1.4 researched.** Established the full capture mechanism (§7.1):
-  `dbug.ini` as the console-script entry point, `Enable*` for isolation, `PauseTime` +
-  `SetTimeAsStopped` + `SetTimeOfDay` for the clock, FSE
-  `CameraMoveToPosAndLookAtPos(from, to, duration)` for the camera, `grim -w` for the frame.
-  `mirror capture-prep` now generates the prologue, the FSE quest and the checklist.
-  Biggest find: **FOV is data and it is horizontal** (§3.10) — `CAMERA_MODE.FOV`, default 70,
-  with `fovY = 2·atan(tan(HFOV/2)/aspect)` ≈ 43° at 16:9. We had been using 70° as a vertical
-  FOV. Corrected, with the derivation as a unit test; it was never a constant to fit.
-- **2026-08-06** — **Step 1.1–1.3 landed.** `openalbion` split into a library plus a thin
-  viewer binary; shared scene assembly moved to `openalbion::scene`; `Renderer` gained an
-  offscreen target and `render_to_image()`. New `packages/mirror` with a scene manifest
-  (`scenes.toml`, 6 starter scenes), `mirror list` / `capture-prep` / `render`. Headless
-  capture verified end to end against `~/Fable`. Remaining in step 1: reference capture
-  (1.4), compare + ledger (1.5), probe (1.6), register map (1.7).
-- **2026-08-06** — Tooling reassessed after Jamen rejected building `shot`/`probe` into the
-  openalbion CLI. Established that the original engine is controllable here (§3.9): runs under
-  Proton, per-subsystem `Enable*` console commands, FSE Lua camera + frozen clock. Replanned
-  step 1 as `packages/mirror`, a comparison testbed with a scene manifest, structure-gated /
-  colour-reported metric and a Divergence Ledger (§6). RenderDoc ruled out for capturing the
-  original (32-bit PE vs x64 RenderDoc); numeric extraction routed through the existing ASI
-  hook infrastructure as a spike.
-- **2026-08-05** — Renderer review. Identified the LUT column model (§3.1), the landscape
-  layer architecture (§3.4) and the sRGB mismatch (§3.5) as the three root causes behind the
-  sky/terrain fix loop. Decoded the `.bbb` shader bank format (§3.7) and recovered the named
-  shader constant register map (§3.8), cross-verified against the disassembly on six
-  registers. Z-up settled. Document reconstituted; plan in §5 and tooling in §6 pending review.
+- **2026-08-10** — **Levels are populated** (§3.11, step 6). `.tng` things resolve through their
+  def's `Graphic` to a `graphics.big` asset id — 38/38, 192/192 and 57/57 across three levels —
+  so the text `objects.def` bridge was deleted. **Four latent bugs found on the way, three of
+  them in code that predated the work:** the landscape was mirrored in Y; Fable's meshes are
+  clockwise-front, so `FrontFace::Ccw` was drawing their interiors (385,787 triangles vs 1,082,
+  measured); the landscape pass was double-subtracting the camera position; and the model
+  sampler clamped where D3D9 wraps. All three of the old ones were invisible while the landscape
+  was the only thing drawn in world space — **placements are the independent witness that
+  exposed them.**
+- **2026-08-09** — **The landscape is textured** (§3.4, step 5). §3.4's earlier reading was wrong
+  in one decisive way — `CliffU`/`CliffV` are the packed vertex *normal*, not texture
+  coordinates — and correcting it made the subsystem simpler. Recovered the five `.rdata` tables
+  from `ego_r.exe` via `Ego_r.pdb`, which pinned the texture scale at one tile per 8 cells. The
+  bug that had kept the ground white: the `.lev` theme palette's stored def index is stale in
+  retail data and the engine resolves it by *name*.
+- **2026-08-08** — **The renderer became its own crate, and the mirror was abandoned** (§11).
+  Passes take `TerrainData`, `Model` and `TextureImage` instead of reaching into `Files`, `Lev`
+  and the archives, so a pass can no longer invent a data lookup. Verified as a visual no-op —
+  three scenes rendered byte-identically before and after — using `mirror` immediately before
+  deleting it. That check is still the pattern §12.8 uses.
+- **2026-08-06** — Step 1.1–1.4. The lib/bin split, offscreen rendering, and the comparison
+  harness that was later abandoned. Biggest find, and it outlived the harness: **FOV is data and
+  it is horizontal** (§3.10) — `CAMERA_MODE.FOV`, default 70, giving ~43° vertical at 16:9. We
+  had been feeding 70 in as a *vertical* FOV. It was never a constant to fit; it was one to read.
+- **2026-08-05** — Renderer review. Identified the LUT column model (§3.1), the landscape layer
+  architecture (§3.4) and the sRGB mismatch (§3.5) as the three root causes behind a long
+  `fix:`/`diagnostic:`/`debug:` loop. Decoded the `.bbb` bank format (§3.7) and recovered the
+  named shader constant register map (§3.8), cross-verified against the disassembly on six
+  registers. Z-up settled. **§2's ground rules date from here** and are the response to that
+  loop.
 
 ---
 
@@ -2102,10 +1505,10 @@ packages/
   fool/         asset CLI                                 (bin)
 ```
 
-**One game binary.** `openalbion` is the project. World editing, when it happens, is a
-**mode inside it** rather than a second binary — decided 2026-08-08 after briefly trying
-the split, which only bought duplicated `files`/`scene`/`camera` for no gain the engine
-could use. The renderer stayed a crate on its own merits (below); nothing else needed to.
+**One game binary.** `openalbion` is the project. World editing, when it happens, is a **mode
+inside it** rather than a second binary — decided 2026-08-08 after briefly trying the split,
+which only bought duplicated `files`/`scene`/`camera` for no gain the engine could use. The
+renderer stayed a crate on its own merits (below); nothing else needed to.
 
 ### 11.1 The renderer's input boundary — *why this shape*
 
@@ -2118,33 +1521,455 @@ arrives as a plain struct:
 | `TextureImage` + `ImageFormat` | decoded pixels or BCN blocks, ready to upload |
 | `TerrainData` | vertices, indices, one image per theme layer, palette→layer map |
 | `Model` / `ModelPrimitive` / `ModelMaterial` / `AlphaMode` | geometry + materials |
+| `ModelInstance` / `LocalDetailInstance` | placements |
 | uniform setters (`update_sky_uniforms`, …) | the shader constants, by name |
 
-**This is the structural answer to §0.** The fix loop happened because passes were doing
-their own data lookups and getting them wrong — §4's pattern, *"the geometry is roughly
-right and the data lookup is invented."* A pass handed a finished `TerrainData` has nothing
-left to invent, so ground rule 3 ("verify before rendering") is now enforced by the
-compiler rather than by a reviewer noticing.
+**This is the structural answer to §2.** The fix loop happened because passes were doing their
+own data lookups and getting them wrong. A pass handed a finished `TerrainData` has nothing
+left to invent, so ground rule 3 is enforced by the compiler rather than by a reviewer noticing.
 
-It also buys the test layers §6.9 asks for: mesh builders and value lookups are ordinary
-unit tests needing **no GPU and no Fable install**, and the renderer can be exercised
-headlessly (`Renderer::new_headless` + `render_to_image`) against hand-written constants.
+It also buys §6.9's test layers: mesh builders and value lookups are ordinary unit tests
+needing **no GPU and no Fable install**, and the renderer can be exercised headlessly
+(`Renderer::new_headless` + `render_to_image`) against hand-written constants.
 
 **Rule: nothing in `packages/renderer` may depend on `fable-data` or touch the filesystem.**
 If a pass needs a number, it arrives as a parameter. That is the whole invariant.
 
-### 11.2 Why a crate and not a module
+**§13 will test this rule.** `fontdue` rasterizes a glyph from a font file — that is asset
+conversion, the same category as `scene`'s job, so `fontdue` does not belong in `renderer`.
+The text *pass* does. See §13.5.
 
-`renderer` is the one split worth having, and it earns it three times over:
+### 11.2 Why a crate and not a module
 
 - **It is its own compilation unit.** Renderer edits stop rebuilding through `fable-data`,
   which pulls `fable-defs` from git.
-- **It is enforceable.** A module can quietly `use crate::files`; a crate cannot, because
-  the dependency is not in its manifest. §11.1's invariant is checked, not remembered.
-- **It is self-contained.** The wgpu surface, the passes and their inputs are one thing
-  with one boundary, and can be read without the engine around them.
+- **It is enforceable.** A module can quietly `use crate::files`; a crate cannot, because the
+  dependency is not in its manifest. §11.1's invariant is checked, not remembered.
+- **It is self-contained.** The wgpu surface, the passes and their inputs are one thing with
+  one boundary, and can be read without the engine around them.
 
-`openalbion::scene` stays a module of the binary. It is the conversion layer — Fable's
-assets in, renderer inputs out — and per §6.8 it is where provenance logging belongs:
-*"which byte became which constant"* is a conversion question, not a shader one. It has
-exactly one consumer, so it has no reason to be a crate.
+`openalbion::scene` stays a module of the binary. It is the conversion layer — Fable's assets
+in, renderer inputs out — and per §6.8 it is where provenance logging belongs: *"which byte
+became which constant"* is a conversion question, not a shader one. It has exactly one
+consumer, so it has no reason to be a crate.
+
+---
+
+## 12. Bindless rendering — the architecture change
+
+Planned 2026-08-15, not implemented. §2 rules 1 and 3 do not apply (there is no oracle);
+rules 2, 4, 5 and 6 do, and rule 4 here means **pixel-identical**, not *looks right*.
+
+Everything about wgpu below was read out of the vendored crate source —
+`~/.cargo/registry/src/index.crates.io-*/{wgpu-28.0.0,wgpu-types-28.0.0,wgpu-hal-28.0.1,naga-28.0.0}`
+— in the same spirit as rule 1, applied to library capabilities instead of decomp facts. Cited
+by file and line so the next reader can check rather than trust.
+
+### 12.1 Why now, not later
+
+Every pass owns its texture binding independently, and all four do the same thing: build a
+`BindGroupLayout` for "one texture + one sampler (+ a uniform)", then create a fresh
+`BindGroup` per texture drawn. `ModelPass::build_materials` makes one per material
+(`model.rs:524`); `TerrainPass` one per `(ground texture, blend table)` layer pass
+(`terrain.rs:484`); `LocalDetailPass` one per repeated-mesh batch (`local_detail.rs:326`);
+`OuterSkyPass` one for its two blended textures (`sky.rs:418`). None of this is wrong — it is
+the ordinary wgpu pattern — but it does not scale to what is coming.
+
+Font rendering (§13) wants one bindless-registered texture per rasterized glyph, with no atlas.
+A fifth copy of the per-pass-bind-group pattern would multiply it by however many glyphs are on
+screen, rebuilding bind groups as new characters appear. Build the bindless path once,
+generally, and have all four existing passes *and* the future text pass draw through it.
+
+**There is a second, independent motivation, and it is measurable: there is no texture cache.**
+`Material::base_texture_id` is a global asset id (§3.11), but `scene::build_model` calls
+`decode_texture` on every material of every mesh with no memory of having seen an id before,
+and `ModelPass::build_materials` uploads whatever it is handed. Measured across the shipped
+data (method in §12.3):
+
+| Level | Meshes | Material texture refs | Distinct textures | Redundancy |
+|---|---|---|---|---|
+| Witchwood | 35 | 93 | 24 | **3.9×** |
+| Darkwood | 43 | 100 | 29 | **3.4×** |
+| LookoutPoint | 68 | 178 | 70 | **2.5×** |
+| Arena | 4 | 16 | 13 | 1.2× |
+
+So between a half and three quarters of every level's texture decode-and-upload work is
+repeated. A registry keyed by asset id makes the second and later reference a cache hit for
+free (§12.6). **`read_mesh_by_id` has the same problem one layer up** and no cache either:
+`load_things` and `load_repeated_meshes` each call it, so a mesh used by both is read from
+`graphics.big` and decoded twice.
+
+### 12.2 What wgpu 28 actually offers
+
+| Feature | Source | What it does | Platforms |
+|---|---|---|---|
+| `TEXTURE_BINDING_ARRAY` | `features.rs:715` (`1<<8`) | `binding_array<texture_2d<f32>, N>` in WGSL, indexed by a **dynamically uniform** value | DX12, Metal (MSL 2.0+, macOS 10.13+), Vulkan |
+| `SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING` | `features.rs:774` (`1<<11`) | indexing by a value that varies **per fragment** within one draw | DX12, Metal 2.0+, Vulkan 1.2+ (or `VK_EXT_descriptor_indexing`) |
+| `IMMEDIATES` | `features.rs:1537` | small per-draw data, `RenderPass::set_immediates(offset, data)` (`render_pass.rs:518`), declared `var<immediate>` in WGSL — wgpu's current name for push constants | DX12, Vulkan, Metal native; OpenGL emulated |
+| `PARTIALLY_BOUND_BINDING_ARRAY` | `features.rs:793` (`1<<13`) | a bind group may supply fewer entries than the layout's `count` | Vulkan, DX12 — **not Metal**. *Not needed*: §12.4 always fills every slot |
+| `BUFFER_BINDING_ARRAY`, `STORAGE_RESOURCE_BINDING_ARRAY` | `features.rs:736`, `:749` | arrays of buffers / storage resources | Not needed — the renderer only samples |
+
+Six structural facts, each of which shapes the design:
+
+1. **Binding arrays are *sized*, not unbounded.** `BindGroupLayoutEntry::count:
+   Option<NonZeroU32>` is fixed at layout-creation time. The design needs a chosen capacity
+   (§12.3), and outgrowing it means rebuilding the layout, which cascades into every pipeline.
+2. **A `BindGroup` is immutable.** Nothing lets an existing slot point at a different texture.
+   Registering a new texture rebuilds the *whole* bindless `BindGroup` — cheap (`N` view
+   handles via `BindingResource::TextureViewArray`, `bind_group.rs:71`, not `N` copies of data)
+   but not free, and not something to do per-texture in a loop (§13.3).
+3. **⚠ The binding-array limits default to zero and must be raised.**
+   `max_binding_array_elements_per_shader_stage` and
+   `max_binding_array_sampler_elements_per_shader_stage` are **0** in `Limits::default()`,
+   `Limits::downlevel_defaults()` and `downlevel_webgl2_defaults()` alike
+   (`limits.rs:378-379`, and the doc-comment tables at `:320`, `:440`, `:517`). Their doc says:
+   *"This 'defaults' to 0. However if binding arrays are supported, all devices can support
+   500,000"* (1,000 for samplers). `DeviceDescriptor` derives `Default` (`device.rs:10`), and
+   `required_limits`' own doc is explicit: *"Exactly the specified limits, and no better or
+   worse, will be allowed in validation of API calls on the resulting device"* — validation uses
+   what you **asked for**, never what the adapter can do. The renderer passes
+   `..Default::default()` today (`lib.rs:186`, `:259`), so **the bind group layout would fail
+   validation even though the feature was granted.** This is the single mistake most likely to
+   stall day one. The right shape is to start from `adapter.limits()` and lower it to what is
+   wanted, not to start from `Limits::default()` and raise it blind.
+4. **`max_immediate_size` also defaults to 0** (`limits.rs:397`) and needs both the `IMMEDIATES`
+   feature and a raised limit, or `set_immediates` panics. Expect 128–256 bytes on Vulkan, 256
+   on DX12, 4096 on Metal (`limits.rs:222-230`) — this machine's RADV reports
+   `maxPushConstantsSize = 256`. §12.5's struct is 16 bytes.
+5. **A WGSL module may contain at most one `var<immediate>` global** (naga `ir/mod.rs:359-365`;
+   the keyword is `immediate`, `front/wgsl/parse/conv.rs:21` — *not* `push_constant`). So each
+   shader gets exactly one per-draw struct, not several composed.
+6. **Every entry in one binding array must match the layout's declared sample type and view
+   dimension.** Today every renderer texture is `Float { filterable: true }`, D2,
+   non-multisampled — Bc1/Bc2/Bc3, Rgba8Unorm and R8Unorm all qualify (`image.rs:30-40`), and
+   the glyph bitmaps of §13 are R8Unorm too. **This is an invariant to write down**: the first
+   texture that is not (a depth buffer, a storage texture, a cube map) needs its own binding,
+   not the shared array. Differing mip counts and differing dimensions between entries are fine.
+
+**This machine supports all of it.** AMD Radeon RX 580 (Polaris 10), RADV, Mesa 26.2, Vulkan
+1.4: `shaderSampledImageArrayNonUniformIndexing = true`, `runtimeDescriptorArray = true`,
+`descriptorBindingPartiallyBound = true`, `maxPerStageDescriptorUpdateAfterBindSampledImages =
+1,015,808`, `maxPushConstantsSize = 256`. So capacity is not hardware-bound here; it is bounded
+by memory and by the least capable target we care about.
+
+**Decision — request non-uniform indexing from day one.** Nothing in §12.8's migration needs
+it: every existing pass draws one material/layer/batch per draw, so its texture index is
+constant for the whole draw — *dynamically uniform*, covered by `TEXTURE_BINDING_ARRAY` alone.
+Only §13's glyph batching needs it. But it is supported on exactly the same platforms, so
+asking now costs nothing and avoids a second feature/limits migration later.
+
+**Decision — bindless is a hard requirement, not a fallback path.** If the adapter lacks
+`TEXTURE_BINDING_ARRAY`, `request_device` fails with a clear message and the game does not
+start. Maintaining two texture-binding paths would reintroduce exactly the duplication §12.1
+exists to remove, and the renderer *already* hard-requires `TEXTURE_COMPRESSION_BC`
+(`lib.rs:185`), so this is the same kind of requirement, not a new kind. What it costs: GL and
+WebGPU, neither of which this project targets. **State this in the error message**, so a user
+on unsupported hardware gets a reason rather than a panic.
+
+### 12.3 How big — `MAX_BINDLESS_TEXTURES`, measured
+
+Measured against the shipped data on 2026-08-15, not chosen. Method: for each level, take every
+mesh asset id its `.tng` things resolve to (§3.11) plus every mesh its local-detail generators
+place (§3.13), decode each distinct mesh, and count distinct non-zero `Material::base_texture_id`
+plus the palette themes' `BaseTexture`/`CliffBaseTexture`.
+
+| Scope | Distinct meshes | Distinct mesh textures | Ground textures |
+|---|---|---|---|
+| Arena | 4 | 13 | 11 |
+| Witchwood | 35 | 24 | 14 |
+| Darkwood | 43 | 29 | 23 |
+| LookoutPoint | 68 | 70 | 20 |
+| Largest `.wld` region (`ExecutionTree`) | 359 | — | 50 |
+| **Whole world**, all 402 `.lev` files | **1,331** | — | **132** |
+
+So a single level's resident set is **≈ 100 textures** (70 mesh + 20 ground + 5 blend tables +
+2 sky, at the LookoutPoint peak). A whole region is a few hundred. The **entire game world** is
+1,331 distinct meshes, whose textures — at LookoutPoint's roughly 1:1 mesh-to-texture ratio —
+will not exceed a few thousand.
+
+> **Recommendation: `MAX_BINDLESS_TEXTURES = 4096`.**
+> It covers the whole world with headroom, so the regrowth problem in fact 1 never has to be
+> solved. It costs one `TextureView` handle per slot in a `Vec` and one descriptor per slot in
+> the bind group — on the order of 128 KB of descriptors, against a hardware ceiling of
+> 1,015,808 here and 1,000,000 on Metal argument-buffers Tier 2 (`wgpu-hal` `metal/adapter.rs:737`).
+> The only real risk of a large capacity is Metal **Tier 1**, where the same file reports 128 or
+> even 31 elements — so if macOS ever matters, probe `adapter.limits()` and clamp, rather than
+> hardcoding blind.
+
+**Pin these counts as a test with the implementation.** They are a pure function of the shipped
+data, exactly like §5 step 8's placement counts, so they belong in the suite rather than in this
+paragraph.
+
+### 12.4 Architecture — `BindlessTextures`
+
+A new `renderer/src/bindless.rs`, owning:
+
+- `slots: Vec<TextureView>`, length `MAX_BINDLESS_TEXTURES`, **pre-filled at construction with
+  the fallback 1×1 white view** already built by `model.rs`'s `create_white_view`. Every slot is
+  always valid, so the array is always fully bound — which is precisely why
+  `PARTIALLY_BOUND_BINDING_ARRAY` (unsupported on Metal) is never needed.
+- `index_of: HashMap<TextureKey, BindlessIndex>` plus a next-free counter. `TextureKey` is the
+  global asset id for game textures (§3.11), a `(direction)` for the five blend tables, or a
+  glyph key `(FontId, char, px_size)` for §13.
+- `register(key, view) -> BindlessIndex` — returns the existing index on a repeat key (this
+  *is* the dedup); otherwise takes the next free slot and marks the registry dirty. **Touches no
+  GPU state.** Returns an error rather than panicking when full, so exhaustion is a diagnosable
+  condition and not a crash.
+- `rebuild_if_dirty(&Device) -> &BindGroup` — recreates the one bind group from `slots` via
+  `TextureViewArray` only when dirty. Called at controlled sync points, **never** per
+  `register`.
+- **Two named samplers, plain bindings — deliberately *not* a sampler array.** A
+  `binding_array<sampler, N>` with a per-draw `sampler_index` is the symmetric-looking answer
+  and is unnecessary: sampler choice is *per pass and statically known in each shader*. Model and local detail use
+  `repeat_sampler` alone; terrain uses `ground_sampler` (repeat/aniso) and `blend_sampler`
+  (clamp, no mip — for the reason in §5 step 7); sky uses `linear_clamp_sampler`. Two ordinary
+  sampler bindings alongside the texture array covers every case. This removes the
+  `max_binding_array_sampler_elements_per_shader_stage` limit from the requirement list, removes
+  `sampler_index` from the per-draw data, and sidesteps Metal's much lower sampler-array limits.
+
+**Bind group index convention, fixed before §12.8 step 1**: **group 0 = the pass's own frame
+uniforms; group 1 = the shared bindless group.** That is exactly where each pass's per-draw
+group already sits (`model.rs:653`, `terrain.rs:620`, `local_detail.rs:456`, `sky.rs:484`), so a
+migrated pass swaps a per-draw bind group for the shared one *at the same index* and no other
+pass's pipeline layout changes. Set group 1 once per render pass, not per draw.
+
+**Registry lifetime — decide this before §12.8 step 1, because it decides `BindlessIndex`'s
+type.**
+`Renderer::clear_models()` exists and runs on every scene load (`main.rs:462`); today it drops
+the meshes and their textures with them. Once the registry owns the views, `clear_models` would
+leak every slot and every texture unless it also clears the registry — at which point every
+`BindlessIndex` previously handed out is stale. Two workable answers:
+
+- **Level-scoped registry (recommended).** `clear_models` clears the registry too. Indices are
+  valid only between one clear and the next, which is already true of every `GpuModel` that
+  holds them. Document the invariant; the type stays a bare `u32`.
+- **Generation-tagged indices.** `BindlessIndex { generation: u32, slot: u32 }`, validated on
+  use. Safer, more machinery. Only worth it if indices ever outlive a scene load.
+
+Either way, **say which**, and make `clear_models` do it — silently leaking the whole world's
+textures across scene loads is the failure mode this section exists to prevent.
+
+### 12.5 Per-draw data — and what the per-material bind group *actually* carries
+
+The per-material bind group is **not** just a texture and a sampler. `ModelMaterialBindGroupLayout`
+has three entries (`model.rs:215-242`), the third being a `MaterialUniforms { alpha_test: u32,
+alpha_cutoff: f32 }` in its own 16-byte uniform buffer, **created per material**
+(`model.rs:518`). `LocalDetailPass`'s per-batch group carries `alpha_cutoff` the same way
+(`local_detail.rs:320`). Any plan that replaces only the texture leaves the layout standing and
+"retire the scaffolding" cannot happen.
+
+So the per-draw immediate carries all of it — one struct per shader (fact 5):
+
+```wgsl
+struct DrawConstants {
+    texture_index: u32,   // slot in the bindless array
+    alpha_test:    u32,   // non-zero enables the cutout discard
+    alpha_cutoff:  f32,
+    _pad:          u32,
+}
+var<immediate> draw: DrawConstants;
+```
+
+16 bytes, comfortably inside every backend's limit (fact 4). Terrain's variant carries
+`ground_index` and `blend_index` instead of one index (§3.4 binds a *pair* per layer pass).
+`RenderPass::set_immediates(0, bytemuck::bytes_of(&draw))` replaces each
+`set_bind_group(1, &material.bind_group, &[])`, and every `PipelineLayoutDescriptor`'s
+`immediate_size` goes from `0` (`model.rs:266`, `local_detail.rs:209`) to
+`size_of::<DrawConstants>()`.
+
+**Consequences worth stating:** one 16-byte uniform buffer *per material* disappears entirely,
+and `MaterialUniforms` with it — for LookoutPoint that is 178 buffer allocations (§12.1) down
+to zero.
+
+**Documented fallback if `IMMEDIATES` is ever unavailable:** a uniform buffer with
+`has_dynamic_offset: true`, one entry per draw, set via `set_bind_group`'s offset argument. A
+value read from a uniform buffer is still dynamically uniform, so the binding array is happy,
+and no feature is needed. Slower and more bookkeeping; recorded here so it is a known option
+rather than a mid-migration discovery.
+
+### 12.6 The dedup — where it goes, and what it is worth
+
+Two independent caches, and the *upper* one is the bigger win:
+
+1. **GPU-side, free:** `BindlessTextures::register` keyed by asset id turns a repeated
+   `base_texture_id` into a cache hit. Saves the upload.
+2. **Scene-side, the real win:** a `scene::TextureCache` from asset id → `BindlessIndex` (or to
+   an already-decoded `TextureImage`) lets `build_model` skip the **archive read and the BC
+   slice** entirely on a repeat, not just the re-upload. §12.1's table is the measurement: 2.5–3.9×
+   redundant work today.
+3. **Meshes too, and it needs no bindless at all:** `Files::read_mesh_by_id` re-reads and
+   re-decodes on every call, and both `load_things` and `load_repeated_meshes` call it. A
+   `HashMap<u32, Rc<Mesh>>` beside it is a small, independent change that can land before §12
+   or after.
+
+Note that the two caches are *not* redundant: (1) dedups within one renderer, (2) dedups the
+CPU work before the renderer is ever called. Do (2).
+
+### 12.7 Unify `FrameUniforms` — do this first, it is a five-minute change
+
+Independent of bindless but touching the same three files. `FrameUniforms` — `ambient` = `c3`,
+`light_dir`/`diffuse` = `c19`/`c20`, `backlight` = `c35` (§3.8) — is defined **identically** in
+`model.rs:146`, `terrain.rs` and `local_detail.rs`, each with its own copy of the same neutral
+placeholder constructor (§9).
+
+§5 step 2 says the environment layer "lights meshes and terrain in one change". That is only
+true if there is one place to make it. Unify into `renderer::lighting::LightingUniforms`, used
+by all three passes' frame bind groups. **Land it before either §12.8 or step 2** — it is the
+cheapest item in this document and it makes both of them smaller.
+
+### 12.8 Migration order — one pass per commit
+
+1. **Land `BindlessTextures`, the features and the limits — unused.** No behavioural change: a
+   pass that registers nothing only exercises the fallback fill.
+   *Verify three things, not one:*
+   (a) `--screenshot` on a fixed scene (fixed level, camera, time of day) is **byte-identical**
+   to a capture taken before the change — the same check that verified the 2026-08-08 crate
+   split as a visual no-op;
+   (b) the device actually **granted** every requested feature and limit (assert, don't assume —
+   `request_device` succeeding with `Limits::default()` is exactly the fact-3 trap);
+   (c) `rebuild_if_dirty` produces a bind group of the declared length. Without (b) and (c),
+   "unused" and "silently broken" look the same.
+2. **Model pass.** The worst bind-group churn and the clearest key (§3.11). Replace
+   `ModelMaterialBindGroupLayout` and the per-material `BindGroup` with `DrawConstants` per
+   sub-mesh draw. Dedup (§12.6) lands here first. *Verify:* byte-identical screenshot again, plus
+   a logged registered-texture count matching §12.3's measured number for that level.
+3. **Local detail.** Same shape — it already shares `Model`/`ModelMaterial` — so the same change
+   applies, with `alpha_cutoff` coming from the batch rather than the constant.
+4. **Terrain.** Different shape: two indices per draw (§3.4), and the blend tables register once
+   at startup rather than per level. The `blend_sampler` stays a named binding (§12.4).
+5. **Sky.** Two textures a frame, the smallest surface; last because it has the least to gain.
+6. **Retire what is now dead:** `ModelMaterialBindGroupLayout`, `MaterialUniforms`,
+   `TerrainBindGroupLayouts.draw`, local detail's inline material layout,
+   `SkyTextureBindGroupLayout`. Each pass keeps only its frame uniform group plus the shared
+   bindless group. **If any of these are still referenced, step 2–5 left something behind** —
+   that is the check, not a cleanup chore.
+
+### 12.9 Deferred
+
+- **Merging draws.** Bindless makes it *possible* to draw many materials in one call; §12.8 does
+  not do it, and none of the verification above depends on it. Draw-call count will fall anyway
+  (one `set_immediates` beats one `set_bind_group`), but **do not claim a speedup without
+  measuring** (§6.6).
+- **Exercising non-uniform indexing.** Requested from day one, unexercised until §13. Being
+  *granted* the feature does not prove the shader path works: give it its own small test — two
+  quads in one instanced draw, each indexing a different slot — before font rendering leans on it.
+- **Growing past the chosen capacity at runtime.** §12.3 picks a number that makes this
+  unnecessary. If it ever is necessary, it means rebuilding the layout and every pipeline.
+- **Bindless buffers or storage textures.** Nothing needs either.
+- **Cross-frame slot eviction.** §12.3's measurement says a level, a region, and plausibly the
+  whole world fit. Revisit only if the resident set becomes genuinely unbounded.
+
+### 12.10 Worth doing alongside, cheaply
+
+Small, independent, and each makes the migration or the next subsystem smaller:
+
+- **Fix the devshell link failure first** (§0). Nothing in §12.8 can be verified until
+  `cargo build` works.
+- **§12.7's `FrameUniforms` unification.** Do it second.
+- **The mesh cache** (§12.6 item 3). Independent of everything.
+- **Step 6.9 — drop index-degenerate triangles at decode.** 474,048 of 998,466 measured
+  triangles are strip stitches that rasterise nothing. Halving every index buffer is free, safe,
+  and touches `fable-data::mesh` only.
+- **Two broken provenance citations, both one line to fix.** `fable-data/tests/lexer_corpus.rs:1`
+  cites a `§11.4` that does not exist. `fable-data/src/landscape/mod.rs:81,97,102` cites
+  `tools/landscape-statics.md`, which was never committed and is gone (§3.4) — the RVAs in
+  those same comments are what actually carries the provenance now, and the comments should say
+  so rather than point at a missing file.
+- **`Renderer::new` and `new_headless` duplicate their whole device-creation block**
+  (`lib.rs:168-287`). §12 edits both identically; fold the shared part into one function while
+  editing it, or edit it twice forever.
+
+### 12.11 Open questions — resolve at the §7 derivation review, before code
+
+1. **Registry lifetime** — level-scoped clear, or generation-tagged indices? (§12.4) *Recommend
+   level-scoped.*
+2. **Capacity** — 4096, or a smaller number plus an `adapter.limits()` clamp for Metal Tier 1?
+   (§12.3) *Recommend 4096 with the clamp, since the clamp is three lines.*
+3. **Does the sky pass migrate at all?** It has two textures and one sampler and gains almost
+   nothing. Migrating it buys uniformity — one texture path in the renderer, no exceptions —
+   which is worth something on its own. *Recommend yes, last, for that reason alone.*
+
+---
+
+## 13. Font rendering & the dev console — decisions recorded, work deferred
+
+Not started, and deliberately behind §12. This section exists so the decisions already made are
+not re-litigated when the work starts.
+
+### 13.1 Parsing and rasterization: `fontdue`
+
+Decided 2026-08-15 (Jamen). Pulls a TTF/OTF and rasterizes individual glyphs to 8-bit alpha
+coverage bitmaps at a requested pixel size, on demand. No shaping engine — no ligatures, no
+complex-script layout — which is fine for a dev console and Latin UI text; revisit only if a
+real HUD or dialogue system needs it.
+
+The bitmaps are R8, which is already an `ImageFormat` the renderer accepts (`image.rs:23`) and
+already satisfies §12.2 fact 6's sample-type invariant. No new upload path is needed.
+
+### 13.2 No texture atlas — bindless per-glyph textures
+
+Decided 2026-08-15 (Jamen), explicitly rejecting the conventional answer. An atlas — pack every
+glyph into one shared texture, address by UV rect — is the standard approach and deliberately not
+this project's: it reintroduces exactly the packing/repacking/overflow bookkeeping that bindless
+removes, and by the time this starts §12's registry already exists to use instead. Each glyph
+bitmap (well under 64×64) becomes its own texture in the same `BindlessTextures` array game
+meshes and terrain use, keyed by `(FontId, char, px_size)`.
+
+**The cost, quantified so it is a choice and not an oversight:** one `wgpu::Texture` and one
+`TextureView` per glyph. A dev console's printable ASCII at one size is ~95 textures — against
+§12.3's measured level peak of ~100 and a capacity of 4096, that is noise. It stops being noise
+if a UI ever wants many sizes or a CJK range; at that point the atlas question is worth
+reopening, and reopening it is not a reversal of this decision but a change in what the decision
+was about.
+
+### 13.3 Rasterize on demand, cache, rebuild in batches
+
+Follows directly from §12.2 fact 2: every new registration dirties the whole array, so
+rasterizing and registering one glyph at a time as text streams in would rebuild the bind group
+once per character. Instead: collect every newly-needed glyph for the frame, rasterize and
+register all of them, then call `rebuild_if_dirty` **once**. A `HashMap<(FontId, char, px_size),
+BindlessIndex>` means steady-state typing after the first frame touches nothing.
+
+### 13.4 Where non-uniform indexing actually gets used
+
+A run of text wants **one instanced draw of many glyph quads, each instance answering a
+different bindless index** — so adjacent fragments from neighbouring quads hit different array
+slots within one draw. A per-instance vertex attribute is not dynamically uniform, so this is the
+concrete, load-bearing use for
+`SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING` (§12.2).
+
+**But note what it buys: batching, not correctness.** One draw per glyph with a `DrawConstants`
+immediate (§12.5) needs no non-uniform indexing at all and would work on day one. For a console
+of a few hundred glyphs that is very likely fast enough. **Start there**, and move to the batched
+instanced draw when there is a reason — the feature is already requested either way, so nothing
+is blocked by choosing the simple path first.
+
+### 13.5 The dev console: rudimentary and basic, on purpose
+
+Scope, as stated by Jamen: a basic development console, not a reproduction of Fable's own
+(`NGlobalConsole`) and not a general-purpose UI framework. **In scope:** a toggleable overlay, a
+text input line, scrollback of recent output, and a way to wire in commands — the natural first
+ones being `Enable*`-style subsystem toggles, in the spirit of (not copying) the original's own
+console vocabulary and §6.8's logging targets. **Out of scope unless it becomes needed:** history
+search, autocomplete, rich text/colour spans, resizing, theming.
+
+A `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}`-shaped toggle set is more than a
+convenience: it is the subsystem isolation that made comparing against the original possible at
+all (§3.9), and it is genuinely useful for this renderer's own debugging.
+
+### 13.6 Open — resolve when the work starts
+
+- **Where the module lives.** The text *pass* belongs in `renderer`, which by then owns bindless
+  textures and pipelines. `fontdue` must **not** become a `renderer` dependency — rasterization
+  is asset conversion, the same category as `scene`'s job, and §11.1's rule is the whole reason
+  that boundary holds. So font and console state belong beside `scene`, or in a new
+  `openalbion::console` module playing the same "real input in, plain renderer input out" role.
+  The renderer receives `TextureImage`s and glyph quads, exactly as it receives `Model`s today.
+- **Text geometry.** One quad per glyph, instanced, each instance carrying a bindless index —
+  either `ModelInstance`'s pattern extended or a parallel `GlyphInstance`. Decide once §12.8's
+  model-pass migration has a working answer to copy.
+- **Screen-space projection and DPI handling.** Not investigated. The console draws after the
+  resolve pass, into the presentable texture, so it is the one pass that is *not* multisampled —
+  which is what you want for text anyway.
+- **Shader transcription convention (§6.7).** `text.wgsl` will be the first WGSL in the project
+  with no original to transcribe. Its header should say so explicitly.
