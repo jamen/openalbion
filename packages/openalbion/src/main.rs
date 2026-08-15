@@ -10,13 +10,13 @@ mod scene;
 
 use crate::camera::Camera;
 use crate::files::{Files, NewFilesError};
-use renderer::{NewRendererError, Renderer};
 use argh::FromArgs;
 use derive_more::{Display, Error};
+use renderer::{NewRendererError, Renderer};
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap, HashSet},
-    path::Path,
+    path::PathBuf,
     sync::Arc,
     time::Instant,
 };
@@ -40,11 +40,11 @@ struct Cli {
     #[argh(option)]
     log: Option<String>,
 
-    /// fable's directory
+    /// fable's directory (default: the current working directory)
     #[argh(option)]
     fable_directory: Option<String>,
 
-    /// level to load from FinalAlbion.wad (default: Witchwood)
+    /// level to load from FinalAlbion.wad (default: LookoutPoint)
     #[argh(option)]
     level: Option<String>,
 
@@ -63,31 +63,15 @@ struct Cli {
     /// camera target for --screenshot, as `x,y,z` (default: the terrain centre)
     #[argh(option)]
     look_at: Option<String>,
-
-    /// start with the camera flying the level's best scripted camera spline instead of
-    /// manual fly control (toggle with F)
-    #[argh(switch)]
-    flythrough: bool,
-
-    /// use the Nth-ranked camera spline candidate instead of the richest one found (see the
-    /// "Camera path candidate" log lines for what's available)
-    #[argh(option)]
-    flythrough_spline: Option<usize>,
-
-    /// render the level's flythrough to a PPM frame sequence in this directory and exit,
-    /// instead of opening a window
-    #[argh(option)]
-    flythrough_export: Option<String>,
-
-    /// frames per second for --flythrough-export (default: 30)
-    #[argh(option)]
-    flythrough_fps: Option<u32>,
 }
 
 /// `x,y,z` → a point. Returns `None` for anything else, so a typo falls back to the default
 /// framing rather than putting the camera somewhere silently wrong.
 fn parse_point(text: &str) -> Option<glam::Vec3> {
-    let parts: Vec<f32> = text.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+    let parts: Vec<f32> = text
+        .split(',')
+        .filter_map(|p| p.trim().parse().ok())
+        .collect();
     match parts[..] {
         [x, y, z] => Some(glam::Vec3::new(x, y, z)),
         _ => None,
@@ -122,27 +106,18 @@ enum TryMainError {
     LoadScene(TryResumedError),
     Capture(renderer::CaptureError),
     WriteScreenshot(std::io::Error),
-    /// `--flythrough-export` on a level with no scripted camera spline rich enough to fly.
-    NoFlythroughPath,
-    CreateExportDir(std::io::Error),
 }
 
 fn try_main(cli: Cli) -> Result<(), TryMainError> {
     use TryMainError as E;
 
     let screenshot = cli.screenshot.clone();
-    let flythrough_export = cli.flythrough_export.clone();
-    let flythrough_fps = cli.flythrough_fps.unwrap_or(30).max(1);
     let camera = cli.camera.as_deref().and_then(parse_point);
     let look_at = cli.look_at.as_deref().and_then(parse_point);
     let mut app = App::new(cli).map_err(E::NewApp)?;
 
     if let Some(path) = screenshot {
         return capture(&mut app, &path, camera, look_at);
-    }
-
-    if let Some(dir) = flythrough_export {
-        return export_flythrough(&mut app, &dir, flythrough_fps);
     }
 
     let event_loop = EventLoop::new().map_err(E::NewEventLoop)?;
@@ -167,8 +142,7 @@ fn capture(
 
     const SIZE: [u32; 2] = [1280, 720];
 
-    let mut renderer =
-        pollster::block_on(Renderer::new_headless(SIZE)).map_err(E::NewRenderer)?;
+    let mut renderer = pollster::block_on(Renderer::new_headless(SIZE)).map_err(E::NewRenderer)?;
 
     app.load_scene(&mut renderer).map_err(E::LoadScene)?;
     app.camera.set_aspect(SIZE[0], SIZE[1]);
@@ -218,67 +192,6 @@ fn capture(
     Ok(())
 }
 
-/// Render the level's flythrough to a PPM frame sequence, one file per frame, and print the
-/// `ffmpeg` command to mux it. Same headless setup as [`capture`]; the difference is a loop
-/// over sampled camera poses instead of one explicit one.
-fn export_flythrough(app: &mut App, dir: &str, fps: u32) -> Result<(), TryMainError> {
-    use TryMainError as E;
-
-    const SIZE: [u32; 2] = [1280, 720];
-
-    let mut renderer =
-        pollster::block_on(Renderer::new_headless(SIZE)).map_err(E::NewRenderer)?;
-
-    app.load_scene(&mut renderer).map_err(E::LoadScene)?;
-    app.camera.set_aspect(SIZE[0], SIZE[1]);
-
-    let path = app.flythrough_path.clone().ok_or(E::NoFlythroughPath)?;
-    std::fs::create_dir_all(dir).map_err(E::CreateExportDir)?;
-
-    app.renderer = Some(renderer);
-
-    let frame_count = (path.total_duration * fps as f32).ceil() as u32;
-    tracing::info!(
-        "Exporting {frame_count} frames ({:.1}s at {fps}fps) to {dir}",
-        path.total_duration,
-    );
-
-    for frame in 0..frame_count {
-        let t = frame as f32 / fps as f32;
-        let (position, look_dir, _fov_h, _roll_angle) = path.sample(t);
-        app.camera.position = position;
-        app.camera.look_at(position + look_dir);
-
-        let sky_blend = app.refresh_sky();
-
-        let camera_relative_view_proj = app
-            .camera
-            .camera_relative_view_projection_matrix()
-            .to_cols_array_2d();
-        let view_proj = app.camera.view_projection_matrix().to_cols_array_2d();
-
-        let renderer = app.renderer.as_mut().expect("just set");
-        renderer.update_sky_uniforms(camera_relative_view_proj, [0.0; 4], [0.0; 4], sky_blend);
-        renderer.update_terrain_uniforms(camera_relative_view_proj, app.camera.position);
-        renderer.update_model_uniforms(view_proj);
-        renderer.set_model_camera_pos(app.camera.position);
-
-        let image = renderer.render_to_image().map_err(E::Capture)?;
-
-        let mut ppm = format!("P6\n{} {}\n255\n", image.width, image.height).into_bytes();
-        ppm.extend(image.rgba.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]));
-        let frame_path = format!("{dir}/frame_{frame:05}.ppm");
-        std::fs::write(&frame_path, ppm).map_err(E::WriteScreenshot)?;
-    }
-
-    tracing::info!(
-        "Wrote {frame_count} frames to {dir}. Mux with:\n  \
-         ffmpeg -framerate {fps} -i {dir}/frame_%05d.ppm -pix_fmt yuv420p {dir}/flythrough.mp4",
-    );
-
-    Ok(())
-}
-
 struct App {
     files: Files,
     renderer: Option<Renderer<'static>>,
@@ -304,21 +217,11 @@ struct App {
     cursor_lock_desired: bool,
     /// Frame counter to detect first load.
     first_frame: bool,
-    /// The richest scripted camera spline found in the loaded region, if any
-    /// (`scene::find_camera_paths`). `None` when the level has no spline with enough key
-    /// cameras to be a flythrough rather than a two-key establishing cut.
-    flythrough_path: Option<scene::CameraPath>,
-    /// Which ranked candidate to use — `--flythrough-spline N`, default the richest (0).
-    flythrough_spline_index: usize,
-    /// Whether the camera is currently being driven by `flythrough_path` instead of WASD.
-    flythrough_active: bool,
-    /// Playback clock into `flythrough_path`, seconds, looped modulo its `total_duration`.
-    flythrough_time: f32,
 }
 
 #[derive(Debug, Display)]
 enum NewAppError {
-    NoFableDirectory,
+    CurrentDir(std::io::Error),
     Files(NewFilesError),
 }
 
@@ -326,11 +229,14 @@ impl App {
     fn new(cli: Cli) -> Result<Self, NewAppError> {
         use NewAppError as E;
 
-        let fable_directory = cli.fable_directory.as_ref().ok_or(E::NoFableDirectory)?;
+        let fable_directory = match cli.fable_directory.as_ref() {
+            Some(fable_directory) => PathBuf::from(fable_directory),
+            None => std::env::current_dir().map_err(E::CurrentDir)?,
+        };
 
-        tracing::info!("{}", fable_directory);
+        tracing::info!("{}", fable_directory.display());
 
-        let files = Files::new(Path::new(fable_directory)).map_err(E::Files)?;
+        let files = Files::new(&fable_directory).map_err(E::Files)?;
 
         Ok(Self {
             files,
@@ -339,7 +245,10 @@ impl App {
             camera: Camera::new(),
             last_frame_time: None,
             time_of_day: 18.0,
-            level_name: cli.level.clone().unwrap_or_else(|| "Witchwood".to_string()),
+            level_name: cli
+                .level
+                .clone()
+                .unwrap_or_else(|| "LookoutPoint".to_string()),
             mesh_name: cli.mesh.clone(),
             terrain_center: glam::Vec3::ZERO,
             terrain_radius: 1.0,
@@ -348,10 +257,6 @@ impl App {
             cursor_locked: false,
             cursor_lock_desired: true,
             first_frame: true,
-            flythrough_path: None,
-            flythrough_spline_index: cli.flythrough_spline.unwrap_or(0),
-            flythrough_active: cli.flythrough,
-            flythrough_time: 0.0,
         })
     }
 }
@@ -563,7 +468,6 @@ impl App {
 
         let mut all_things = Vec::new();
         let mut all_local_detail = Vec::new();
-        let mut all_camera_paths = Vec::new();
 
         for (map, lev) in maps {
             if !map.populated {
@@ -572,7 +476,6 @@ impl App {
 
             match self.files.load_tng(&map.level_name) {
                 Ok(tng) => {
-                    all_camera_paths.extend(scene::find_camera_paths(&tng));
                     all_things.push(scene::resolve_things(
                         &tng,
                         &self.files.thing_graphics,
@@ -586,24 +489,6 @@ impl App {
 
             all_local_detail.push(scene::build_local_detail(&self.files, lev, map.origin));
         }
-
-        all_camera_paths.sort_by(scene::rank_camera_paths);
-        for (i, path) in all_camera_paths.iter().enumerate() {
-            tracing::info!(
-                "Camera path candidate {i}: {} keys, {:.1}s, path length {:.1}",
-                path.keys.len(),
-                path.total_duration,
-                path.path_length(),
-            );
-        }
-        self.flythrough_path = all_camera_paths.into_iter().nth(self.flythrough_spline_index);
-        if self.flythrough_path.is_none() {
-            tracing::warn!(
-                "No usable camera spline (index {}) for a flythrough in this region",
-                self.flythrough_spline_index,
-            );
-        }
-        self.flythrough_time = 0.0;
 
         let things = scene::merge_things(all_things);
         let resolved_placements = things.placement_count();
@@ -668,7 +553,10 @@ impl App {
             let (mesh, textures) = match self.files.read_mesh_by_id(mesh_id) {
                 Ok(loaded) => loaded,
                 Err(error) => {
-                    tracing::warn!("Mesh {name} ({mesh_id}): {error} — {} placements dropped", instances.len());
+                    tracing::warn!(
+                        "Mesh {name} ({mesh_id}): {error} — {} placements dropped",
+                        instances.len()
+                    );
                     failed_meshes += 1;
                     continue;
                 }
@@ -680,7 +568,10 @@ impl App {
             let model = match scene::build_model(&mesh, &textures) {
                 Ok(model) => model,
                 Err(error) => {
-                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", instances.len());
+                    tracing::warn!(
+                        "Mesh {name}: {error} — {} placements dropped",
+                        instances.len()
+                    );
                     failed_meshes += 1;
                     continue;
                 }
@@ -697,7 +588,10 @@ impl App {
                     );
                 }
                 Err(error) => {
-                    tracing::warn!("Mesh {name}: {error} — {} placements dropped", instances.len());
+                    tracing::warn!(
+                        "Mesh {name}: {error} — {} placements dropped",
+                        instances.len()
+                    );
                     failed_meshes += 1;
                 }
             }
@@ -750,7 +644,10 @@ impl App {
             let model = match built {
                 Ok(model) => model,
                 Err(error) => {
-                    tracing::warn!("Repeated mesh {name}: {error} — {} dropped", instances.len());
+                    tracing::warn!(
+                        "Repeated mesh {name}: {error} — {} dropped",
+                        instances.len()
+                    );
                     dropped += instances.len();
                     continue;
                 }
@@ -765,7 +662,10 @@ impl App {
                     instances.len(),
                 ),
                 Err(error) => {
-                    tracing::warn!("Repeated mesh {name}: {error} — {} dropped", instances.len());
+                    tracing::warn!(
+                        "Repeated mesh {name}: {error} — {} dropped",
+                        instances.len()
+                    );
                     dropped += instances.len();
                 }
             }
@@ -857,14 +757,6 @@ impl App {
                         self.try_lock_cursor();
                         return Ok(());
                     }
-                    if keycode == KeyCode::KeyF && self.flythrough_path.is_some() {
-                        self.flythrough_active = !self.flythrough_active;
-                        tracing::info!(
-                            "Flythrough {}",
-                            if self.flythrough_active { "on" } else { "off" },
-                        );
-                        return Ok(());
-                    }
                     self.keys.insert(keycode);
                 } else {
                     self.keys.remove(&keycode);
@@ -910,7 +802,7 @@ impl App {
             Err(error) => {
                 window.set_cursor_visible(true);
                 tracing::warn!("Cursor grab failed, will retry on next focus: {error}");
-            },
+            }
         }
     }
 
@@ -971,40 +863,28 @@ impl App {
             self.try_lock_cursor();
         }
 
-        // Either the camera flies the level's scripted spline, or WASD drives it — never
-        // both, or the two would fight over `camera.position` every frame.
-        if self.flythrough_active {
-            if let Some(path) = &self.flythrough_path {
-                self.flythrough_time += delta_time;
-                let (position, look_dir, _fov_h, _roll_angle) =
-                    path.sample(self.flythrough_time);
-                self.camera.position = position;
-                self.camera.look_at(position + look_dir);
-            }
+        // Fly camera: process input.
+        let speed_mult = if self.keys.contains(&KeyCode::ShiftLeft)
+            || self.keys.contains(&KeyCode::ShiftRight)
+        {
+            3.0
         } else {
-            // Fly camera: process input.
-            let speed_mult = if self.keys.contains(&KeyCode::ShiftLeft)
-                || self.keys.contains(&KeyCode::ShiftRight)
-            {
-                3.0
-            } else {
-                1.0
-            };
+            1.0
+        };
 
-            self.camera.fly(
-                delta_time,
-                (
-                    self.keys.contains(&KeyCode::KeyW),
-                    self.keys.contains(&KeyCode::KeyS),
-                    self.keys.contains(&KeyCode::KeyA),
-                    self.keys.contains(&KeyCode::KeyD),
-                    self.keys.contains(&KeyCode::Space),
-                    self.keys.contains(&KeyCode::ControlLeft)
-                        || self.keys.contains(&KeyCode::ControlRight),
-                ),
-                speed_mult,
-            );
-        }
+        self.camera.fly(
+            delta_time,
+            (
+                self.keys.contains(&KeyCode::KeyW),
+                self.keys.contains(&KeyCode::KeyS),
+                self.keys.contains(&KeyCode::KeyA),
+                self.keys.contains(&KeyCode::KeyD),
+                self.keys.contains(&KeyCode::Space),
+                self.keys.contains(&KeyCode::ControlLeft)
+                    || self.keys.contains(&KeyCode::ControlRight),
+            ),
+            speed_mult,
+        );
 
         self.time_of_day += delta_time * 0.1; // ~4 real minutes per game hour
         if self.time_of_day >= 24.0 {
