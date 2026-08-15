@@ -60,6 +60,14 @@ pub enum TextureKey {
     /// A table the renderer builds rather than reads — the five landscape direction blend
     /// tables (§3.4), keyed by `MappingDirection::index()`.
     BlendTable(u32),
+    /// A landscape ground texture, keyed by its slot in `TerrainData::textures`.
+    ///
+    /// Slot rather than asset id because the scene layer has *already* deduped these by asset
+    /// id on the way in (`scene::terrain`'s `texture_slot`), and because a ground texture that
+    /// failed to load falls back to a deliberately visible magenta placeholder that has no
+    /// asset behind it and must still get a slot of its own rather than collapse into the
+    /// white fallback.
+    Ground(u32),
     /// Sky texture slot 0 or 1. Resolved by name per keyframe rather than by asset id, so it
     /// gets its own key space until that path is asset-id-driven.
     Sky(u32),
@@ -91,6 +99,10 @@ pub struct BindlessTextures {
     /// the bind group is rebuilt at controlled sync points instead, because a `BindGroup` is
     /// immutable and every new texture means rebuilding the whole thing (§12.2).
     dirty: bool,
+    /// Bumped by every [`Self::clear`]. A pass records the generation it registered under and
+    /// checks it at draw time, so the one ordering hazard this design has — registering, then
+    /// being cleared, then drawing with stale indices — is caught rather than rendered.
+    generation: u32,
     layout: BindGroupLayout,
     bind_group: BindGroup,
     /// Wrap + trilinear + anisotropy 4, for anything projected onto a surface.
@@ -173,6 +185,7 @@ impl BindlessTextures {
             next_free: 0,
             capacity,
             dirty: false,
+            generation: 0,
             layout,
             bind_group,
             repeat_sampler,
@@ -187,6 +200,10 @@ impl BindlessTextures {
 
     pub fn capacity(&self) -> u32 {
         self.capacity
+    }
+
+    pub fn generation(&self) -> u32 {
+        self.generation
     }
 
     /// The slot every unregistered entry holds: 1×1 opaque white.
@@ -264,6 +281,7 @@ impl BindlessTextures {
     /// scene load would leak every previous level's textures *and* burn their slots.
     pub fn clear(&mut self) {
         if self.next_free == 0 {
+            self.generation += 1;
             return;
         }
         for slot in &mut self.slots[..self.next_free as usize] {
@@ -272,6 +290,7 @@ impl BindlessTextures {
         self.index_of.clear();
         self.next_free = 0;
         self.dirty = true;
+        self.generation += 1;
     }
 
     /// Rebuild the bind group if anything was registered since the last call.
@@ -298,14 +317,25 @@ impl BindlessTextures {
         &self.bind_group
     }
 
-    pub fn bind_group(&self) -> &BindGroup {
-        &self.bind_group
+    pub fn frame(&self) -> BindlessFrame<'_> {
+        BindlessFrame {
+            bind_group: &self.bind_group,
+            generation: self.generation,
+        }
     }
 
     /// Slots handed out so far. `(registered, capacity)`.
     pub fn stats(&self) -> (u32, u32) {
         (self.next_free, self.capacity)
     }
+}
+
+/// What a pass is handed for one frame: the shared bind group, and the generation every
+/// [`BindlessIndex`] it draws with must have been registered under.
+#[derive(Copy, Clone)]
+pub struct BindlessFrame<'a> {
+    pub bind_group: &'a BindGroup,
+    pub generation: u32,
 }
 
 fn build_bind_group(

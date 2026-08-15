@@ -71,23 +71,27 @@ struct Frame {
     fade_transform: vec4<f32>,
 };
 
-// Per draw — one layer's mapping direction, as the projection it implies.
-struct Draw {
+// Per draw — one layer's mapping direction, as the projection it implies, plus the pair of
+// textures it samples. All of it in immediate storage, replacing a bind group and a uniform
+// buffer per layer pass (AGENTS.md §12.5).
+struct DrawConstants {
     // c40
     uv_transform_u: vec4<f32>,
     // c41
     uv_transform_v: vec4<f32>,
+    // t1 — the layer's ground texture, sampled through `repeat_sampler` because it tiles.
+    ground_index: u32,
+    // t0 — the mapping direction's blend table, sampled through `clamp_sampler`: it is a
+    // lookup indexed by the packed vertex normal, not a tile, and it must not mip either
+    // (§3.4's additive compositing holds only while the five directions' blends partition
+    // unity at every texel).
+    blend_index: u32,
+    _pad0: u32,
+    _pad1: u32,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
-
-@group(1) @binding(0) var<uniform> draw: Draw;
-// t1 — the layer's ground texture, wrapped.
-@group(1) @binding(1) var ground_texture: texture_2d<f32>;
-@group(1) @binding(2) var ground_sampler: sampler;
-// t0 — the mapping direction's blend table, clamped: it is a lookup, not a tile.
-@group(1) @binding(3) var blend_table: texture_2d<f32>;
-@group(1) @binding(4) var blend_sampler: sampler;
+var<immediate> draw: DrawConstants;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -166,9 +170,17 @@ fn fs_blackout() -> @location(0) vec4<f32> {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // tex t0 — the original's table is A8 and the shader reads t0.w; ours is R8.
-    let mask = textureSample(blend_table, blend_sampler, in.cliff_uv).r;
+    let mask = textureSample(
+        bindless_textures[draw.blend_index],
+        clamp_sampler,
+        in.cliff_uv,
+    ).r;
     // tex t1
-    let ground = textureSample(ground_texture, ground_sampler, in.ground_uv);
+    let ground = textureSample(
+        bindless_textures[draw.ground_index],
+        repeat_sampler,
+        in.ground_uv,
+    );
 
     // mul_x2_sat r0.xyz, t1, v0
     let colour = saturate(ground.rgb * in.light * 2.0);

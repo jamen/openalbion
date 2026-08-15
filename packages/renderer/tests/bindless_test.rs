@@ -62,7 +62,7 @@ fn a_frame_still_renders() {
 /// The dedup, and the thing that would otherwise leak.
 ///
 /// Two meshes sharing an asset id must take **one** slot, not two — that is the whole point of
-/// keying the registry by the global asset id (AGENTS.md §3.11, §12.6). And `clear_models`
+/// keying the registry by the global asset id (AGENTS.md §3.11, §12.6). And `clear_scene`
 /// must return the slots, or every scene load would leak the previous level's textures and
 /// burn its capacity (§12.4).
 #[test]
@@ -86,11 +86,11 @@ fn a_shared_asset_id_takes_one_slot_and_clearing_returns_it() {
     renderer.add_model(&model_with_texture(9), &[Default::default()]).unwrap();
     assert_eq!(renderer.bindless_stats().0, 2, "a different id takes a new slot");
 
-    renderer.clear_models();
+    renderer.clear_scene();
     assert_eq!(
         renderer.bindless_stats().0,
         0,
-        "clear_models must return the slots, or a scene load leaks the whole level",
+        "clear_scene must return the slots, or a scene load leaks the whole level",
     );
     assert!(!renderer.has_texture(7), "and the registrations with them");
 }

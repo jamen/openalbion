@@ -163,10 +163,10 @@ const REQUIRED_FEATURES: Features = Features::TEXTURE_COMPRESSION_BC
 
 /// Bytes of per-draw immediate data (wgpu's name for push constants) a pipeline may declare.
 ///
-/// One `vec4`-sized struct is enough for every per-draw constant the passes carry — a bindless
-/// index or two, and the alpha-test pair the model pass keeps in a per-material uniform buffer
-/// today. Vulkan guarantees 128, DX12 256, Metal 4096.
-const MAX_IMMEDIATE_SIZE: u32 = 16;
+/// Sized by the largest pass: terrain's is 48 bytes, because a layer pass binds a *pair* of
+/// textures and carries the planar projection for its mapping direction (§3.4). The model and
+/// local-detail passes use 16. Vulkan guarantees 128, DX12 256, Metal 4096.
+const MAX_IMMEDIATE_SIZE: u32 = 48;
 
 /// The device request, shared by the windowed and offscreen paths so they cannot drift.
 ///
@@ -456,16 +456,21 @@ impl<'target> Renderer<'target> {
     pub fn set_terrain(&mut self, terrain: &TerrainData) {
         self.passes
             .terrain
-            .set_terrain(&self.device, &self.queue, terrain);
+            .set_terrain(&self.device, &self.queue, &mut self.bindless, terrain);
     }
 
-    pub fn clear_models(&mut self) {
+    /// Drop everything the current scene uploaded — models, local detail, and the textures
+    /// all of them plus the terrain were drawing with.
+    ///
+    /// **Call this before `set_terrain`, not after.** The bindless registry is scene-scoped,
+    /// not model-scoped: clearing it invalidates every `BindlessIndex` handed out, terrain's
+    /// included, and terrain registers its ground textures and blend tables the moment
+    /// `set_terrain` runs (AGENTS.md §12.4). Getting that order wrong leaves the landscape
+    /// sampling whatever took its slots next — which looks almost right, so `TerrainPass`
+    /// carries the registry's generation and asserts on it rather than trusting this comment.
+    pub fn clear_scene(&mut self) {
         self.passes.model.clear_models();
         self.passes.local_detail.clear();
-        // The registry owns the textures those models were drawing with, so it clears with
-        // them. Without this a scene load would leak every previous level's textures *and*
-        // burn their slots; every `BindlessIndex` handed out before now is stale after it
-        // (AGENTS.md §12.4).
         self.bindless.clear();
     }
 
@@ -581,7 +586,7 @@ impl<'target> Renderer<'target> {
         // texture: a `BindGroup` is immutable, so every new texture means rebuilding the
         // whole array (AGENTS.md §12.2).
         self.bindless.rebuild_if_dirty(&self.device);
-        let bindless = self.bindless.bind_group();
+        let bindless = self.bindless.frame();
 
         let mut cmd = self.device.create_command_encoder(&Default::default());
 
@@ -594,15 +599,15 @@ impl<'target> Renderer<'target> {
         self.passes.sky.pass(&mut cmd, colour);
         self.passes
             .terrain
-            .pass(&mut cmd, colour, self.depth_texture.view());
+            .pass(&mut cmd, bindless, colour, self.depth_texture.view());
         // Local detail before the model pass: both write depth for their opaque draws, and
         // the model pass ends with its depth-sorted blended ones, which must come last.
         self.passes
             .local_detail
-            .pass(&mut cmd, bindless, colour, self.depth_texture.view());
+            .pass(&mut cmd, bindless.bind_group, colour, self.depth_texture.view());
         self.passes
             .model
-            .pass(&mut cmd, bindless, colour, self.depth_texture.view());
+            .pass(&mut cmd, bindless.bind_group, colour, self.depth_texture.view());
 
         if let Some(msaa) = &self.msaa_texture {
             self.passes.resolve.pass(&mut cmd, &msaa.view, view);
@@ -764,7 +769,7 @@ impl RenderPasses {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, targets),
-            terrain: TerrainPass::new(device, targets),
+            terrain: TerrainPass::new(device, targets, bindless),
             model: ModelPass::new(device, targets, bindless),
             local_detail: LocalDetailPass::new(device, targets, bindless),
             resolve: ResolvePass,

@@ -8,19 +8,19 @@
 //! buffer. Building it from a `.lev` lives on the other side of the crate boundary.
 
 use crate::TargetFormats;
+use crate::bindless::{BindlessFrame, BindlessIndex, BindlessTextures, TextureKey};
 use crate::image::TextureImage;
 use crate::lighting::{LIGHTING_WGSL, LightingUniforms};
 use bytemuck::{Pod, Zeroable};
 use std::any::type_name;
 use wgpu::{
-    AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType,
     BufferUsages, CommandEncoder, CompareFunction, DepthBiasState, DepthStencilState, Device,
-    Extent3d, FilterMode, FragmentState, FrontFace, IndexFormat, PipelineLayout,
-    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, SamplerDescriptor, ShaderModule, ShaderStages, StencilState,
-    TextureDescriptor, TextureDimension, TextureSampleType,
-    TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
+    Extent3d, FragmentState, FrontFace, IndexFormat, PipelineLayout,
+    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderStages, StencilState,
+    TextureDescriptor, TextureDimension,
+    TextureUsages, TextureView, TextureViewDescriptor, VertexAttribute,
     VertexBufferLayout, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
 };
@@ -113,17 +113,29 @@ impl FrameUniforms {
     }
 }
 
-/// `c40` / `c41` for one draw.
+/// Everything one layer pass needs, as immediate data — replacing a bind group *and* a
+/// uniform buffer per draw (AGENTS.md §12.5).
+///
+/// Bigger than the other passes' 16 bytes because a layer pass binds a *pair* of textures
+/// (§3.4) and carries the planar projection for its mapping direction. 48 bytes, against
+/// Vulkan's guaranteed 128.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct DrawUniforms {
+struct DrawConstants {
+    /// `c40`
     uv_transform_u: [f32; 4],
+    /// `c41`
     uv_transform_v: [f32; 4],
+    /// The layer's ground texture, sampled through `repeat_sampler`.
+    ground_index: BindlessIndex,
+    /// The mapping direction's blend table, sampled through `clamp_sampler` — it is a lookup
+    /// indexed by the packed vertex normal, and must neither wrap nor mip (§3.4, step 7).
+    blend_index: BindlessIndex,
+    _pad: [u32; 2],
 }
 
 pub struct TerrainBindGroupLayouts {
     frame: BindGroupLayout,
-    draw: BindGroupLayout,
 }
 
 impl TerrainBindGroupLayouts {
@@ -138,23 +150,6 @@ impl TerrainBindGroupLayouts {
             },
             count: None,
         };
-        let texture = |binding| BindGroupLayoutEntry {
-            binding,
-            visibility: ShaderStages::FRAGMENT,
-            ty: BindingType::Texture {
-                sample_type: TextureSampleType::Float { filterable: true },
-                view_dimension: TextureViewDimension::D2,
-                multisampled: false,
-            },
-            count: None,
-        };
-        let sampler = |binding| BindGroupLayoutEntry {
-            binding,
-            visibility: ShaderStages::FRAGMENT,
-            ty: BindingType::Sampler(SamplerBindingType::Filtering),
-            count: None,
-        };
-
         Self {
             frame: device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("terrain_frame"),
@@ -163,16 +158,6 @@ impl TerrainBindGroupLayouts {
                     ShaderStages::VERTEX_FRAGMENT,
                 )],
             }),
-            draw: device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("terrain_draw"),
-                entries: &[
-                    uniform(0, ShaderStages::VERTEX),
-                    texture(1),
-                    sampler(2),
-                    texture(3),
-                    sampler(4),
-                ],
-            }),
         }
     }
 }
@@ -180,11 +165,16 @@ impl TerrainBindGroupLayouts {
 pub struct TerrainShader(ShaderModule);
 
 impl TerrainShader {
-    pub fn new(device: &Device) -> Self {
+    pub fn new(device: &Device, bindless: &BindlessTextures) -> Self {
         Self(device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("terrain.wgsl"),
             source: wgpu::ShaderSource::Wgsl(
-                format!("{LIGHTING_WGSL}\n{}", include_str!("terrain.wgsl")).into(),
+                format!(
+                    "{LIGHTING_WGSL}\n{}\n{}",
+                    bindless.wgsl_prelude(),
+                    include_str!("terrain.wgsl"),
+                )
+                .into(),
             ),
         }))
     }
@@ -193,11 +183,15 @@ impl TerrainShader {
 pub struct TerrainPipelineLayout(PipelineLayout);
 
 impl TerrainPipelineLayout {
-    pub fn new(device: &Device, layouts: &TerrainBindGroupLayouts) -> Self {
+    pub fn new(
+        device: &Device,
+        layouts: &TerrainBindGroupLayouts,
+        bindless: &BindlessTextures,
+    ) -> Self {
         Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(type_name::<Self>()),
-            bind_group_layouts: &[&layouts.frame, &layouts.draw],
-            immediate_size: 0,
+            bind_group_layouts: &[&layouts.frame, bindless.layout()],
+            immediate_size: size_of::<DrawConstants>() as u32,
         }))
     }
 }
@@ -318,17 +312,14 @@ impl TerrainPipeline {
 
 /// A draw's bind group, holding its own `c40`/`c41` and its two textures.
 struct PreparedDraw {
-    bind_group: BindGroup,
+    constants: DrawConstants,
     first_index: u32,
     index_count: u32,
 }
 
 pub struct TerrainPass {
-    layouts: TerrainBindGroupLayouts,
     pipeline: TerrainPipeline,
     blackout_pipeline: TerrainPipeline,
-    ground_sampler: wgpu::Sampler,
-    blend_sampler: wgpu::Sampler,
 
     frame_buffer: wgpu::Buffer,
     frame_bind_group: BindGroup,
@@ -336,47 +327,21 @@ pub struct TerrainPass {
     vertex_buffer: Option<wgpu::Buffer>,
     index_buffer: Option<wgpu::Buffer>,
     draws: Vec<PreparedDraw>,
-
-    /// Kept alive for as long as the bind groups reference them.
-    _textures: Vec<wgpu::Texture>,
-    _draw_buffers: Vec<wgpu::Buffer>,
+    /// The registry generation `draws`' indices were registered under. Checked at draw time:
+    /// terrain registers in `set_terrain`, which runs *before* the scene's model loading, so
+    /// a clear landing between the two would leave every layer pass sampling whatever took
+    /// its slot next (AGENTS.md §12.4).
+    generation: u32,
 }
 
 impl TerrainPass {
-    pub fn new(device: &Device, targets: TargetFormats) -> Self {
-        let shader = TerrainShader::new(device);
+    pub fn new(device: &Device, targets: TargetFormats, bindless: &BindlessTextures) -> Self {
+        let shader = TerrainShader::new(device, bindless);
         let layouts = TerrainBindGroupLayouts::new(device);
-        let layout = TerrainPipelineLayout::new(device, &layouts);
+        let layout = TerrainPipelineLayout::new(device, &layouts, bindless);
         let pipeline = TerrainPipeline::new(device, &layout, &shader, targets);
         let blackout_pipeline =
             TerrainPipeline::new_blackout(device, &layout, &shader, targets);
-
-        // The ground texture tiles, and is the one thing here that is projected onto a
-        // surface: trilinear and anisotropic, at the shipped `SetMaxAnisotropy(4)`
-        // (`crate::texture::MAX_ANISOTROPY`, AGENTS.md §3.12). One tile spans 8 world cells,
-        // so grazing views minify hard and this is exactly the case anisotropy is for.
-        let ground_sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("terrain_ground_sampler"),
-            mag_filter: FilterMode::Linear,
-            min_filter: FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            anisotropy_clamp: crate::texture::MAX_ANISOTROPY,
-            address_mode_u: AddressMode::Repeat,
-            address_mode_v: AddressMode::Repeat,
-            ..Default::default()
-        });
-        // The blend table is a lookup indexed by the packed vertex normal — it must not wrap,
-        // and it must not mip: §3.4's additive compositing holds only because the five
-        // directions' blends partition unity at every texel, and a filtered-down level would
-        // not. It is uploaded single-mip to match.
-        let blend_sampler = device.create_sampler(&SamplerDescriptor {
-            label: Some("terrain_blend_sampler"),
-            mag_filter: FilterMode::Linear,
-            min_filter: FilterMode::Linear,
-            address_mode_u: AddressMode::ClampToEdge,
-            address_mode_v: AddressMode::ClampToEdge,
-            ..Default::default()
-        });
 
         let frame_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("terrain_frame_uniforms"),
@@ -396,25 +361,26 @@ impl TerrainPass {
         });
 
         Self {
-            layouts,
             pipeline,
             blackout_pipeline,
-            ground_sampler,
-            blend_sampler,
             frame_buffer,
             frame_bind_group,
             vertex_buffer: None,
             index_buffer: None,
             draws: Vec::new(),
-            _textures: Vec::new(),
-            _draw_buffers: Vec::new(),
+            generation: 0,
         }
     }
 
-    pub fn set_terrain(&mut self, device: &Device, queue: &Queue, terrain: &TerrainData) {
+    pub fn set_terrain(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        bindless: &mut BindlessTextures,
+        terrain: &TerrainData,
+    ) {
         self.draws.clear();
-        self._textures.clear();
-        self._draw_buffers.clear();
+        self.generation = bindless.generation();
 
         if terrain.vertices.is_empty() || terrain.indices.is_empty() {
             self.vertex_buffer = None;
@@ -434,23 +400,40 @@ impl TerrainPass {
             usage: BufferUsages::INDEX,
         }));
 
-        let ground_views: Vec<_> = terrain
+        // Ground textures are keyed by slot, not asset id: the scene layer has already
+        // deduped them by id on the way in, and a failed load falls back to a deliberately
+        // visible magenta placeholder that has no asset behind it.
+        let ground: Vec<BindlessIndex> = terrain
             .textures
             .iter()
             .enumerate()
-            .map(|(i, image)| self.upload(device, queue, image, &format!("terrain_ground_{i}")))
-            .collect();
-        let blend_views: Vec<_> = terrain
+            .map(|(i, image)| {
+                let view = self.upload(device, queue, image, &format!("terrain_ground_{i}"));
+                bindless.register(TextureKey::Ground(i as u32), view)
+            })
+            .collect::<Result<_, _>>()
+            .unwrap_or_else(|error| {
+                tracing::error!("Terrain ground textures: {error}");
+                Vec::new()
+            });
+        let blend: Vec<BindlessIndex> = terrain
             .blend_tables
             .iter()
             .enumerate()
-            .map(|(i, image)| self.upload(device, queue, image, &format!("terrain_blend_{i}")))
-            .collect();
+            .map(|(i, image)| {
+                let view = self.upload(device, queue, image, &format!("terrain_blend_{i}"));
+                bindless.register(TextureKey::BlendTable(i as u32), view)
+            })
+            .collect::<Result<_, _>>()
+            .unwrap_or_else(|error| {
+                tracing::error!("Terrain blend tables: {error}");
+                Vec::new()
+            });
 
         for draw in &terrain.draws {
-            let (Some(ground), Some(blend)) = (
-                ground_views.get(draw.texture as usize),
-                blend_views.get(draw.blend_table as usize),
+            let (Some(&ground_index), Some(&blend_index)) = (
+                ground.get(draw.texture as usize),
+                blend.get(draw.blend_table as usize),
             ) else {
                 tracing::warn!(
                     "Terrain draw references texture {} / blend table {}, which do not exist \
@@ -461,46 +444,14 @@ impl TerrainPass {
                 continue;
             };
 
-            let uniforms = DrawUniforms {
-                uv_transform_u: draw.uv_transform_u,
-                uv_transform_v: draw.uv_transform_v,
-            };
-            let buffer = device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("terrain_draw_uniforms"),
-                contents: bytemuck::cast_slice(&[uniforms]),
-                usage: BufferUsages::UNIFORM,
-            });
-
-            let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                label: Some("terrain_draw"),
-                layout: &self.layouts.draw,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: buffer.as_entire_binding(),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(ground),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.ground_sampler),
-                    },
-                    BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(blend),
-                    },
-                    BindGroupEntry {
-                        binding: 4,
-                        resource: wgpu::BindingResource::Sampler(&self.blend_sampler),
-                    },
-                ],
-            });
-
-            self._draw_buffers.push(buffer);
             self.draws.push(PreparedDraw {
-                bind_group,
+                constants: DrawConstants {
+                    uv_transform_u: draw.uv_transform_u,
+                    uv_transform_v: draw.uv_transform_v,
+                    ground_index,
+                    blend_index,
+                    _pad: [0; 2],
+                },
                 first_index: draw.first_index,
                 index_count: draw.index_count,
             });
@@ -516,7 +467,7 @@ impl TerrainPass {
     }
 
     fn upload(
-        &mut self,
+        &self,
         device: &Device,
         queue: &Queue,
         image: &TextureImage,
@@ -550,9 +501,9 @@ impl TerrainPass {
             );
         }
 
-        let view = texture.create_view(&TextureViewDescriptor::default());
-        self._textures.push(texture);
-        view
+        // The view keeps the texture alive, and the bindless registry keeps the view — so
+        // there is no separate list of textures to hold onto any more.
+        texture.create_view(&TextureViewDescriptor::default())
     }
 
     pub fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4], camera_pos: [f32; 3]) {
@@ -566,9 +517,18 @@ impl TerrainPass {
     pub fn pass(
         &self,
         cmd: &mut CommandEncoder,
+        bindless: BindlessFrame<'_>,
         target_texture_view: &TextureView,
         depth_texture_view: &TextureView,
     ) {
+        // Terrain registers its textures in `set_terrain`, which runs before the scene's
+        // models load. A clear between the two would leave every layer pass sampling whatever
+        // took its slot next — silently, and looking almost right (AGENTS.md §12.4).
+        debug_assert_eq!(
+            self.generation, bindless.generation,
+            "terrain's bindless indices are from a cleared generation — \
+             set_terrain must run after the scene is cleared, not before",
+        );
         let (Some(vertex_buffer), Some(index_buffer)) = (&self.vertex_buffer, &self.index_buffer)
         else {
             return;
@@ -605,9 +565,11 @@ impl TerrainPass {
 
         // The blackout pass over the same meshes, laying down depth and the black the layers
         // accumulate onto. Overlapping layers black each other out harmlessly.
+        rpass.set_bind_group(1, bindless.bind_group, &[]);
+
         rpass.set_pipeline(&self.blackout_pipeline.0);
         for draw in &self.draws {
-            rpass.set_bind_group(1, &draw.bind_group, &[]);
+            rpass.set_immediates(0, bytemuck::bytes_of(&draw.constants));
             rpass.draw_indexed(
                 draw.first_index..draw.first_index + draw.index_count,
                 0,
@@ -617,7 +579,7 @@ impl TerrainPass {
 
         rpass.set_pipeline(&self.pipeline.0);
         for draw in &self.draws {
-            rpass.set_bind_group(1, &draw.bind_group, &[]);
+            rpass.set_immediates(0, bytemuck::bytes_of(&draw.constants));
             rpass.draw_indexed(
                 draw.first_index..draw.first_index + draw.index_count,
                 0,

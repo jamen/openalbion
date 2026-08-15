@@ -417,6 +417,10 @@ impl App {
         // `scene::build_region_terrain` for how a boundary vertex reads the neighbouring
         // map's height, normal and theme instead of clamping to its own edge (AGENTS.md
         // §3.4/§6.12).
+        // Before `set_terrain`, not after: the bindless registry is scene-scoped, and
+        // terrain registers its ground textures and blend tables inside `set_terrain`
+        // (AGENTS.md §12.4).
+        renderer.clear_scene();
         renderer.set_terrain(&scene::build_region_terrain(&mut self.files, &maps));
         tracing::info!(
             "Uploaded terrain to GPU: {} map(s) ({} populated), primary {} at {:?}, \
@@ -483,7 +487,6 @@ impl App {
         renderer: &mut Renderer<'_>,
         maps: &[(fable_data::wld::RegionMap, fable_data::lev::Lev)],
     ) {
-        renderer.clear_models();
 
         if self.mesh_name.is_some() {
             self.load_single_mesh(renderer);

@@ -1845,13 +1845,24 @@ shaders at module creation so the two language's layouts cannot drift. The four 
    *Verify:* LookoutPoint and Witchwood byte-identical. Full-level dedup, both upload paths
    counted together: **LookoutPoint 88 of 204 references resident (112 slots), Witchwood 93 of
    146 (51 slots), Darkwood 32 of 62 (29 slots)**.
-4. **Terrain — next.** Different shape: two indices per draw (§3.4), and the blend tables
-   register once at startup rather than per level — which makes them the first registrations
-   that must *survive* `clear`, since they are not level-scoped. Either register them after
-   each clear or give them a slot range outside it; decide before writing the code. The blend
-   table samples through `clamp_sampler`, the ground texture through `repeat_sampler`, both
-   already in the shared group (§12.4).
-5. **Sky.** Two textures a frame, the smallest surface; last because it has the least to gain.
+4. ~~**Terrain.**~~ **DONE.** Two indices per draw plus the mapping direction's planar
+   projection, so its immediate is 48 bytes where the others are 16 — still a third of
+   Vulkan's guaranteed 128. Its own `ground_sampler` and `blend_sampler` are gone: they were
+   byte-for-byte the shared `repeat_sampler` and `clamp_sampler` (§12.4).
+   **The ordering hazard was real, and the guard caught it.** Terrain registers inside
+   `set_terrain`, which runs *before* the scene's models load, so the old `clear_models` —
+   called after — wiped its indices. The landscape would have sampled whatever took its slots
+   next, which looks almost right. `BindlessTextures` now carries a generation, `TerrainPass`
+   records the one it registered under, and a `debug_assert` at draw time compares them; it
+   fired on the first run. `clear_models` is now `clear_scene` and is called *before*
+   `set_terrain`, because the registry is scene-scoped, not model-scoped.
+   *Verify:* LookoutPoint and Witchwood byte-identical. LookoutPoint's region now holds 227
+   slots, Witchwood 100.
+5. **Sky — next.** Two textures a frame, the smallest surface; last because it has the least
+   to gain. Note it re-uploads only when the active keyframe pair changes, so it registers on
+   a different cadence from everything else — the one pass whose registrations happen mid-run
+   rather than at scene load, and so the first real exercise of `rebuild_if_dirty` outside a
+   load.
 6. **Retire what is now dead:** `ModelMaterialBindGroupLayout`, `MaterialUniforms`,
    `TerrainBindGroupLayouts.draw`, local detail's inline material layout,
    `SkyTextureBindGroupLayout`. Each pass keeps only its frame uniform group plus the shared
