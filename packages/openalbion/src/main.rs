@@ -538,6 +538,11 @@ impl App {
         let mut uploaded_meshes = 0usize;
         let mut placed = 0usize;
         let mut failed_meshes = 0usize;
+        // What the bindless registry saves, counted rather than asserted (AGENTS.md §12.6):
+        // every material texture reference, and how many of them were already resident and so
+        // skipped the archive read and the BC decode entirely.
+        let texture_refs = std::cell::Cell::new(0usize);
+        let texture_reused = std::cell::Cell::new(0usize);
 
         // Deterministic order so two runs log the same thing.
         let mut mesh_ids: Vec<u32> = instances_by_mesh.keys().copied().collect();
@@ -565,7 +570,14 @@ impl App {
             // A material with no resolvable texture draws white rather than dropping the
             // whole mesh: roughly a quarter of the materials in graphics.big have no base
             // texture at all, and a silently absent object is worse than an untextured one.
-            let model = match scene::build_model(&mesh, &textures) {
+            let model = match scene::build_model(&mesh, &textures, |id| {
+                texture_refs.set(texture_refs.get() + 1);
+                let resident = renderer.has_texture(id);
+                if resident {
+                    texture_reused.set(texture_reused.get() + 1);
+                }
+                resident
+            }) {
                 Ok(model) => model,
                 Err(error) => {
                     tracing::warn!(
@@ -596,6 +608,14 @@ impl App {
                 }
             }
         }
+
+        let (registered, capacity) = renderer.bindless_stats();
+        tracing::info!(
+            "Textures: {registered}/{capacity} bindless slots; {} of {} material references \
+             were already resident and skipped the read and decode",
+            texture_reused.get(),
+            texture_refs.get(),
+        );
 
         let skipped = &things.skipped;
         tracing::info!(
@@ -639,7 +659,8 @@ impl App {
                 .read_mesh_by_id(mesh_id)
                 .map_err(|e| e.to_string())
                 .and_then(|(mesh, textures)| {
-                    scene::build_model(&mesh, &textures).map_err(|e| e.to_string())
+                    scene::build_model(&mesh, &textures, |id| renderer.has_texture(id))
+                        .map_err(|e| e.to_string())
                 });
             let model = match built {
                 Ok(model) => model,
@@ -690,7 +711,7 @@ impl App {
                 return;
             }
         };
-        let model = match scene::build_model(&mesh, &textures) {
+        let model = match scene::build_model(&mesh, &textures, |id| renderer.has_texture(id)) {
             Ok(model) => model,
             Err(error) => {
                 tracing::warn!("Requested mesh {name}: {error}");

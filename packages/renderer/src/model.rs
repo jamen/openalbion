@@ -10,22 +10,21 @@
 //! use `cull_mode: Back`, with `front_face: Cw` — Fable's meshes are clockwise-front, matching
 //! D3D9's default `D3DCULL_CCW`. See the note on the pipeline.
 
+use crate::bindless::{BindlessIndex, BindlessTextures, TextureKey};
 use crate::image::TextureImage;
 use crate::lighting::{LIGHTING_WGSL, LightingUniforms};
 use crate::TargetFormats;
-use crate::texture::{repeat_sampler, upload_texture};
+use crate::texture::upload_texture;
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
 use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BlendState, BufferBindingType,
+    BindGroupLayoutEntry, BindingType, BlendState, BufferBindingType,
     BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, CompareFunction, DepthBiasState,
-    DepthStencilState, Device, Extent3d, Face, FragmentState, FrontFace, IndexFormat,
+    DepthStencilState, Device, Face, FragmentState, FrontFace, IndexFormat,
     PipelineLayout, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages, StencilState,
-    TexelCopyBufferLayout, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType,
-    TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute,
+    RenderPipelineDescriptor, ShaderModule, ShaderStages, StencilState, TextureView, VertexAttribute,
     VertexBufferLayout, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
 };
@@ -48,7 +47,19 @@ pub enum AlphaMode {
 
 /// One material: its diffuse map (a 1×1 white texture stands in when absent) and how it
 /// blends.
+///
+/// The map arrives as a *key plus optionally an image*, not just an image, because the
+/// renderer dedups by key (AGENTS.md §12.6). A caller that knows the renderer already holds
+/// `diffuse_id` may leave `diffuse` `None` and skip the archive read and the BC slice
+/// entirely — which is where most of the win is: across a level, between a half and three
+/// quarters of material texture references are repeats (§12.1).
 pub struct ModelMaterial {
+    /// The texture's global asset id (AGENTS.md §3.11), or `None` for a material with no
+    /// diffuse map — roughly a quarter of `graphics.big`'s materials, so this is the normal
+    /// case rather than an error, and it draws white.
+    pub diffuse_id: Option<u32>,
+    /// The decoded image. `None` with a `Some` `diffuse_id` means "you already have this
+    /// one"; `None` with a `None` id means the material has no map at all.
     pub diffuse: Option<TextureImage>,
     pub alpha_mode: AlphaMode,
     pub two_sided: bool,
@@ -160,14 +171,21 @@ impl FrameUniforms {
     }
 }
 
+/// Everything that used to be a per-material bind group, as 16 bytes of per-draw immediate
+/// data (AGENTS.md §12.5). Must match `struct DrawConstants` in `model.wgsl`.
+///
+/// The old layout was a texture, a sampler and a `MaterialUniforms` buffer — one `BindGroup`
+/// *and* one 16-byte uniform buffer allocated per material of every mesh. LookoutPoint alone
+/// allocated 178 of each.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct MaterialUniforms {
+struct DrawConstants {
+    /// Slot in the shared bindless array.
+    texture_index: BindlessIndex,
     /// Non-zero enables alpha-test (cutout) in the shader.
     alpha_test: u32,
     alpha_cutoff: f32,
-    _pad0: f32,
-    _pad1: f32,
+    _pad: u32,
 }
 
 pub struct ModelFrameBindGroupLayout(BindGroupLayout);
@@ -190,53 +208,19 @@ impl ModelFrameBindGroupLayout {
     }
 }
 
-/// Bind group layout for one material: diffuse texture, sampler, and the material uniform.
-pub struct ModelMaterialBindGroupLayout(BindGroupLayout);
-
-impl ModelMaterialBindGroupLayout {
-    pub fn new(device: &Device) -> Self {
-        Self(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some(type_name::<Self>()),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        }))
-    }
-}
-
 pub struct ModelShader(ShaderModule);
 
 impl ModelShader {
-    pub fn new(device: &Device) -> Self {
+    pub fn new(device: &Device, bindless: &BindlessTextures) -> Self {
         Self(device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("model.wgsl"),
             source: wgpu::ShaderSource::Wgsl(
-                format!("{LIGHTING_WGSL}\n{}", include_str!("model.wgsl")).into(),
+                format!(
+                    "{LIGHTING_WGSL}\n{}\n{}",
+                    bindless.wgsl_prelude(),
+                    include_str!("model.wgsl"),
+                )
+                .into(),
             ),
         }))
     }
@@ -248,12 +232,15 @@ impl ModelPipelineLayout {
     pub fn new(
         device: &Device,
         frame_layout: &ModelFrameBindGroupLayout,
-        material_layout: &ModelMaterialBindGroupLayout,
+        bindless: &BindlessTextures,
     ) -> Self {
         Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(type_name::<Self>()),
-            bind_group_layouts: &[&frame_layout.0, &material_layout.0],
-            immediate_size: 0,
+            // Group 0 is the pass's own frame uniforms, group 1 the shared bindless group —
+            // the same index the per-material group used, so this pass's migration touches no
+            // other pass (AGENTS.md §12.4).
+            bind_group_layouts: &[&frame_layout.0, bindless.layout()],
+            immediate_size: size_of::<DrawConstants>() as u32,
         }))
     }
 }
@@ -334,9 +321,9 @@ impl ModelPipelines {
     }
 }
 
-/// One material's GPU resources: its bind group (texture + sampler + uniform) and alpha mode.
+/// One material, resolved to the 16 bytes a draw needs plus how it blends.
 struct GpuMaterial {
-    bind_group: BindGroup,
+    draw: DrawConstants,
     transparent: bool,
 }
 
@@ -373,14 +360,64 @@ pub enum AddModelError {
     NoPrimitives,
     #[display("model has no instances to place")]
     NoInstances,
+    #[display("no room in the bindless texture array: {_0}")]
+    BindlessFull(crate::bindless::BindlessFull),
+}
+
+/// Resolve each material to the 16 bytes a draw needs, registering its diffuse map in the
+/// shared array on the way (AGENTS.md §12.6).
+///
+/// A repeat asset id is a cache hit: `register` returns the slot it already gave out, and the
+/// image — which the caller may not even have decoded — is dropped. A material with no map at
+/// all points at slot 0's... no: it points at the *fallback*, via
+/// [`BindlessTextures::fallback_index`], which is white, so it draws the material's own colour
+/// rather than a hole.
+fn build_materials(
+    device: &Device,
+    queue: &Queue,
+    bindless: &mut BindlessTextures,
+    materials_in: &[ModelMaterial],
+) -> Result<Vec<GpuMaterial>, AddModelError> {
+    let mut materials = Vec::with_capacity(materials_in.len());
+    for material in materials_in {
+        let texture_index = match material.diffuse_id {
+            Some(id) => {
+                let key = TextureKey::Asset(id);
+                match (bindless.index_of(key), &material.diffuse) {
+                    // Already resident — the dedup, and the caller skipped the decode too.
+                    (Some(index), _) => index,
+                    (None, Some(image)) => {
+                        let view = upload_texture(device, queue, "model_material_diffuse", image);
+                        bindless
+                            .register(key, view)
+                            .map_err(AddModelError::BindlessFull)?
+                    }
+                    // An id with no image and no registration: the caller believed we had it
+                    // and we do not. Draw white rather than the wrong texture, and say so.
+                    (None, None) => {
+                        tracing::warn!("Material texture {id} was not registered — drawing white");
+                        bindless.fallback_index()
+                    }
+                }
+            }
+            None => bindless.fallback_index(),
+        };
+
+        materials.push(GpuMaterial {
+            draw: DrawConstants {
+                texture_index,
+                alpha_test: (material.alpha_mode == AlphaMode::Cutout) as u32,
+                alpha_cutoff: ALPHA_CUTOFF,
+                _pad: 0,
+            },
+            transparent: material.alpha_mode == AlphaMode::Blend,
+        });
+    }
+    Ok(materials)
 }
 
 pub struct ModelPass {
-    material_layout: ModelMaterialBindGroupLayout,
     pipelines: ModelPipelines,
-    sampler: wgpu::Sampler,
-    /// 1x1 white texture used for materials that have no base map.
-    white_view: TextureView,
     meshes: Vec<GpuModel>,
     /// One buffer for the whole pass — the static mesh shader has no per-object constants.
     frame_buffer: wgpu::Buffer,
@@ -390,20 +427,11 @@ pub struct ModelPass {
 }
 
 impl ModelPass {
-    pub fn new(
-        device: &Device,
-        queue: &Queue,
-        targets: TargetFormats,
-    ) -> Self {
-        let shader = ModelShader::new(device);
+    pub fn new(device: &Device, targets: TargetFormats, bindless: &BindlessTextures) -> Self {
+        let shader = ModelShader::new(device, bindless);
         let frame_layout = ModelFrameBindGroupLayout::new(device);
-        let material_layout = ModelMaterialBindGroupLayout::new(device);
-        let layout = ModelPipelineLayout::new(device, &frame_layout, &material_layout);
+        let layout = ModelPipelineLayout::new(device, &frame_layout, bindless);
         let pipelines = ModelPipelines::new(device, &layout, &shader, targets);
-        // D3D9's default addressing is WRAP, and a third of the mesh library needs it: 501
-        // of 1500 meshes sampled out of graphics.big carry UVs outside 0..1.
-        let sampler = repeat_sampler(device, "model_sampler");
-        let white_view = create_white_view(device, queue);
 
         let frame_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("model_frame_buffer"),
@@ -422,10 +450,7 @@ impl ModelPass {
         });
 
         Self {
-            material_layout,
             pipelines,
-            sampler,
-            white_view,
             meshes: Vec::new(),
             frame_buffer,
             frame_bind_group,
@@ -443,6 +468,7 @@ impl ModelPass {
         &mut self,
         device: &Device,
         queue: &Queue,
+        bindless: &mut BindlessTextures,
         model: &Model,
         instances: &[ModelInstance],
     ) -> Result<(), AddModelError> {
@@ -453,7 +479,7 @@ impl ModelPass {
             return Err(AddModelError::NoInstances);
         }
 
-        let materials = self.build_materials(device, queue, &model.materials);
+        let materials = build_materials(device, queue, bindless, &model.materials)?;
         let primitives = build_primitives(device, model);
 
         let instance_buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -483,61 +509,6 @@ impl ModelPass {
         self.meshes.len()
     }
 
-    /// Build a [`GpuMaterial`] per input material, uploading each diffuse texture (or
-    /// falling back to the shared white texture) and baking its alpha mode into a uniform.
-    fn build_materials(
-        &self,
-        device: &Device,
-        queue: &Queue,
-        materials_in: &[ModelMaterial],
-    ) -> Vec<GpuMaterial> {
-        let mut materials = Vec::with_capacity(materials_in.len());
-        for material in materials_in {
-            let uploaded = material
-                .diffuse
-                .as_ref()
-                .map(|image| upload_texture(device, queue, "model_material_diffuse", image));
-            let view = uploaded.as_ref().unwrap_or(&self.white_view);
-
-            let material_uniforms = MaterialUniforms {
-                alpha_test: (material.alpha_mode == AlphaMode::Cutout) as u32,
-                alpha_cutoff: ALPHA_CUTOFF,
-                _pad0: 0.0,
-                _pad1: 0.0,
-            };
-            let material_buffer = device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("model_material_uniform"),
-                contents: bytemuck::cast_slice(&[material_uniforms]),
-                usage: BufferUsages::UNIFORM,
-            });
-
-            let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                label: Some("model_material_bind_group"),
-                layout: &self.material_layout.0,
-                entries: &[
-                    BindGroupEntry {
-                        binding: 0,
-                        resource: BindingResource::TextureView(view),
-                    },
-                    BindGroupEntry {
-                        binding: 1,
-                        resource: BindingResource::Sampler(&self.sampler),
-                    },
-                    BindGroupEntry {
-                        binding: 2,
-                        resource: material_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-
-            materials.push(GpuMaterial {
-                bind_group,
-                transparent: material.alpha_mode == AlphaMode::Blend,
-            });
-        }
-        materials
-    }
-
     pub fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
         queue.write_buffer(
             &self.frame_buffer,
@@ -553,6 +524,7 @@ impl ModelPass {
     pub fn pass(
         &self,
         cmd: &mut CommandEncoder,
+        bindless: &BindGroup,
         target_texture_view: &TextureView,
         depth_texture_view: &TextureView,
     ) {
@@ -585,6 +557,9 @@ impl ModelPass {
         });
 
         rpass.set_bind_group(0, &self.frame_bind_group, &[]);
+        // Once for the whole pass, not once per material — the array holds every texture the
+        // level uses, and a draw picks its slot with an immediate instead (AGENTS.md §12.4).
+        rpass.set_bind_group(1, bindless, &[]);
 
         // Opaque and cutout first — they write depth, and every placement of a mesh draws
         // in one instanced call.
@@ -640,7 +615,7 @@ impl GpuModel {
                     &pipelines.opaque_unculled
                 };
                 rpass.set_pipeline(pipeline);
-                rpass.set_bind_group(1, &material.bind_group, &[]);
+                rpass.set_immediates(0, bytemuck::bytes_of(&material.draw));
                 let end = sub.index_start + sub.index_count;
                 rpass.draw_indexed(sub.index_start..end, 0, instances.clone());
             }
@@ -673,7 +648,7 @@ impl GpuModel {
                     &pipelines.blend_unculled
                 };
                 rpass.set_pipeline(pipeline);
-                rpass.set_bind_group(1, &material.bind_group, &[]);
+                rpass.set_immediates(0, bytemuck::bytes_of(&material.draw));
                 let end = sub.index_start + sub.index_count;
                 rpass.draw_indexed(sub.index_start..end, 0, instance..instance + 1);
             }
@@ -735,37 +710,4 @@ fn build_primitives(device: &Device, model: &Model) -> Vec<GpuPrimitive> {
             }
         })
         .collect()
-}
-
-/// Create a 1x1 opaque-white texture view, used for materials without a diffuse map.
-pub(crate) fn create_white_view(device: &Device, queue: &Queue) -> TextureView {
-    let texture = device.create_texture(&TextureDescriptor {
-        label: Some("model_white_fallback"),
-        size: Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        texture.as_image_copy(),
-        &[255, 255, 255, 255],
-        TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(4),
-            rows_per_image: None,
-        },
-        Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-    );
-    texture.create_view(&TextureViewDescriptor::default())
 }

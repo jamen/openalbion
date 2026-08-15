@@ -54,19 +54,21 @@ struct Frame {
     lighting: Lighting,
 };
 
-struct Material {
+// Per draw, in immediate storage — wgpu's push constants. This replaces a whole bind group
+// per material: a texture, a sampler and a two-field uniform buffer allocated for every
+// material of every mesh (AGENTS.md §12.5). A WGSL module may declare at most one of these.
+struct DrawConstants {
+    // Which slot of `bindless_textures` this material's base map is in. Constant for the
+    // whole draw, so the index is dynamically uniform and needs no non-uniform indexing.
+    texture_index: u32,
     // Non-zero enables alpha testing (cutout): fragments below `alpha_cutoff` are discarded.
     alpha_test: u32,
     alpha_cutoff: f32,
-    _pad0: f32,
-    _pad1: f32,
+    _pad: u32,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
-
-@group(1) @binding(0) var base_texture: texture_2d<f32>;
-@group(1) @binding(1) var base_sampler: sampler;
-@group(1) @binding(2) var<uniform> material: Material;
+var<immediate> draw: DrawConstants;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -122,12 +124,18 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // tex t0
-    let base = textureSample(base_texture, base_sampler, in.uv);
+    // tex t0 -- the material's base map, out of the shared bindless array. `repeat_sampler`
+    // is D3D9's default WRAP addressing: 501 of 1500 meshes sampled out of graphics.big carry
+    // UVs outside 0..1, so clamping is visibly wrong for a third of the mesh library.
+    let base = textureSample(
+        bindless_textures[draw.texture_index],
+        repeat_sampler,
+        in.uv,
+    );
 
     // Alpha-test (cutout) materials discard rather than blend. The original does this with
     // D3DRS_ALPHATESTENABLE around the same draw, not in the shader.
-    if material.alpha_test != 0u && base.a < material.alpha_cutoff {
+    if draw.alpha_test != 0u && base.a < draw.alpha_cutoff {
         discard;
     }
 

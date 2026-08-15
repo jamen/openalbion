@@ -20,10 +20,17 @@ pub enum BuildModelError {
 /// a quarter of the materials in `graphics.big` have `base_texture_id == 0`, so this is the
 /// normal case, not an error.
 ///
+/// `is_resident` answers "does the renderer already hold this asset id" — a texture it says
+/// yes to is **not decoded at all**, only named. That is where most of the dedup win is:
+/// across a level, between a half and three quarters of material texture references are
+/// repeats (AGENTS.md §12.1, §12.6), and the archive read plus the BC slice is the larger part
+/// of the work the renderer's own registry would only have deduplicated at upload.
+///
 /// Where the model stands is not this function's business — that is a `ModelInstance`.
 pub fn build_model(
     mesh: &Mesh,
     material_textures: &[Option<(AssetMetadata, Vec<u8>)>],
+    is_resident: impl Fn(u32) -> bool,
 ) -> Result<Model, BuildModelError> {
     if mesh.primitives.is_empty() {
         return Err(BuildModelError::NoPrimitives);
@@ -34,18 +41,32 @@ pub fn build_model(
         .iter()
         .enumerate()
         .map(|(i, material)| {
-            let diffuse = material_textures
-                .get(i)
-                .and_then(|t| t.as_ref())
-                .and_then(|(asset, data)| match super::decode_texture(asset, data) {
+            let resolved = material_textures.get(i).and_then(|t| t.as_ref());
+            // The id the renderer keys its registry by — the asset's own id, which is what
+            // makes the same texture shared between two meshes one upload (AGENTS.md §3.11).
+            let diffuse_id = resolved.map(|(asset, _)| asset.id);
+            // Asked exactly once per material: it is the thing being counted, and a
+            // double call would flatter the numbers it produces.
+            let resident = diffuse_id.is_some_and(&is_resident);
+
+            let diffuse = if resident {
+                // Already there: name it and skip the read and the decode entirely.
+                None
+            } else {
+                resolved.and_then(|(asset, data)| match super::decode_texture(asset, data) {
                     Ok(image) => Some(image),
                     Err(error) => {
                         tracing::warn!("Material {i} diffuse texture: {error}");
                         None
                     }
-                });
+                })
+            };
 
             ModelMaterial {
+                // A texture that failed to decode has no usable map, so it must not claim a
+                // registry slot it will never fill — otherwise every later mesh sharing that
+                // id would be told it is resident and draw the fallback silently.
+                diffuse_id: diffuse_id.filter(|_| resident || diffuse.is_some()),
                 diffuse,
                 alpha_mode: alpha_mode(material.boolean_alpha, material.transparent),
                 two_sided: material.two_sided,

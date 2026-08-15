@@ -268,7 +268,7 @@ impl LocalDetailPass {
             unculled: make(false),
             // D3D9 addresses WRAP by default, and a third of the mesh library needs it.
             sampler: repeat_sampler(device, "local_detail_sampler"),
-            white_view: crate::model::create_white_view(device, queue),
+            white_view: crate::bindless::create_white_view(device, queue),
             batches: Vec::new(),
             frame_buffer,
             frame_bind_group,

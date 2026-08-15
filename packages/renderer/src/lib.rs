@@ -22,7 +22,7 @@ mod sky;
 mod terrain;
 mod texture;
 
-use self::bindless::BindlessTextures;
+use self::bindless::{BindlessTextures, TextureKey};
 use self::depth::DepthTexture;
 use self::local_detail::LocalDetailPass;
 use self::model::ModelPass;
@@ -316,7 +316,8 @@ impl<'target> Renderer<'target> {
             sample_count: supported_sample_count(&adapter, surface_format, DepthTexture::FORMAT),
         };
 
-        let passes = RenderPasses::new(&device, &queue, targets);
+        let bindless = BindlessTextures::new(&device, &queue, bindless_capacity);
+        let passes = RenderPasses::new(&device, &queue, targets, &bindless);
         let depth_texture = DepthTexture::new(&device, [1, 1], targets.sample_count);
 
         Ok(Self {
@@ -328,7 +329,7 @@ impl<'target> Renderer<'target> {
             msaa_texture: targets
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, surface_format, [1, 1], targets.sample_count)),
-            bindless: BindlessTextures::new(&device, &queue, bindless_capacity),
+            bindless,
             device,
             queue,
             passes,
@@ -356,7 +357,8 @@ impl<'target> Renderer<'target> {
             depth: DepthTexture::FORMAT,
             sample_count: supported_sample_count(&adapter, format, DepthTexture::FORMAT),
         };
-        let passes = RenderPasses::new(&device, &queue, targets);
+        let bindless = BindlessTextures::new(&device, &queue, bindless_capacity);
+        let passes = RenderPasses::new(&device, &queue, targets, &bindless);
         let depth_texture = DepthTexture::new(&device, size, targets.sample_count);
         let target = Self::make_offscreen(&device, format, size);
 
@@ -368,7 +370,7 @@ impl<'target> Renderer<'target> {
             msaa_texture: targets
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, format, size, targets.sample_count)),
-            bindless: BindlessTextures::new(&device, &queue, bindless_capacity),
+            bindless,
             device,
             queue,
             passes,
@@ -460,6 +462,20 @@ impl<'target> Renderer<'target> {
     pub fn clear_models(&mut self) {
         self.passes.model.clear_models();
         self.passes.local_detail.clear();
+        // The registry owns the textures those models were drawing with, so it clears with
+        // them. Without this a scene load would leak every previous level's textures *and*
+        // burn their slots; every `BindlessIndex` handed out before now is stale after it
+        // (AGENTS.md §12.4).
+        self.bindless.clear();
+    }
+
+    /// Whether `id` is already resident, so the caller can skip reading and decoding it.
+    ///
+    /// This is where the dedup pays: the registry would deduplicate the *upload* anyway, but
+    /// asking first lets `scene` skip the archive read and the BC slice too, which is the
+    /// larger half of the work (AGENTS.md §12.6).
+    pub fn has_texture(&self, asset_id: u32) -> bool {
+        self.bindless.index_of(TextureKey::Asset(asset_id)).is_some()
     }
 
     /// Upload one mesh asset and every repeated-mesh local detail placement of it.
@@ -495,7 +511,7 @@ impl<'target> Renderer<'target> {
     ) -> Result<(), AddModelError> {
         self.passes
             .model
-            .add_model(&self.device, &self.queue, model, instances)
+            .add_model(&self.device, &self.queue, &mut self.bindless, model, instances)
     }
 
     /// `(mesh assets uploaded, placements drawn)`.
@@ -560,6 +576,12 @@ impl<'target> Renderer<'target> {
     /// Under MSAA the passes draw into the multisampled texture and [`ResolvePass`] resolves
     /// it into `view`; without it they draw into `view` directly.
     fn encode(&mut self, view: &TextureView) -> CommandEncoder {
+        // One rebuild per frame, at a controlled point, rather than one per registered
+        // texture: a `BindGroup` is immutable, so every new texture means rebuilding the
+        // whole array (AGENTS.md §12.2).
+        self.bindless.rebuild_if_dirty(&self.device);
+        let bindless = self.bindless.bind_group();
+
         let mut cmd = self.device.create_command_encoder(&Default::default());
 
         let colour = match &self.msaa_texture {
@@ -579,7 +601,7 @@ impl<'target> Renderer<'target> {
             .pass(&mut cmd, colour, self.depth_texture.view());
         self.passes
             .model
-            .pass(&mut cmd, colour, self.depth_texture.view());
+            .pass(&mut cmd, bindless, colour, self.depth_texture.view());
 
         if let Some(msaa) = &self.msaa_texture {
             self.passes.resolve.pass(&mut cmd, &msaa.view, view);
@@ -737,12 +759,17 @@ struct RenderPasses {
 }
 
 impl RenderPasses {
-    fn new(device: &Device, queue: &Queue, targets: TargetFormats) -> Self {
+    fn new(
+        device: &Device,
+        queue: &Queue,
+        targets: TargetFormats,
+        bindless: &BindlessTextures,
+    ) -> Self {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, targets),
             terrain: TerrainPass::new(device, targets),
-            model: ModelPass::new(device, queue, targets),
+            model: ModelPass::new(device, targets, bindless),
             local_detail: LocalDetailPass::new(device, queue, targets),
             resolve: ResolvePass,
         }

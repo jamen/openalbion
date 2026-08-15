@@ -1825,12 +1825,21 @@ shaders at module creation so the two language's layouts cannot drift. The four 
    (c) the array built and validated at its declared capacity — `Bindless textures: 4096 slots`
    — which only happens because `max_binding_array_elements_per_shader_stage` was raised.
    `renderer/tests/bindless_test.rs` keeps (b) and (c) as gates.
-2. **Model pass — next.** The worst bind-group churn and the clearest key (§3.11). Replace
-   `ModelMaterialBindGroupLayout` and the per-material `BindGroup` with `DrawConstants` per
-   sub-mesh draw. Dedup (§12.6) lands here first. *Verify:* byte-identical screenshot again, plus
-   a logged registered-texture count matching §12.3's measured number for that level.
-3. **Local detail.** Same shape — it already shares `Model`/`ModelMaterial` — so the same change
-   applies, with `alpha_cutoff` coming from the batch rather than the constant.
+2. ~~**Model pass.**~~ **DONE.** `ModelMaterialBindGroupLayout`, its per-material `BindGroup`
+   and `MaterialUniforms` are all gone; a 16-byte `DrawConstants` immediate carries the
+   texture slot and the alpha-test pair per sub-mesh draw, and the shared bindless group binds
+   **once per pass** instead of once per material. `scene::build_model` takes an `is_resident`
+   predicate, so a repeat asset id skips the archive read and the BC slice as well as the
+   upload (§12.6).
+   *Verify:* LookoutPoint **and** Witchwood are byte-identical to before, and the registry
+   lands where §12.3 predicted — LookoutPoint's region registers **97** slots against a
+   predicted ~100. The dedup is measured, not assumed:
+   **LookoutPoint 88 of 189 material references already resident (47%), Witchwood 93 of 144
+   (65%)** — that much archive reading and BC slicing no longer happens at all.
+3. **Local detail — next.** Same shape — it already shares `Model`/`ModelMaterial` — so the
+   same change applies, with `alpha_cutoff` coming from the batch rather than the constant.
+   Note it still calls `crate::bindless::create_white_view` for its own fallback; that goes
+   when it starts using `fallback_index` instead.
 4. **Terrain.** Different shape: two indices per draw (§3.4), and the blend tables register once
    at startup rather than per level. The `blend_sampler` stays a named binding (§12.4).
 5. **Sky.** Two textures a frame, the smallest surface; last because it has the least to gain.
@@ -1882,8 +1891,9 @@ cheap to revisit and neither has a caller yet.
 1. ~~**Registry lifetime**~~ — **level-scoped**. `BindlessTextures::clear` drops every
    registration and returns the slots, and `BindlessIndex` stays a bare `u32` whose validity
    runs from one clear to the next — the same lifetime the `GpuModel`s holding them already
-   have. `clear` still needs wiring into `Renderer::clear_models` when step 2 gives it
-   something to clear; **until then a scene reload would leak, so do not skip that.**
+   have. `Renderer::clear_models` clears it, and
+   `renderer/tests/bindless_test.rs` keeps that a gate — without it a scene load would leak
+   every previous level's textures *and* burn their slots.
 2. ~~**Capacity**~~ — **4096, clamped to `adapter.limits()`**, floor 256.
 3. **Does the sky pass migrate at all?** It has two textures and one sampler and gains almost
    nothing. Migrating it buys uniformity — one texture path in the renderer, no exceptions —
