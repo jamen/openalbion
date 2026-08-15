@@ -547,9 +547,10 @@ impl TerrainPass {
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth_texture_view,
-                // Reverse-Z: `0.0` is "nothing here yet", not `1.0` (`Camera::projection_matrix`).
+                // `ClearPass` clears depth, not this pass — see its doc comment. This one only
+                // ever loads, like every other drawing pass.
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(0.0),
+                    load: wgpu::LoadOp::Load,
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,

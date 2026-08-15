@@ -106,12 +106,12 @@ pub struct Renderer<'target> {
     /// case the passes draw into the presentable texture directly.
     msaa_texture: Option<MsaaTexture>,
     passes: RenderPasses,
-    /// The one texture array every pass will draw through (AGENTS.md §12).
+    /// The one texture array every pass draws through (AGENTS.md §12).
     ///
-    /// Landed unused: no pass registers anything yet, so every slot holds the fallback and
-    /// the array is exercised only by being built and validated. That is the point of
-    /// §12.8 step 1 — the features, the limits and the layout are proven before any
-    /// behaviour depends on them.
+    /// **Scene-scoped**: `clear_scene` drops every registration, so a `BindlessIndex` is valid
+    /// only from one clear to the next. A pass that registers outside a scene load — the sky
+    /// does, on a keyframe change — carries the generation it registered under and checks it
+    /// at draw time (§12.4).
     bindless: BindlessTextures,
     target: Target<'target>,
 }
@@ -412,8 +412,9 @@ impl<'target> Renderer<'target> {
 
     /// `(textures registered, capacity)` in the bindless array (AGENTS.md §12).
     ///
-    /// Zero registered is the correct answer until §12.8 step 2 migrates the model pass; the
-    /// capacity is what proves the array was built at the size the limits were requested for.
+    /// The measurement §12.3 predicted and §13.2 budgets against: LookoutPoint's region — the
+    /// worst case in the shipped data — registers 227 slots at scene load and 229 once the
+    /// sky's keyframe pair lands, against a capacity of 4096.
     pub fn bindless_stats(&self) -> (u32, u32) {
         self.bindless.stats()
     }
@@ -602,7 +603,9 @@ impl<'target> Renderer<'target> {
             None => view,
         };
 
-        self.passes.clear.pass(&mut cmd, colour);
+        self.passes
+            .clear
+            .pass(&mut cmd, colour, self.depth_texture.view());
         self.passes.sky.pass(&mut cmd, bindless, colour);
         self.passes
             .terrain
@@ -784,12 +787,24 @@ impl RenderPasses {
     }
 }
 
+/// Clears the frame: colour to black, depth to the reverse-Z "nothing here yet" value.
+///
+/// **The depth clear belongs here and not in a drawing pass.** It used to be `TerrainPass`'s,
+/// which made that pass silently load-bearing in two ways: it returns early when it has no
+/// buffers, and it is the first pass a `EnableLandscape`-style toggle (AGENTS.md §13.5) would
+/// switch off — either way the passes after it would depth-test against the *previous* frame.
+/// A pass that draws nothing cannot be turned off by accident.
 struct ClearPass;
 
 impl ClearPass {
-    fn pass(&mut self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
+    fn pass(
+        &mut self,
+        cmd: &mut CommandEncoder,
+        target_texture_view: &TextureView,
+        depth_texture_view: &TextureView,
+    ) {
         cmd.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
+            label: Some("clear"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: target_texture_view,
                 depth_slice: None,
@@ -799,7 +814,16 @@ impl ClearPass {
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_texture_view,
+                // Reverse-Z: `0.0` is "nothing here yet", not `1.0`
+                // (`Camera::projection_matrix`).
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
