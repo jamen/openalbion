@@ -57,7 +57,12 @@
               ];
               targets = [ mingwTarget ];
             })
-            mingw.stdenv.cc
+            # `mingw.stdenv.cc` deliberately does NOT go in `packages`. Its cc-wrapper setup
+            # hook exports a bare `CC`/`AR` for its own target, which the `cc` crate then uses
+            # to build `packages/lzo`'s minilzo — producing a *Windows COFF* object that the
+            # Linux host link cannot resolve (`undefined symbol: lzo1x_decompress_safe`).
+            # `cargo check` never links, so the breakage hides. Everything the cross build
+            # needs is exported below by absolute store path, so it need not be on PATH.
           ];
 
           shellHook = ''
