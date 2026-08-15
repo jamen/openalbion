@@ -1836,12 +1836,21 @@ shaders at module creation so the two language's layouts cannot drift. The four 
    predicted ~100. The dedup is measured, not assumed:
    **LookoutPoint 88 of 189 material references already resident (47%), Witchwood 93 of 144
    (65%)** — that much archive reading and BC slicing no longer happens at all.
-3. **Local detail — next.** Same shape — it already shares `Model`/`ModelMaterial` — so the
-   same change applies, with `alpha_cutoff` coming from the batch rather than the constant.
-   Note it still calls `crate::bindless::create_white_view` for its own fallback; that goes
-   when it starts using `fallback_index` instead.
-4. **Terrain.** Different shape: two indices per draw (§3.4), and the blend tables register once
-   at startup rather than per level. The `blend_sampler` stays a named binding (§12.4).
+3. ~~**Local detail.**~~ **DONE.** The same change, with `alpha_cutoff` in the immediate
+   instead of a per-batch uniform buffer, and no alpha-test flag — this pass always
+   alpha-tests, which is what makes tens of thousands of grass instances cheap. It now shares
+   the *array* with the model pass as well as the types, so a mesh drawn by both — which is
+   the normal case, since local detail's static-mesh half goes through the model pass by
+   design (§3.13) — shares one upload.
+   *Verify:* LookoutPoint and Witchwood byte-identical. Full-level dedup, both upload paths
+   counted together: **LookoutPoint 88 of 204 references resident (112 slots), Witchwood 93 of
+   146 (51 slots), Darkwood 32 of 62 (29 slots)**.
+4. **Terrain — next.** Different shape: two indices per draw (§3.4), and the blend tables
+   register once at startup rather than per level — which makes them the first registrations
+   that must *survive* `clear`, since they are not level-scoped. Either register them after
+   each clear or give them a slot range outside it; decide before writing the code. The blend
+   table samples through `clamp_sampler`, the ground texture through `repeat_sampler`, both
+   already in the shared group (§12.4).
 5. **Sky.** Two textures a frame, the smallest surface; last because it has the least to gain.
 6. **Retire what is now dead:** `ModelMaterialBindGroupLayout`, `MaterialUniforms`,
    `TerrainBindGroupLayouts.draw`, local detail's inline material layout,

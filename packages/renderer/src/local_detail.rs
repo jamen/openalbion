@@ -13,21 +13,19 @@
 //! than fifteen thousand.
 
 use crate::TargetFormats;
-use crate::image::TextureImage;
 use crate::model::{Model, ModelVertex};
+use crate::bindless::{BindlessIndex, BindlessTextures, TextureKey};
 use crate::lighting::{LIGHTING_WGSL, LightingUniforms};
-use crate::texture::{repeat_sampler, upload_texture};
+use crate::texture::upload_texture;
 use bytemuck::{Pod, Zeroable};
 use derive_more::{Display, Error};
 use std::any::type_name;
 use wgpu::{
-    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingType, BufferBindingType, BufferUsages,
     ColorTargetState, ColorWrites, CommandEncoder, CompareFunction, DepthBiasState,
     DepthStencilState, Device, Face, FragmentState, FrontFace, IndexFormat, PipelineLayout,
-    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor,
-    SamplerBindingType, ShaderModule, ShaderStages, StencilState, TextureSampleType, TextureView,
-    TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
+    PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderStages, StencilState, TextureView, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -95,16 +93,22 @@ impl FrameUniforms {
     }
 }
 
+/// The per-draw immediate, matching `struct DrawConstants` in `local_detail.wgsl`.
+///
+/// The same 16 bytes the model pass uses (AGENTS.md §12.5), minus the alpha-test flag: this
+/// pass *always* alpha-tests, because that is what makes tens of thousands of grass instances
+/// cheap — no sorting, and depth written.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct MaterialUniforms {
+struct DrawConstants {
+    texture_index: BindlessIndex,
     alpha_cutoff: f32,
-    _pad: [f32; 3],
+    _pad: [u32; 2],
 }
 
 /// A mesh asset and every repeated-mesh placement of it.
 struct GpuBatch {
-    materials: Vec<BindGroup>,
+    materials: Vec<DrawConstants>,
     primitives: Vec<GpuPrimitive>,
     instance_buffer: wgpu::Buffer,
     instance_count: u32,
@@ -129,25 +133,29 @@ pub enum AddLocalDetailError {
     NoPrimitives,
     #[display("no instances to place")]
     NoInstances,
+    #[display("no room in the bindless texture array: {_0}")]
+    BindlessFull(crate::bindless::BindlessFull),
 }
 
 pub struct LocalDetailPass {
-    material_layout: BindGroupLayout,
     culled: RenderPipeline,
     unculled: RenderPipeline,
-    sampler: wgpu::Sampler,
-    white_view: TextureView,
     batches: Vec<GpuBatch>,
     frame_buffer: wgpu::Buffer,
     frame_bind_group: BindGroup,
 }
 
 impl LocalDetailPass {
-    pub fn new(device: &Device, queue: &Queue, targets: TargetFormats) -> Self {
+    pub fn new(device: &Device, targets: TargetFormats, bindless: &BindlessTextures) -> Self {
         let shader: ShaderModule = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("local_detail.wgsl"),
             source: wgpu::ShaderSource::Wgsl(
-                format!("{LIGHTING_WGSL}\n{}", include_str!("local_detail.wgsl")).into(),
+                format!(
+                    "{LIGHTING_WGSL}\n{}\n{}",
+                    bindless.wgsl_prelude(),
+                    include_str!("local_detail.wgsl"),
+                )
+                .into(),
             ),
         });
 
@@ -165,42 +173,12 @@ impl LocalDetailPass {
             }],
         });
 
-        let material_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("local_detail_material_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-        });
-
         let layout: PipelineLayout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(type_name::<Self>()),
-            bind_group_layouts: &[&frame_layout, &material_layout],
-            immediate_size: 0,
+            // Group 1 is the shared bindless group, at the same index the per-material
+            // group used (AGENTS.md §12.4).
+            bind_group_layouts: &[&frame_layout, bindless.layout()],
+            immediate_size: size_of::<DrawConstants>() as u32,
         });
 
         // One pipeline shape, in a culled and an unculled variant. There is no blended
@@ -263,12 +241,8 @@ impl LocalDetailPass {
         });
 
         Self {
-            material_layout,
             culled: make(true),
             unculled: make(false),
-            // D3D9 addresses WRAP by default, and a third of the mesh library needs it.
-            sampler: repeat_sampler(device, "local_detail_sampler"),
-            white_view: crate::bindless::create_white_view(device, queue),
             batches: Vec::new(),
             frame_buffer,
             frame_bind_group,
@@ -288,6 +262,7 @@ impl LocalDetailPass {
         &mut self,
         device: &Device,
         queue: &Queue,
+        bindless: &mut BindlessTextures,
         model: &Model,
         instances: &[LocalDetailInstance],
         alpha_cutoff: f32,
@@ -299,44 +274,39 @@ impl LocalDetailPass {
             return Err(AddLocalDetailError::NoInstances);
         }
 
-        let materials = model
-            .materials
-            .iter()
-            .map(|material| {
-                let uploaded = material.diffuse.as_ref().map(|image: &TextureImage| {
-                    upload_texture(device, queue, "local_detail_diffuse", image)
-                });
-                let view = uploaded.as_ref().unwrap_or(&self.white_view);
-
-                let material_buffer = device.create_buffer_init(&BufferInitDescriptor {
-                    label: Some("local_detail_material_uniform"),
-                    contents: bytemuck::cast_slice(&[MaterialUniforms {
-                        alpha_cutoff,
-                        _pad: [0.0; 3],
-                    }]),
-                    usage: BufferUsages::UNIFORM,
-                });
-
-                device.create_bind_group(&BindGroupDescriptor {
-                    label: Some("local_detail_material_bind_group"),
-                    layout: &self.material_layout,
-                    entries: &[
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::TextureView(view),
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: BindingResource::Sampler(&self.sampler),
-                        },
-                        BindGroupEntry {
-                            binding: 2,
-                            resource: material_buffer.as_entire_binding(),
-                        },
-                    ],
-                })
-            })
-            .collect();
+        // Registered by asset id in the same array the model pass uses, so a mesh drawn by
+        // both — and local detail's static-mesh half goes through the model pass by design
+        // (AGENTS.md §3.13) — shares one upload rather than two.
+        let mut materials = Vec::with_capacity(model.materials.len());
+        for material in &model.materials {
+            let texture_index = match material.diffuse_id {
+                Some(id) => {
+                    let key = TextureKey::Asset(id);
+                    match (bindless.index_of(key), &material.diffuse) {
+                        (Some(index), _) => index,
+                        (None, Some(image)) => {
+                            let view =
+                                upload_texture(device, queue, "local_detail_diffuse", image);
+                            bindless
+                                .register(key, view)
+                                .map_err(AddLocalDetailError::BindlessFull)?
+                        }
+                        (None, None) => {
+                            tracing::warn!(
+                                "Local detail texture {id} was not registered — drawing white"
+                            );
+                            bindless.fallback_index()
+                        }
+                    }
+                }
+                None => bindless.fallback_index(),
+            };
+            materials.push(DrawConstants {
+                texture_index,
+                alpha_cutoff,
+                _pad: [0; 2],
+            });
+        }
 
         let primitives = model
             .primitives
@@ -400,6 +370,7 @@ impl LocalDetailPass {
     pub fn pass(
         &self,
         cmd: &mut CommandEncoder,
+        bindless: &BindGroup,
         target_texture_view: &TextureView,
         depth_texture_view: &TextureView,
     ) {
@@ -432,6 +403,7 @@ impl LocalDetailPass {
         });
 
         rpass.set_bind_group(0, &self.frame_bind_group, &[]);
+        rpass.set_bind_group(1, bindless, &[]);
 
         for batch in &self.batches {
             rpass.set_vertex_buffer(1, batch.instance_buffer.slice(..));
@@ -447,7 +419,7 @@ impl LocalDetailPass {
                     } else {
                         &self.unculled
                     });
-                    rpass.set_bind_group(1, material, &[]);
+                    rpass.set_immediates(0, bytemuck::bytes_of(material));
                     rpass.draw_indexed(
                         sub.index_start..sub.index_start + sub.index_count,
                         0,

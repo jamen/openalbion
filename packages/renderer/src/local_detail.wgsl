@@ -90,22 +90,22 @@ struct Frame {
     lighting: Lighting,
 };
 
-struct Material {
+// Per draw, in immediate storage — replacing a texture, a sampler and a uniform buffer
+// allocated per material per batch (AGENTS.md §12.5).
+struct DrawConstants {
+    // Which slot of the shared bindless array this material's base map is in.
+    texture_index: u32,
     // The alpha test the object type asks for, `AlphaRef / 255`. Unlike the static mesh
     // pass's cutoff this is read, not invented: `CLocalDetailObjectCollectionType`'s
     // constructor takes `AlphaRef` from the def and falls back to the ENGINE def's
     // `LocalDetailBooleanAlphaDefaultAlphaRef` or `DefaultPrimitiveAlphaRef`.
     alpha_cutoff: f32,
-    _pad0: f32,
-    _pad1: f32,
-    _pad2: f32,
+    _pad0: u32,
+    _pad1: u32,
 };
 
 @group(0) @binding(0) var<uniform> frame: Frame;
-
-@group(1) @binding(0) var base_texture: texture_2d<f32>;
-@group(1) @binding(1) var base_sampler: sampler;
-@group(1) @binding(2) var<uniform> material: Material;
+var<immediate> draw: DrawConstants;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -168,12 +168,16 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // tex t0
-    let base = textureSample(base_texture, base_sampler, in.uv);
+    let base = textureSample(
+        bindless_textures[draw.texture_index],
+        repeat_sampler,
+        in.uv,
+    );
 
     // The original does this with D3DRS_ALPHATESTENABLE and D3DRS_ALPHAREF around the draw,
     // not in the shader. Without it the alpha channel of a grass blade would draw as opaque
     // black, since the pass does not blend.
-    if base.a < material.alpha_cutoff {
+    if base.a < draw.alpha_cutoff {
         discard;
     }
 

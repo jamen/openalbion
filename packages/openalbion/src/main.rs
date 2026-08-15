@@ -65,6 +65,30 @@ struct Cli {
     look_at: Option<String>,
 }
 
+/// How much of a level's texture work the bindless registry saves (AGENTS.md §12.6).
+///
+/// Counted across both upload paths — `.tng` things and local detail's repeated meshes —
+/// because they draw from one array and a mesh used by both should show up as one upload.
+#[derive(Default)]
+struct TextureReuse {
+    /// Material texture references seen.
+    refs: std::cell::Cell<usize>,
+    /// Of those, the ones already resident, which skipped the read *and* the decode.
+    reused: std::cell::Cell<usize>,
+}
+
+impl TextureReuse {
+    /// Record one reference and pass its residency straight back, so counting cannot change
+    /// what is counted.
+    fn observe(&self, resident: bool) -> bool {
+        self.refs.set(self.refs.get() + 1);
+        if resident {
+            self.reused.set(self.reused.get() + 1);
+        }
+        resident
+    }
+}
+
 /// `x,y,z` → a point. Returns `None` for anything else, so a typo falls back to the default
 /// framing rather than putting the camera somewhere silently wrong.
 fn parse_point(text: &str) -> Option<glam::Vec3> {
@@ -522,8 +546,13 @@ impl App {
             }
         }
 
+        // What the bindless registry saves, counted rather than asserted (AGENTS.md §12.6):
+        // every material texture reference across *both* upload paths, and how many were
+        // already resident and so skipped the archive read and the BC decode entirely.
+        let textures = TextureReuse::default();
+
         let local_detail = scene::merge_local_detail(all_local_detail);
-        self.load_repeated_meshes(renderer, &local_detail);
+        self.load_repeated_meshes(renderer, &local_detail, &textures);
         for (mesh_id, mut objects) in local_detail.by_mesh {
             sources
                 .entry(mesh_id)
@@ -538,11 +567,6 @@ impl App {
         let mut uploaded_meshes = 0usize;
         let mut placed = 0usize;
         let mut failed_meshes = 0usize;
-        // What the bindless registry saves, counted rather than asserted (AGENTS.md §12.6):
-        // every material texture reference, and how many of them were already resident and so
-        // skipped the archive read and the BC decode entirely.
-        let texture_refs = std::cell::Cell::new(0usize);
-        let texture_reused = std::cell::Cell::new(0usize);
 
         // Deterministic order so two runs log the same thing.
         let mut mesh_ids: Vec<u32> = instances_by_mesh.keys().copied().collect();
@@ -555,7 +579,7 @@ impl App {
                 .mesh_name_by_id(mesh_id)
                 .unwrap_or_else(|| format!("#{mesh_id}"));
 
-            let (mesh, textures) = match self.files.read_mesh_by_id(mesh_id) {
+            let (mesh, material_textures) = match self.files.read_mesh_by_id(mesh_id) {
                 Ok(loaded) => loaded,
                 Err(error) => {
                     tracing::warn!(
@@ -570,13 +594,8 @@ impl App {
             // A material with no resolvable texture draws white rather than dropping the
             // whole mesh: roughly a quarter of the materials in graphics.big have no base
             // texture at all, and a silently absent object is worse than an untextured one.
-            let model = match scene::build_model(&mesh, &textures, |id| {
-                texture_refs.set(texture_refs.get() + 1);
-                let resident = renderer.has_texture(id);
-                if resident {
-                    texture_reused.set(texture_reused.get() + 1);
-                }
-                resident
+            let model = match scene::build_model(&mesh, &material_textures, |id| {
+                textures.observe(renderer.has_texture(id))
             }) {
                 Ok(model) => model,
                 Err(error) => {
@@ -613,8 +632,8 @@ impl App {
         tracing::info!(
             "Textures: {registered}/{capacity} bindless slots; {} of {} material references \
              were already resident and skipped the read and decode",
-            texture_reused.get(),
-            texture_refs.get(),
+            textures.reused.get(),
+            textures.refs.get(),
         );
 
         let skipped = &things.skipped;
@@ -640,6 +659,7 @@ impl App {
         &mut self,
         renderer: &mut Renderer<'_>,
         local_detail: &scene::LevelLocalDetail,
+        textures: &TextureReuse,
     ) {
         // Deterministic order so two runs log the same thing.
         let mut keys: Vec<(u32, i32)> = local_detail.repeated.keys().copied().collect();
@@ -658,9 +678,11 @@ impl App {
                 .files
                 .read_mesh_by_id(mesh_id)
                 .map_err(|e| e.to_string())
-                .and_then(|(mesh, textures)| {
-                    scene::build_model(&mesh, &textures, |id| renderer.has_texture(id))
-                        .map_err(|e| e.to_string())
+                .and_then(|(mesh, material_textures)| {
+                    scene::build_model(&mesh, &material_textures, |id| {
+                        textures.observe(renderer.has_texture(id))
+                    })
+                    .map_err(|e| e.to_string())
                 });
             let model = match built {
                 Ok(model) => model,

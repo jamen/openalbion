@@ -317,7 +317,7 @@ impl<'target> Renderer<'target> {
         };
 
         let bindless = BindlessTextures::new(&device, &queue, bindless_capacity);
-        let passes = RenderPasses::new(&device, &queue, targets, &bindless);
+        let passes = RenderPasses::new(&device, targets, &bindless);
         let depth_texture = DepthTexture::new(&device, [1, 1], targets.sample_count);
 
         Ok(Self {
@@ -358,7 +358,7 @@ impl<'target> Renderer<'target> {
             sample_count: supported_sample_count(&adapter, format, DepthTexture::FORMAT),
         };
         let bindless = BindlessTextures::new(&device, &queue, bindless_capacity);
-        let passes = RenderPasses::new(&device, &queue, targets, &bindless);
+        let passes = RenderPasses::new(&device, targets, &bindless);
         let depth_texture = DepthTexture::new(&device, size, targets.sample_count);
         let target = Self::make_offscreen(&device, format, size);
 
@@ -491,6 +491,7 @@ impl<'target> Renderer<'target> {
         self.passes.local_detail.add_batch(
             &self.device,
             &self.queue,
+            &mut self.bindless,
             model,
             instances,
             alpha_cutoff,
@@ -598,7 +599,7 @@ impl<'target> Renderer<'target> {
         // the model pass ends with its depth-sorted blended ones, which must come last.
         self.passes
             .local_detail
-            .pass(&mut cmd, colour, self.depth_texture.view());
+            .pass(&mut cmd, bindless, colour, self.depth_texture.view());
         self.passes
             .model
             .pass(&mut cmd, bindless, colour, self.depth_texture.view());
@@ -759,18 +760,13 @@ struct RenderPasses {
 }
 
 impl RenderPasses {
-    fn new(
-        device: &Device,
-        queue: &Queue,
-        targets: TargetFormats,
-        bindless: &BindlessTextures,
-    ) -> Self {
+    fn new(device: &Device, targets: TargetFormats, bindless: &BindlessTextures) -> Self {
         Self {
             clear: ClearPass,
             sky: OuterSkyPass::new(device, targets),
             terrain: TerrainPass::new(device, targets),
             model: ModelPass::new(device, targets, bindless),
-            local_detail: LocalDetailPass::new(device, queue, targets),
+            local_detail: LocalDetailPass::new(device, targets, bindless),
             resolve: ResolvePass,
         }
     }
