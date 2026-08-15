@@ -11,14 +11,9 @@
 //! pass, indexed per draw. A texture is registered by key; registering a key twice returns the
 //! same index, which is the whole dedup.
 //!
-//! **Nothing uses this yet.** It is landed unused, deliberately, so the device features, the
-//! limits and the array's validation are proven separately from any behavioural change
-//! (§12.8 step 1).
-
-// Step 1 lands the whole registry and migrates no pass, so most of the surface below has no
-// caller yet. The allow goes away on its own as §12.8 steps 2–5 use it; if it is still needed
-// when step 6 closes, something was built that nothing wanted.
-#![allow(dead_code)]
+//! All four passes draw through it: the model pass and local detail key by global asset id
+//! (§3.11), terrain by ground-texture slot and blend-table direction, the sky by asset id.
+//! Between them they hold every texture a level shows.
 
 use crate::texture::{linear_clamp_sampler, repeat_sampler};
 use derive_more::{Display, Error};
@@ -68,9 +63,6 @@ pub enum TextureKey {
     /// asset behind it and must still get a slot of its own rather than collapse into the
     /// white fallback.
     Ground(u32),
-    /// Sky texture slot 0 or 1. Resolved by name per keyframe rather than by asset id, so it
-    /// gets its own key space until that path is asset-id-driven.
-    Sky(u32),
 }
 
 /// A slot in the bindless array.
@@ -196,10 +188,6 @@ impl BindlessTextures {
     /// The layout every pipeline that draws through the array is built against.
     pub fn layout(&self) -> &BindGroupLayout {
         &self.layout
-    }
-
-    pub fn capacity(&self) -> u32 {
-        self.capacity
     }
 
     pub fn generation(&self) -> u32 {

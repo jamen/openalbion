@@ -1858,16 +1858,21 @@ shaders at module creation so the two language's layouts cannot drift. The four 
    `set_terrain`, because the registry is scene-scoped, not model-scoped.
    *Verify:* LookoutPoint and Witchwood byte-identical. LookoutPoint's region now holds 227
    slots, Witchwood 100.
-5. **Sky — next.** Two textures a frame, the smallest surface; last because it has the least
-   to gain. Note it re-uploads only when the active keyframe pair changes, so it registers on
-   a different cadence from everything else — the one pass whose registrations happen mid-run
-   rather than at scene load, and so the first real exercise of `rebuild_if_dirty` outside a
-   load.
-6. **Retire what is now dead:** `ModelMaterialBindGroupLayout`, `MaterialUniforms`,
-   `TerrainBindGroupLayouts.draw`, local detail's inline material layout,
-   `SkyTextureBindGroupLayout`. Each pass keeps only its frame uniform group plus the shared
-   bindless group. **If any of these are still referenced, step 2–5 left something behind** —
-   that is the check, not a cleanup chore.
+5. ~~**Sky.**~~ **DONE.** The smallest surface, and migrated for uniformity rather than gain
+   (§12.11 q3, answered yes). It is the one pass that registers **mid-run** — the keyframe
+   pair advances with the clock and `refresh_sky` re-uploads only when it changes — so it is
+   the first real exercise of `rebuild_if_dirty` outside a scene load, and the only pass that
+   can be mid-registration when a scene is cleared. It carries the generation for that reason
+   and starts its pair afresh rather than pairing a stale index with a new one.
+6. ~~**Retire what is now dead.**~~ **DONE, and the check paid.** `ModelMaterialBindGroupLayout`,
+   `MaterialUniforms`, `TerrainBindGroupLayouts.draw`, `DrawUniforms`, local detail's inline
+   material layout and `SkyTextureBindGroupLayout` are all gone; every pass now holds exactly
+   its own frame uniform group plus the shared bindless group, and binds group 1 **once per
+   pass**. Dropping step 1's `#![allow(dead_code)]` surfaced two things nothing wanted — a
+   `TextureKey::Sky` variant made redundant once the sky keyed by asset id like everything
+   else, and a `capacity()` accessor `stats()` already covered. Both deleted.
+
+**§12.8 is complete.** Every step verified byte-identical on LookoutPoint and Witchwood.
 
 ### 12.9 Deferred
 
@@ -1915,10 +1920,10 @@ cheap to revisit and neither has a caller yet.
    `renderer/tests/bindless_test.rs` keeps that a gate — without it a scene load would leak
    every previous level's textures *and* burn their slots.
 2. ~~**Capacity**~~ — **4096, clamped to `adapter.limits()`**, floor 256.
-3. **Does the sky pass migrate at all?** It has two textures and one sampler and gains almost
-   nothing. Migrating it buys uniformity — one texture path in the renderer, no exceptions —
-   which is worth something on its own. *Recommend yes, last, for that reason alone.* Still
-   open.
+3. ~~**Does the sky pass migrate at all?**~~ **Yes**, last, for uniformity — one texture path
+   in the renderer, no exceptions. It gained something unforeseen as well: keying by asset id
+   means a sky texture shared between two keyframes is one upload, where the two fixed
+   bind-group slots re-uploaded on every keyframe change.
 
 ---
 

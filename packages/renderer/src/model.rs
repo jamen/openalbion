@@ -174,9 +174,8 @@ impl FrameUniforms {
 /// Everything that used to be a per-material bind group, as 16 bytes of per-draw immediate
 /// data (AGENTS.md §12.5). Must match `struct DrawConstants` in `model.wgsl`.
 ///
-/// The old layout was a texture, a sampler and a `MaterialUniforms` buffer — one `BindGroup`
-/// *and* one 16-byte uniform buffer allocated per material of every mesh. LookoutPoint alone
-/// allocated 178 of each.
+/// A bind group per material — texture, sampler and a two-field uniform buffer — is what this
+/// replaces, and the buffer allocation with it: LookoutPoint's region allocated 189 of each.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct DrawConstants {

@@ -76,9 +76,7 @@ pub fn upload_sky_texture(
         image.format,
     );
 
-    if secondary {
-        renderer.set_sky_texture1(&image);
-    } else {
-        renderer.set_sky_texture0(&image);
-    }
+    // The asset's own id is the registry key, so a sky texture shared between two keyframes
+    // — or with anything else on screen — is one upload (AGENTS.md §12.6).
+    renderer.set_sky_texture(secondary, metadata.id, &image);
 }

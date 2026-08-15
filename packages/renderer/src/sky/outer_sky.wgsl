@@ -35,9 +35,16 @@ struct Uniforms {
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
-@group(1) @binding(0) var sky_texture_0: texture_2d<f32>;
-@group(1) @binding(1) var sky_texture_1: texture_2d<f32>;
-@group(1) @binding(2) var sky_sampler: sampler;
+// Per draw: which slots of the shared bindless array the two texture stages are in. Both are
+// sampled through `clamp_sampler` — a sky texture is wrapped around the dome by its UVs, not
+// tiled, so a UV outside 0..1 is out of range rather than another tile.
+struct DrawConstants {
+    texture0_index: u32,
+    texture1_index: u32,
+    _pad0: u32,
+    _pad1: u32,
+};
+var<immediate> draw: DrawConstants;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -76,8 +83,8 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // tex t0 / tex t1
-    let t0 = textureSample(sky_texture_0, sky_sampler, in.uv);
-    let t1 = textureSample(sky_texture_1, sky_sampler, in.uv);
+    let t0 = textureSample(bindless_textures[draw.texture0_index], clamp_sampler, in.uv);
+    let t1 = textureSample(bindless_textures[draw.texture1_index], clamp_sampler, in.uv);
 
     // mov_sat r0, c0 / lrp r0, r0.w, t1, t0
     var color = mix(t0, t1, saturate(uniforms.texture_blend));

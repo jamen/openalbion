@@ -8,19 +8,19 @@
 //! Until then the caller passes zeroed gradients, so the sky shows the raw sky
 //! texture — the unimplemented half is visible rather than faked.
 
+use crate::bindless::{BindlessFrame, BindlessIndex, BindlessTextures, TextureKey};
 use crate::image::TextureImage;
 use crate::TargetFormats;
-use crate::texture::{linear_clamp_sampler, upload_texture};
+use crate::texture::upload_texture;
 use bytemuck::{Pod, Zeroable};
 use std::any::type_name;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindingResource, BindingType, BufferBindingType, BufferUsages,
+    BindGroupLayoutEntry, BindingType, BufferBindingType, BufferUsages,
     CommandEncoder, Device, FragmentState, IndexFormat, PipelineLayout,
     PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPassDescriptor, RenderPipeline,
-    RenderPipelineDescriptor, SamplerBindingType, ShaderModule, ShaderStages,
-    TextureSampleType, TextureView, TextureViewDimension, VertexAttribute, VertexBufferLayout,
-    VertexState, VertexStepMode, include_wgsl,
+    RenderPipelineDescriptor, ShaderModule, ShaderStages, TextureView, VertexAttribute, VertexBufferLayout,
+    VertexState, VertexStepMode,
     util::{BufferInitDescriptor, DeviceExt},
 };
 
@@ -243,50 +243,36 @@ impl SkyUniformBindGroupLayout {
     }
 }
 
-/// Bind group layout for sky textures (two textures for blending + shared sampler).
-pub struct SkyTextureBindGroupLayout(BindGroupLayout);
-
-impl SkyTextureBindGroupLayout {
-    pub fn new(device: &Device) -> Self {
-        Self(device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some(type_name::<Self>()),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        }))
-    }
+/// Which of `PSHADER_OUTER_SKY`'s two texture stages a slot in the bindless array is in.
+///
+/// The sky is the one pass whose textures change *mid-run* rather than at scene load: the
+/// keyframe pair advances with the clock, and `refresh_sky` re-uploads only when the pair
+/// actually changes. So this is where `rebuild_if_dirty` earns its name.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Pod, Zeroable)]
+struct DrawConstants {
+    /// t0 — the primary sky texture.
+    texture0_index: BindlessIndex,
+    /// t1 — the one it blends toward, by the pixel shader's `c0.w`.
+    texture1_index: BindlessIndex,
+    _pad: [u32; 2],
 }
 
 pub struct OuterSkyShader(ShaderModule);
 
 impl OuterSkyShader {
-    pub fn new(device: &Device) -> Self {
-        Self(device.create_shader_module(include_wgsl!("sky/outer_sky.wgsl")))
+    pub fn new(device: &Device, bindless: &BindlessTextures) -> Self {
+        Self(device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("outer_sky.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(
+                format!(
+                    "{}\n{}",
+                    bindless.wgsl_prelude(),
+                    include_str!("sky/outer_sky.wgsl"),
+                )
+                .into(),
+            ),
+        }))
     }
 }
 
@@ -296,12 +282,12 @@ impl OuterSkyPipelineLayout {
     pub fn new(
         device: &Device,
         uniform_layout: &SkyUniformBindGroupLayout,
-        texture_layout: &SkyTextureBindGroupLayout,
+        bindless: &BindlessTextures,
     ) -> Self {
         Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some(type_name::<Self>()),
-            bind_group_layouts: &[&uniform_layout.0, &texture_layout.0],
-            immediate_size: 0,
+            bind_group_layouts: &[&uniform_layout.0, bindless.layout()],
+            immediate_size: size_of::<DrawConstants>() as u32,
         }))
     }
 }
@@ -343,22 +329,23 @@ impl OuterSkyPipeline {
 }
 
 pub struct OuterSkyPass {
-    texture_layout: SkyTextureBindGroupLayout,
     pipeline: OuterSkyPipeline,
     dome: SkyMesh,
     base_band: SkyMesh,
-    sky_sampler: wgpu::Sampler,
-    texture0: Option<TextureView>,
-    texture1: Option<TextureView>,
-    sky_textures_bind_group: Option<BindGroup>,
+    /// `None` until the first texture is set — the sky is optional, and a level without one
+    /// should draw the rest of the world rather than a wrong colour.
+    draw: Option<DrawConstants>,
+    /// The registry generation `draw`'s indices belong to. The sky registers on the clock
+    /// rather than at scene load, so it is the one pass that can be mid-registration when a
+    /// scene is cleared (AGENTS.md §12.4).
+    generation: u32,
 }
 
 impl OuterSkyPass {
-    pub fn new(device: &Device, targets: TargetFormats) -> Self {
-        let shader = OuterSkyShader::new(device);
+    pub fn new(device: &Device, targets: TargetFormats, bindless: &BindlessTextures) -> Self {
+        let shader = OuterSkyShader::new(device, bindless);
         let uniform_layout = SkyUniformBindGroupLayout::new(device);
-        let texture_layout = SkyTextureBindGroupLayout::new(device);
-        let layout = OuterSkyPipelineLayout::new(device, &uniform_layout, &texture_layout);
+        let layout = OuterSkyPipelineLayout::new(device, &uniform_layout, bindless);
         let pipeline = OuterSkyPipeline::new(device, &layout, &shader, targets);
 
         // 36 segments: engine_sky_renderer.cpp:616 loops `while (uVar13 < 0x24)`.
@@ -382,57 +369,71 @@ impl OuterSkyPass {
         );
 
         Self {
-            texture_layout,
             pipeline,
             dome,
             base_band,
-            sky_sampler: linear_clamp_sampler(device, "sky_sampler"),
-            texture0: None,
-            texture1: None,
-            sky_textures_bind_group: None,
+            draw: None,
+            generation: 0,
         }
     }
 
-    /// Set the primary sky texture — `t0` in `PSHADER_OUTER_SKY`.
-    pub fn set_texture0(&mut self, device: &Device, queue: &Queue, image: &TextureImage) {
-        self.texture0 = Some(upload_texture(device, queue, "sky_texture0", image));
-        self.rebuild_sky_bind_group(device);
+    /// Forget which slots the sky was drawing with — its registrations went with the scene.
+    pub fn clear(&mut self) {
+        self.draw = None;
     }
 
-    /// Set the secondary sky texture — `t1`, blended against `t0` by the pixel shader's
-    /// `c0.w`.
-    pub fn set_texture1(&mut self, device: &Device, queue: &Queue, image: &TextureImage) {
-        self.texture1 = Some(upload_texture(device, queue, "sky_texture1", image));
-        self.rebuild_sky_bind_group(device);
-    }
-
-    fn rebuild_sky_bind_group(&mut self, device: &Device) {
-        let Some(tex0) = &self.texture0 else {
-            self.sky_textures_bind_group = None;
-            return;
+    /// Set one of the two sky texture stages.
+    ///
+    /// `secondary` picks `t1`, the one `PSHADER_OUTER_SKY` blends toward by `c0.w`; `t0` is
+    /// the primary. Registered by asset id like everything else, so a texture shared between
+    /// two keyframes — or with anything else on screen — is one upload.
+    pub fn set_texture(
+        &mut self,
+        device: &Device,
+        queue: &Queue,
+        bindless: &mut BindlessTextures,
+        secondary: bool,
+        asset_id: u32,
+        image: &TextureImage,
+    ) {
+        let key = TextureKey::Asset(asset_id);
+        let index = match bindless.index_of(key) {
+            Some(index) => index,
+            None => {
+                let view = upload_texture(device, queue, "sky_texture", image);
+                match bindless.register(key, view) {
+                    Ok(index) => index,
+                    Err(error) => {
+                        tracing::warn!("Sky texture {asset_id}: {error} — sky unchanged");
+                        return;
+                    }
+                }
+            }
         };
 
-        // Fall back to texture0 for the blend slot until a second texture is set.
-        let tex1_view = self.texture1.as_ref().unwrap_or(tex0);
+        // A generation change means the scene was cleared under us and the other stage's
+        // index is stale, so start the pair afresh rather than pairing old with new.
+        let mut draw = match self.draw {
+            Some(draw) if self.generation == bindless.generation() => draw,
+            _ => DrawConstants {
+                texture0_index: index,
+                texture1_index: index,
+                _pad: [0; 2],
+            },
+        };
+        self.generation = bindless.generation();
 
-        self.sky_textures_bind_group = Some(device.create_bind_group(&BindGroupDescriptor {
-            label: Some("sky_textures_bind_group"),
-            layout: &self.texture_layout.0,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(tex0),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::TextureView(tex1_view),
-                },
-                BindGroupEntry {
-                    binding: 2,
-                    resource: BindingResource::Sampler(&self.sky_sampler),
-                },
-            ],
-        }));
+        if secondary {
+            draw.texture1_index = index;
+        } else {
+            draw.texture0_index = index;
+            // Until a second texture arrives, t1 falls back to t0 — the blend then does
+            // nothing rather than sampling a slot nobody filled.
+            if self.draw.is_none() {
+                draw.texture1_index = index;
+            }
+        }
+        self.draw = Some(draw);
     }
 
     /// `gradient_top`/`gradient_bottom` are `c92`/`c93`; `texture_blend` is the pixel
@@ -457,11 +458,20 @@ impl OuterSkyPass {
         self.base_band.update_uniforms(queue, &uniforms);
     }
 
-    pub fn pass(&self, cmd: &mut CommandEncoder, target_texture_view: &TextureView) {
-        let Some(sky_bind_group) = &self.sky_textures_bind_group else {
-            tracing::debug!("Sky pass: no textures bind group — sky skipped");
+    pub fn pass(
+        &self,
+        cmd: &mut CommandEncoder,
+        bindless: BindlessFrame<'_>,
+        target_texture_view: &TextureView,
+    ) {
+        let Some(draw) = self.draw else {
+            tracing::debug!("Sky pass: no textures registered — sky skipped");
             return;
         };
+        debug_assert_eq!(
+            self.generation, bindless.generation,
+            "sky's bindless indices are from a cleared generation",
+        );
 
         let mut rpass = cmd.begin_render_pass(&RenderPassDescriptor {
             label: Some(type_name::<Self>()),
@@ -481,7 +491,8 @@ impl OuterSkyPass {
         });
 
         rpass.set_pipeline(&self.pipeline.0);
-        rpass.set_bind_group(1, sky_bind_group, &[]);
+        rpass.set_bind_group(1, bindless.bind_group, &[]);
+        rpass.set_immediates(0, bytemuck::bytes_of(&draw));
 
         self.dome.draw(&mut rpass);
 

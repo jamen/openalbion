@@ -471,6 +471,7 @@ impl<'target> Renderer<'target> {
     pub fn clear_scene(&mut self) {
         self.passes.model.clear_models();
         self.passes.local_detail.clear();
+        self.passes.sky.clear();
         self.bindless.clear();
     }
 
@@ -545,16 +546,22 @@ impl<'target> Renderer<'target> {
         self.passes.model.set_camera_pos(pos);
     }
 
-    pub fn set_sky_texture0(&mut self, image: &TextureImage) {
-        self.passes
-            .sky
-            .set_texture0(&self.device, &self.queue, image);
-    }
-
-    pub fn set_sky_texture1(&mut self, image: &TextureImage) {
-        self.passes
-            .sky
-            .set_texture1(&self.device, &self.queue, image);
+    /// Set one of the sky's two texture stages. `secondary` picks `t1`, the one the pixel
+    /// shader blends toward; `asset_id` is the registry key (AGENTS.md §12.6).
+    pub fn set_sky_texture(
+        &mut self,
+        secondary: bool,
+        asset_id: u32,
+        image: &TextureImage,
+    ) {
+        self.passes.sky.set_texture(
+            &self.device,
+            &self.queue,
+            &mut self.bindless,
+            secondary,
+            asset_id,
+            image,
+        );
     }
 
     /// `gradient_top`/`gradient_bottom` are the sky shader's `c92`/`c93`, `texture_blend`
@@ -596,7 +603,7 @@ impl<'target> Renderer<'target> {
         };
 
         self.passes.clear.pass(&mut cmd, colour);
-        self.passes.sky.pass(&mut cmd, colour);
+        self.passes.sky.pass(&mut cmd, bindless, colour);
         self.passes
             .terrain
             .pass(&mut cmd, bindless, colour, self.depth_texture.view());
@@ -768,7 +775,7 @@ impl RenderPasses {
     fn new(device: &Device, targets: TargetFormats, bindless: &BindlessTextures) -> Self {
         Self {
             clear: ClearPass,
-            sky: OuterSkyPass::new(device, targets),
+            sky: OuterSkyPass::new(device, targets, bindless),
             terrain: TerrainPass::new(device, targets, bindless),
             model: ModelPass::new(device, targets, bindless),
             local_detail: LocalDetailPass::new(device, targets, bindless),
