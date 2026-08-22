@@ -133,11 +133,28 @@ pub struct ModelPrimitive {
     pub sub_meshes: Vec<ModelSubMesh>,
 }
 
+/// One primitive's skinned geometry — the same draw ranges, a richer vertex.
+pub struct SkinnedPrimitive {
+    pub vertices: Vec<SkinnedVertex>,
+    pub indices: Vec<u16>,
+    pub sub_meshes: Vec<ModelSubMesh>,
+}
+
 /// A mesh asset ready to upload: geometry and materials, with no position of its own.
 /// Where it stands is [`ModelInstance`]'s job.
 pub struct Model {
     pub primitives: Vec<ModelPrimitive>,
     pub materials: Vec<ModelMaterial>,
+    /// Present when the mesh is skinned. When it is, `primitives` is ignored and these draw
+    /// instead — same materials, same sub-meshes, a vertex that carries its bones.
+    pub skin: Option<ModelSkin>,
+}
+
+/// The skinned half of a [`Model`].
+pub struct ModelSkin {
+    pub primitives: Vec<SkinnedPrimitive>,
+    /// Bones per instance — the stride of the palette this model's draws index.
+    pub bone_count: usize,
 }
 
 /// One placement of a [`Model`].
@@ -158,11 +175,23 @@ impl ModelInstance {
     const ATTRIBS: [VertexAttribute; 5] =
         wgpu::vertex_attr_array![3 => Float32x4, 4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4];
 
+    /// The same five attributes shifted past [`SkinnedVertex`]'s two extra ones.
+    const SKINNED_ATTRIBS: [VertexAttribute; 5] =
+        wgpu::vertex_attr_array![5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4];
+
     fn layout() -> VertexBufferLayout<'static> {
         VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: VertexStepMode::Instance,
             attributes: &Self::ATTRIBS,
+        }
+    }
+
+    fn skinned_layout() -> VertexBufferLayout<'static> {
+        VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: VertexStepMode::Instance,
+            attributes: &Self::SKINNED_ATTRIBS,
         }
     }
 
@@ -188,6 +217,35 @@ pub struct ModelVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub uv: [f32; 2],
+}
+
+/// A vertex of a skinned mesh: the static attributes plus the bones that move it.
+///
+/// `bones` are **direct indices into the model's bone palette**, already resolved through the
+/// block's `Groups[]` table by the caller — the shader has no palette of its own. Weights are
+/// as authored, and only the first three are summed (`bones_per_vertex` is 3 everywhere).
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+pub struct SkinnedVertex {
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
+    pub bones: [u32; 4],
+    pub weights: [f32; 4],
+}
+
+impl SkinnedVertex {
+    const ATTRIBS: [VertexAttribute; 5] = wgpu::vertex_attr_array![
+        0 => Float32x3, 1 => Float32x3, 2 => Float32x2, 3 => Uint32x4, 4 => Float32x4
+    ];
+
+    pub(crate) fn layout() -> VertexBufferLayout<'static> {
+        VertexBufferLayout {
+            array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
 }
 
 impl ModelVertex {
@@ -295,6 +353,58 @@ impl ModelPipelineLayout {
             immediate_size: size_of::<DrawConstants>() as u32,
         }))
     }
+
+    /// The skinned variant adds group 2: the bone palettes and their stride.
+    pub fn new_skinned(
+        device: &Device,
+        frame_layout: &ModelFrameBindGroupLayout,
+        bindless: &BindlessTextures,
+        bones_layout: &BindGroupLayout,
+    ) -> Self {
+        Self(device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("model_skinned_pipeline_layout"),
+            bind_group_layouts: &[&frame_layout.0, bindless.layout(), bones_layout],
+            immediate_size: size_of::<DrawConstants>() as u32,
+        }))
+    }
+}
+
+/// Group 2 for the skinned pipelines: one storage buffer of bone matrices for the whole model
+/// (`instance * bones_per_instance + bone`), plus that stride as a uniform.
+fn bones_bind_group_layout(device: &Device) -> BindGroupLayout {
+    device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("model_bones_layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    })
+}
+
+/// `bones_per_instance`, padded to the 16 bytes a uniform buffer wants.
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+struct SkinUniforms {
+    bones_per_instance: u32,
+    _pad: [u32; 3],
 }
 
 /// The opaque and alpha-blended pipeline variants, each with a culled and unculled version.
@@ -314,6 +424,26 @@ impl ModelPipelines {
         shader: &ModelShader,
         targets: TargetFormats,
     ) -> Self {
+        Self::build(device, layout, shader, targets, false)
+    }
+
+    /// The skinned variant: `vs_skinned` over [`SkinnedVertex`], everything else identical.
+    fn new_skinned(
+        device: &Device,
+        layout: &ModelPipelineLayout,
+        shader: &ModelShader,
+        targets: TargetFormats,
+    ) -> Self {
+        Self::build(device, layout, shader, targets, true)
+    }
+
+    fn build(
+        device: &Device,
+        layout: &ModelPipelineLayout,
+        shader: &ModelShader,
+        targets: TargetFormats,
+        skinned: bool,
+    ) -> Self {
         let make = |blend: bool, cull: bool| {
             let color_target = ColorTargetState {
                 format: targets.colour,
@@ -329,8 +459,12 @@ impl ModelPipelines {
                 layout: Some(&layout.0),
                 vertex: VertexState {
                     module: &shader.0,
-                    entry_point: Some("vs_main"),
-                    buffers: &[ModelVertex::layout(), ModelInstance::layout()],
+                    entry_point: Some(if skinned { "vs_skinned" } else { "vs_main" }),
+                    buffers: &if skinned {
+                        [SkinnedVertex::layout(), ModelInstance::skinned_layout()]
+                    } else {
+                        [ModelVertex::layout(), ModelInstance::layout()]
+                    },
                     compilation_options: Default::default(),
                 },
                 fragment: Some(FragmentState {
@@ -399,12 +533,21 @@ struct GpuPrimitive {
 struct GpuModel {
     materials: Vec<GpuMaterial>,
     primitives: Vec<GpuPrimitive>,
+    /// Set for skinned models: the bone palette buffer, its bind group and its stride.
+    skin: Option<GpuSkin>,
     instance_buffer: wgpu::Buffer,
     instances: Vec<ModelInstance>,
     /// Whether any material on this model blends. Only these models contribute to the
     /// depth-sorted pass, so a level of fully opaque meshes sorts nothing.
     has_transparent: bool,
     kind: ModelKind,
+}
+
+/// A skinned model's bone palettes: `instance * bone_count + bone`, rewritten every frame.
+struct GpuSkin {
+    bone_buffer: wgpu::Buffer,
+    bind_group: BindGroup,
+    bone_count: usize,
 }
 
 #[derive(Debug, Display, Error)]
@@ -471,6 +614,8 @@ fn build_materials(
 
 pub struct ModelPass {
     pipelines: ModelPipelines,
+    skinned_pipelines: ModelPipelines,
+    bones_layout: BindGroupLayout,
     meshes: Vec<GpuModel>,
     /// One buffer for the whole pass — the static mesh shader has no per-object constants.
     frame_buffer: wgpu::Buffer,
@@ -485,6 +630,11 @@ impl ModelPass {
         let frame_layout = ModelFrameBindGroupLayout::new(device);
         let layout = ModelPipelineLayout::new(device, &frame_layout, bindless);
         let pipelines = ModelPipelines::new(device, &layout, &shader, targets);
+
+        let bones_layout = bones_bind_group_layout(device);
+        let skinned_layout =
+            ModelPipelineLayout::new_skinned(device, &frame_layout, bindless, &bones_layout);
+        let skinned_pipelines = ModelPipelines::new_skinned(device, &skinned_layout, &shader, targets);
 
         let frame_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("model_frame_buffer"),
@@ -508,6 +658,8 @@ impl ModelPass {
             frame_buffer,
             frame_bind_group,
             camera_pos: [0.0; 3],
+            skinned_pipelines,
+            bones_layout,
         }
     }
 
@@ -539,6 +691,48 @@ impl ModelPass {
         let materials = build_materials(device, queue, bindless, &model.materials)?;
         let primitives = build_primitives(device, model);
 
+        // A skinned model uploads its own vertex buffers and a per-instance bone palette.
+        // The palette starts as identities, which leaves the mesh in bind pose until the
+        // first `set_bone_matrices` — so a skinned model that is never posed looks exactly
+        // like the bind-pose draw it replaces.
+        let skin = model.skin.as_ref().map(|skin| {
+            let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
+            let palette = vec![identity; skin.bone_count.max(1) * instances.len()];
+            let bone_buffer = device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("model_bone_matrices"),
+                contents: bytemuck::cast_slice(&palette),
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            });
+            let uniforms = SkinUniforms {
+                bones_per_instance: skin.bone_count.max(1) as u32,
+                _pad: [0; 3],
+            };
+            let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+                label: Some("model_skin_uniforms"),
+                contents: bytemuck::cast_slice(&[uniforms]),
+                usage: BufferUsages::UNIFORM,
+            });
+            let bind_group = device.create_bind_group(&BindGroupDescriptor {
+                label: Some("model_bones"),
+                layout: &self.bones_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: bone_buffer.as_entire_binding(),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: uniform_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+            GpuSkin {
+                bone_buffer,
+                bind_group,
+                bone_count: skin.bone_count.max(1),
+            }
+        });
+
         let instance_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: Some("model_instance_buffer"),
             contents: bytemuck::cast_slice(instances),
@@ -554,6 +748,7 @@ impl ModelPass {
             instances: instances.to_vec(),
             has_transparent,
             kind,
+            skin,
         });
         Ok(())
     }
@@ -565,6 +760,40 @@ impl ModelPass {
 
     pub fn model_count(&self) -> usize {
         self.meshes.len()
+    }
+
+    /// Replace one skinned model's bone palettes for this frame.
+    ///
+    /// `matrices` is `instance * bone_count + bone`, and must be exactly that long — a short
+    /// buffer would leave stale matrices behind and pose part of the crowd from the last
+    /// frame, which is the kind of bug that looks like a physics glitch.
+    ///
+    /// Returns `false` if the model is not skinned or the length disagrees.
+    pub fn set_bone_matrices(
+        &self,
+        queue: &Queue,
+        model: usize,
+        matrices: &[[[f32; 4]; 4]],
+    ) -> bool {
+        let Some(mesh) = self.meshes.get(model) else {
+            return false;
+        };
+        let Some(skin) = &mesh.skin else { return false };
+        if matrices.len() != skin.bone_count * mesh.instances.len() {
+            return false;
+        }
+        queue.write_buffer(&skin.bone_buffer, 0, bytemuck::cast_slice(matrices));
+        true
+    }
+
+    /// `(model index, bone count, instance count)` for every skinned model, so a caller can
+    /// size and address its palettes without holding on to what it uploaded.
+    pub fn skinned_models(&self) -> Vec<(usize, usize, usize)> {
+        self.meshes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, m)| m.skin.as_ref().map(|s| (i, s.bone_count, m.instances.len())))
+            .collect()
     }
 
     /// Placements of one kind — what `ShowStats` reports per toggle.
@@ -637,14 +866,14 @@ impl ModelPass {
         // Opaque and cutout first — they write depth, and every placement of a mesh draws
         // in one instanced call.
         for mesh in self.meshes.iter().filter(|m| kinds.allows(m.kind)) {
-            mesh.draw_opaque(&mut rpass, &self.pipelines);
+            mesh.draw_opaque(&mut rpass, &self.pipelines, &self.skinned_pipelines);
         }
 
         // Then the blended ones, back to front across the whole level rather than within
         // one model, so a distant transparent object cannot paint over a near one. Sorting
         // is per instance, so these draw one at a time.
         for (mesh, instance) in self.sorted_transparent_instances(kinds) {
-            mesh.draw_transparent(&mut rpass, &self.pipelines, instance);
+            mesh.draw_transparent(&mut rpass, &self.pipelines, &self.skinned_pipelines, instance);
         }
     }
 
@@ -667,7 +896,19 @@ impl ModelPass {
 
 impl GpuModel {
     /// One instanced draw per (primitive, material) — the whole placement set at once.
-    fn draw_opaque(&self, rpass: &mut wgpu::RenderPass<'_>, pipelines: &ModelPipelines) {
+    fn draw_opaque(
+        &self,
+        rpass: &mut wgpu::RenderPass<'_>,
+        pipelines: &ModelPipelines,
+        skinned_pipelines: &ModelPipelines,
+    ) {
+        let pipelines = match &self.skin {
+            Some(skin) => {
+                rpass.set_bind_group(2, &skin.bind_group, &[]);
+                skinned_pipelines
+            }
+            None => pipelines,
+        };
         let instances = 0..self.instances.len() as u32;
         for primitive in &self.primitives {
             let mut bound = false;
@@ -700,8 +941,16 @@ impl GpuModel {
         &self,
         rpass: &mut wgpu::RenderPass<'_>,
         pipelines: &ModelPipelines,
+        skinned_pipelines: &ModelPipelines,
         instance: u32,
     ) {
+        let pipelines = match &self.skin {
+            Some(skin) => {
+                rpass.set_bind_group(2, &skin.bind_group, &[]);
+                skinned_pipelines
+            }
+            None => pipelines,
+        };
         for primitive in &self.primitives {
             let mut bound = false;
             for sub in &primitive.sub_meshes {
@@ -745,42 +994,60 @@ fn dist_sq(a: &[f32; 3], b: &[f32; 3]) -> f32 {
 /// Upload every primitive's geometry and resolve its sub-mesh draw ranges. Empty primitives
 /// (no vertices or no indices) are skipped so we never create a zero-sized GPU buffer.
 fn build_primitives(device: &Device, model: &Model) -> Vec<GpuPrimitive> {
+    let sub_meshes = |subs: &[ModelSubMesh]| -> Vec<SubMeshDraw> {
+        subs.iter()
+            .map(|s| SubMeshDraw {
+                material: s.material as usize,
+                index_start: s.index_start,
+                index_count: s.index_count,
+                cull: model
+                    .materials
+                    .get(s.material as usize)
+                    .map(|m| !m.two_sided)
+                    .unwrap_or(true),
+            })
+            .collect()
+    };
+    let upload = |vertices: &[u8], indices: &[u16], subs: Vec<SubMeshDraw>| GpuPrimitive {
+        vertex_buffer: device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("model_vertex_buffer"),
+            contents: vertices,
+            usage: BufferUsages::VERTEX,
+        }),
+        index_buffer: device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("model_index_buffer"),
+            contents: bytemuck::cast_slice(indices),
+            usage: BufferUsages::INDEX,
+        }),
+        sub_meshes: subs,
+    };
+
+    // A skinned model draws its skinned primitives and ignores the static ones.
+    if let Some(skin) = &model.skin {
+        return skin
+            .primitives
+            .iter()
+            .filter(|p| !p.vertices.is_empty() && !p.indices.is_empty())
+            .map(|p| {
+                upload(
+                    bytemuck::cast_slice(&p.vertices),
+                    &p.indices,
+                    sub_meshes(&p.sub_meshes),
+                )
+            })
+            .collect();
+    }
+
     model
         .primitives
         .iter()
         .filter(|p| !p.vertices.is_empty() && !p.indices.is_empty())
-        .map(|primitive| {
-            let vertex_buffer = device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("model_vertex_buffer"),
-                contents: bytemuck::cast_slice(&primitive.vertices),
-                usage: BufferUsages::VERTEX,
-            });
-            let index_buffer = device.create_buffer_init(&BufferInitDescriptor {
-                label: Some("model_index_buffer"),
-                contents: bytemuck::cast_slice(&primitive.indices),
-                usage: BufferUsages::INDEX,
-            });
-
-            let sub_meshes = primitive
-                .sub_meshes
-                .iter()
-                .map(|s| SubMeshDraw {
-                    material: s.material as usize,
-                    index_start: s.index_start,
-                    index_count: s.index_count,
-                    cull: model
-                        .materials
-                        .get(s.material as usize)
-                        .map(|m| !m.two_sided)
-                        .unwrap_or(true),
-                })
-                .collect();
-
-            GpuPrimitive {
-                vertex_buffer,
-                index_buffer,
-                sub_meshes,
-            }
+        .map(|p| {
+            upload(
+                bytemuck::cast_slice(&p.vertices),
+                &p.indices,
+                sub_meshes(&p.sub_meshes),
+            )
         })
         .collect()
 }

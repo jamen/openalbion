@@ -56,6 +56,7 @@ fn fullscreen_quad() -> Model {
                 index_count: 6,
             }],
         }],
+        skin: None,
         materials: vec![ModelMaterial {
             diffuse_id: None,
             diffuse: None,

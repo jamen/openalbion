@@ -122,6 +122,98 @@ fn vs_main(
     return out;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Skinned meshes — a transcription of VSHADER_PALSKIN_DIRLIGHT_FOG's blend, on top of the
+// static shader above. The disassembly (`SHADERS_PALSKIN`, and AGENTS.md §3.15):
+//
+//   mul r2.xyzw, v1.zyxw, c1.xyzw        ; v1 = blend indices, c1 = (256,256,256,256) preset
+//   mov r3.xyzw, v2.zyxw                 ; v2 = blend weights
+//   mov a.x, r2.x
+//   mul r4.xyzw, r3.x, c[a.xyzw + 38]    ; \ three registers per bone: a CMatrix3x4's rows.
+//   mul r5.xyzw, r3.x, c[a.xyzw + 39]    ;  > BoneMatrices starts at c38.
+//   mul r6.xyzw, r3.x, c[a.xyzw + 40]    ; /
+//   mov a.x, r2.y                        ; then `mad`ded twice more, for bones 1 and 2
+//   ...
+//   dp4 r0.x, v0, r4                     ; position through the blended matrix
+//   dp3 r1.x, v3, r4                     ; normal through the same
+//
+// From `dp4 r2.x, r0, c5` onward it is character-for-character `vs_main` above, so the
+// lighting below is the same expression over the same constants.
+//
+// DIVERGENCE, deliberate, and the same shape as `local_detail.rs`'s: vs_1_1 indexes a constant
+// bank with the address register because it has no other way to do it. We read a storage buffer
+// instead, indexed per instance. The arithmetic is unchanged; only the storage is. The blend
+// itself is exact — three bones, weights as stored.
+@group(2) @binding(0) var<storage, read> bone_matrices: array<mat4x4<f32>>;
+
+struct SkinnedFrame {
+    // How many bones each instance's palette holds, so an instance's block can be addressed.
+    bones_per_instance: u32,
+};
+@group(2) @binding(1) var<uniform> skin: SkinnedFrame;
+
+@vertex
+fn vs_skinned(
+    @builtin(instance_index) instance: u32,
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    // Bone indices, already resolved through the block's palette on the CPU — so this is a
+    // direct index into the mesh's bones rather than `Groups[]` slot times three.
+    @location(3) bones: vec4<u32>,
+    @location(4) weights: vec4<f32>,
+    @location(5) object_0: vec4<f32>,
+    @location(6) object_1: vec4<f32>,
+    @location(7) object_2: vec4<f32>,
+    @location(8) object_3: vec4<f32>,
+    @location(9) colour: vec4<f32>,
+) -> VertexOutput {
+    var out: VertexOutput;
+
+    let object = mat4x4<f32>(object_0, object_1, object_2, object_3);
+    let base = instance * skin.bones_per_instance;
+
+    // mul r4, r3.x, c[a.x + 38] ... mad r4, r3.y, c[a.y + 38], r4 ... — three bones, weighted.
+    // `bones_per_vertex` is 3 on every shipped animated block (AGENTS.md §3.15), so the fourth
+    // slot is always zero-weighted and is not summed.
+    var skinned = mat4x4<f32>(
+        vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0),
+    );
+    for (var k = 0u; k < 3u; k = k + 1u) {
+        let w = weights[k];
+        if w > 0.0 {
+            let m = bone_matrices[base + bones[k]];
+            skinned[0] = skinned[0] + m[0] * w;
+            skinned[1] = skinned[1] + m[1] * w;
+            skinned[2] = skinned[2] + m[2] * w;
+            skinned[3] = skinned[3] + m[3] * w;
+        }
+    }
+
+    // dp4 r0.x/y/z, v0, r4/r5/r6 — position through the blend, then the object matrix and
+    // c5..c8 exactly as the static path.
+    let posed = skinned * vec4<f32>(position, 1.0);
+    out.clip_position = frame.view_proj * (object * vec4<f32>(posed.xyz, 1.0));
+
+    // dp3 r1.x/y/z, v3, r4/r5/r6 — the normal through the same blend, then into world space.
+    let posed_normal = mat3x3<f32>(skinned[0].xyz, skinned[1].xyz, skinned[2].xyz) * normal;
+    let world_normal = normalize(mat3x3<f32>(
+        object_0.xyz,
+        object_1.xyz,
+        object_2.xyz,
+    ) * posed_normal);
+
+    let n_dot_l = dot(world_normal, -frame.lighting.light_dir.xyz);
+    let lit = max(n_dot_l, 0.0);
+    let back = min(n_dot_l, 0.0);
+    out.light = lit * lit * frame.lighting.diffuse.rgb - back * frame.lighting.backlight.rgb + frame.lighting.ambient.rgb;
+
+    out.uv = uv;
+    out.colour = colour;
+
+    return out;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // tex t0 -- the material's base map, out of the shared bindless array. `repeat_sampler`

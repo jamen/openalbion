@@ -1,7 +1,8 @@
 //! `fable_data::mesh::Mesh` → [`Model`].
 
 use renderer::{
-    AlphaMode, Model, ModelMaterial, ModelPrimitive, ModelSubMesh, ModelVertex,
+    AlphaMode, Model, ModelMaterial, ModelPrimitive, ModelSkin, ModelSubMesh, ModelVertex,
+    SkinnedPrimitive, SkinnedVertex,
 };
 use derive_more::{Display, Error};
 use fable_data::{big::AssetMetadata, mesh::Mesh};
@@ -100,9 +101,103 @@ pub fn build_model(
         })
         .collect();
 
+    // A skinned mesh gets a second set of primitives whose vertices carry their bones. The
+    // palette slot is resolved through the block's `Groups[]` here rather than on the GPU, so
+    // the shader indexes the mesh's bones directly and needs no palette of its own.
+    let skin = build_skin(mesh);
+
     Ok(Model {
         primitives,
         materials,
+        skin,
+    })
+}
+
+/// The skinned half of a model, or `None` for a static mesh.
+///
+/// A vertex's `slots()` index the *block's* palette (`Groups[]`, at most 18 entries), and each
+/// entry is a bone index. Resolving that here keeps the shader's array a plain per-instance
+/// bone palette.
+fn build_skin(mesh: &Mesh) -> Option<ModelSkin> {
+    if mesh.bones.is_empty() || !mesh.primitives.iter().any(|p| !p.blends.is_empty()) {
+        return None;
+    }
+
+    let primitives = mesh
+        .primitives
+        .iter()
+        .filter(|p| !p.blends.is_empty() && !p.indices.is_empty())
+        .map(|primitive| {
+            // **Each animated block has its own palette, and they do not agree.** The blocks
+            // partition the primitive's vertex stream in order — `Σ block.vertex_count ==
+            // primitive.vertex_count` on 282 of 282 animated primitives — and of the 37 with
+            // more than one block, **0** share a palette. Resolving every vertex through the
+            // first block's `Groups[]` therefore mis-binds everything past the first block,
+            // which shows up as detached forearms and hands: `MESH_GRANNY`'s second block
+            // covers the arms with `[29, 39, 41, …]` where the first holds `[6, 7, 4, …]`.
+            let mut vertices = Vec::with_capacity(primitive.vertices.len());
+            let mut start = 0usize;
+            for block in &primitive.animated_blocks {
+                let palette = block.groups.as_slice();
+                let end = (start + block.vertex_count as usize).min(primitive.vertices.len());
+                for i in start..end {
+                    let (v, blend) = (&primitive.vertices[i], &primitive.blends[i]);
+                    let slots = blend.slots();
+                    let mut bones = [0u32; 4];
+                    for k in 0..4 {
+                        // A slot with no palette entry falls back to bone 0, whose matrix is
+                        // the identity when undriven — an unresolvable weight then leaves the
+                        // vertex in bind pose rather than flinging it to the origin.
+                        bones[k] = palette
+                            .get(slots[k] as usize)
+                            .map(|&b| b as u32)
+                            .unwrap_or(0);
+                    }
+                    vertices.push(SkinnedVertex {
+                        position: v.pos,
+                        normal: v.normal,
+                        uv: v.uv,
+                        bones,
+                        weights: blend.weights(),
+                    });
+                }
+                start = end;
+            }
+            // Any tail the blocks did not claim keeps its bind pose rather than being dropped,
+            // which would leave holes in the mesh.
+            for i in start..primitive.vertices.len() {
+                let v = &primitive.vertices[i];
+                vertices.push(SkinnedVertex {
+                    position: v.pos,
+                    normal: v.normal,
+                    uv: v.uv,
+                    bones: [0; 4],
+                    weights: [1.0, 0.0, 0.0, 0.0],
+                });
+            }
+
+            SkinnedPrimitive {
+                vertices,
+                indices: primitive.indices.clone(),
+                sub_meshes: primitive
+                    .sub_meshes
+                    .iter()
+                    .map(|s| ModelSubMesh {
+                        material: s.material_index,
+                        index_start: s.index_start,
+                        index_count: s.index_count,
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if primitives.is_empty() {
+        return None;
+    }
+    Some(ModelSkin {
+        primitives,
+        bone_count: mesh.bones.len(),
     })
 }
 

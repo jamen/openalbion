@@ -1269,6 +1269,127 @@ the parent's `SubDefRecord::def_index` is the join.
   `HERO_MORPH_NONE` on 101 of them. Nothing here is blocked by rendering; it is blocked by
   the hero having no inventory, and by the same undecoded-blob problem.
 
+### 3.17 Animation — the `3DAF` format, the skeleton, and what finally moved
+
+**`graphics.big` carries 3,435 animation assets and 87 MB**, alongside its 3,295 meshes.
+`ExtraMetadata::Animation` (asset type 24) had identified them since the archive parser was
+written and nothing read them — the same *parsed and read by nothing* tell §3.12 records.
+
+#### The container
+
+The asset is **LZO-compressed whole** — a `u32` decompressed length then an LZO1X stream,
+unlike `mesh.rs`'s sections which store the *compressed* length. Inside is a `CChunkedFile`
+(`lib_chunked_file.hpp`), the same family as the `C3DMeshFileX*` chunks:
+
+```
+">>>>"  "3DAF"  u32 version(100)  cstr "Copyright Big Blue Box Studios Ltd."
+  ANRT  u32 size   u8 looping, f32 duration
+    AOBJ  u32 size   cstr skeleton name, u32
+      XSEQ  u32 size   one bone's tracks
+    HLPR  u32 size   helper points (not parsed)
+```
+
+Every chunk is `tag(4) + size(4) + payload(size)`, `size` covering nested children.
+
+#### The tracks are compressed, and finding that out was the work
+
+`C3DAnimFileSequenceChunk`'s reader (`lib_3d_anim_file_sequence.cpp:87`) reads raw 48-byte
+`CMatrix3x4` samples via `CDataInputStream::ReadMatrix3x4`, which is twelve plain floats — and
+**no shipped track is stored that way**: 0 of 210,743 sequences have `data == frames × 48`, and
+the median is 7 bytes per sample. That reader is the *authoring* path. Retail uses
+`C3DAnimationSequenceData::ReadCompressedFromFile` (`lib_3d_animation_2.cpp:1328`), whose class
+(`lib_3d_animation_2.hpp`) names every field:
+
+```
+u32  version (0x7ADA)      f32  position factor
+i32  parent index          f32  scaling factor
+cstr bone name             u16 n, [CQuaternion; n]     rotation values
+u8   bone type             u16 n, [u8; n]              per-frame rotation palette
+f32  samples per second    u16 n, [C3DVectorWord; n]   position values (3 x i16)
+u32  frame count           u16 n, [u8; n]              per-frame position palette
+u8   enabled
+u8   rotation / u8 position / u8 scaling track mode
+```
+
+`ETrackMode` is `IDENTITY | CONSTANT | NORMAL | PALETTED`. **`PALETTED` is what earns the
+format its size** — distinct values once plus a `u8` index per frame, taking a near-static bone
+to ~1 byte per sample. Positions are `i16`s times `PositionFactor`.
+
+*Evidence:* 3,435 of 3,435 assets parse into 210,743 sequences.
+**4,737,592 of 4,737,597 quaternions are unit length within 1% (99.9999%)** — the decisive
+check, because a misaligned rotation track yields arbitrary floats and arbitrary floats are not
+unit quaternions. Sample rates are all real (`{30: 192688, 15: 9756, 20: 7641, …}`), and
+`ANIM_BIPED_GENERIC_MAN_HOMELIFE_GET_OUT_BED` reads back as 10.5 s × 30 fps = 315 frames.
+
+#### The skeleton — and the misread that cost three sessions
+
+> **`Mesh::bone_transforms` is the inverse bind matrix, stored transposed.**
+> `C3DMesh2::BoneSpaceTransforms`' accessor is `PeekTransposedObjectToBoneSpaceTransform`
+> (`lib_3d_mesh_2.hpp:1105,1140`), and the data agrees: the stored 4×4's last **row** is
+> `(0,0,0,1)` on 15,022 of 15,022 bones, so it is **column-vector** with its translation at
+> indices 3, 7, 11. Three sessions of sweeps read indices 12/13/14 — which are zero — so every
+> composition tested was translation-free, and their 1,349–1,387 "matches" were exactly the
+> 1,360 bones where both matrices are identity anyway. **A negative result that lands on the
+> degenerate count is not a negative result.**
+
+Transposing gives the row-vector object→bone matrix; inverting *that* gives the bind pose, and
+the bind pose is a standing person, which is what settles it:
+
+```
+MESH_BS_MALE_MIDDLE_UNCLOTHED_01, 194 units tall
+  Bip01 Pelvis  ( -0.3,  6.0,  96.5)     Bip01 L Foot  ( 16.5, 6.7,  18.8)
+  Bip01 Spine   ( -0.3,  6.0, 105.7)     Bip01 R Hand  (-50.7, 7.2, 107.4)
+  Bip01 Head    ( -0.3,  5.6, 164.8)
+```
+
+**The whole file is column-vector**, rotations included, so the stored quaternion is conjugated
+on the way in — one convention change stated once. Composition is `world_child = local_child ·
+world_parent`, and a `Sequence`'s translation is the bone's length along its own local X (3ds
+Max Biped).
+
+**Two invariants settle those two conventions, and they are not interchangeable:**
+
+- *Composition order* — animation rotates bones and never stretches them, so a bone's distance
+  to its parent must match the bind skeleton's at every frame. `child · parent` gives a median
+  error of **0.0000**; `parent · child` gives 7.6.
+- *Rotation handedness* — **no rigid-motion check can catch a transpose**, because a transposed
+  rotation is still a rotation and bone lengths survive it exactly. What catches it is the
+  skinned **silhouette**: `ANIM_VILLAGER_FEAR_WALK_02` spans Z −0.2..193.6 conjugated, matching
+  the mesh's own −0.7..193.6 with the feet on the ground; unconjugated it is 71 tall and 204
+  wide.
+
+#### Retargeting, and the per-vertex data
+
+An animation carries **its own skeleton** (`male_villager_complete`, `HeroUnclothed`,
+`Bandit01_COMPLETE`) and binds to a mesh **by Biped bone name** — 57 of 62 sequences on the
+villager body. `Mesh::bone_names` and `bone_name_indices` were parsed and unused; the names
+confirm against `~/Fable/data/Bones/*.bncfg`, which turn out to be the **skeletal-morph** tables
+(§3.16a), not animations.
+
+`decode_vertex`'s skipped 8 bytes are the skinning data, split by measurement over all
+**690,029** skinned vertices: the last four sum to **255 on every one** (weights), the first
+four are multiples of three on **every one**, max 51 (palette slots **×3**, because the shader
+reads `c[a.x + 38/39/40]`). 51 = 17×3 is the last slot of an 18-entry palette and
+`CAnimatedBlock::Groups[18]` caps it there.
+
+> **Each animated block has its own palette, and they do not agree.** Blocks partition the
+> primitive's vertex stream (`Σ block.vertex_count == primitive.vertex_count` on 282 of 282),
+> and of the 37 primitives with more than one block, **0 share a palette**. Resolving every
+> vertex through the first block's `Groups[]` mis-binds everything past it — it rendered as
+> detached forearms and hands floating beside each villager. `MESH_GRANNY`'s second block covers
+> the arms with `[29, 39, 41, …]` where the first holds `[6, 7, 4, …]`.
+
+#### Which clip plays
+
+`APPEARANCE`'s `Animation` is an `AnimationSet`, and `AnimationEntry::bank_index` is a
+`graphics.big` asset id — **23,005 of 23,005 resolve**, over 151 of 174 `APPEARANCE` defs. One
+key recurs across every set:
+
+> **`1098326459` names the default/idle clip** — `ANIMATION_ARENA_GATE_DEFAULT_01`,
+> `ANIM_ARENA_AUDIENCE_IDLE_BREATHE_01`, `ANIMATION_DUMMY_DEFAULT_01`.
+
+636 thing defs name one. That is what a creature standing around plays.
+
 ---
 
 ## 4. *(retired)*

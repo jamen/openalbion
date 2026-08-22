@@ -39,6 +39,8 @@ pub struct Files {
     /// The body-part meshes a `CREATURE` is assembled from, keyed the same way. Only the
     /// creature defs that have any — 127 of retail's 231 `CCreatureDef`s.
     pub creature_body_parts: HashMap<String, BodyPartSets>,
+    /// `DefinitionType` → the animation assets it can play.
+    pub default_animations: crate::scene::DefaultAnimations,
     /// `LOCAL_DETAIL_GENERATOR` defs by global entry index, which is how an `ENGINE_THEME`
     /// names one.
     local_detail_generators: HashMap<i32, EngineLocalDetailGeneratorDef>,
@@ -56,6 +58,7 @@ struct Defs {
     engine_themes: HashMap<String, EngineThemeDef>,
     thing_graphics: HashMap<String, EngineGraphic>,
     creature_body_parts: HashMap<String, BodyPartSets>,
+    default_animations: crate::scene::DefaultAnimations,
     local_detail_generators: HashMap<i32, EngineLocalDetailGeneratorDef>,
     engine_def: Option<EngineDef>,
     sky_def: Option<SkyDef>,
@@ -108,14 +111,16 @@ impl Defs {
         }
 
         defs.creature_body_parts = Self::read_creature_body_parts(names, def_binary);
+        defs.default_animations = crate::scene::read_default_animations(names, def_binary);
 
         tracing::info!(
             "game.bin: {} ENGINE_THEME, {} thing graphics, {} LOCAL_DETAIL_GENERATOR, \
-             {} creatures with body parts",
+             {} creatures with body parts, {} default animations",
             defs.engine_themes.len(),
             defs.thing_graphics.len(),
             defs.local_detail_generators.len(),
             defs.creature_body_parts.len(),
+            defs.default_animations.len(),
         );
         defs
     }
@@ -297,6 +302,7 @@ impl Files {
             engine_themes: defs.engine_themes,
             thing_graphics: defs.thing_graphics,
             creature_body_parts: defs.creature_body_parts,
+            default_animations: defs.default_animations,
             local_detail_generators: defs.local_detail_generators,
             engine_def: defs.engine_def,
             sky_def: defs.sky_def,
@@ -571,6 +577,36 @@ impl Files {
             .cloned()
             .ok_or(ReadMeshError::NotFound)?;
         self.read_mesh_asset(&asset)
+    }
+
+    /// Read an animation by its `graphics.big` asset id — how an `AnimationEntry`'s
+    /// `bank_index` names one (AGENTS.md §3.17).
+    pub fn read_animation_by_id(&mut self, id: u32) -> Option<fable_data::anim::Animation> {
+        let asset = self
+            .graphics
+            .bank_iter()
+            .find_map(|bank| bank.asset_by_id(id))
+            .filter(|a| matches!(&a.extras, Some(ExtraMetadata::Animation(_))))
+            .cloned()?;
+        let data = self.graphics.read_asset_from_metadata(&asset).ok()?;
+        match fable_data::anim::Animation::decode(&data) {
+            Ok(animation) => Some(animation),
+            Err(error) => {
+                tracing::warn!("Animation {id}: {error}");
+                None
+            }
+        }
+    }
+
+    /// An animation asset's id from its symbol name — what `--animation NAME` resolves.
+    pub fn animation_id_by_name(&self, name: &str) -> Option<i32> {
+        self.graphics
+            .bank_iter()
+            .flat_map(|bank| bank.asset_iter())
+            .find(|a| {
+                a.symbol_name == name && matches!(&a.extras, Some(ExtraMetadata::Animation(_)))
+            })
+            .map(|a| a.id as i32)
     }
 
     /// The mesh asset's symbol name, for logging a placement's provenance.

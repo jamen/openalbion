@@ -82,6 +82,16 @@ struct Cli {
     /// the whole world costs (AGENTS.md §12.3b). Needs a release build and patience.
     #[argh(switch)]
     world: bool,
+
+    /// play each creature's idle clip instead of a random one from its set. Random is the
+    /// default because it shows the variety a level's animation data actually holds.
+    #[argh(switch)]
+    idle_animations: bool,
+
+    /// force every creature onto one animation, by symbol name
+    /// (`--animation ANIM_VILLAGER_FEAR_WALK_02`). Overrides --idle-animations.
+    #[argh(option)]
+    animation: Option<String>,
 }
 
 /// How much of a level's texture work the bindless registry saves (AGENTS.md §12.6).
@@ -106,6 +116,22 @@ impl TextureReuse {
         }
         resident
     }
+}
+
+/// One skinned model being played: which renderer model, its clip, and where each instance
+/// sits in that clip.
+struct PlayingAnimation {
+    model_index: usize,
+    bone_count: usize,
+    /// One clip per instance, in instance order.
+    instances: Vec<InstanceAnimation>,
+}
+
+/// One instance's clip and where it sits in it.
+struct InstanceAnimation {
+    bound: scene::BoundAnimation,
+    /// Seconds to subtract, so a crowd is not in lockstep.
+    offset: f32,
 }
 
 /// `x,y,z` → a point. Returns `None` for anything else, so a typo falls back to the default
@@ -206,6 +232,9 @@ fn capture(
 
     app.renderer = Some(renderer);
     app.run_startup_commands();
+    // A capture never runs the frame loop, so pose the crowd once explicitly — otherwise a
+    // screenshot would always show bind pose and silently contradict the live window.
+    app.update_animations(0.0);
     let sky_blend = app.refresh_sky();
     // Twice: the stats overlay reports its own glyph count, which only exists once it has been
     // laid out. A live window gets that for free from the previous frame; a single capture does
@@ -251,6 +280,14 @@ struct App {
     level_name: String,
     mesh_name: Option<String>,
     terrain_center: glam::Vec3,
+    /// Skinned models and the clip each is playing.
+    animations: Vec<PlayingAnimation>,
+    /// Pick each instance's clip at random from its def's set, rather than its idle.
+    random_animations: bool,
+    /// `--animation NAME`: force one clip on everything.
+    animation_override: Option<String>,
+    /// Seconds since the scene loaded, which is what animation time is measured in.
+    animation_time: f32,
     terrain_radius: f32,
     /// The sky texture name pair currently uploaded to the GPU, so we only re-upload on change.
     sky_textures: Option<(Option<String>, Option<String>)>,
@@ -298,6 +335,10 @@ impl App {
         let files = Files::new(&fable_directory).map_err(E::Files)?;
 
         Ok(Self {
+            animations: Vec::new(),
+            animation_time: 0.0,
+            random_animations: !cli.idle_animations,
+            animation_override: cli.animation.clone(),
             files,
             renderer: None,
             window: None,
@@ -633,6 +674,7 @@ impl App {
                 .append(&mut objects);
         }
 
+        let mut animated: Vec<PlayingAnimation> = Vec::new();
         let mut uploaded_meshes = 0usize;
         let mut placed = 0usize;
         let mut failed_meshes = 0usize;
@@ -677,10 +719,26 @@ impl App {
                 }
             };
 
+            // The renderer appends, so the index this model will occupy is the current count.
+            let model_index = renderer.model_stats().0;
             match renderer.add_model(&model, instances, *kind) {
                 Ok(()) => {
                     uploaded_meshes += 1;
                     placed += instances.len();
+
+                    // Bind a clip to every instance of any skinned mesh we just uploaded.
+                    // A palette covers *all* instances, so this only plays when every one of
+                    // them got a clip — a partial set would misalign the buffer.
+                    if model.skin.is_some() {
+                        let bound = self.bind_animations(&mesh, &sources, mesh_id, instances);
+                        if bound.len() == instances.len() {
+                            animated.push(PlayingAnimation {
+                                model_index,
+                                bone_count: mesh.bones.len(),
+                                instances: bound,
+                            });
+                        }
+                    }
                     tracing::debug!(
                         "{name} (id {mesh_id}) ← {} {kind:?} placements from {:?}",
                         instances.len(),
@@ -732,6 +790,22 @@ impl App {
             things.placement_count_of(kind),
             things.mesh_count_of(kind),
         );
+
+        // Hand the bound clips to the frame loop.
+        let animated_models = animated.len();
+        let animated_instances: usize = animated.iter().map(|a| a.instances.len()).sum();
+        self.animations = animated;
+        if animated_models > 0 {
+            tracing::info!(
+                "Animation: {animated_instances} creatures across {animated_models} meshes, \
+                 clips chosen {} (AGENTS.md §3.17)",
+                match (&self.animation_override, self.random_animations) {
+                    (Some(name), _) => format!("as {name} for all"),
+                    (None, true) => "at random per creature".to_string(),
+                    (None, false) => "as each def's idle".to_string(),
+                },
+            );
+        }
 
         let body_parts = things.body_parts;
         tracing::info!(
@@ -810,6 +884,116 @@ impl App {
         tracing::info!(
             "Local detail: {drawn} repeated instances over {meshes} batches ({dropped} dropped)",
         );
+    }
+
+    /// Find the idle clip for a skinned mesh and bind it, resolving retargeting once.
+    ///
+    /// The clip comes from whichever of the mesh's `DefinitionType`s names one — a mesh shared
+    /// by several defs (a villager body serves male villagers, traders and beggars) takes the
+    /// first that has an `APPEARANCE` with animations.
+    /// Bind a clip to every instance of a skinned mesh, resolving retargeting once each.
+    ///
+    /// The clips come from whichever of the mesh's `DefinitionType`s names a set — a mesh
+    /// shared by several defs (a villager body serves male villagers, traders and beggars)
+    /// takes the first with animations.
+    ///
+    /// **Selection is per instance, not per mesh**, so a crowd drawn from one body shows a
+    /// spread of poses rather than one pose repeated. `--animation NAME` forces a single clip
+    /// on everything for looking at one in particular; otherwise each instance draws from the
+    /// def's whole set through the engine's own PRNG (§3.13), seeded from the mesh id and the
+    /// instance index — so the crowd is varied *and* identical run to run.
+    fn bind_animations(
+        &mut self,
+        mesh: &fable_data::mesh::Mesh,
+        sources: &HashMap<u32, BTreeSet<String>>,
+        mesh_id: u32,
+        instances: &[renderer::ModelInstance],
+    ) -> Vec<InstanceAnimation> {
+        let Some(definitions) = sources.get(&mesh_id) else {
+            return Vec::new();
+        };
+        let Some(set) = definitions
+            .iter()
+            .find_map(|d| self.files.default_animations.get(d.as_str()))
+            .cloned()
+        else {
+            return Vec::new();
+        };
+
+        // `--animation NAME` overrides everything, so one clip can be inspected on its own.
+        let forced = self
+            .animation_override
+            .as_ref()
+            .and_then(|name| self.files.animation_id_by_name(name));
+
+        let mut bound = Vec::with_capacity(instances.len());
+        for (instance, placement) in instances.iter().enumerate() {
+            // **Seeded from where the creature stands, not from the mesh.** A creature is
+            // three separate body-part meshes (§3.16), each with its own instance list, and
+            // seeding per mesh gives its head one clip and its torso another — which pulls
+            // the head off. All three parts share one placement transform, so hashing that
+            // is what makes them one creature again.
+            let t = placement.transform[3];
+            let seed = t[0].to_bits() ^ t[1].to_bits().rotate_left(11) ^ t[2].to_bits().rotate_left(22);
+            let Some(animation_id) = forced.or_else(|| {
+                if self.random_animations {
+                    set.random(seed)
+                } else {
+                    set.idle()
+                }
+            }) else {
+                continue;
+            };
+
+            let Some(animation) = self.files.read_animation_by_id(animation_id as u32) else {
+                continue;
+            };
+            let Some(clip) = scene::BoundAnimation::bind(mesh, animation) else {
+                continue;
+            };
+
+            // A clip that drives almost nothing is a retargeting failure, not an animation —
+            // it would leave the creature in bind pose while claiming to be animated. Fall
+            // back to the idle rather than dropping the instance.
+            let driven = clip.bone_to_sequence.iter().filter(|b| b.is_some()).count();
+            if driven * 2 < clip.bone_to_sequence.len() {
+                tracing::debug!(
+                    "mesh {mesh_id} instance {instance}: animation {animation_id} drives only \
+                     {driven} of {} bones — skipped",
+                    clip.bone_to_sequence.len(),
+                );
+                continue;
+            }
+
+            // Spread the crowd through the clip so they are not in lockstep.
+            let phase = (fable_data::local_detail::rng::next_seed(seed ^ 0x5f37) % 1000) as f32
+                / 1000.0;
+            let offset = phase * clip.frame_count() as f32
+                / clip.animation.samples_per_second().max(1.0);
+
+            bound.push(InstanceAnimation {
+                bound: clip,
+                offset,
+            });
+        }
+        bound
+    }
+
+    /// Advance every playing clip and push this frame's bone palettes.
+    fn update_animations(&mut self, delta: f32) {
+        self.animation_time += delta;
+        let Some(renderer) = self.renderer.as_ref() else {
+            return;
+        };
+        for playing in &self.animations {
+            let mut palette =
+                Vec::with_capacity(playing.bone_count * playing.instances.len());
+            for instance in &playing.instances {
+                let frame = instance.bound.frame_at(self.animation_time - instance.offset);
+                palette.extend(instance.bound.matrices(frame));
+            }
+            renderer.set_bone_matrices(playing.model_index, &palette);
+        }
     }
 
     /// `--mesh NAME`: show one mesh at the terrain centre, for looking at an asset.
@@ -1199,6 +1383,9 @@ impl App {
             .unwrap_or(0.0);
 
         self.last_frame_time = Some(now);
+
+        // Pose every skinned creature for this frame.
+        self.update_animations(delta_time);
 
         // On first frame, lock cursor for fly camera.
         if self.first_frame {

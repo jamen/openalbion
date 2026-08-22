@@ -44,7 +44,7 @@ pub use self::image::{ImageFormat, TextureImage};
 pub use self::local_detail::{AddLocalDetailError, LocalDetailInstance};
 pub use self::model::{
     AddModelError, AlphaMode, Model, ModelInstance, ModelKind, ModelKinds, ModelMaterial,
-    ModelPrimitive, ModelSubMesh, ModelVertex,
+    ModelPrimitive, ModelSkin, ModelSubMesh, ModelVertex, SkinnedPrimitive, SkinnedVertex,
 };
 pub use self::terrain::{TerrainData, TerrainDraw, TerrainVertex};
 pub use self::text::{AddGlyphError, GlyphInstance};
@@ -611,6 +611,16 @@ impl<'target> Renderer<'target> {
             self.passes.model.model_count(),
             self.passes.model.instance_count(),
         )
+    }
+
+    /// Replace a skinned model's bone palettes — see `ModelPass::set_bone_matrices`.
+    pub fn set_bone_matrices(&self, model: usize, matrices: &[[[f32; 4]; 4]]) -> bool {
+        self.passes.model.set_bone_matrices(&self.queue, model, matrices)
+    }
+
+    /// `(model index, bone count, instance count)` for every skinned model.
+    pub fn skinned_models(&self) -> Vec<(usize, usize, usize)> {
+        self.passes.model.skinned_models()
     }
 
     /// `(mesh assets uploaded, placements drawn)` for one kind.

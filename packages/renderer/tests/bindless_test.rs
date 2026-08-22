@@ -124,6 +124,7 @@ fn model_with_texture(asset_id: u32) -> Model {
             indices: vec![0, 1, 2],
             sub_meshes: vec![ModelSubMesh { material: 0, index_start: 0, index_count: 3 }],
         }],
+        skin: None,
         materials: vec![ModelMaterial {
             diffuse_id: Some(asset_id),
             diffuse: Some(TextureImage {

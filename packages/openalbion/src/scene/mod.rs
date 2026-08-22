@@ -9,6 +9,7 @@
 //! left to invent. It also means this module — not a shader — is where provenance
 //! logging belongs: "which byte became which constant" is a conversion question.
 
+pub mod animation;
 pub mod local_detail;
 pub mod model;
 pub mod sky;
@@ -16,6 +17,7 @@ pub mod terrain;
 pub mod texture;
 pub mod things;
 
+pub use self::animation::{BoundAnimation, DefaultAnimations, read_default_animations};
 pub use self::local_detail::{LevelLocalDetail, build_local_detail, merge_local_detail};
 pub use self::model::build_model;
 pub use self::sky::{sky_textures_at_time, upload_sky_textures};
