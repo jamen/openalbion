@@ -1,5 +1,6 @@
 use derive_more::{Display, Error};
 use fable_data::{
+    appearance::BodyPartSets,
     big::{AssetMetadata, BigReader, BigReaderError, ExtraMetadata, ReadAssetDataError},
     def::{
         EngineDef, EngineGraphic, EngineLocalDetailGeneratorDef, EngineThemeDef, SkyDef,
@@ -35,6 +36,9 @@ pub struct Files {
     /// Every def that can be a thing's `DefinitionType` and draws something, keyed by
     /// instance name — what `.tng` placements resolve through. See [`Defs::read`].
     pub thing_graphics: HashMap<String, EngineGraphic>,
+    /// The body-part meshes a `CREATURE` is assembled from, keyed the same way. Only the
+    /// creature defs that have any — 127 of retail's 231 `CCreatureDef`s.
+    pub creature_body_parts: HashMap<String, BodyPartSets>,
     /// `LOCAL_DETAIL_GENERATOR` defs by global entry index, which is how an `ENGINE_THEME`
     /// names one.
     local_detail_generators: HashMap<i32, EngineLocalDetailGeneratorDef>,
@@ -51,6 +55,7 @@ pub struct Files {
 struct Defs {
     engine_themes: HashMap<String, EngineThemeDef>,
     thing_graphics: HashMap<String, EngineGraphic>,
+    creature_body_parts: HashMap<String, BodyPartSets>,
     local_detail_generators: HashMap<i32, EngineLocalDetailGeneratorDef>,
     engine_def: Option<EngineDef>,
     sky_def: Option<SkyDef>,
@@ -102,13 +107,65 @@ impl Defs {
             }
         }
 
+        defs.creature_body_parts = Self::read_creature_body_parts(names, def_binary);
+
         tracing::info!(
-            "game.bin: {} ENGINE_THEME, {} thing graphics, {} LOCAL_DETAIL_GENERATOR",
+            "game.bin: {} ENGINE_THEME, {} thing graphics, {} LOCAL_DETAIL_GENERATOR, \
+             {} creatures with body parts",
             defs.engine_themes.len(),
             defs.thing_graphics.len(),
             defs.local_detail_generators.len(),
+            defs.creature_body_parts.len(),
         );
         defs
+    }
+
+    /// Join each `CREATURE` to its `CCreatureDef` sub-def and read the body-part mesh lists.
+    ///
+    /// A sub-def is a **separate entry** in the global index space; the parent points at it
+    /// through its `sub_defs` table (`SubDefRecord::def_index`). That indirection is the only
+    /// reason this needs its own pass: `RandomAppearanceMorph` lives on the sub-def, while the
+    /// name a `.tng` says (`DefinitionType`) lives on the parent.
+    fn read_creature_body_parts(
+        names: &Names,
+        def_binary: &DefBinary,
+    ) -> HashMap<String, BodyPartSets> {
+        // Every CCreatureDef's body-part lists, by the global index its parent will name.
+        let mut by_index: HashMap<u32, BodyPartSets> = HashMap::new();
+        for entry in def_binary.entries(names) {
+            let DefBody::CreatureDef(def) = &entry.record.body else {
+                continue;
+            };
+            let morph = &def.random_appearance_morph;
+            let sets = BodyPartSets {
+                parts: [
+                    morph.body_parts0.meshes.iter().map(|m| m.mesh_id).collect(),
+                    morph.body_parts1.meshes.iter().map(|m| m.mesh_id).collect(),
+                    morph.body_parts2.meshes.iter().map(|m| m.mesh_id).collect(),
+                ],
+            };
+            if !sets.is_empty() {
+                by_index.insert(entry.global_index as u32, sets);
+            }
+        }
+
+        let mut by_name = HashMap::new();
+        for entry in def_binary.entries(names) {
+            if !matches!(&entry.record.body, DefBody::ThingCreatureDef(_)) {
+                continue;
+            }
+            let (Some(name), Some(sub_defs)) = (entry.file_name, entry.record.sub_defs.as_ref())
+            else {
+                continue;
+            };
+            if let Some(sets) = sub_defs
+                .iter()
+                .find_map(|sub| by_index.get(&sub.def_index))
+            {
+                by_name.insert(name.to_string(), sets.clone());
+            }
+        }
+        by_name
     }
 }
 
@@ -239,6 +296,7 @@ impl Files {
             environment,
             engine_themes: defs.engine_themes,
             thing_graphics: defs.thing_graphics,
+            creature_body_parts: defs.creature_body_parts,
             local_detail_generators: defs.local_detail_generators,
             engine_def: defs.engine_def,
             sky_def: defs.sky_def,

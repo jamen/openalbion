@@ -565,6 +565,7 @@ impl App {
                     all_things.push(scene::resolve_things(
                         &tng,
                         &self.files.thing_graphics,
+                        &self.files.creature_body_parts,
                         map.origin,
                     ));
                 }
@@ -730,6 +731,14 @@ impl App {
              meshes, drawn in bind pose (no bones — AGENTS.md §5 step 6.7)",
             things.placement_count_of(kind),
             things.mesh_count_of(kind),
+        );
+
+        let body_parts = things.body_parts;
+        tracing::info!(
+            "Body parts: {} creatures assembled from {} part meshes instead of their base body \
+             (AGENTS.md §3.16)",
+            body_parts.creatures,
+            body_parts.placements,
         );
     }
 

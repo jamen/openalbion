@@ -1,3 +1,4 @@
+pub mod appearance;
 pub mod big;
 pub mod bytes;
 pub mod crc32;

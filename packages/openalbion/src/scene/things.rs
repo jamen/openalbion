@@ -22,11 +22,13 @@
 //! equal the mesh header's own `bounding_box` 244 times out of 244, and the meshes come out
 //! person-sized under the same `RenderSizeX × ObjectScale × 0.01` as everything else.
 //!
-//! **What is missing, stated rather than hidden:** clothing. A villager resolves to
-//! `MESH_BS_MALE_MIDDLE_UNCLOTHED_01`, and the garments live in `APPEARANCE_MODIFIER` defs that
-//! `fable-defs` does not decode yet. They render unclothed — a visible gap, per §2 rule 5,
-//! rather than a plausible-looking substitute.
+//! **A creature is usually not its `Graphic.BankIndex` mesh.** That names a *base body*
+//! (`MESH_BS_MALE_MIDDLE_UNCLOTHED_01`), and the clothed creature is three body-part meshes
+//! chosen from the def by the placement's own authored seed — see [`fable_data::appearance`].
+//! When a creature has body parts, they are placed **instead of** the base mesh, at the same
+//! object matrix.
 
+use fable_data::appearance::BodyPartSets;
 use fable_data::def::{EngineGraphic, EngineGraphicType};
 use fable_data::tng::Tng;
 use renderer::ModelKind;
@@ -53,6 +55,17 @@ pub struct LevelThings {
     /// `graphics.big` asset id → the object matrices to draw it with.
     pub by_mesh: HashMap<u32, MeshPlacements>,
     pub skipped: Skipped,
+    pub body_parts: BodyPartCounts,
+}
+
+/// How much of a level's crowd was assembled from body parts rather than drawn as a base
+/// body. `placements / creatures` should be 3 wherever every part list is populated.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct BodyPartCounts {
+    /// Creature placements that resolved to body parts.
+    pub creatures: usize,
+    /// Part meshes those placements produced.
+    pub placements: usize,
 }
 
 /// Every placement of one mesh asset, and which toggle they answer to.
@@ -113,6 +126,8 @@ pub fn merge_things(things: Vec<LevelThings>) -> LevelThings {
         merged.skipped.not_drawable += level.skipped.not_drawable;
         merged.skipped.no_placement += level.skipped.no_placement;
         merged.skipped.kind_conflict += level.skipped.kind_conflict;
+        merged.body_parts.creatures += level.body_parts.creatures;
+        merged.body_parts.placements += level.body_parts.placements;
         for (kind, count) in level.skipped.other_graphic_type {
             *merged.skipped.other_graphic_type.entry(kind).or_default() += count;
         }
@@ -169,10 +184,13 @@ impl Skipped {
 pub fn resolve_things(
     tng: &Tng,
     graphics: &HashMap<String, EngineGraphic>,
+    body_parts: &HashMap<String, BodyPartSets>,
     origin: (i32, i32),
 ) -> LevelThings {
     let mut by_mesh: HashMap<u32, MeshPlacements> = HashMap::new();
     let mut skipped = Skipped::default();
+    let mut body_part_placements = 0usize;
+    let mut creatures_with_body_parts = 0usize;
 
     for thing in tng.things() {
         let definition_type = &thing.base().definition_type;
@@ -222,22 +240,57 @@ pub fn resolve_things(
         transform[3][0] += origin.0 as f32;
         transform[3][1] += origin.1 as f32;
 
-        let placed = by_mesh
-            .entry(graphic.bank_index as u32)
-            .or_insert_with(|| MeshPlacements::new(kind))
-            .push(
-                kind,
-                Placement {
-                    transform,
-                    definition_type: definition_type.clone(),
-                },
-            );
-        if !placed {
-            skipped.kind_conflict += 1;
+        // A creature with body parts is drawn as its parts, not as its base body. The parts
+        // partition the same silhouette and carry the clothed materials, so this is a
+        // replacement rather than an addition — see `fable_data::appearance`.
+        //
+        // The seed comes from the placement's own `CTCRandomAppearanceMorph`. A creature def
+        // that has body parts but a placement that carries no seed component falls back to
+        // seed 0, which is a real draw rather than a special case: the engine's `Seed` member
+        // is likewise zero-initialised until something sets it.
+        let chosen = body_parts.get(definition_type.as_str()).map(|sets| {
+            let seed = thing
+                .components()
+                .random_appearance_morph
+                .as_ref()
+                .map_or(0, |m| m.seed as u32);
+            sets.choose(seed)
+        });
+
+        let meshes: Vec<u32> = match &chosen {
+            Some(parts) if !parts.is_empty() => {
+                creatures_with_body_parts += 1;
+                body_part_placements += parts.len();
+                parts.iter().map(|&id| id as u32).collect()
+            }
+            _ => vec![graphic.bank_index as u32],
+        };
+
+        for mesh_id in meshes {
+            let placed = by_mesh
+                .entry(mesh_id)
+                .or_insert_with(|| MeshPlacements::new(kind))
+                .push(
+                    kind,
+                    Placement {
+                        transform,
+                        definition_type: definition_type.clone(),
+                    },
+                );
+            if !placed {
+                skipped.kind_conflict += 1;
+            }
         }
     }
 
-    LevelThings { by_mesh, skipped }
+    LevelThings {
+        by_mesh,
+        skipped,
+        body_parts: BodyPartCounts {
+            creatures: creatures_with_body_parts,
+            placements: body_part_placements,
+        },
+    }
 }
 
 impl LevelThings {

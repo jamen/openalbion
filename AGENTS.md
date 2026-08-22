@@ -1183,6 +1183,92 @@ Decided 2026-08-21 (Jamen): **draw them anyway**, per §2 rule 5 — a stated ga
 plausible substitute — with clothing as the next goal. `RandomAppearanceMorph` on `CreatureDef`
 is part of that story and needs its own investigation.
 
+### 3.16 Creature appearance — a villager is not its `Graphic.BankIndex`
+
+**The mesh a `CREATURE` def names is a *base body*, and on its own it is underdressed.**
+`CREATURE_BS_VILLAGER_MALE` → `MESH_BS_MALE_MIDDLE_UNCLOTHED_01`. The clothed creature is
+assembled from three **body-part** meshes chosen at random per placement. Two independent
+systems dress creatures, and they are easy to confuse:
+
+| System | Dresses | Reached through | State |
+|---|---|---|---|
+| `CRandomAppearanceMorph` | **NPCs and enemies** — villagers, bandits, hobbes | `CCreatureDef` sub-def, seeded per `.tng` placement | **Built** |
+| `CAppearanceModifierDef` | **the hero's inventory clothing** — worn items, hair, beards | `OBJECT` defs, `HeroSuit`, `SuitPart` | not built (§3.16a) |
+
+**The parts replace the base body; they do not layer over it.** Measured from the meshes' own
+bounding boxes, in mesh units:
+
+```
+UNCLOTHED_01   Z  -0.7 .. 193.6   64 bones   materials: face hair torso legs mouth
+HEAD_01        Z 156.8 .. 193.6   28 bones   materials: face hair mouth
+TORSO_02       Z  85.8 .. 168.8   40 bones   materials: skin shirt
+LEGS_02        Z   0.0 .. 114.7   16 bones   materials: Legs02
+```
+
+The three span the base body's full height between them and carry *clothed* materials where the
+base carries bare ones. `CTCRandomAppearanceMorph::OnAppearanceDraw` returns `bool` — the
+handled-the-draw-myself pattern — which fits, but its body is Ghidra noise, so the geometry is
+what this rests on.
+
+**The choice is exact.** `CRandomAppearanceMorph::GetRandomBodyParts`
+(`fablelib/random_appearance_morph.cpp:838`) draws from **§3.13's PRNG**, already ported:
+
+```c
+for (part = 0; part != 3; part++)          // literally `do { } while (iVar8 != 3)`
+    if (BodyParts[part] non-empty) {
+        count = (Mylast - Myfirst) / 0x1c; // 28 = sizeof(CBodyPartMesh) ✓ the class layout
+        *seed = GFROR13(*seed * 0x24a1 + 0x24df);
+        mesh  = BodyParts[part][*seed % count].MeshIndex;
+    }
+```
+
+The advance is **inside** the non-empty guard, so an empty part consumes no draw. And the seed
+is authored per placement — `.tng` carries `StartCTCRandomAppearanceMorph; Seed -1949563995;`,
+604 of them across the shipped levels — so a level's crowd is reproducible exactly.
+
+*Evidence:* `CCreatureDef` parses out of retail `game.bin` with **980 of 980 body-part meshes
+resolving** to mesh assets, over the 127 creature defs that have any. `Priority` is `1` on all
+980 and is read by nothing in the draw. Sub-defs are separate entries in the global index space;
+the parent's `SubDefRecord::def_index` is the join.
+
+> **Two `fable-defs` bugs found here, both in `~/git/fable-defs` rather than this repo.**
+> `RandomAppearanceMorphBodyParts*MeshesEntry::texture_id` is misnamed — the oracle
+> (`CBodyPartMesh`) calls it **`Priority`**, and its value is 1 everywhere, not a texture id.
+> And `texture_morphs` is **misparsed**: it decodes an "original texture" of
+> `EDITORGUI_STOP_ICON`. `CTextureMorph { NewTexture, GroupID }` is the 8-byte value and the
+> map key is the original texture; the 12-byte entry shape is right but the alignment is not.
+
+#### 3.16a What is not built, and why
+
+- **Texture morphs.** The random *texture* per part (`AddTextureToMesh`) needs the parse above
+  fixed. Villagers get their meshes' default textures, so a crowd varies in clothing cut but
+  not in colourway.
+- **`MaxTextureGroupID`'s pre-draw** — logged in §9. It is a *derived* field (the running max of
+  the group ids handed to `AddTextureToMesh`), so it too is behind the texture-morph parse.
+  Its **value** only picks a texture group, which we do not implement; but **whether it is zero**
+  decides if the sequence is shifted by one draw. The shipped text defs put the group id at `0`
+  on 650 of 784 calls and on every villager def, so no pre-draw is right for the common case;
+  about twenty defs (hobbes, bandit officers, prophets, guild apprentices, traders) use groups
+  1–3 and will pick a different variant than the original until this is closed.
+- **Skeletal morphs** (`AddSkeletalMorph`, `CTCSkeletalMorph`) — body-shape variation, 45 calls.
+- **The hero's clothing** (`CAppearanceModifierDef`). The derivation is done and the 24-byte
+  blob `fable-defs` calls `AppearanceModifierGraphicsGraphicsEntry::data` is fully specified by
+  `CAppearanceModifierGraphics::CEntry` (`fablelib/defs/tc_clothing_def.hpp:47`):
+
+  ```
+  0x00 EEngineGraphicType Type      0x0c float RenderSizeX
+  0x04 EHeroMorphType     MorphType 0x10 float StartMorphStrength
+  0x08 long               BankIndex 0x14 float EndMorphStrength
+  ```
+
+  The text defs confirm it and show the *argument* order differs from the field order:
+  `Graphics.Add(ENGINE_GRAPHIC_ANIMATING_MESH, MESH_HERO_BEARDWATSON_01, 1, HERO_MORPH_NONE, 0, 0)`
+  is `(Type, BankIndex, RenderSizeX, MorphType, Start, End)`. **Garments are
+  `ENGINE_GRAPHIC_ANIMATING_MESH`** — skinned to the same skeleton — so they would draw in bind
+  pose exactly as §3.15's creatures do. 19 `HERO_MORPH_*` values appear in the data,
+  `HERO_MORPH_NONE` on 101 of them. Nothing here is blocked by rendering; it is blocked by
+  the hero having no inventory, and by the same undecoded-blob problem.
+
 ---
 
 ## 4. *(retired)*
@@ -1337,7 +1423,23 @@ have to be merged back the moment bones land.
   matrix) hit identity on only 529 and 548 of 7,805 bones respectively, so the convention is
   still open. That is the first question an animation step has to answer, and it is why this
   step does not claim to have decoded the skeleton.
-- 6.7b Clothing and appearance modifiers — see §3.15's last paragraph. **The next goal.**
+- 6.7b ~~Clothing~~ — **done for NPCs**, as step 6.14. The hero's own clothing is §3.16a.
+
+### Step 6.14 — Creature appearance — **BUILT** (body-part meshes)
+
+Derivation §3.16. A creature with body parts draws its head, torso and legs — chosen by the
+placement's authored seed through §3.13's PRNG — **instead of** its base body.
+`fable_data::appearance` is the ported `GetRandomBodyParts`; no new parser was needed, which is
+the same position §3.13 found local detail in.
+
+*Evidence:* 980/980 body-part meshes resolve; LookoutPoint assembles 6 creatures from 18 part
+meshes (201 → 213 placements, exactly +2 per creature), Witchwood 1 from 3, and Arena 0 —
+its 91 animating things are `OBJECT`s, not `CREATURE`s, which makes it the control. The
+"placements + skipped accounts for every thing" invariant is kept by subtracting the extra
+placements a one-thing-three-meshes creature contributes.
+
+**Deliberately not done:** everything in §3.16a — texture morphs, the `MaxTextureGroupID`
+pre-draw (§9), skeletal morphs, and the hero's `APPEARANCE_MODIFIER` clothing.
 - 6.8 Sprites, 3D sprites and generated effects — their own primitive managers.
 - 6.9 Dropping index-degenerate triangles at decode. Half of every static mesh's triangles are
   strip stitches with two equal indices (474,048 of 998,466 measured) and the
@@ -1634,6 +1736,7 @@ Track anything that could not be sourced. Empty is the goal.
 | `fable-data/src/local_detail/place.rs` | the draw counter's third index | **UNVERIFIED**: `GetRandomDisplacement`'s third argument is register-passed and invisible in both call sites. That a counter is incremented immediately before each draw is visible; that it starts at zero once per cell, and that the theme draw increments it too, is the reading. Plausibility-neutral — it changes *which* object stands where, not whether the result looks right |
 | `fable-data/src/local_detail/grid.rs` | `cell = floor(x + 0.5)` | **derived, not read.** The `__ftol2_sse` arguments are FPU values, but the storage forces it: the encode is `floor((offset + 0.5) · 255)` and the decode is `byte / 255 − 0.5`, so the offset must land in `[−0.5, 0.5]`. Under `floor(x)` half of every grid would clamp to the cell's far edge and the ±16 wrap would never fire |
 | `renderer/src/lib.rs` | MSAA 4× | **DIVERGENCE**, `ACCEPTED` (§6.3): the original ships AA **off**. Enabled deliberately as an improvement, per Jamen 2026-08-10; to be made configurable later |
+| `fable-data/src/appearance.rs` | `MaxTextureGroupID`'s pre-draw is not made | **UNVERIFIED**, and it is a *derived* value we cannot currently compute: it is the running max of the group ids handed to `AddTextureToMesh`, which reach us only through `texture_morphs`, which `fable-defs` misparses (§3.16). Only its zero-ness matters here — it decides whether the body-part sequence is shifted by one draw. The shipped text defs put the group id at `0` on 650 of 784 calls and on every villager def, so omitting the draw is right for the common case and wrong for ~20 defs (hobbes, bandit officers, prophets, guild apprentices, traders). Changes *which* clothed body a creature gets, never whether it gets one. Closed by fixing the `texture_morphs` parse |
 
 Retired from this table, all now sourced and cited in place: the `LightArray`/`LightGlobals`/
 `LightAttenuations` register offsets (§3.8, cross-checked three ways); `model.wgsl`'s invented
@@ -1649,6 +1752,23 @@ Newest first, one entry per working session: what landed, and the correction wor
 Anything a session *established* is a present-tense fact in §3, §5 or §9 instead — this is the
 record of how it got there, not a second copy of it.
 
+- **2026-08-21** — **Creatures are dressed** (§3.16, step 6.14). NPCs draw as three body-part
+  meshes chosen by their placement's authored seed, instead of the base body their
+  `Graphic.BankIndex` names. **The correction that made this cheap:** the obvious route was
+  `APPEARANCE_MODIFIER`, the system the previous session's derivation named — and it is the
+  *wrong* system. That one dresses the **hero**, from inventory; NPCs are dressed by
+  `CRandomAppearanceMorph`, which `fable-defs` already decodes and whose draw uses **§3.13's
+  PRNG unchanged**. So no new parser, exactly as local detail. Sub-defs turned out to be
+  separate entries in the global index space joined by `SubDefRecord::def_index`, which is the
+  only indirection involved. **Two things measurement settled that the decomp could not:** the
+  parts *replace* the base body rather than layering over it (their bounding boxes partition
+  the same silhouette and carry clothed materials where the base carries bare ones), and
+  `OnAppearanceDraw` is too mangled to have answered it. **Found and left for upstream:**
+  `fable-defs` misnames `CBodyPartMesh::Priority` as `texture_id`, and misparses
+  `texture_morphs` badly enough to report `EDITORGUI_STOP_ICON` as an original texture — which
+  is what blocks both the per-part texture variation and §9's `MaxTextureGroupID` entry.
+  Incidental: `CAppearanceModifierGraphics::CEntry` fully specifies the 24-byte blob for when
+  the hero's clothing is wanted, and the text defs' argument order is *not* its field order.
 - **2026-08-21** — **Creatures render** (§3.15, step 6.7). Animating meshes draw in bind pose
   through the existing model pass. **The derivation is the whole of it, and it is an identity,
   not an approximation:** `VSHADER_PALSKIN_DIRLIGHT_FOG` is `VSHADER_STATIC_DIRLIGHT` with a
