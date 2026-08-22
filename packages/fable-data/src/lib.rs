@@ -10,6 +10,7 @@ pub mod landscape;
 pub mod local_detail;
 pub mod manifest;
 pub mod text;
+pub mod skeleton;
 pub mod texture;
 pub mod tga;
 pub mod tng;
