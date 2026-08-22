@@ -25,7 +25,9 @@ inert where it has not — deliberately, per §2 rule 5.
 |---|---|---|
 | Landscape (foreground) | **Built.** Triplanar layers over normal-indexed blend tables, additive over a blackout pass | §3.4, step 5 |
 | Things (static meshes) | **Built.** `.tng` → def `Graphic` → `graphics.big` asset, instanced | §3.11, step 6 |
-| Things (animating meshes) | **Built, in bind pose.** Creatures, NPCs and animating objects draw through the *same* pass with an identity bone palette. No bones, no animation, no clothing | §3.15, step 6.7 |
+| Things (animating meshes) | **Built.** Creatures, NPCs and animating objects draw skinned, playing real clips | §3.15, §3.17, step 6.7 |
+| Creature appearance | **Built.** NPCs are assembled from randomly chosen head/torso/legs meshes, seeded per placement | §3.16, step 6.14 |
+| Animation | **Built.** The `3DAF` format parses, the skeleton resolves, and creatures play clips from their defs | §3.17, step 6.15 |
 | Texture sampling | **Built.** Shipped mip chains, anisotropy 4, MSAA 4× | §3.12, step 7 |
 | Local detail (foliage) | **Built.** Generated, deterministic, exactly reproducible | §3.13, step 8 |
 | Sky | **Partial.** Textures, keyframe blend and the gradient lerp are right; the gradients themselves are zero pending the environment layer, and the base band draws through the wrong pipeline | §3.2, §3.3, step 3 |
@@ -41,9 +43,11 @@ commands.
 `--text-demo` is gone; the console replaced it, and `--console` plus `--command` are how a
 capture reaches either (§8).
 
-**Creatures are on screen** (§3.15, step 6.7) — animating meshes draw in the bind pose they
-ship in, which is the *identity case* of `SHADERS_PALSKIN` rather than an approximation of it.
-Bones, animation and clothing are all still absent, and named as absent.
+**Creatures are on screen, dressed, and moving** (§3.15, §3.16, §3.17). Animating meshes draw
+through a transcription of `SHADERS_PALSKIN`; NPCs are assembled from body-part meshes chosen by
+their placement's authored seed; and each plays a clip out of its def's `AnimationSet`, picked at
+random so a level shows the variety its data holds. **Animation blending, skeletal morphs, the
+hero's clothing and creature AI are all still absent**, and named as absent in §3.16a and §5.
 
 **One thing is left: the environment layer (§5 step 2)**, and it is the highest-value
 *faithfulness* work remaining. Sky gradients, landscape lighting and mesh lighting are the same
@@ -1151,9 +1155,19 @@ the file-format chunk `C3DMeshFileXAnimatedPrimitiveBlockChunk`
 (`lib_3d_mesh_file_extras.hpp:1081`) carries only `GroupBlock`, `BonesPerVertex`, `VertexList`,
 `BoneWeights`. `Groups[18]` also pins the group array's ceiling, which the data reaches exactly.
 
-**Animated blocks index sequentially from 0**, unlike static blocks which seek `start_index`:
-787 of 787 primitives have their animated blocks contiguous from zero, and the walked length
-equals the declared `index_count` on all 787. 0 of 1,041 set `degenerate_triangles`.
+**Every block seeks `start_index`, animated ones included, and a strip of N triangles occupies
+N + 2 indices.** `start_index` is the running total of that: it holds on 562 of 562 blocks in
+multi-block primitives. 0 of 1,041 blocks set `degenerate_triangles`.
+
+> **The trap, and it shipped.** Animated blocks' `start_index` values *are* cumulative from
+> zero, which reads like a licence to walk them sequentially — and walking them was wrong,
+> because the expansion consumes one index per triangle of a strip (it peeks the other two)
+> while the strip *occupies* N + 2. Every block after the first began two indices early and the
+> error compounded — measured drift 2, 4, 6, 8 — so only 241 of 562 blocks landed where their
+> own `start_index` said. It rendered as a spray of long thin triangles across a villager's
+> chest, and nothing else complained, because a wrong offset still yields valid indices.
+> `index_layout_test.rs` guards both halves: the arithmetic, and that consecutive triangles of
+> a strip still share an edge.
 
 **The two sets are disjoint** — 2,327 static mesh ids against 244 animating ones, **zero
 overlap** — which is what lets one upload per mesh asset carry one kind. `MeshPlacements::push`
@@ -1537,13 +1551,28 @@ have to be merged back the moment bones land.
 
 **Deliberately not done:**
 
-- 6.7a Bones and animation. The bone palette is identity; `Mesh` already parses `bones`,
-  `bone_keyframes` and `bone_transforms`, and `decode_vertex` *skips* the per-vertex weights it
-  would need. **How `bone_transforms` relates to `Bone::matrix` is not yet established** — the
-  obvious readings (inverse of the bone's local matrix; inverse of a parent-composed world
-  matrix) hit identity on only 529 and 548 of 7,805 bones respectively, so the convention is
-  still open. That is the first question an animation step has to answer, and it is why this
-  step does not claim to have decoded the skeleton.
+- ~~6.7a Bones and animation~~ — **done**, as step 6.15 (§3.17).
+
+  **The failure that took three sessions is worth keeping, because it generalises.** The
+  question was how `Mesh::bone_transforms` relates to `Bone::matrix`. Three separate sweeps
+  concluded it did not: the last tried eighteen readings across {no chain, chain child-first,
+  chain parent-first} × {stored, transposed} × {left, right} over all 532 skinned meshes, and
+  every one landed on **1,349–1,387 of 14,946 bones**.
+
+  They were all testing nothing. The stored matrix is **column-vector** — translation at
+  indices 3, 7, 11 — and every sweep read indices 12/13/14, which are zero, so each
+  "composition" was translation-free. And **1,360 is exactly the number of bones where both
+  matrices are the identity**, so the reported hit rate was the degenerate count and nothing
+  else.
+
+  > **A negative result that lands on the degenerate count is not a negative result.** Before
+  > believing one, count how many cases are trivially satisfiable and check the answer is not
+  > that number.
+
+  The second half of the lesson is in §3.17: **no rigid-motion check can settle a rotation
+  convention**, because a transposed rotation is still a rotation. Bone lengths matched to a
+  median error of 0.0000 while the rotation was still wrong. Only the skinned silhouette
+  caught it.
 - 6.7b ~~Clothing~~ — **done for NPCs**, as step 6.14. The hero's own clothing is §3.16a.
 
 ### Step 6.14 — Creature appearance — **BUILT** (body-part meshes)
@@ -1561,6 +1590,45 @@ placements a one-thing-three-meshes creature contributes.
 
 **Deliberately not done:** everything in §3.16a — texture morphs, the `MaxTextureGroupID`
 pre-draw (§9), skeletal morphs, and the hero's `APPEARANCE_MODIFIER` clothing.
+
+### Step 6.15 — Animation — **BUILT** (one clip at a time)
+
+Derivation §3.17. `fable-data::anim` parses the `3DAF` format; `fable-data::skeleton` resolves
+the bind pose and poses a skeleton; `scene::animation` chooses a clip and drives it; the
+renderer skins on the GPU through a transcription of `VSHADER_PALSKIN_DIRLIGHT_FOG`.
+
+*Evidence:* 3,435 of 3,435 animation assets parse into 210,743 sequences, with
+**4,737,592 of 4,737,597 quaternions unit length**; the bind skeleton is a standing person;
+bone lengths survive posing with a median error of **0.0000**; and a walking villager skins to
+the mesh's own height with its feet on the ground. LookoutPoint plays 32 creatures across 23
+meshes; Arena plays 91.
+
+**The storage shape is a divergence, and the same one `local_detail.rs` already carries** (§9):
+vs_1_1 indexes a constant bank with the address register because it has nothing else; we read a
+storage buffer of per-instance palettes. The arithmetic is transcribed unchanged. The palette
+starts as identities, so a skinned model that is never posed draws exactly the bind pose it
+replaces.
+
+**Deliberately not done:**
+
+- 6.15a **Blending and transitions.** `CAnimationState`, `C3DAnimationBuilder` and
+  `AnimationEntry::components` are a whole blend graph; one clip at a time is where this stops.
+  Consequence, stated: clips cut rather than blend, and `*_INTO_*` / `*_OUTOF_*` transition
+  clips play as though they were loops.
+- 6.15b **Choosing a clip because of what a creature is doing.** There is no AI (§6.16), so a
+  creature draws one at random from its def's set — `--idle-animations` restricts it to the
+  idle, `--animation NAME` forces one. Random is the default because a level of villagers all
+  breathing in place shows almost none of what 3,435 clips hold.
+- 6.15c **Skeletal morphs** — `~/Fable/data/Bones/*.bncfg`, 60 files of per-bone scale triples
+  keyed by Biped name, applied on top of the skeleton (§3.16a).
+- 6.15d **Interpolation between samples.** The format is uniformly sampled, so a clip at 15 fps
+  shows 15 distinct poses a second rather than being lerped up to the frame rate.
+- 6.15e Root motion. `Scene Root` / `Movement` carry a clip's world placement, and it is
+  composed like any other bone — so a walk animation walks on the spot *and* drags its
+  creature along the clip's authored path. Harmless while nothing moves; wrong once anything
+  does.
+- 6.15f Cloth, facial and phoneme animation, and the `CS_*` cutscene clips.
+- 6.15g Helper points (`HLPR`) and bone masks, both parsed past rather than read.
 - 6.8 Sprites, 3D sprites and generated effects — their own primitive managers.
 - 6.9 Dropping index-degenerate triangles at decode. Half of every static mesh's triangles are
   strip stitches with two equal indices (474,048 of 998,466 measured) and the
@@ -1827,6 +1895,11 @@ cargo run --release -p openalbion -- --level Arena --screenshot arena.ppm
 # one mesh on its own, which is the quickest look at a creature's bind pose
 cargo run --release -p openalbion -- --level LookoutPoint --mesh MESH_HERO --screenshot hero.ppm
 
+# creatures animate. Clips are random per creature by default (§5 step 6.15b); these pin one.
+cargo run --release -p openalbion -- --level LookoutPoint --idle-animations
+cargo run --release -p openalbion -- --level LookoutPoint \
+  --animation ANIM_VILLAGER_FEAR_WALK_02
+
 # the regression check for step 6.7: this must still be md5 4137e8a4… (§5 step 6.7)
 cargo run --release -p openalbion -- --level LookoutPoint \
   --command "EnableAnimatedMeshes false" --screenshot lookout.ppm
@@ -1873,6 +1946,24 @@ Newest first, one entry per working session: what landed, and the correction wor
 Anything a session *established* is a present-tense fact in §3, §5 or §9 instead — this is the
 record of how it got there, not a second copy of it.
 
+- **2026-08-22** — **Creatures animate** (§3.17, step 6.15). The `3DAF` format, the skeleton,
+  a GPU skinning pass, and clips chosen from the defs. **The format was the easy half**: the
+  container is LZO plus a chunked file the decomp names field for field, and 3,435 of 3,435
+  assets parse. The hard half was that `C3DAnimFileSequenceChunk`'s reader takes raw 48-byte
+  matrices and **no shipped track is stored that way** — retail uses
+  `ReadCompressedFromFile`'s quaternion/`i16` tracks with an `ETrackMode` per track, and
+  `PALETTED` is what takes a near-static bone to one byte a sample.
+  **The correction that matters is §5 item 6.7a's**: three sessions of sweeps had "eliminated"
+  the bind pose, and all of them were reading a column-vector matrix's translation from the
+  wrong indices and reporting the identity-bone count back as a hit rate. **A negative result
+  that lands on the degenerate count is not a negative result.** Its sibling: no rigid-motion
+  check can settle a rotation convention — bone lengths matched to 0.0000 while the rotation
+  was still transposed, and only the skinned silhouette caught it.
+  **Two bugs found by looking at the picture**, both from assumptions stated in comments and
+  not checked: every vertex resolved its bone through the *first* animated block's palette,
+  where the blocks partition the vertex stream and **0 of 37** multi-block primitives share a
+  palette — it rendered as detached forearms; and clips were seeded per mesh, where a creature
+  is three body-part meshes that must share one — it pulled their heads off.
 - **2026-08-21** — **Creatures are dressed** (§3.16, step 6.14). NPCs draw as three body-part
   meshes chosen by their placement's authored seed, instead of the base body their
   `Graphic.BankIndex` names. **The correction that made this cheap:** the obvious route was
