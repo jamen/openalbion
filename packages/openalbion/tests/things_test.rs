@@ -10,6 +10,7 @@ use fable_data::def::binary::{DefBinary, DefBody};
 use fable_data::def::names::Names;
 use fable_data::def::EngineGraphic;
 use fable_data::tng::Tng;
+use renderer::ModelKind;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -49,9 +50,10 @@ fn thing_graphics(retail: &Path) -> HashMap<String, EngineGraphic> {
     map
 }
 
-/// Every static-mesh placement must name an asset that really is a mesh in `graphics.big`.
-/// If `Graphic.BankIndex` were an index into something rather than an asset id, this is
-/// where it would show.
+/// Every placement must name an asset that really is a mesh in `graphics.big`. If
+/// `Graphic.BankIndex` were an index into something rather than an asset id, this is where it
+/// would show — and it covers `ENGINE_GRAPHIC_ANIMATING_MESH` on the same terms as static
+/// meshes, which is the claim §5 step 6.7 rests on.
 #[test]
 fn every_placement_resolves_to_a_mesh_asset() {
     let Some((retail, levels)) = fixtures() else {
@@ -68,14 +70,17 @@ fn every_placement_resolves_to_a_mesh_asset() {
         .map(|a| (a.id, a.symbol_name.to_string()))
         .collect();
 
-    // (level, things in file, static-mesh placements, distinct meshes)
+    // (level, things in file, placements, distinct meshes, of which animating: placements,
+    // meshes). Both mesh kinds are placed — the animating ones in bind pose (AGENTS.md
+    // §5 step 6.7). Arena is where the second column moves most: 91 of its 148 placements are
+    // its animating audience.
     let expected = [
-        ("Witchwood", 64, 38, 20),
-        ("LookoutPoint", 288, 192, 44),
-        ("Arena", 355, 57, 4),
+        ("Witchwood", 64, 42, 24, 4, 4),
+        ("LookoutPoint", 288, 201, 49, 9, 5),
+        ("Arena", 355, 148, 12, 91, 8),
     ];
 
-    for (level, total, placements, meshes) in expected {
+    for (level, total, placements, meshes, anim_placements, anim_meshes) in expected {
         let text = std::fs::read_to_string(levels.join(format!("{level}.tng"))).unwrap();
         let tng = Tng::parse(&text).unwrap();
         assert_eq!(tng.things().count(), total, "{level}: things in file");
@@ -84,9 +89,23 @@ fn every_placement_resolves_to_a_mesh_asset() {
         assert_eq!(
             resolved.placement_count(),
             placements,
-            "{level}: static-mesh placements"
+            "{level}: mesh placements"
         );
         assert_eq!(resolved.by_mesh.len(), meshes, "{level}: distinct meshes");
+        assert_eq!(
+            resolved.placement_count_of(ModelKind::Animated),
+            anim_placements,
+            "{level}: animating placements"
+        );
+        assert_eq!(
+            resolved.mesh_count_of(ModelKind::Animated),
+            anim_meshes,
+            "{level}: distinct animating meshes"
+        );
+        assert_eq!(
+            resolved.skipped.kind_conflict, 0,
+            "{level}: a mesh asset served two kinds"
+        );
 
         for id in resolved.by_mesh.keys() {
             assert!(
@@ -117,7 +136,12 @@ fn repeated_meshes_group_into_one_entry() {
     let text = std::fs::read_to_string(levels.join("LookoutPoint.tng")).unwrap();
     let resolved = things::resolve_things(&Tng::parse(&text).unwrap(), &graphics, (0, 0));
 
-    let most = resolved.by_mesh.values().map(Vec::len).max().unwrap();
+    let most = resolved
+        .by_mesh
+        .values()
+        .map(things::MeshPlacements::len)
+        .max()
+        .unwrap();
     assert_eq!(most, 50, "MESH_SMALL_WALL_CURVED_POST_01 is placed 50 times");
     assert!(
         resolved.by_mesh.len() * 4 < resolved.placement_count(),
@@ -149,7 +173,7 @@ fn placements_sit_on_the_terrain() {
         let resolved = things::resolve_things(&Tng::parse(&text).unwrap(), &graphics, (0, 0));
 
         let mut deltas: Vec<f32> = Vec::new();
-        for placement in resolved.by_mesh.values().flatten() {
+        for placement in resolved.by_mesh.values().flat_map(|g| &g.placements) {
             // The object matrix's translation column is the world position.
             let [x, y, z] = [
                 placement.transform[3][0],
@@ -193,10 +217,11 @@ fn origin_translates_every_placement_and_nothing_else() {
     let in_world = things::resolve_things(&tng, &graphics, (3232, 3488));
 
     let mut checked = 0usize;
-    for (mesh_id, placements) in &at_origin.by_mesh {
+    for (mesh_id, group) in &at_origin.by_mesh {
         let shifted = &in_world.by_mesh[mesh_id];
-        assert_eq!(placements.len(), shifted.len(), "mesh {mesh_id}: placement count changed");
-        for (a, b) in placements.iter().zip(shifted) {
+        assert_eq!(group.len(), shifted.len(), "mesh {mesh_id}: placement count changed");
+        assert_eq!(group.kind, shifted.kind, "mesh {mesh_id}: kind changed with the origin");
+        for (a, b) in group.placements.iter().zip(&shifted.placements) {
             for row in 0..4 {
                 let expected = match row {
                     3 => [a.transform[3][0] + 3232.0, a.transform[3][1] + 3488.0, a.transform[3][2], a.transform[3][3]],

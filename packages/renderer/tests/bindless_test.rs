@@ -10,8 +10,8 @@
 //! Needs a GPU, so it skips when there is not one, like the tests that need a Fable install.
 
 use renderer::{
-    AlphaMode, ImageFormat, MAX_BINDLESS_TEXTURES, MIN_BINDLESS_TEXTURES, Model, ModelMaterial,
-    ModelPrimitive, ModelSubMesh, ModelVertex, Renderer, TextureImage,
+    AlphaMode, ImageFormat, MAX_BINDLESS_TEXTURES, MIN_BINDLESS_TEXTURES, Model, ModelKind,
+    ModelMaterial, ModelPrimitive, ModelSubMesh, ModelVertex, Renderer, TextureImage,
 };
 
 fn headless() -> Option<Renderer<'static>> {
@@ -72,18 +72,18 @@ fn a_shared_asset_id_takes_one_slot_and_clearing_returns_it() {
     };
 
     // Two meshes referencing the same texture, and a third referencing a different one.
-    renderer.add_model(&model_with_texture(7), &[Default::default()]).unwrap();
+    renderer.add_model(&model_with_texture(7), &[Default::default()], ModelKind::Static).unwrap();
     assert!(renderer.has_texture(7), "id 7 is resident after the first mesh");
     assert_eq!(renderer.bindless_stats().0, 1);
 
-    renderer.add_model(&model_with_texture(7), &[Default::default()]).unwrap();
+    renderer.add_model(&model_with_texture(7), &[Default::default()], ModelKind::Static).unwrap();
     assert_eq!(
         renderer.bindless_stats().0,
         1,
         "the same asset id must reuse its slot, not take another",
     );
 
-    renderer.add_model(&model_with_texture(9), &[Default::default()]).unwrap();
+    renderer.add_model(&model_with_texture(9), &[Default::default()], ModelKind::Static).unwrap();
     assert_eq!(renderer.bindless_stats().0, 2, "a different id takes a new slot");
 
     renderer.clear_scene();
@@ -107,7 +107,7 @@ fn a_material_without_a_texture_takes_no_slot() {
     model.materials[0].diffuse_id = None;
     model.materials[0].diffuse = None;
 
-    renderer.add_model(&model, &[Default::default()]).unwrap();
+    renderer.add_model(&model, &[Default::default()], ModelKind::Static).unwrap();
     assert_eq!(renderer.bindless_stats().0, 0);
     renderer.render_to_image().expect("still renders");
 }

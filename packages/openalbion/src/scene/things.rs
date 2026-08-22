@@ -12,9 +12,24 @@
 //! Placements are grouped by mesh here rather than in the renderer, because that is the
 //! shape the pass wants: one upload per mesh asset, one instance per placement. LookoutPoint
 //! is 201 placements over 44 meshes.
+//!
+//! Two graphic types are placed: `ENGINE_GRAPHIC_STATIC_MESH` and
+//! `ENGINE_GRAPHIC_ANIMATING_MESH`. The second draws in the **bind pose the asset ships in** —
+//! no bones, no animation. That is not an approximation: `VSHADER_PALSKIN_DIRLIGHT_FOG` is
+//! `VSHADER_STATIC_DIRLIGHT` with a three-bone blend on the front, and an identity palette
+//! makes the blend a no-op (see `renderer::model`'s note). The shipped vertices really are in
+//! that pose — over all 244 animating mesh assets the defs reference, the decoded vertex bounds
+//! equal the mesh header's own `bounding_box` 244 times out of 244, and the meshes come out
+//! person-sized under the same `RenderSizeX × ObjectScale × 0.01` as everything else.
+//!
+//! **What is missing, stated rather than hidden:** clothing. A villager resolves to
+//! `MESH_BS_MALE_MIDDLE_UNCLOTHED_01`, and the garments live in `APPEARANCE_MODIFIER` defs that
+//! `fable-defs` does not decode yet. They render unclothed — a visible gap, per §2 rule 5,
+//! rather than a plausible-looking substitute.
 
 use fable_data::def::{EngineGraphic, EngineGraphicType};
 use fable_data::tng::Tng;
+use renderer::ModelKind;
 use std::collections::HashMap;
 
 /// Mesh coordinates are a hundred times world coordinates.
@@ -32,12 +47,49 @@ use std::collections::HashMap;
 /// the ground, where one landscape cell is 1.0.
 const MESH_UNITS_PER_WORLD_UNIT: f32 = 0.01;
 
-/// Every placement in a level that resolves to a static mesh, grouped by mesh asset id.
+/// Every placement in a level that resolves to a mesh, grouped by mesh asset id.
 #[derive(Default)]
 pub struct LevelThings {
     /// `graphics.big` asset id → the object matrices to draw it with.
-    pub by_mesh: HashMap<u32, Vec<Placement>>,
+    pub by_mesh: HashMap<u32, MeshPlacements>,
     pub skipped: Skipped,
+}
+
+/// Every placement of one mesh asset, and which toggle they answer to.
+///
+/// The kind belongs to the *group* rather than to each placement because it is a property of
+/// the mesh: an asset is authored skinned or it is not. In the shipped data the two sets are
+/// disjoint — 2,327 static mesh ids and 244 animating ones, **zero overlap** — so one upload
+/// per mesh never has to serve both. [`MeshPlacements::push`] keeps that an invariant rather
+/// than an assumption.
+pub struct MeshPlacements {
+    pub kind: ModelKind,
+    pub placements: Vec<Placement>,
+}
+
+impl MeshPlacements {
+    fn new(kind: ModelKind) -> Self {
+        MeshPlacements {
+            kind,
+            placements: Vec::new(),
+        }
+    }
+
+    /// Add a placement, returning `false` if it disagrees with the group's kind — which would
+    /// mean one mesh asset is referenced as both static and animating. That does not happen in
+    /// the shipped data; if it ever does, the placement is dropped and counted rather than
+    /// silently drawn under the wrong toggle.
+    fn push(&mut self, kind: ModelKind, placement: Placement) -> bool {
+        if self.kind != kind {
+            return false;
+        }
+        self.placements.push(placement);
+        true
+    }
+
+    pub fn len(&self) -> usize {
+        self.placements.len()
+    }
 }
 
 /// Combine several maps' resolved things into one, for a region loaded as a unit. Placements
@@ -46,12 +98,21 @@ pub struct LevelThings {
 pub fn merge_things(things: Vec<LevelThings>) -> LevelThings {
     let mut merged = LevelThings::default();
     for level in things {
-        for (mesh_id, mut placements) in level.by_mesh {
-            merged.by_mesh.entry(mesh_id).or_default().append(&mut placements);
+        for (mesh_id, group) in level.by_mesh {
+            let entry = merged
+                .by_mesh
+                .entry(mesh_id)
+                .or_insert_with(|| MeshPlacements::new(group.kind));
+            for placement in group.placements {
+                if !entry.push(group.kind, placement) {
+                    merged.skipped.kind_conflict += 1;
+                }
+            }
         }
         merged.skipped.no_def += level.skipped.no_def;
         merged.skipped.not_drawable += level.skipped.not_drawable;
         merged.skipped.no_placement += level.skipped.no_placement;
+        merged.skipped.kind_conflict += level.skipped.kind_conflict;
         for (kind, count) in level.skipped.other_graphic_type {
             *merged.skipped.other_graphic_type.entry(kind).or_default() += count;
         }
@@ -79,6 +140,9 @@ pub struct Skipped {
     pub other_graphic_type: HashMap<&'static str, usize>,
     /// No physics component, or one with no orientation (`CTCPhysicsLight`).
     pub no_placement: usize,
+    /// One mesh asset referenced as both static and animating. Zero in the shipped data; see
+    /// [`MeshPlacements`].
+    pub kind_conflict: usize,
 }
 
 impl Skipped {
@@ -87,15 +151,16 @@ impl Skipped {
             + self.not_drawable
             + self.other_graphic_type.values().sum::<usize>()
             + self.no_placement
+            + self.kind_conflict
     }
 }
 
 /// Resolve every thing in `tng` against `graphics`, keyed by `DefinitionType`.
 ///
-/// Only [`EngineGraphicType::EngineGraphicStaticMesh`] is placed. Animating meshes need
-/// bones and the palette-skinning shaders, and sprites and generated effects are their own
-/// primitive managers; all three are counted in [`Skipped::other_graphic_type`] rather than
-/// approximated.
+/// [`EngineGraphicType::EngineGraphicStaticMesh`] and
+/// [`EngineGraphicType::EngineGraphicAnimatingMesh`] are placed; the second in bind pose (see
+/// the module note). Sprites, 3D sprites and generated effects are their own primitive managers
+/// and are counted in [`Skipped::other_graphic_type`] rather than approximated.
 ///
 /// `origin` is the map's position in world cells (`MapX`/`MapY`, AGENTS.md §6.12), added to
 /// each placement's translation so things from multiple maps land in one world rather than
@@ -106,7 +171,7 @@ pub fn resolve_things(
     graphics: &HashMap<String, EngineGraphic>,
     origin: (i32, i32),
 ) -> LevelThings {
-    let mut by_mesh: HashMap<u32, Vec<Placement>> = HashMap::new();
+    let mut by_mesh: HashMap<u32, MeshPlacements> = HashMap::new();
     let mut skipped = Skipped::default();
 
     for thing in tng.things() {
@@ -117,17 +182,21 @@ pub fn resolve_things(
             continue;
         };
 
-        if graphic.type_ != EngineGraphicType::EngineGraphicStaticMesh {
-            if graphic.bank_index == 0 {
-                skipped.not_drawable += 1;
-            } else {
-                *skipped
-                    .other_graphic_type
-                    .entry(graphic_type_name(graphic.type_))
-                    .or_default() += 1;
+        let kind = match graphic.type_ {
+            EngineGraphicType::EngineGraphicStaticMesh => ModelKind::Static,
+            EngineGraphicType::EngineGraphicAnimatingMesh => ModelKind::Animated,
+            other => {
+                if graphic.bank_index == 0 {
+                    skipped.not_drawable += 1;
+                } else {
+                    *skipped
+                        .other_graphic_type
+                        .entry(graphic_type_name(other))
+                        .or_default() += 1;
+                }
+                continue;
             }
-            continue;
-        }
+        };
 
         if graphic.bank_index <= 0 {
             skipped.not_drawable += 1;
@@ -153,13 +222,19 @@ pub fn resolve_things(
         transform[3][0] += origin.0 as f32;
         transform[3][1] += origin.1 as f32;
 
-        by_mesh
+        let placed = by_mesh
             .entry(graphic.bank_index as u32)
-            .or_default()
-            .push(Placement {
-                transform,
-                definition_type: definition_type.clone(),
-            });
+            .or_insert_with(|| MeshPlacements::new(kind))
+            .push(
+                kind,
+                Placement {
+                    transform,
+                    definition_type: definition_type.clone(),
+                },
+            );
+        if !placed {
+            skipped.kind_conflict += 1;
+        }
     }
 
     LevelThings { by_mesh, skipped }
@@ -168,7 +243,21 @@ pub fn resolve_things(
 impl LevelThings {
     /// Total placements across every mesh — what the level will actually draw.
     pub fn placement_count(&self) -> usize {
-        self.by_mesh.values().map(Vec::len).sum()
+        self.by_mesh.values().map(MeshPlacements::len).sum()
+    }
+
+    /// Placements of one kind — the number behind "N creatures in this level".
+    pub fn placement_count_of(&self, kind: ModelKind) -> usize {
+        self.by_mesh
+            .values()
+            .filter(|g| g.kind == kind)
+            .map(MeshPlacements::len)
+            .sum()
+    }
+
+    /// Distinct mesh assets of one kind.
+    pub fn mesh_count_of(&self, kind: ModelKind) -> usize {
+        self.by_mesh.values().filter(|g| g.kind == kind).count()
     }
 }
 

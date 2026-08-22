@@ -581,29 +581,32 @@ impl App {
 
         // A thing and a local detail object are the same kind of draw — the engine puts both
         // through `AddStaticMesh` — so they share one instance buffer per mesh rather than
-        // two passes over the same asset.
-        let mut instances_by_mesh: HashMap<u32, Vec<renderer::ModelInstance>> = things
-            .by_mesh
-            .iter()
-            .map(|(&mesh_id, placements)| {
-                let instances = placements
-                    .iter()
-                    .map(|p| renderer::ModelInstance {
-                        transform: p.transform,
-                        // The per-object colour (`c0`) is opaque white until fade distance
-                        // lands; that leaves the material exactly as authored.
-                        ..Default::default()
-                    })
-                    .collect();
-                (mesh_id, instances)
-            })
-            .collect();
+        // two passes over the same asset. The kind rides along per mesh so the two mesh
+        // toggles can gate independently; it does not change the draw.
+        let mut instances_by_mesh: HashMap<u32, (renderer::ModelKind, Vec<renderer::ModelInstance>)> =
+            things
+                .by_mesh
+                .iter()
+                .map(|(&mesh_id, group)| {
+                    let instances = group
+                        .placements
+                        .iter()
+                        .map(|p| renderer::ModelInstance {
+                            transform: p.transform,
+                            // The per-object colour (`c0`) is opaque white until fade distance
+                            // lands; that leaves the material exactly as authored.
+                            ..Default::default()
+                        })
+                        .collect();
+                    (mesh_id, (group.kind, instances))
+                })
+                .collect();
 
         // Provenance: which defs became which mesh (AGENTS.md §6.8).
         let mut sources: HashMap<u32, BTreeSet<String>> = HashMap::new();
-        for (&mesh_id, placements) in &things.by_mesh {
+        for (&mesh_id, group) in &things.by_mesh {
             let entry = sources.entry(mesh_id).or_default();
-            for placement in placements {
+            for placement in &group.placements {
                 entry.insert(placement.definition_type.clone());
             }
         }
@@ -620,9 +623,12 @@ impl App {
                 .entry(mesh_id)
                 .or_default()
                 .insert("local detail".to_string());
+            // Local detail's mesh objects are literally `AddStaticMesh` calls in the engine
+            // (AGENTS.md §3.13), so they answer to `EnableStaticMeshes`.
             instances_by_mesh
                 .entry(mesh_id)
-                .or_default()
+                .or_insert_with(|| (renderer::ModelKind::Static, Vec::new()))
+                .1
                 .append(&mut objects);
         }
 
@@ -635,7 +641,7 @@ impl App {
         mesh_ids.sort_unstable();
 
         for mesh_id in mesh_ids {
-            let instances = &instances_by_mesh[&mesh_id];
+            let (kind, instances) = &instances_by_mesh[&mesh_id];
             let name = self
                 .files
                 .mesh_name_by_id(mesh_id)
@@ -670,12 +676,12 @@ impl App {
                 }
             };
 
-            match renderer.add_model(&model, instances) {
+            match renderer.add_model(&model, instances, *kind) {
                 Ok(()) => {
                     uploaded_meshes += 1;
                     placed += instances.len();
                     tracing::debug!(
-                        "{name} (id {mesh_id}) ← {} placements from {:?}",
+                        "{name} (id {mesh_id}) ← {} {kind:?} placements from {:?}",
                         instances.len(),
                         sources.get(&mesh_id).map(|s| s.iter().collect::<Vec<_>>()),
                     );
@@ -702,13 +708,28 @@ impl App {
         tracing::info!(
             "Things: placed {placed} of {} placements over \
              {uploaded_meshes} meshes ({failed_meshes} meshes failed); skipped {} things — \
-             {} no def, {} not drawable, {} without a placement, {:?} by graphic type",
+             {} no def, {} not drawable, {} without a placement, {} kind conflicts, \
+             {:?} by graphic type",
             resolved_placements + local_detail.counts.drawn_as_models(),
             skipped.total(),
             skipped.no_def,
             skipped.not_drawable,
             skipped.no_placement,
+            skipped.kind_conflict,
             skipped.other_graphic_type,
+        );
+
+        // Creatures and the other skinned things, counted on their own: they are the half of
+        // this that draws in bind pose, and the number is what says whether a level got any.
+        // Resolved and uploaded are both reported, because a mesh that failed to decode would
+        // otherwise vanish between them without saying so.
+        let kind = renderer::ModelKind::Animated;
+        let (uploaded_animated, drawn_animated) = renderer.model_stats_of(kind);
+        tracing::info!(
+            "Animating meshes: {drawn_animated} of {} placements over {uploaded_animated} of {} \
+             meshes, drawn in bind pose (no bones — AGENTS.md §5 step 6.7)",
+            things.placement_count_of(kind),
+            things.mesh_count_of(kind),
         );
     }
 
@@ -807,7 +828,14 @@ impl App {
             transform: glam::Mat4::from_translation(self.terrain_center).to_cols_array_2d(),
             ..Default::default()
         };
-        if let Err(error) = renderer.add_model(&model, &[instance]) {
+        // There is no def here to read a graphic type from, so the mesh's own `animated` flag
+        // decides which toggle it answers to. A skinned mesh still draws in bind pose.
+        let kind = if mesh.animated {
+            renderer::ModelKind::Animated
+        } else {
+            renderer::ModelKind::Static
+        };
+        if let Err(error) = renderer.add_model(&model, &[instance], kind) {
             tracing::warn!("Requested mesh {name}: {error}");
             return;
         }
@@ -1010,6 +1038,7 @@ impl App {
                     Subsystem::Sky => &mut toggles.sky,
                     Subsystem::Landscape => &mut toggles.landscape,
                     Subsystem::StaticMeshes => &mut toggles.static_meshes,
+                    Subsystem::AnimatedMeshes => &mut toggles.animated_meshes,
                     Subsystem::RepeatedMeshes => &mut toggles.repeated_meshes,
                 };
                 *field = value.unwrap_or(!*field);
@@ -1034,6 +1063,10 @@ impl App {
     fn stats_lines(&self) -> Vec<String> {
         let (slots, capacity) = self.renderer.as_ref().map_or((0, 0), Renderer::bindless_stats);
         let (meshes, placements) = self.renderer.as_ref().map_or((0, 0), Renderer::model_stats);
+        let (animated_meshes, animated_placements) = self
+            .renderer
+            .as_ref()
+            .map_or((0, 0), |r| r.model_stats_of(renderer::ModelKind::Animated));
         let (_, foliage) = self
             .renderer
             .as_ref()
@@ -1048,6 +1081,7 @@ impl App {
             (toggles.sky, "Sky"),
             (toggles.landscape, "Landscape"),
             (toggles.static_meshes, "StaticMeshes"),
+            (toggles.animated_meshes, "AnimatedMeshes"),
             (toggles.repeated_meshes, "RepeatedMeshes"),
         ] {
             if !on {
@@ -1072,6 +1106,7 @@ impl App {
             ),
             format!("bindless  {slots}/{capacity} slots"),
             format!("meshes    {meshes} assets, {placements} placements"),
+            format!("animated  {animated_meshes} assets, {animated_placements} placements (bind pose)"),
             format!("foliage   {foliage} instances"),
             // The previous frame's, necessarily: this line is part of what gets counted, so a
             // number describing the frame it appears in cannot be known before it is laid out.

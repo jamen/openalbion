@@ -19,24 +19,27 @@ pub enum Subsystem {
     Sky,
     Landscape,
     StaticMeshes,
+    AnimatedMeshes,
     RepeatedMeshes,
 }
 
 impl Subsystem {
-    pub const ALL: [Subsystem; 4] = [
+    pub const ALL: [Subsystem; 5] = [
         Subsystem::Sky,
         Subsystem::Landscape,
         Subsystem::StaticMeshes,
+        Subsystem::AnimatedMeshes,
         Subsystem::RepeatedMeshes,
     ];
 
     /// The command name, which is `Enable` plus this — matching the original's
-    /// `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` (§3.9).
+    /// `Enable{Sky,Landscape,StaticMeshes,AnimatedMeshes,RepeatedMeshes}` (§3.9).
     pub fn name(self) -> &'static str {
         match self {
             Subsystem::Sky => "Sky",
             Subsystem::Landscape => "Landscape",
             Subsystem::StaticMeshes => "StaticMeshes",
+            Subsystem::AnimatedMeshes => "AnimatedMeshes",
             Subsystem::RepeatedMeshes => "RepeatedMeshes",
         }
     }
@@ -48,6 +51,7 @@ impl Subsystem {
             Subsystem::Sky => "the sky dome and base band",
             Subsystem::Landscape => "the terrain's foreground layers",
             Subsystem::StaticMeshes => "the level's .tng things",
+            Subsystem::AnimatedMeshes => "creatures and other skinned things, in bind pose",
             Subsystem::RepeatedMeshes => "local detail's foliage",
         }
     }

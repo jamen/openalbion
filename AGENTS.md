@@ -25,6 +25,7 @@ inert where it has not — deliberately, per §2 rule 5.
 |---|---|---|
 | Landscape (foreground) | **Built.** Triplanar layers over normal-indexed blend tables, additive over a blackout pass | §3.4, step 5 |
 | Things (static meshes) | **Built.** `.tng` → def `Graphic` → `graphics.big` asset, instanced | §3.11, step 6 |
+| Things (animating meshes) | **Built, in bind pose.** Creatures, NPCs and animating objects draw through the *same* pass with an identity bone palette. No bones, no animation, no clothing | §3.15, step 6.7 |
 | Texture sampling | **Built.** Shipped mip chains, anisotropy 4, MSAA 4× | §3.12, step 7 |
 | Local detail (foliage) | **Built.** Generated, deterministic, exactly reproducible | §3.13, step 8 |
 | Sky | **Partial.** Textures, keyframe blend and the gradient lerp are right; the gradients themselves are zero pending the environment layer, and the base band draws through the wrong pipeline | §3.2, §3.3, step 3 |
@@ -35,9 +36,14 @@ step verified byte-identical, and the texture cache it bought is measured at 2.5
 work removed (§12.1, §12.8).
 
 **The dev console is done** (§13.7 step 4) — a toggleable overlay on backquote, an input line,
-scrollback, and `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` as the first commands.
+scrollback, and `Enable{Sky,Landscape,StaticMeshes,AnimatedMeshes,RepeatedMeshes}` as its
+commands.
 `--text-demo` is gone; the console replaced it, and `--console` plus `--command` are how a
 capture reaches either (§8).
+
+**Creatures are on screen** (§3.15, step 6.7) — animating meshes draw in the bind pose they
+ship in, which is the *identity case* of `SHADERS_PALSKIN` rather than an approximation of it.
+Bones, animation and clothing are all still absent, and named as absent.
 
 **One thing is left: the environment layer (§5 step 2)**, and it is the highest-value
 *faithfulness* work remaining. Sky gradients, landscape lighting and mesh lighting are the same
@@ -1069,6 +1075,114 @@ Four consequences, which together are why §13 embeds a font instead:
 **When this becomes worth parsing:** in-game UI — dialogue, HUD, menus — where §2 rule 1
 applies and the right glyphs are the shipped ones. A dev console is not that (§13.1).
 
+### 3.15 Animating meshes — the bind pose is the static path, exactly
+
+**The claim, and it is an identity rather than an approximation.**
+`VSHADER_PALSKIN_DIRLIGHT_FOG` is `VSHADER_STATIC_DIRLIGHT` with a three-bone blend bolted on
+the front. It builds a skinning matrix from `c38` onward —
+
+```asm
+mul r2, v1.zyxw, c1          ; v1 = bone indices, c1 = preset (256,256,256,256)
+mov r3, v2.zyxw              ; v2 = bone weights
+mov a.x, r2.x
+mul r4, r3.x, c[a.x + 38]    ; \ rows 0,1,2 of bone[i0]'s 3x4, times weight 0
+mul r5, r3.x, c[a.x + 39]    ;  > then `mad`ded twice more for i1, i2
+mul r6, r3.x, c[a.x + 40]    ; /
+dp4 r0.x/y/z, v0, r4/r5/r6   ; position through the blend
+dp3 r1.x/y/z, v3, r4/r5/r6   ; normal through the same
+```
+
+— and **from `dp4 r2.x, r0, c5` onward is character-for-character the static shader**: the same
+`c5`–`c8` transform, the same `c2`/`c18.w` fog `mad`, the same
+`Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` over `c3`/`c19`/`c20`/`c35`, and the
+same `mov oT0, v4`. With `Σ weightᵢ · BoneMatrix[indexᵢ] = I` the blend is a no-op and the two
+programs are one program.
+
+> **There is no `PSHADER_PALSKIN` anywhere in the disassembly.** Skinning is a vertex-stage
+> concern only; both kinds already share `PSHADER_TEXTURE_DIFFUSE`. So the material path needs
+> nothing new either.
+
+The `_2D_` variants additionally write `oT1 = clip.xy · c92.xy + c92.zw`, a screen-space
+coordinate for a second stage. That belongs to those variants, not to the baseline — the plain
+`_DIRLIGHT_FOG` has one texture stage. Do not read the `_2D_` form as the general case; it was
+misread that way once.
+
+**The shipped vertices really are in that pose, measured over all 244 distinct mesh assets the
+defs reference:**
+
+| Check | Result |
+|---|---|
+| `Graphic.BankIndex` resolves to a mesh-typed asset in `graphics.big` | **607 of 607** |
+| Decodes with the existing `Mesh::decode` | **244 of 244**, 0 failures |
+| Decoded vertex bounds == the mesh header's own `bounding_box` | **244 of 244** |
+| Mean \|normal\| over every decoded vertex | **0.9998** (449,042 vertices) |
+
+The bbox agreement is the load-bearing one: bone-local vertices cluster around each bone's
+origin and cannot reproduce the model's own bounding volume on all three axes, 244 times out of
+244. The bounds are whole objects standing on `Z = 0` — `MESH_CREATURE_NEW_CHICKEN_01` is
+`[-35,-25,0]..[35,30,66]`, `MESH_VILLAGE_DOOR_TYPE_01` is `[-104,-11,-0]..[103,10,284]`.
+
+**Scale is §3.11's constant unchanged** — `RenderSizeX × ObjectScale × 0.01` — confirmed by what
+the meshes measure once it is applied: `MESH_HERO` 1.95 world units tall, a villager 1.94, a
+chicken 0.66, `MESH_JACK_OF_BLADES_01` 2.43 (his `RenderSizeX` is 1.2), `MESH_OBJECT_BED_01`
+1.95 × 3.36 × 1.75.
+
+**The parser was already correct, and that was verified rather than assumed.** `decode_vertex`
+skips a fixed 8 bytes of bone data, which is only right if the layout never varies:
+`bones_per_vertex` is **3 on all 1,041 animated blocks** and `paletted_flag` is **true on all
+1,041**. The four observed `init_flags`/`vertex_size` pairs reconcile exactly —
+
+| `init_flags` | position | +bones | normal | uv | +extra | total | seen |
+|---|---|---|---|---|---|---|---|
+| 4  | 4 (packed) | 8 | 4 | 4 | — | **20** | 719 |
+| 6  | 4 (packed) | 8 | 4 | 4 | 8 | **28** | 45 |
+| 20 | 12 (`&0x10`) | 8 | 4 | 4 | — | **28** | 6 |
+| 22 | 12 (`&0x10`) | 8 | 4 | 4 | 8 | **36** | 17 |
+
+— and the independent witness is that mean `|normal|` of 0.9998, since the normal is read
+*after* the skipped bone bytes and a wrong offset would decode it as garbage.
+
+**Animated blocks carry no material of their own**, so `Primitive::parse` giving them the
+primitive's `material_index` is the only available reading — confirmed by two oracles
+independently: `N3DPrimitive::CAnimatedBlock` (`bbblibrary/lib_3d_primitive_2.hpp:1387`) has
+`BoneConstantsFixupOffset`, `VertexCount`, `BonesPerVertex`, `PalettedFlag`, `GroupCount`,
+`Groups[18]` and nothing else, where `CStaticBlock` (`:1439`) has `MaterialIndex` at `0x1c`; and
+the file-format chunk `C3DMeshFileXAnimatedPrimitiveBlockChunk`
+(`lib_3d_mesh_file_extras.hpp:1081`) carries only `GroupBlock`, `BonesPerVertex`, `VertexList`,
+`BoneWeights`. `Groups[18]` also pins the group array's ceiling, which the data reaches exactly.
+
+**Animated blocks index sequentially from 0**, unlike static blocks which seek `start_index`:
+787 of 787 primitives have their animated blocks contiguous from zero, and the walked length
+equals the declared `index_count` on all 787. 0 of 1,041 set `degenerate_triangles`.
+
+**The two sets are disjoint** — 2,327 static mesh ids against 244 animating ones, **zero
+overlap** — which is what lets one upload per mesh asset carry one kind. `MeshPlacements::push`
+keeps that an invariant rather than an assumption, counting a violation as
+`Skipped::kind_conflict` instead of drawing it under the wrong toggle.
+
+**Scale, world-wide:** 1,440 animating placements over 165 meshes (854 of them `CREATURE`),
+against 12,087 static placements over 1,211 meshes. Their textures are **420 distinct from 534
+material references** — so §12.3b's whole-world peak of 3,215 of 4,096 slots becomes ~3,635, and
+the margin narrows from 22% to 11%. Still comfortable; no longer enormous.
+
+**One ambiguity, benign and recorded so it is not re-investigated.** `CBaseBlock`'s in-memory
+field order is `PrimitiveCount, StartIndex, IsStrip, DegenerateTriangles, ChangeFlags`
+(`lib_3d_primitive_2.hpp:1360`), while `PrimitiveBlock::parse` reads `is_strip`, `change_flags`,
+`degenerate_triangles` — the last two possibly swapped. **It cannot be decided from the data and
+does not matter:** both bytes are **zero on all 2,481 static blocks** and all 1,041 animated
+ones, so the two readings are indistinguishable and §3.11's conclusion (the flag is never set,
+so `expand_block` never drops anything) holds either way.
+
+**What is deliberately missing: clothing.** A villager resolves to
+`MESH_BS_MALE_MIDDLE_UNCLOTHED_01`, and the garments live in `APPEARANCE_MODIFIER` defs
+(`Graphics`, `HideMaterials`, `SuitPart`, `CoversBodyAreaFlags`) reached through
+`CreatureDef::initial_appearance_modifiers`. `fable-defs` does **not** decode them —
+`AppearanceModifierGraphics::graphics` is still `Vec<[u8; 24]>`, an undecoded blob. The base
+body meshes ship wearing undergarments, so this reads as underdressed rather than nude.
+Decided 2026-08-21 (Jamen): **draw them anyway**, per §2 rule 5 — a stated gap beats a
+plausible substitute — with clothing as the next goal. `RandomAppearanceMorph` on `CreatureDef`
+is part of that story and needs its own investigation.
+
 ---
 
 ## 4. *(retired)*
@@ -1184,20 +1298,46 @@ over 48,955 vertices with no placeholder textures.
 **Lighting is neutral** pending step 2, running the real
 `Ambient + saturate(n·l)²·Diffuse + max(−n·l,0)·Backlight` with placeholder constants.
 
-### Step 6 — Things — **BUILT** (static meshes only)
+### Step 6 — Things — **BUILT** (both mesh kinds; animating ones in bind pose)
 
-Derivation §3.11. `.tng` placements → def `Graphic` → `graphics.big` asset id, placed with a
-ported `CalcObjectMatrix`, drawn instanced through a transcribed `VSHADER_STATIC_DIRLIGHT` +
-`PSHADER_TEXTURE_DIFFUSE` over the same lighting constants the landscape reads.
+Derivation §3.11 for static meshes, §3.15 for animating ones. `.tng` placements → def `Graphic`
+→ `graphics.big` asset id, placed with a ported `CalcObjectMatrix`, drawn instanced through a
+transcribed `VSHADER_STATIC_DIRLIGHT` + `PSHADER_TEXTURE_DIFFUSE` over the same lighting
+constants the landscape reads.
 
-*Evidence:* Witchwood 38/38, LookoutPoint 192/192 over 44 meshes, Arena 57/57 over 4 — no mesh
-failures, and `placed + skipped == every thing in the file` as a test invariant.
+*Evidence:* Witchwood 42/42 over 24 meshes, LookoutPoint 201/201 over 49, Arena 148/148 over 12
+— no mesh failures, and `placed + skipped == every thing in the file` as a test invariant. Of
+those, 4 / 9 / 91 are animating meshes.
+
+### Step 6.7 — Animating meshes in bind pose — **BUILT**
+
+Derivation §3.15. Creatures, NPCs and animating objects (doors, beds, the Arena audience) draw
+through the **same** `ModelPass` with an identity bone palette, because that is what the palskin
+shader reduces to. `resolve_things` accepts `ENGINE_GRAPHIC_ANIMATING_MESH` alongside
+`ENGINE_GRAPHIC_STATIC_MESH`; nothing else in the pipeline needed to change.
+
+*Evidence:* 607/607 bank indices resolve, 244/244 meshes decode, 244/244 vertex bounds match
+their header `bounding_box`, and **`EnableAnimatedMeshes false` reproduces LookoutPoint's
+pre-change frame byte for byte — `md5 4137e8a4…`, the same hash §10 has recorded since the
+console landed.** That is §12.8's own verification pattern: the change adds its subsystem and
+touches nothing else.
+
+**Not a separate pass, deliberately.** Both kinds share the pipeline and one depth sort for
+their blended instances, so `EnableStaticMeshes` / `EnableAnimatedMeshes` are a filter *inside*
+`ModelPass::pass` rather than a condition around it. `ModelKind` exists for that filter and for
+nothing else. A second pass would be the per-pass duplication §12 exists to remove, and would
+have to be merged back the moment bones land.
 
 **Deliberately not done:**
 
-- 6.7 Animated/skinned meshes (`ENGINE_GRAPHIC_ANIMATING_MESH`, `SHADERS_PALSKIN`). 9 of 288
-  things in LookoutPoint but **91 of 355 in Arena** — counted and logged per graphic type
-  rather than approximated in bind pose.
+- 6.7a Bones and animation. The bone palette is identity; `Mesh` already parses `bones`,
+  `bone_keyframes` and `bone_transforms`, and `decode_vertex` *skips* the per-vertex weights it
+  would need. **How `bone_transforms` relates to `Bone::matrix` is not yet established** — the
+  obvious readings (inverse of the bone's local matrix; inverse of a parent-composed world
+  matrix) hit identity on only 529 and 548 of 7,805 bones respectively, so the convention is
+  still open. That is the first question an animation step has to answer, and it is why this
+  step does not claim to have decoded the skeleton.
+- 6.7b Clothing and appearance modifiers — see §3.15's last paragraph. **The next goal.**
 - 6.8 Sprites, 3D sprites and generated effects — their own primitive managers.
 - 6.9 Dropping index-degenerate triangles at decode. Half of every static mesh's triangles are
   strip stitches with two equal indices (474,048 of 998,466 measured) and the
@@ -1457,7 +1597,22 @@ cargo run --release -p openalbion -- --world --level LookoutPoint --command Show
 cargo run -p openalbion -- --level LookoutPoint --console --command Help --screenshot console.ppm
 cargo run -p openalbion -- --level LookoutPoint --command "EnableLandscape false" \
   --screenshot no-landscape.ppm
+
+# creatures. Arena is the densest — 91 of its 148 placements are the animating audience.
+cargo run --release -p openalbion -- --level Arena --screenshot arena.ppm
+
+# one mesh on its own, which is the quickest look at a creature's bind pose
+cargo run --release -p openalbion -- --level LookoutPoint --mesh MESH_HERO --screenshot hero.ppm
+
+# the regression check for step 6.7: this must still be md5 4137e8a4… (§5 step 6.7)
+cargo run --release -p openalbion -- --level LookoutPoint \
+  --command "EnableAnimatedMeshes false" --screenshot lookout.ppm
 ```
+
+**`--fable-directory` matters**: the loader wants a lowercase `data/`, which is the *retail*
+tree's layout (`~/Fable`), not the Anniversary tree's `Data/`. It defaults to the working
+directory, so a bare `cargo run` from the repo root fails with a bare `No such file or
+directory` — pass `--fable-directory /home/jamen/Fable`.
 
 ---
 
@@ -1494,6 +1649,25 @@ Newest first, one entry per working session: what landed, and the correction wor
 Anything a session *established* is a present-tense fact in §3, §5 or §9 instead — this is the
 record of how it got there, not a second copy of it.
 
+- **2026-08-21** — **Creatures render** (§3.15, step 6.7). Animating meshes draw in bind pose
+  through the existing model pass. **The derivation is the whole of it, and it is an identity,
+  not an approximation:** `VSHADER_PALSKIN_DIRLIGHT_FOG` is `VSHADER_STATIC_DIRLIGHT` with a
+  three-bone blend on the front, and there is no `PSHADER_PALSKIN` at all — so an identity
+  palette makes the two programs one program. Everything downstream already worked: the parser
+  decodes 244 of 244 animating meshes, their vertex bounds equal their header `bounding_box`
+  244 times out of 244, and the 100× scale constant is unchanged. **The verification worth
+  keeping** is §12.8's: `EnableAnimatedMeshes false` reproduces LookoutPoint's pre-change frame
+  byte for byte (`md5 4137e8a4…`), which is what proves a new subsystem added only itself.
+  **Three corrections from doing it.** The first reading of `SHADERS_PALSKIN` took the `_2D_`
+  variants for the whole group and concluded the baseline had a second texture stage it does not
+  have — reading only the first four of ~90 entries. `bones_per_vertex` had to be *checked*
+  (3 on all 1,041 blocks) rather than assumed, because `decode_vertex` skips a fixed 8 bytes and
+  a varying layout would have silently corrupted every normal and UV after it; the mean
+  `|normal|` of 0.9998 is what closed that. And "unclothed" in Fable's mesh names means
+  *in undergarments*, not nude — the concern that shaped the derivation review was milder than
+  stated. Found on the way and left alone: `CBaseBlock`'s `DegenerateTriangles`/`ChangeFlags`
+  may be swapped relative to our parser, but both bytes are zero everywhere in the shipped data,
+  so the readings are indistinguishable and nothing depends on it.
 - **2026-08-15** — **The dev console** (§13.7 step 4). Backquote opens an overlay with an input
   line, scrollback and a command table; `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` are
   the first commands and `RenderToggles` is the renderer half. `--text-demo` and its `demo`

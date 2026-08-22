@@ -2,14 +2,18 @@
 //!
 //! The claim being pinned is "a toggle removes **exactly** its own subsystem", which is two
 //! assertions rather than one: switching a subsystem off must make its pixels go away, and
-//! switching the *other* three off must leave them alone. A test that only checked the first
+//! switching the *other* four off must leave them alone. A test that only checked the first
 //! would pass just as well for a toggle that turned off the whole frame.
+//!
+//! `EnableStaticMeshes` and `EnableAnimatedMeshes` are the pair most at risk here, because
+//! unlike the others they are **not** two passes — both kinds draw through `ModelPass` and the
+//! toggle is a filter inside it. So each of them has to be shown not to take the other's pixels.
 //!
 //! Needs a GPU, so it skips when there is not one.
 
 use renderer::{
-    AlphaMode, GlyphInstance, ImageFormat, Model, ModelInstance, ModelMaterial, ModelPrimitive,
-    ModelSubMesh, ModelVertex, RenderToggles, Renderer, TextureImage,
+    AlphaMode, GlyphInstance, ImageFormat, Model, ModelInstance, ModelKind, ModelMaterial,
+    ModelPrimitive, ModelSubMesh, ModelVertex, RenderToggles, Renderer, TextureImage,
 };
 
 const SIZE: u32 = 64;
@@ -86,6 +90,7 @@ fn a_toggle_removes_its_own_subsystem_and_only_its_own() {
                 transform: glam::Mat4::IDENTITY.to_cols_array_2d(),
                 colour: [1.0, 1.0, 1.0, 1.0],
             }],
+            ModelKind::Static,
         )
         .expect("upload the quad");
 
@@ -105,23 +110,79 @@ fn a_toggle_removes_its_own_subsystem_and_only_its_own() {
     );
     assert_eq!(off, 0, "EnableStaticMeshes false left the mesh drawing");
 
-    // The other three do not. This is the half that catches a toggle wired to the wrong pass.
+    // The other four do not. This is the half that catches a toggle wired to the wrong pass —
+    // and `animated_meshes` is in here because it shares `ModelPass` with this quad.
     let others_off = centre(
         &mut renderer,
         RenderToggles {
             sky: false,
             landscape: false,
             repeated_meshes: false,
+            animated_meshes: false,
             static_meshes: true,
         },
     );
     assert_eq!(
         others_off, all_on,
-        "turning off sky, landscape and foliage changed the static mesh pass's pixels",
+        "turning off sky, landscape, foliage and animated meshes changed the static mesh pass",
     );
 
     // And back on again: a toggle is state, not a one-way door.
     assert_eq!(centre(&mut renderer, RenderToggles::default()), all_on);
+}
+
+/// The same claim for the animating half, and the direction that actually matters: an
+/// animating mesh must answer to `EnableAnimatedMeshes` and **not** to `EnableStaticMeshes`.
+///
+/// Both kinds go through one pass with one pipeline, so a filter applied to the wrong field —
+/// or not applied at all — is invisible in every other test. This is the one that would catch
+/// it, and it is the mirror image of the static case above.
+#[test]
+fn an_animating_mesh_answers_only_to_its_own_toggle() {
+    let Some(mut renderer) = headless() else {
+        return;
+    };
+
+    renderer.update_model_uniforms(glam::Mat4::IDENTITY.to_cols_array_2d());
+    renderer
+        .add_model(
+            &fullscreen_quad(),
+            &[ModelInstance {
+                transform: glam::Mat4::IDENTITY.to_cols_array_2d(),
+                colour: [1.0, 1.0, 1.0, 1.0],
+            }],
+            ModelKind::Animated,
+        )
+        .expect("upload the quad");
+
+    let all_on = centre(&mut renderer, RenderToggles::default());
+    assert!(all_on > 0, "the animating quad drew nothing with everything on");
+
+    let own_off = centre(
+        &mut renderer,
+        RenderToggles {
+            animated_meshes: false,
+            ..Default::default()
+        },
+    );
+    assert_eq!(own_off, 0, "EnableAnimatedMeshes false left the mesh drawing");
+
+    // The decisive one: the *static* toggle must not reach it.
+    let static_off = centre(
+        &mut renderer,
+        RenderToggles {
+            static_meshes: false,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        static_off, all_on,
+        "EnableStaticMeshes false removed an animating mesh — the filter reads the wrong field",
+    );
+
+    // And the reported counts follow the kind, so `ShowStats` cannot disagree with the toggle.
+    assert_eq!(renderer.model_stats_of(ModelKind::Animated), (1, 1));
+    assert_eq!(renderer.model_stats_of(ModelKind::Static), (0, 0));
 }
 
 /// **The console must survive its own toggles.** Text is not a subsystem toggle can reach — a
@@ -148,6 +209,7 @@ fn text_still_draws_with_every_subsystem_off() {
             sky: false,
             landscape: false,
             static_meshes: false,
+            animated_meshes: false,
             repeated_meshes: false,
         },
     );

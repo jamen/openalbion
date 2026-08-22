@@ -43,8 +43,8 @@ pub use self::bindless::{MAX_BINDLESS_TEXTURES, MIN_BINDLESS_TEXTURES};
 pub use self::image::{ImageFormat, TextureImage};
 pub use self::local_detail::{AddLocalDetailError, LocalDetailInstance};
 pub use self::model::{
-    AddModelError, AlphaMode, Model, ModelInstance, ModelMaterial, ModelPrimitive, ModelSubMesh,
-    ModelVertex,
+    AddModelError, AlphaMode, Model, ModelInstance, ModelKind, ModelKinds, ModelMaterial,
+    ModelPrimitive, ModelSubMesh, ModelVertex,
 };
 pub use self::terrain::{TerrainData, TerrainDraw, TerrainVertex};
 pub use self::text::{AddGlyphError, GlyphInstance};
@@ -157,6 +157,8 @@ pub struct RenderToggles {
     pub landscape: bool,
     /// `EnableStaticMeshes` — the `.tng` things.
     pub static_meshes: bool,
+    /// `EnableAnimatedMeshes` — the skinned things, drawn in bind pose.
+    pub animated_meshes: bool,
     /// `EnableRepeatedMeshes` — local detail's foliage.
     pub repeated_meshes: bool,
 }
@@ -167,6 +169,7 @@ impl Default for RenderToggles {
             sky: true,
             landscape: true,
             static_meshes: true,
+            animated_meshes: true,
             repeated_meshes: true,
         }
     }
@@ -590,10 +593,16 @@ impl<'target> Renderer<'target> {
         &mut self,
         model: &Model,
         instances: &[ModelInstance],
+        kind: ModelKind,
     ) -> Result<(), AddModelError> {
-        self.passes
-            .model
-            .add_model(&self.device, &self.queue, &mut self.bindless, model, instances)
+        self.passes.model.add_model(
+            &self.device,
+            &self.queue,
+            &mut self.bindless,
+            model,
+            instances,
+            kind,
+        )
     }
 
     /// `(mesh assets uploaded, placements drawn)`.
@@ -601,6 +610,14 @@ impl<'target> Renderer<'target> {
         (
             self.passes.model.model_count(),
             self.passes.model.instance_count(),
+        )
+    }
+
+    /// `(mesh assets uploaded, placements drawn)` for one kind.
+    pub fn model_stats_of(&self, kind: ModelKind) -> (usize, usize) {
+        (
+            self.passes.model.model_count_of(kind),
+            self.passes.model.instance_count_of(kind),
         )
     }
 
@@ -773,11 +790,19 @@ impl<'target> Renderer<'target> {
                 self.depth_texture.view(),
             );
         }
-        if self.toggles.static_meshes {
-            self.passes
-                .model
-                .pass(&mut cmd, bindless.bind_group, colour, self.depth_texture.view());
-        }
+        // Both mesh kinds go through one pass: they share the pipeline, and their blended
+        // instances share one depth sort. The toggles are therefore a filter inside the pass,
+        // not a condition around it.
+        self.passes.model.pass(
+            &mut cmd,
+            bindless.bind_group,
+            colour,
+            self.depth_texture.view(),
+            ModelKinds {
+                static_meshes: self.toggles.static_meshes,
+                animated_meshes: self.toggles.animated_meshes,
+            },
+        );
 
         if let Some(msaa) = &self.msaa_texture {
             self.passes.resolve.pass(&mut cmd, &msaa.view, view);

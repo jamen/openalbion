@@ -6,6 +6,16 @@
 //! puts 192 things on the ground drawn from 44 distinct meshes, one of which
 //! (`MESH_SMALL_WALL_CURVED_POST_01`) is placed 50 times.
 //!
+//! **Skinned meshes draw through here too, in bind pose** ([`ModelKind::Animated`]).
+//! `VSHADER_PALSKIN_DIRLIGHT_FOG` is `VSHADER_STATIC_DIRLIGHT` with a three-bone blend on the
+//! front: it builds `Σ weightᵢ · BoneMatrix[indexᵢ]`, transforms position and normal by it, and
+//! from `dp4 r2.x, r0, c5` onward is character-for-character the static shader over the same
+//! `c19`/`c20`/`c35`/`c3`. With an identity palette that blend is a no-op, so this is the
+//! *identity case* of the real shader rather than an approximation of it — and there is no
+//! `PSHADER_PALSKIN` at all, so both kinds already share `PSHADER_TEXTURE_DIFFUSE`.
+//! The kind exists only so `EnableStaticMeshes` and `EnableAnimatedMeshes` can gate
+//! independently, as they do in `ego_r.exe` (AGENTS.md §3.9).
+//!
 //! Backface culling is enabled per-material: `two_sided` materials use `cull_mode: None`, the rest
 //! use `cull_mode: Back`, with `front_face: Cw` — Fable's meshes are clockwise-front, matching
 //! D3D9's default `D3DCULL_CCW`. See the note on the pipeline.
@@ -32,6 +42,49 @@ use wgpu::{
 /// Texels with alpha below this are discarded by alpha-test (cutout) materials.
 // UNVERIFIED: not sourced from the game. AGENTS.md §9.
 const ALPHA_CUTOFF: f32 = 0.5;
+
+/// Which console toggle a model answers to.
+///
+/// Both kinds draw through the same pipeline with the same shader — see the module note. This
+/// distinguishes them *only* for `EnableStaticMeshes` / `EnableAnimatedMeshes`, which the
+/// original engine has as separate commands (AGENTS.md §3.9).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub enum ModelKind {
+    /// `ENGINE_GRAPHIC_STATIC_MESH` things, and local detail's mesh objects.
+    #[default]
+    Static,
+    /// `ENGINE_GRAPHIC_ANIMATING_MESH` things, drawn in the bind pose the asset ships in.
+    Animated,
+}
+
+/// Which model kinds a frame draws — `RenderToggles`' two mesh switches, as the pass sees them.
+///
+/// The filter has to be applied *inside* [`ModelPass::pass`] rather than around it, because
+/// transparent instances are depth-sorted across the whole level and both kinds share that
+/// ordering.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ModelKinds {
+    pub static_meshes: bool,
+    pub animated_meshes: bool,
+}
+
+impl ModelKinds {
+    pub const ALL: ModelKinds = ModelKinds {
+        static_meshes: true,
+        animated_meshes: true,
+    };
+
+    fn allows(&self, kind: ModelKind) -> bool {
+        match kind {
+            ModelKind::Static => self.static_meshes,
+            ModelKind::Animated => self.animated_meshes,
+        }
+    }
+
+    fn any(&self) -> bool {
+        self.static_meshes || self.animated_meshes
+    }
+}
 
 /// How a material's alpha channel is treated.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -351,6 +404,7 @@ struct GpuModel {
     /// Whether any material on this model blends. Only these models contribute to the
     /// depth-sorted pass, so a level of fully opaque meshes sorts nothing.
     has_transparent: bool,
+    kind: ModelKind,
 }
 
 #[derive(Debug, Display, Error)]
@@ -463,6 +517,9 @@ impl ModelPass {
 
     /// Upload one mesh asset and every placement of it. Geometry, materials and textures
     /// are uploaded once no matter how many instances there are.
+    ///
+    /// `kind` decides which console toggle the placements answer to, nothing else — it does
+    /// not change the pipeline, the shader or the draw.
     pub fn add_model(
         &mut self,
         device: &Device,
@@ -470,6 +527,7 @@ impl ModelPass {
         bindless: &mut BindlessTextures,
         model: &Model,
         instances: &[ModelInstance],
+        kind: ModelKind,
     ) -> Result<(), AddModelError> {
         if model.primitives.is_empty() {
             return Err(AddModelError::NoPrimitives);
@@ -495,6 +553,7 @@ impl ModelPass {
             instance_buffer,
             instances: instances.to_vec(),
             has_transparent,
+            kind,
         });
         Ok(())
     }
@@ -506,6 +565,20 @@ impl ModelPass {
 
     pub fn model_count(&self) -> usize {
         self.meshes.len()
+    }
+
+    /// Placements of one kind — what `ShowStats` reports per toggle.
+    pub fn instance_count_of(&self, kind: ModelKind) -> usize {
+        self.meshes
+            .iter()
+            .filter(|m| m.kind == kind)
+            .map(|m| m.instances.len())
+            .sum()
+    }
+
+    /// Uploaded mesh assets of one kind.
+    pub fn model_count_of(&self, kind: ModelKind) -> usize {
+        self.meshes.iter().filter(|m| m.kind == kind).count()
     }
 
     pub fn update_uniforms(&self, queue: &Queue, view_proj: [[f32; 4]; 4]) {
@@ -526,8 +599,9 @@ impl ModelPass {
         bindless: &BindGroup,
         target_texture_view: &TextureView,
         depth_texture_view: &TextureView,
+        kinds: ModelKinds,
     ) {
-        if self.meshes.is_empty() {
+        if self.meshes.is_empty() || !kinds.any() {
             return;
         }
 
@@ -562,24 +636,24 @@ impl ModelPass {
 
         // Opaque and cutout first — they write depth, and every placement of a mesh draws
         // in one instanced call.
-        for mesh in &self.meshes {
+        for mesh in self.meshes.iter().filter(|m| kinds.allows(m.kind)) {
             mesh.draw_opaque(&mut rpass, &self.pipelines);
         }
 
         // Then the blended ones, back to front across the whole level rather than within
         // one model, so a distant transparent object cannot paint over a near one. Sorting
         // is per instance, so these draw one at a time.
-        for (mesh, instance) in self.sorted_transparent_instances() {
+        for (mesh, instance) in self.sorted_transparent_instances(kinds) {
             mesh.draw_transparent(&mut rpass, &self.pipelines, instance);
         }
     }
 
     /// Every transparent placement in the level, farthest first.
-    fn sorted_transparent_instances(&self) -> Vec<(&GpuModel, u32)> {
+    fn sorted_transparent_instances(&self, kinds: ModelKinds) -> Vec<(&GpuModel, u32)> {
         let mut draws: Vec<(&GpuModel, u32)> = self
             .meshes
             .iter()
-            .filter(|m| m.has_transparent)
+            .filter(|m| m.has_transparent && kinds.allows(m.kind))
             .flat_map(|m| (0..m.instances.len() as u32).map(move |i| (m, i)))
             .collect();
         draws.sort_by(|(a, i), (b, j)| {
