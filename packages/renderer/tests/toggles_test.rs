@@ -153,3 +153,39 @@ fn text_still_draws_with_every_subsystem_off() {
     );
     assert!(lit > 250, "text read back {lit} with the world off, not ~255");
 }
+
+/// The panel behind the console's text is a [`GlyphInstance`] pointing at the bindless array's
+/// 1×1 white fallback — no second pipeline and no upload (see `Renderer::solid_index`). What
+/// makes that work is that the slot is *not* scene-scoped: `clear_scene` drops every
+/// registration, and this one has to survive it or every level load would take the panel with
+/// it.
+#[test]
+fn the_solid_slot_fills_a_rectangle_and_survives_a_scene_clear() {
+    let Some(mut renderer) = headless() else {
+        return;
+    };
+
+    let solid = renderer.solid_index();
+    renderer.clear_scene();
+    assert_eq!(
+        renderer.solid_index(),
+        solid,
+        "the solid slot moved across a scene clear",
+    );
+
+    // Half alpha over the black clear, so the read-back proves the *instance colour* reached
+    // the pixel rather than the texture's white.
+    renderer.set_text(&[GlyphInstance {
+        rect: [0.0, 0.0, SIZE as f32, SIZE as f32],
+        colour: [1.0, 1.0, 1.0, 0.5],
+        texture_index: solid,
+        _pad: [0; 3],
+    }]);
+
+    let filled = centre(&mut renderer, RenderToggles::default());
+    assert!(
+        filled.abs_diff(128) <= 2,
+        "the solid slot filled {filled}, not ~128 — it is not opaque white, or coverage is not \
+         reaching alpha",
+    );
+}

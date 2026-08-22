@@ -609,6 +609,18 @@ impl<'target> Renderer<'target> {
         self.size
     }
 
+    /// The slot holding a 1×1 opaque white texture, so a [`GlyphInstance`] can be a **solid
+    /// rectangle** — the console's panel, and any other screen-space fill.
+    ///
+    /// It is the bindless array's fallback (`bindless.rs`), which is the whole reason this
+    /// needs no second pipeline, no second shader and no upload: the slot is created with the
+    /// device and `clear_scene` never touches it, so unlike a glyph it is valid in every
+    /// generation. Sampling white gives coverage 1 everywhere, and `text.wgsl` multiplies the
+    /// instance colour's alpha by coverage — so the instance's colour *is* the fill.
+    pub fn solid_index(&self) -> u32 {
+        self.bindless.fallback_index()
+    }
+
     /// Which world subsystems currently draw (AGENTS.md §13.5).
     pub fn toggles(&self) -> RenderToggles {
         self.toggles
