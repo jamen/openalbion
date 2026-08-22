@@ -34,12 +34,16 @@ pub struct PlacedGlyph {
 /// the font does not map — are still returned: they advance the pen, and it is the caller's
 /// rasterizer that discovers there is nothing to draw. Returning them keeps the column index of
 /// every later character right, which a cursor depends on.
+///
+/// `out` is any [`Extend`] rather than a `Vec` so a caller that wants something *more* than a
+/// position per character — the console attaches a colour — can collect straight into its own
+/// shape instead of laying out into a temporary and mapping it.
 pub fn layout_line(
     font: &Font,
     px: u32,
     text: &str,
     origin: [f32; 2],
-    out: &mut Vec<PlacedGlyph>,
+    out: &mut impl Extend<PlacedGlyph>,
 ) {
     let (cell_width, _) = font.cell(px);
     let baseline_y = origin[1] + font.ascent(px);
@@ -55,7 +59,7 @@ pub fn layout_line(
             _ => {}
         }
 
-        out.push(PlacedGlyph {
+        out.extend([PlacedGlyph {
             key: GlyphKey {
                 font: FontId::Inconsolata,
                 ch,
@@ -63,7 +67,7 @@ pub fn layout_line(
             },
             pen_x: origin[0] + column as f32 * cell_width,
             baseline_y,
-        });
+        }]);
         column += 1;
     }
 }
@@ -77,19 +81,18 @@ pub fn layout_lines(
     px: u32,
     lines: impl IntoIterator<Item = impl AsRef<str>>,
     origin: [f32; 2],
-) -> Vec<PlacedGlyph> {
+    out: &mut impl Extend<PlacedGlyph>,
+) {
     let (_, line_height) = font.cell(px);
-    let mut out = Vec::new();
     for (row, line) in lines.into_iter().enumerate() {
         layout_line(
             font,
             px,
             line.as_ref(),
             [origin[0], origin[1] + row as f32 * line_height],
-            &mut out,
+            out,
         );
     }
-    out
 }
 
 #[cfg(test)]
@@ -158,7 +161,8 @@ mod tests {
     fn lines_stack_by_one_cell_height() {
         let font = font();
         let (_, line_height) = font.cell(16);
-        let placed = layout_lines(&font, 16, ["a", "b", "c"], [0.0, 0.0]);
+        let mut placed = Vec::new();
+        layout_lines(&font, 16, ["a", "b", "c"], [0.0, 0.0], &mut placed);
 
         assert_eq!(placed.len(), 3);
         for (row, glyph) in placed.iter().enumerate() {
@@ -175,7 +179,8 @@ mod tests {
     fn an_empty_line_still_takes_a_row() {
         let font = font();
         let (_, line_height) = font.cell(16);
-        let placed = layout_lines(&font, 16, ["a", "", "c"], [0.0, 0.0]);
+        let mut placed = Vec::new();
+        layout_lines(&font, 16, ["a", "", "c"], [0.0, 0.0], &mut placed);
 
         assert_eq!(placed.len(), 2);
         assert_eq!(placed[1].key.ch, 'c');

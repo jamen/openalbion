@@ -5,11 +5,13 @@
 //! the renderer accepts. World space is Z-up, matching the game (AGENTS.md §3.6).
 
 mod camera;
+mod console;
 mod files;
 mod scene;
 mod text;
 
 use crate::camera::Camera;
+use crate::console::{Console, Effect, Input, Subsystem};
 use crate::files::{Files, NewFilesError};
 use argh::FromArgs;
 use derive_more::{Display, Error};
@@ -65,9 +67,16 @@ struct Cli {
     #[argh(option)]
     look_at: Option<String>,
 
-    /// draw the text-rendering demonstration overlay (AGENTS.md §13.7 step 3)
+    /// open the developer console at startup, instead of on the first backquote (AGENTS.md
+    /// §13.5). Works with --screenshot, which is how a console frame gets captured.
     #[argh(switch)]
-    text_demo: bool,
+    console: bool,
+
+    /// run a console command once the level is loaded, before the first frame. Repeatable:
+    /// `--command "EnableLandscape false" --command ShowStats`. This is how a subsystem toggle
+    /// reaches a `--screenshot`, which never sees a key press.
+    #[argh(option)]
+    command: Vec<String>,
 
     /// load every map in FinalAlbion.wld at once instead of --level's region, and report what
     /// the whole world costs (AGENTS.md §12.3b). Needs a release build and patience.
@@ -196,11 +205,13 @@ fn capture(
     );
 
     app.renderer = Some(renderer);
+    app.run_startup_commands();
     let sky_blend = app.refresh_sky();
-    // Twice: the overlay reports its own glyph count, which only exists once it has been laid
-    // out. A live window gets that for free from the previous frame; a single capture does not.
-    app.update_text_demo();
-    app.update_text_demo();
+    // Twice: the stats overlay reports its own glyph count, which only exists once it has been
+    // laid out. A live window gets that for free from the previous frame; a single capture does
+    // not. Both calls are no-ops with the console closed, which is the default.
+    app.update_console();
+    app.update_console();
 
     let camera_relative_view_proj = app
         .camera
@@ -230,97 +241,6 @@ fn capture(
     Ok(())
 }
 
-/// The `--text-demo` overlay: what the text path can do, on screen, so it can be looked at
-/// rather than described (AGENTS.md §13.7 step 3).
-///
-/// **A stand-in for the console, not a design for it.** Step 4 replaces it. It deliberately
-/// shows the two things a still image cannot: values that change every frame, so glyphs
-/// register as new digits appear, and two sizes, so the `px` half of the cache key is visible.
-mod demo {
-    use crate::text::{self, Font};
-    use renderer::{GlyphInstance, Renderer};
-
-    /// Body text size, and the heading's. Two sizes because `(char, px)` is the cache key, so
-    /// the same character at two sizes is two slots — visible here as two registrations.
-    const BODY_PX: u32 = 17;
-    const HEADING_PX: u32 = 26;
-    /// Inset from the top-left corner, in pixels.
-    const MARGIN: f32 = 18.0;
-
-    const TEXT_COLOUR: [f32; 4] = [0.93, 0.95, 0.90, 1.0];
-    /// A one-pixel drop shadow, so the overlay stays readable over both the bright sky and the
-    /// dark ground. Not a text feature — just the same glyphs drawn twice.
-    const SHADOW_COLOUR: [f32; 4] = [0.0, 0.0, 0.0, 0.8];
-    const SHADOW_OFFSET: f32 = 1.0;
-
-    /// Lay out `heading` and `body`, register whatever glyphs are new, and hand the whole
-    /// overlay to the renderer as one batch.
-    ///
-    /// The order matters and is the §13.3 shape: rasterize and register *every* new glyph
-    /// first, then draw. Registering dirties the bindless array, and `encode` rebuilds it once
-    /// per frame — so a glyph at a time would rebuild it once per character.
-    pub fn draw(renderer: &mut Renderer, font: &Font, heading: &str, body: &[String]) {
-        let mut placed = Vec::new();
-        text::layout_line(font, HEADING_PX, heading, [MARGIN, MARGIN], &mut placed);
-        placed.extend(text::layout_lines(
-            font,
-            BODY_PX,
-            body,
-            [MARGIN, MARGIN + font.cell(HEADING_PX).1],
-        ));
-
-        // Shadows in one pass and text in another, rather than interleaved per glyph: within a
-        // draw the instances blend in order, so a neighbour's shadow would otherwise land on
-        // top of the glyph before it.
-        let mut shadows = Vec::with_capacity(placed.len());
-        let mut text = Vec::with_capacity(placed.len());
-
-        for glyph in &placed {
-            // A space has no outline. Not an error — the pen advanced, there is nothing to draw.
-            let Some(raster) = font.rasterize(glyph.key) else {
-                continue;
-            };
-
-            let key = glyph.key.id();
-            // Ask every frame rather than caching: the registry is scene-scoped and a level
-            // load invalidates every slot (§13.2a). A miss costs a re-register, not a
-            // re-rasterize, because the bitmap is right here.
-            let index = match renderer.glyph_index(key) {
-                Some(index) => index,
-                None => match renderer.add_glyph(key, &raster.image) {
-                    Ok(index) => index,
-                    Err(error) => {
-                        tracing::warn!("text demo: {:?} did not register: {error}", glyph.key.ch);
-                        continue;
-                    }
-                },
-            };
-
-            let rect = [
-                glyph.pen_x + raster.left,
-                glyph.baseline_y + raster.top,
-                raster.image.width as f32,
-                raster.image.height as f32,
-            ];
-            shadows.push(GlyphInstance {
-                rect: [rect[0] + SHADOW_OFFSET, rect[1] + SHADOW_OFFSET, rect[2], rect[3]],
-                colour: SHADOW_COLOUR,
-                texture_index: index,
-                _pad: [0; 3],
-            });
-            text.push(GlyphInstance {
-                rect,
-                colour: TEXT_COLOUR,
-                texture_index: index,
-                _pad: [0; 3],
-            });
-        }
-
-        shadows.append(&mut text);
-        renderer.set_text(&shadows);
-    }
-}
-
 struct App {
     files: Files,
     renderer: Option<Renderer<'static>>,
@@ -346,10 +266,13 @@ struct App {
     cursor_lock_desired: bool,
     /// Frame counter to detect first load.
     first_frame: bool,
-    /// The embedded font, loaded only for `--text-demo`. `None` means the overlay is off, which
-    /// is the default and what keeps `--screenshot` byte-comparable (AGENTS.md §13.6).
-    demo_font: Option<text::Font>,
-    /// Smoothed frames per second, for the overlay to have something that moves.
+    /// The developer console (AGENTS.md §13.5). `None` only if the embedded font failed to
+    /// parse, which leaves the engine running without one rather than refusing to start.
+    /// Closed by default, so it draws nothing and `--screenshot` is unaffected.
+    console: Option<Console>,
+    /// `--command` lines, run once the scene is loaded and then taken.
+    startup_commands: Vec<String>,
+    /// Smoothed frames per second, for the stats overlay to have something that moves.
     fps: f32,
     /// `--world`: load every map at once rather than `--level`'s region.
     load_world: bool,
@@ -393,13 +316,21 @@ impl App {
             cursor_locked: false,
             cursor_lock_desired: true,
             first_frame: true,
-            demo_font: cli.text_demo.then(text::Font::new).transpose().map_or_else(
-                |error| {
-                    tracing::error!("--text-demo: {error}");
+            console: match Console::new() {
+                Ok(mut console) => {
+                    // `--console` opens it at startup, which is the only way a capture can show
+                    // one: `--screenshot` renders a single frame and never sees a key press.
+                    if cli.console {
+                        console.handle(Input::Toggle);
+                    }
+                    Some(console)
+                }
+                Err(error) => {
+                    tracing::error!("no developer console: {error}");
                     None
-                },
-                |font| font,
-            ),
+                }
+            },
+            startup_commands: cli.command.clone(),
             fps: 0.0,
             load_world: cli.world,
         })
@@ -441,6 +372,9 @@ impl App {
 
         // Upload the initial sky now that the renderer is in place (sky is optional).
         self.refresh_sky();
+
+        // `--command` lines, now that there is a renderer for a toggle to reach.
+        self.run_startup_commands();
 
         Ok(())
     }
@@ -904,6 +838,12 @@ impl App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::RedrawRequested => self.redraw_requested().map_err(E::RedrawRequested)?,
             WindowEvent::Resized(size) => self.resize(size).map_err(E::Resize)?,
+            WindowEvent::KeyboardInput { ref event, .. }
+                if event.state == ElementState::Pressed && self.console_key(event) =>
+            {
+                // The console took it. Nothing below runs, which is what stops a `w` typed at
+                // the prompt from also flying the camera forward.
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -947,6 +887,14 @@ impl App {
                 // (handled via raw device events for locked mode).
                 let _ = position;
             }
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                // The console asks for its glyphs at `16 px × scale_factor`, and `px` is part of
+                // the cache key — so a scale change re-rasterizes at the new size with no
+                // invalidation of its own (AGENTS.md §13.6).
+                if let Some(console) = self.console.as_mut() {
+                    console.set_scale(scale_factor as f32);
+                }
+            }
             WindowEvent::Focused(true) => {
                 // A grab attempted before the window was focused (startup, or a click that
                 // hadn't yet activated the window) can fail without erroring — `set_cursor_grab`
@@ -960,6 +908,186 @@ impl App {
         }
 
         Ok(())
+    }
+
+    /// Offer one key press to the console. Returns whether it was taken.
+    ///
+    /// **Backquote is checked before anything else**, because the platform reports the same
+    /// press as both a physical key *and* the text "`" — so handling it second would open the
+    /// console and immediately type into it.
+    ///
+    /// Printable characters come from `KeyEvent::text` rather than the physical key, which is
+    /// the only way a non-US layout types what its keycaps say: the platform has already applied
+    /// the layout and the modifiers. Editing keys stay physical, because their meaning does not
+    /// depend on the layout.
+    fn console_key(&mut self, event: &KeyEvent) -> bool {
+        if self.console.is_none() {
+            return false;
+        }
+        let was_open = self.console.as_ref().is_some_and(Console::is_open);
+        let code = match event.physical_key {
+            PhysicalKey::Code(code) => Some(code),
+            PhysicalKey::Unidentified(_) => None,
+        };
+
+        let input = if code == Some(KeyCode::Backquote) {
+            Input::Toggle
+        } else if !was_open {
+            return false;
+        } else {
+            match code {
+                Some(KeyCode::Escape) => Input::Close,
+                Some(KeyCode::Enter | KeyCode::NumpadEnter) => Input::Enter,
+                Some(KeyCode::Backspace) => Input::Backspace,
+                Some(KeyCode::Delete) => Input::Delete,
+                Some(KeyCode::ArrowLeft) => Input::Left,
+                Some(KeyCode::ArrowRight) => Input::Right,
+                Some(KeyCode::Home) => Input::Home,
+                Some(KeyCode::End) => Input::End,
+                Some(KeyCode::ArrowUp) => Input::HistoryPrev,
+                Some(KeyCode::ArrowDown) => Input::HistoryNext,
+                Some(KeyCode::PageUp) => Input::ScrollUp,
+                Some(KeyCode::PageDown) => Input::ScrollDown,
+                // Everything else is either text or nothing — a modifier on its own reports no
+                // text, and is swallowed rather than reaching the camera.
+                _ => match event.text.as_ref() {
+                    Some(text) => Input::Text(text.to_string()),
+                    None => return true,
+                },
+            }
+        };
+
+        let effect = self
+            .console
+            .as_mut()
+            .expect("checked above")
+            .handle(input);
+
+        // Opening the console releases the mouse; closing it takes it back. Held movement keys
+        // are dropped either way, or a `w` held as the console opens would fly forever.
+        let is_open = self.console.as_ref().is_some_and(Console::is_open);
+        if is_open != was_open {
+            self.keys.clear();
+            if is_open {
+                self.unlock_cursor();
+            } else {
+                self.cursor_lock_desired = true;
+                self.try_lock_cursor();
+            }
+        }
+
+        if let Some(effect) = effect {
+            self.apply_effect(effect);
+        }
+
+        true
+    }
+
+    /// Run the `--command` lines, once, after the scene is loaded and the renderer exists —
+    /// `EnableSky false` has nowhere to go before that.
+    fn run_startup_commands(&mut self) {
+        for line in std::mem::take(&mut self.startup_commands) {
+            let effect = self.console.as_mut().and_then(|c| c.run_line(&line));
+            if let Some(effect) = effect {
+                self.apply_effect(effect);
+            }
+        }
+    }
+
+    /// Perform what the console handed back, and report the result into its scrollback.
+    ///
+    /// The console cannot reach the renderer itself, deliberately (AGENTS.md §11.1) — so this is
+    /// where `EnableSky false` becomes a `RenderToggles` and where `Stats` gets its numbers.
+    fn apply_effect(&mut self, effect: Effect) {
+        let Some(renderer) = self.renderer.as_mut() else {
+            return;
+        };
+
+        let message = match effect {
+            Effect::Enable(subsystem, value) => {
+                let mut toggles = renderer.toggles();
+                let field = match subsystem {
+                    Subsystem::Sky => &mut toggles.sky,
+                    Subsystem::Landscape => &mut toggles.landscape,
+                    Subsystem::StaticMeshes => &mut toggles.static_meshes,
+                    Subsystem::RepeatedMeshes => &mut toggles.repeated_meshes,
+                };
+                *field = value.unwrap_or(!*field);
+                let now = *field;
+                renderer.set_toggles(toggles);
+                format!("Enable{} {now}", subsystem.name())
+            }
+            Effect::Stats => self.stats_lines().join("\n"),
+        };
+
+        if let Some(console) = self.console.as_mut() {
+            console.println(message);
+        }
+    }
+
+    /// What `Stats` prints and what `ShowStats` keeps on screen — one source, so the two cannot
+    /// disagree.
+    ///
+    /// These are the numbers `--text-demo` used to show, and they are still worth showing for
+    /// the reason it existed: the bindless slot count fills in as you fly and then stops, which
+    /// is the glyph cache working and is invisible in a still image (§13.7 step 3).
+    fn stats_lines(&self) -> Vec<String> {
+        let (slots, capacity) = self.renderer.as_ref().map_or((0, 0), Renderer::bindless_stats);
+        let (meshes, placements) = self.renderer.as_ref().map_or((0, 0), Renderer::model_stats);
+        let (_, foliage) = self
+            .renderer
+            .as_ref()
+            .map_or((0, 0), Renderer::local_detail_stats);
+        let toggles = self
+            .renderer
+            .as_ref()
+            .map_or_else(Default::default, Renderer::toggles);
+
+        let mut off: Vec<&str> = Vec::new();
+        for (on, name) in [
+            (toggles.sky, "Sky"),
+            (toggles.landscape, "Landscape"),
+            (toggles.static_meshes, "StaticMeshes"),
+            (toggles.repeated_meshes, "RepeatedMeshes"),
+        ] {
+            if !on {
+                off.push(name);
+            }
+        }
+
+        vec![
+            format!("level     {}", self.level_name),
+            format!(
+                "camera    {:9.1} {:9.1} {:9.1}",
+                self.camera.position.x, self.camera.position.y, self.camera.position.z,
+            ),
+            format!("time      {:5.2}h", self.time_of_day),
+            format!(
+                "fps       {}",
+                if self.fps > 0.0 {
+                    format!("{:.0}", self.fps)
+                } else {
+                    "n/a".to_string()
+                },
+            ),
+            format!("bindless  {slots}/{capacity} slots"),
+            format!("meshes    {meshes} assets, {placements} placements"),
+            format!("foliage   {foliage} instances"),
+            // The previous frame's, necessarily: this line is part of what gets counted, so a
+            // number describing the frame it appears in cannot be known before it is laid out.
+            format!(
+                "glyphs    {} quads, one draw",
+                self.renderer.as_ref().map_or(0, Renderer::text_stats),
+            ),
+            format!(
+                "disabled  {}",
+                if off.is_empty() {
+                    "none".to_string()
+                } else {
+                    off.join(" ")
+                },
+            ),
+        ]
     }
 
     /// Attempts to hide and grab the cursor, only committing `cursor_locked` on success.
@@ -1043,16 +1171,23 @@ impl App {
             1.0
         };
 
+        // The console holds the keyboard while it is open. `console_key` already swallows the
+        // presses and clears held keys, so this is belt and braces — but it is the one place
+        // that says *why* the camera goes still, rather than leaving it as a consequence of an
+        // empty key set.
+        let flying = !self.console.as_ref().is_some_and(Console::captures_input);
+
         self.camera.fly(
             delta_time,
             (
-                self.keys.contains(&KeyCode::KeyW),
-                self.keys.contains(&KeyCode::KeyS),
-                self.keys.contains(&KeyCode::KeyA),
-                self.keys.contains(&KeyCode::KeyD),
-                self.keys.contains(&KeyCode::Space),
-                self.keys.contains(&KeyCode::ControlLeft)
-                    || self.keys.contains(&KeyCode::ControlRight),
+                flying && self.keys.contains(&KeyCode::KeyW),
+                flying && self.keys.contains(&KeyCode::KeyS),
+                flying && self.keys.contains(&KeyCode::KeyA),
+                flying && self.keys.contains(&KeyCode::KeyD),
+                flying && self.keys.contains(&KeyCode::Space),
+                flying
+                    && (self.keys.contains(&KeyCode::ControlLeft)
+                        || self.keys.contains(&KeyCode::ControlRight)),
             ),
             speed_mult,
         );
@@ -1090,7 +1225,7 @@ impl App {
                 instant
             };
         }
-        self.update_text_demo();
+        self.update_console();
 
         let window = self.window.as_ref().ok_or(E::NoWindow)?;
         let renderer = self.renderer.as_mut().ok_or(E::NoRenderer)?;
@@ -1116,60 +1251,25 @@ impl App {
 }
 
 impl App {
-    /// Build the `--text-demo` overlay and hand it to the renderer. A no-op without the flag.
+    /// Refresh the stats overlay and hand the console's glyphs to the renderer.
     ///
-    /// Split from [`demo::draw`] because the strings come from `&self` and the drawing needs
-    /// `&mut self.renderer` — so the borrow ends before the renderer's begins.
-    fn update_text_demo(&mut self) {
-        let Some(font) = self.demo_font.take() else {
-            return;
-        };
-
-        let (slots, capacity) = self.renderer.as_ref().map_or((0, 0), Renderer::bindless_stats);
-        let (meshes, placements) = self.renderer.as_ref().map_or((0, 0), Renderer::model_stats);
-        let (_, foliage) = self
-            .renderer
-            .as_ref()
-            .map_or((0, 0), Renderer::local_detail_stats);
-
-        let heading = format!("OpenAlbion — {}", self.level_name);
-        let body = vec![
-            String::new(),
-            // These change every frame, which is the point: each new digit is a glyph that was
-            // not resident, so the cache fills in as you fly and then stops doing anything.
-            format!(
-                "camera    {:9.1} {:9.1} {:9.1}",
-                self.camera.position.x, self.camera.position.y, self.camera.position.z,
-            ),
-            format!("time      {:5.2}h", self.time_of_day),
-            format!(
-                "fps       {}",
-                if self.fps > 0.0 {
-                    format!("{:.0}", self.fps)
-                } else {
-                    "n/a".to_string()
-                },
-            ),
-            String::new(),
-            format!("bindless  {slots}/{capacity} slots"),
-            format!("meshes    {meshes} assets, {placements} placements"),
-            format!("foliage   {foliage} instances"),
-            // The previous frame's, necessarily: this line is part of what gets counted, so a
-            // number describing the frame it appears in cannot be known before it is laid out.
-            format!(
-                "glyphs    {} quads, one draw",
-                self.renderer.as_ref().map_or(0, Renderer::text_stats),
-            ),
-            String::new(),
-            "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ".to_string(),
-            "0123456789  !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~".to_string(),
-            "|....|....|....|....|....|....|....|....|  <- monospace grid".to_string(),
-        ];
-
-        if let Some(renderer) = self.renderer.as_mut() {
-            demo::draw(renderer, &font, &heading, &body);
+    /// Called every frame. With the console closed and `ShowStats` off — the default — the
+    /// layout is empty and this hands the renderer an empty batch, which draws nothing
+    /// (AGENTS.md §13.6).
+    fn update_console(&mut self) {
+        // Built here rather than in `layout` because the console has no camera and no renderer
+        // to ask, and only when it is on screen: a live console is not a reason to format nine
+        // strings a frame.
+        if self.console.as_ref().is_some_and(Console::show_stats) {
+            let lines = self.stats_lines();
+            if let Some(console) = self.console.as_mut() {
+                console.set_stats(lines);
+            }
         }
-        self.demo_font = Some(font);
+
+        if let (Some(renderer), Some(console)) = (self.renderer.as_mut(), self.console.as_ref()) {
+            console::draw(renderer, console);
+        }
     }
 }
 
