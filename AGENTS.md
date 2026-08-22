@@ -34,18 +34,15 @@ inert where it has not — deliberately, per §2 rule 5.
 step verified byte-identical, and the texture cache it bought is measured at 2.5–3.9× redundant
 work removed (§12.1, §12.8).
 
-**Two things are left, and they are independent.**
+**The dev console is done** (§13.7 step 4) — a toggleable overlay on backquote, an input line,
+scrollback, and `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` as the first commands.
+`--text-demo` is gone; the console replaced it, and `--console` plus `--command` are how a
+capture reaches either (§8).
 
-1. **The dev console (§13.7 step 4).** Text rendering itself is **built** — the renderer draws
-   monospace glyph runs in one instanced draw, `openalbion::text` rasterizes and lays them out,
-   and both are tested. What is left is the console that gives them something to say: a
-   toggleable overlay, an input line, scrollback, and the `Enable*` subsystem toggles (§13.5).
-2. **The environment layer (§5 step 2)** is the highest-value *faithfulness* work left. Sky
-   gradients, landscape lighting and mesh lighting are the same four LUT rows, all three
-   currently running the same neutral placeholder (§9). It is now **one constant** to change —
-   `LightingUniforms::NEUTRAL` — since §12.7 landed.
-
-**The console comes first**, then the environment layer — Jamen's call, 2026-08-15.
+**One thing is left: the environment layer (§5 step 2)**, and it is the highest-value
+*faithfulness* work remaining. Sky gradients, landscape lighting and mesh lighting are the same
+four LUT rows, all three currently running the same neutral placeholder (§9). It is now **one
+constant** to change — `LightingUniforms::NEUTRAL` — since §12.7 landed.
 
 **A trap that cost a session, now fixed and worth not reintroducing:** `cargo check` does not
 link, so a broken host link can hide indefinitely. It did — `mingw.stdenv.cc` in the devshell's
@@ -1444,18 +1441,22 @@ nix shell "nixpkgs#vulkan-tools" --command vulkaninfo --summary
 # one offscreen frame, for a pixel-identical before/after
 cargo run -p openalbion -- --level LookoutPoint --screenshot out.ppm
 
-# see text rendering, live — fly with WASD, Escape releases the cursor (§13.7 step 3)
-cargo run -p openalbion -- --level LookoutPoint --text-demo
+# fly with WASD, Escape releases the cursor; **backquote opens the console** (§13.5).
+# `Help` lists the commands; `ShowStats` keeps the live numbers on screen.
+cargo run -p openalbion -- --level LookoutPoint
 
 # the heaviest level in the shipped data — 306 slots, 196 mesh assets, 29k foliage (§12.3a).
 # Use --release: a debug build measures the wrong thing.
-cargo run --release -p openalbion -- --level OakValeEast_v2 --text-demo
+cargo run --release -p openalbion -- --level OakValeEast_v2 --console --command ShowStats
 
 # the whole of Albion at once — 397 maps, 3215/4096 slots, ~72 s to load (§12.3b)
-cargo run --release -p openalbion -- --world --level LookoutPoint --text-demo
+cargo run --release -p openalbion -- --world --level LookoutPoint --command ShowStats
 
-# ...or as a still, without a window
-cargo run -p openalbion -- --level LookoutPoint --text-demo --screenshot text.ppm
+# a console frame as a still: --console opens it, --command runs lines before the first frame,
+# which is the only way a capture reaches a toggle (it never sees a key press)
+cargo run -p openalbion -- --level LookoutPoint --console --command Help --screenshot console.ppm
+cargo run -p openalbion -- --level LookoutPoint --command "EnableLandscape false" \
+  --screenshot no-landscape.ppm
 ```
 
 ---
@@ -1493,6 +1494,22 @@ Newest first, one entry per working session: what landed, and the correction wor
 Anything a session *established* is a present-tense fact in §3, §5 or §9 instead — this is the
 record of how it got there, not a second copy of it.
 
+- **2026-08-15** — **The dev console** (§13.7 step 4). Backquote opens an overlay with an input
+  line, scrollback and a command table; `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` are
+  the first commands and `RenderToggles` is the renderer half. `--text-demo` and its `demo`
+  module are deleted — the console is what step 3 was standing in for. **The frame is unchanged:**
+  LookoutPoint's closed-console capture is still `md5 4137e8a4…`, the same bytes step 1 recorded.
+  **Two decisions Jamen made at the derivation review:** output goes to the console's own
+  scrollback and `tracing` is left alone (§13.5), and the demo's live numbers survive as a
+  `ShowStats` overlay rather than being dropped. **Three things worth keeping.** The panel and
+  cursor need no new pipeline — a `GlyphInstance` pointing at the bindless array's 1×1 white
+  fallback *is* a filled rectangle, and unlike a glyph that slot survives a scene clear. Text
+  input must come from `KeyEvent::text` rather than key codes, or the console types US-layout
+  characters on every other layout — and the backquote must be consumed before it, since one
+  press reports as both. And the useful half of "a toggle removes its subsystem" is **"and only
+  its own"**: the test that turns the *other* three off and demands byte-identical pixels is what
+  a toggle wired to the wrong pass would fail. `--command` exists because a `--screenshot` never
+  sees a key press, so it is the only route from a toggle to a capture.
 - **2026-08-15** — **Text renders** (§13.7 steps 1–3). Inconsolata embedded and rasterized by
   `ab_glyph`, laid out monospace in `openalbion::text`, and drawn by a `TextPass` as one
   instanced draw of screen-space quads after the resolve. **§12.9's last gate closed with it**:
@@ -2141,12 +2158,11 @@ cheap to revisit and neither has a caller yet.
 
 ---
 
-## 13. Font rendering & the dev console — **text is built; the console is next**
+## 13. Font rendering & the dev console — **built**
 
-§12 is complete, and §13.7 steps 1–3 landed 2026-08-15. Step 4, the console, is the current
-work. §2 rules 1 and 3 do not apply (there is no
-oracle — the original engine had a console, but we are not reproducing it, §13.5); rules 2, 4,
-5 and 6 do.
+§12 is complete, and §13.7's four steps all landed 2026-08-15. §2 rules 1 and 3 do not apply
+(there is no oracle — the original engine had a console, but we are not reproducing it, §13.5);
+rules 2, 4, 5 and 6 do.
 
 **Scope, from Jamen: monospace text only**, expanding to UI elements later. That scoping is
 load-bearing for §13.2 and is the reason §13.2 was re-examined and re-affirmed rather than
@@ -2313,6 +2329,40 @@ A `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}`-shaped toggle set is more 
 convenience: it is the subsystem isolation that made comparing against the original possible at
 all (§3.9), and it is genuinely useful for this renderer's own debugging.
 
+**As built**, and the shape is the part worth knowing:
+
+- **Backquote toggles it**, and the key is swallowed rather than typed — the platform reports one
+  press as both a physical key *and* the text `` ` ``. Printable characters come from winit's
+  `KeyEvent::text`, not from key codes, which is the only way a non-US layout types what its
+  keycaps say; editing keys stay physical. While it is open the camera is still and the cursor is
+  released, and held keys are dropped so a `w` held as it opens does not fly forever.
+- **The console performs what it owns and hands back what it does not.** `Help`, `Clear` and
+  `ShowStats` are console state and run in `openalbion::console`; `Enable*` and `Stats` come back
+  to `main.rs` as an `Effect`, because the console deliberately cannot reach the renderer (§11.1).
+  That split is what makes every rule — wrapping, the visible window, cursor movement, what a
+  command prints — testable with no GPU (§6.9).
+- **Command names are Fable's, in spirit** (§3.9): `EnableLandscape false`, case-insensitive,
+  with no argument meaning *flip*. The `Enable*` rows in `Help` are generated from the same list
+  the parser matches against, so a new subsystem cannot be added to one and forgotten in the
+  other.
+- **The panel and the cursor are `GlyphInstance`s pointing at the bindless array's 1×1 white
+  fallback slot** (`Renderer::solid_index`). No second pipeline, no second shader, no upload —
+  and unlike a glyph that slot is not scene-scoped, so a level load cannot take the panel with
+  it. Coverage 1 everywhere means the instance's colour *is* the fill.
+- **`ShowStats` is the one thing that draws with the console closed**, and it is off by default,
+  which is what keeps `--screenshot` byte-identical (§13.6 prerequisite 3). It carries the live
+  numbers `--text-demo` used to show, for the same reason it did: the slot count filling in as
+  you fly is the glyph cache working, and a still image cannot show it.
+- **`--command` runs a line before the first frame**, through exactly the path a keystroke takes.
+  It exists because a `--screenshot` never sees a key press, so it is the only way a toggle
+  reaches a capture.
+
+**Output goes to the console's own scrollback, and `tracing` is left alone** — decided by Jamen,
+2026-08-15, over the `tracing`-layer-feeding-scrollback option §13.6 floated. Two sinks stay two
+sinks: no shared buffer, no lock in the log path, and nothing in the scrollback that was not
+addressed to it. The trigger to revisit is wanting to *see* a warning in-game that currently only
+reaches the terminal — a layer is still the obvious way to do it, and nothing here blocks one.
+
 ### 13.6 Settled by the design review, and what is still open
 
 **Settled:**
@@ -2351,16 +2401,15 @@ rule 2, and each is verifiable byte-identical on its own:**
    (`lib.rs:421`); only the offscreen target keeps one. Screen-space text needs it in a frame
    uniform.
 
-**Still open:**
+**Closed by step 4:**
 
-- **DPI.** winit reports `scale_factor` and `WindowEvent::ScaleFactorChanged`; `main.rs` handles
-  neither today. The px size handed to the rasterizer should be `requested_pt · scale_factor`,
-  which means a scale change re-rasterizes at a new `px_size` — already a distinct cache key
-  (§13.3), so the cache handles it. Not investigated further.
-- **Rasterizer crate** — `ab_glyph` or `fontdue`, per §13.1. Decide at implementation.
-- **Where command output goes.** The console's scrollback and `tracing` (§6.8) are two sinks for
-  the same text. A `tracing` layer feeding the scrollback is the obvious move and is not yet a
-  decision.
+- **DPI.** `main.rs` handles `WindowEvent::ScaleFactorChanged` and the console asks for
+  `16 px × scale_factor`. Because `px` is half the cache key (§13.3), a scale change is a
+  different key and re-rasterizes with no invalidation of its own — the cache needed no special
+  case, exactly as predicted. What is *not* handled is a `Console` created before its window:
+  the scale starts at 1.0 until the first event.
+- **Rasterizer crate** — `ab_glyph` (§13.1).
+- **Where command output goes** — the console's own scrollback; see §13.5.
 
 **Resolved by implementing steps 1–3:** the rasterizer crate (`ab_glyph`, §13.1), the instance
 shape (`renderer::GlyphInstance` — rect, colour, slot; **no uv rect**, since a per-glyph texture
@@ -2393,20 +2442,20 @@ something should.
    for. Also pinned: nothing draws until text is set and `set_text(&[])` restores the frame
    byte-for-byte; a repeated key reuses its slot; and §13.2a's hazard is a gate, not a comment —
    a scene load invalidates glyph slots and drawing across one trips the assert. Driven
-   end-to-end through the real app by **`--text-demo`** (§8), which draws a live overlay over
-   whatever level is loaded: 303 glyphs as 606 quads — each drawn twice, once as a drop shadow —
-   in **one draw**, and **338 of 4096 slots**, being LookoutPoint's 229 plus 109 glyphs across
-   two sizes. §13.2's budget, confirmed on hardware. The overlay is a stand-in for the console
-   and step 4 replaces it; it exists so the text path can be looked at rather than described,
-   and it shows the two things a still image cannot — values that change every frame, so the
-   cache fills in as you fly and then stops doing anything, and two sizes, so the `px` half of
-   the key is visible as two sets of registrations.
-4. **`openalbion::console`** — toggle key, input line, scrollback, command table, with
-   `Enable{Sky,Landscape,StaticMeshes,RepeatedMeshes}` as the first commands (§13.5). This is
-   what gives text something to say — `--text-demo` (§8) is a stand-in for it and this step
-   replaces it. Verify: `--screenshot` still
-   byte-identical with the console closed (§13.6 prerequisite 3), and each toggle demonstrably
-   removes exactly its own subsystem.
+   end-to-end through the real app by a `--text-demo` overlay, since **deleted by step 4** — it
+   was the console's stand-in, and it confirmed §13.2's budget on hardware: 303 glyphs as 606
+   quads in **one draw**, and **338 of 4096 slots**, being LookoutPoint's 229 plus 109 glyphs
+   across two sizes.
+4. ~~**`openalbion::console`.**~~ **DONE.** Toggle key, input line, scrollback, command table and
+   the four `Enable*` toggles (§13.5); `--text-demo` and its `demo` module are gone, replaced by
+   the console plus `--console`/`--command`. *Verify:* LookoutPoint `--screenshot` with the
+   console closed is still **`md5 4137e8a4…`** — the same bytes §13.7 step 1 recorded, so the
+   whole of §13 has cost the default frame nothing. 14 CPU tests over the console (no GPU, no
+   Fable install) and 3 against a real device. The renderer test is the one that pins the claim
+   worth pinning: a toggle removes its own subsystem **and only its own** — switching the other
+   three off leaves the first's pixels byte-identical, which a toggle wired to the wrong pass
+   would fail. On LookoutPoint's default framing the four toggles change 38.8% / 47.9% / 17.5% /
+   0.2% of the frame (foliage is ground cover, and small from up there).
 
 **Two things fixed on the way, neither planned:**
 
