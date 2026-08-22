@@ -1,3 +1,4 @@
+pub mod anim;
 pub mod appearance;
 pub mod big;
 pub mod bytes;
