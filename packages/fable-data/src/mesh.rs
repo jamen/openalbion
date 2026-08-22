@@ -534,9 +534,20 @@ impl Primitive {
                 index_count: indices.len() as u32 - start,
             });
         }
-        let mut animated_view = &index_data[..];
+        // Animated blocks seek `start_index`, exactly like static ones.
+        //
+        // They used to be walked sequentially, on the reading that their `start_index` values
+        // are cumulative from zero — which they are. The walk was still wrong: `expand_block`
+        // consumes **one** index per triangle of a strip, because it peeks the other two, while
+        // a strip of N triangles occupies N + 2 indices. So every block after the first began
+        // two indices early, and the error compounded: measured across the archive, the drift
+        // runs 2, 4, 6, 8 and only 241 of 562 blocks in multi-block primitives landed where
+        // their `start_index` says. It rendered as a spray of long thin triangles across a
+        // villager's chest.
         for block in &animated_blocks {
             let start = indices.len() as u32;
+            let offset = block.base.start_index as usize * 2;
+            let mut animated_view = index_data.get(offset..).unwrap_or(&[]);
             expand_block(&mut animated_view, &block.base, &mut indices)?;
             // Animated blocks carry no material of their own; use the primitive's.
             sub_meshes.push(SubMesh {
