@@ -352,6 +352,49 @@ pub struct PrimitiveAnimatedBlock {
     pub groups: Vec<u8>,
 }
 
+/// The eight bytes of skinning data a skinned vertex carries.
+///
+/// The split was **measured, not assumed**, over 74,253 skinned vertices:
+///
+/// - the last four bytes sum to exactly **255 on every one of them** — they are the blend
+///   weights, `u8`-normalised;
+/// - the first four are multiples of three on **every one of them**, with a maximum of 51 —
+///   they are bone-palette slots **pre-multiplied by 3**, because `VSHADER_PALSKIN_*` reads
+///   `c[a.x + 38]`, `c[a.x + 39]` and `c[a.x + 40]`, three constant registers per bone
+///   (§3.15). 51 = 17 x 3 is the last slot of an 18-entry palette, and
+///   `CAnimatedBlock::Groups[18]` caps it at exactly that.
+///
+/// `bones_per_vertex` is 3 everywhere (§3.15), so the fourth slot is always zero-weighted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VertexBlend {
+    /// Palette slots times three, as stored. Use [`VertexBlend::slots`].
+    pub scaled_slots: [u8; 4],
+    /// Weights out of 255, summing to 255. Use [`VertexBlend::weights`].
+    pub raw_weights: [u8; 4],
+}
+
+impl VertexBlend {
+    /// Indices into the owning [`PrimitiveAnimatedBlock::groups`] palette.
+    pub fn slots(&self) -> [u8; 4] {
+        [
+            self.scaled_slots[0] / 3,
+            self.scaled_slots[1] / 3,
+            self.scaled_slots[2] / 3,
+            self.scaled_slots[3] / 3,
+        ]
+    }
+
+    /// Weights in `0..=1`, summing to 1.
+    pub fn weights(&self) -> [f32; 4] {
+        [
+            self.raw_weights[0] as f32 / 255.0,
+            self.raw_weights[1] as f32 / 255.0,
+            self.raw_weights[2] as f32 / 255.0,
+            self.raw_weights[3] as f32 / 255.0,
+        ]
+    }
+}
+
 /// A render vertex. `#[repr(C)]` + `Pod` so it can be uploaded to the GPU directly.
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 #[repr(C)]
@@ -392,6 +435,8 @@ pub struct Primitive {
     pub pos_bias: [f32; 4],
     pub vertex_size: u32,
     pub vertices: Vec<Vertex>,
+    /// Per-vertex skinning data, empty for static primitives. Parallel to `vertices`.
+    pub blends: Vec<VertexBlend>,
     pub indices: Vec<u16>,
     /// Per-block draw ranges into `indices`, each with its material.
     pub sub_meshes: Vec<SubMesh>,
@@ -456,8 +501,9 @@ impl Primitive {
         let vertex_data = decompress_section(i, total_vertices * vertex_size as usize)?;
         let vd = &mut &vertex_data[..];
         let mut vertices = Vec::with_capacity(total_vertices);
+        let mut blends = Vec::new();
         for _ in 0..total_vertices {
-            vertices.push(decode_vertex(
+            let (vertex, blend) = decode_vertex(
                 vd,
                 vertex_size,
                 animated_block_count > 0,
@@ -465,7 +511,11 @@ impl Primitive {
                 init_flags,
                 pos_scale,
                 pos_bias,
-            )?);
+            )?;
+            vertices.push(vertex);
+            if let Some(blend) = blend {
+                blends.push(blend);
+            }
         }
 
         let index_data = decompress_section(i, 2 * index_count as usize * reps)?;
@@ -517,6 +567,7 @@ impl Primitive {
             pos_bias,
             vertex_size,
             vertices,
+            blends,
             indices,
             sub_meshes,
             cloth_primitives,
@@ -570,7 +621,7 @@ fn decode_vertex(
     init_flags: u32,
     pos_scale: [f32; 4],
     pos_bias: [f32; 4],
-) -> Result<Vertex, MeshError> {
+) -> Result<(Vertex, Option<VertexBlend>), MeshError> {
     // Each vertex occupies `vertex_size` bytes; parse the attributes we use out of that window.
     let mut v = take_bytes(data, vertex_size as usize)?;
 
@@ -583,10 +634,16 @@ fn decode_vertex(
     pos[1] = pos[1] * pos_scale[1] + pos_bias[1];
     pos[2] = pos[2] * pos_scale[2] + pos_bias[2];
 
-    // Per-vertex bone weights/indices (skipped — not used for static rendering).
-    if !repeating && animated {
-        let _ = take_bytes(&mut v, 8);
-    }
+    // Per-vertex bone palette indices and blend weights.
+    let blend = if !repeating && animated {
+        let b = take_bytes(&mut v, 8)?;
+        Some(VertexBlend {
+            scaled_slots: b[..4].try_into().unwrap(),
+            raw_weights: b[4..8].try_into().unwrap(),
+        })
+    } else {
+        None
+    };
 
     let normal = if !repeating {
         read_packed_vec3(&mut v)?
@@ -605,7 +662,7 @@ fn decode_vertex(
         let _ = take_bytes(&mut v, 8);
     }
 
-    Ok(Vertex { pos, normal, uv })
+    Ok((Vertex { pos, normal, uv }, blend))
 }
 
 #[derive(Debug, Clone, PartialEq)]
