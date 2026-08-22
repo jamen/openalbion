@@ -128,10 +128,48 @@ pub struct Renderer<'target> {
     /// does, on a keyframe change — carries the generation it registered under and checks it
     /// at draw time (§12.4).
     bindless: BindlessTextures,
+    /// Which world passes run this frame (AGENTS.md §13.5). All on by default.
+    toggles: RenderToggles,
     /// The target's size in physical pixels. Kept because screen-space passes need it and
     /// `resize_surface` is the only place it is known — it used to be consumed and dropped.
     size: [u32; 2],
     target: Target<'target>,
+}
+
+/// Which world subsystems draw — the renderer half of the console's `Enable*` commands
+/// (AGENTS.md §13.5).
+///
+/// **Subsystem isolation is what made comparing against the original possible at all** (§3.9):
+/// every `CEngineComponent` in Fable has a `GetConsoleEnableFunctionName`, and the same trick
+/// answers "is that seam the terrain or the foliage?" here without a reference image. It is a
+/// struct rather than four setters so a caller reads and writes the whole state — the console
+/// needs to *report* a toggle as well as flip it.
+///
+/// A toggle skips a pass entirely; it does not draw it differently. That is only safe because
+/// [`ClearPass`] owns the depth clear (§13.7 step 1) — while `TerrainPass` owned it, switching
+/// the landscape off would have left the passes after it depth-testing against the previous
+/// frame.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct RenderToggles {
+    /// `EnableSky` — the outer sky dome and base band.
+    pub sky: bool,
+    /// `EnableLandscape` — the terrain's foreground layers.
+    pub landscape: bool,
+    /// `EnableStaticMeshes` — the `.tng` things.
+    pub static_meshes: bool,
+    /// `EnableRepeatedMeshes` — local detail's foliage.
+    pub repeated_meshes: bool,
+}
+
+impl Default for RenderToggles {
+    fn default() -> Self {
+        Self {
+            sky: true,
+            landscape: true,
+            static_meshes: true,
+            repeated_meshes: true,
+        }
+    }
 }
 
 /// The multisampled colour attachment. Recreated on resize alongside the depth buffer, which
@@ -356,6 +394,7 @@ impl<'target> Renderer<'target> {
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, surface_format, [1, 1], targets.sample_count)),
             bindless,
+            toggles: RenderToggles::default(),
             size: [1, 1],
             device,
             queue,
@@ -401,6 +440,7 @@ impl<'target> Renderer<'target> {
                 .is_multisampled()
                 .then(|| MsaaTexture::new(&device, format, size, targets.sample_count)),
             bindless,
+            toggles: RenderToggles::default(),
             size,
             device,
             queue,
@@ -569,6 +609,17 @@ impl<'target> Renderer<'target> {
         self.size
     }
 
+    /// Which world subsystems currently draw (AGENTS.md §13.5).
+    pub fn toggles(&self) -> RenderToggles {
+        self.toggles
+    }
+
+    /// Choose which world subsystems draw. Text is not among them: the console must be able to
+    /// turn the world off and still say so.
+    pub fn set_toggles(&mut self, toggles: RenderToggles) {
+        self.toggles = toggles;
+    }
+
     /// The bindless slot holding the glyph registered under `key`, if it is still resident.
     ///
     /// **Ask every frame rather than caching the answer.** The registry is scene-scoped and
@@ -686,21 +737,35 @@ impl<'target> Renderer<'target> {
             None => view,
         };
 
+        // `clear` and `resolve` are not toggleable, and that is deliberate: a pass that draws
+        // nothing cannot be switched off by accident, so the depth buffer is always cleared
+        // however many subsystems the console has turned off (§13.5).
         self.passes
             .clear
             .pass(&mut cmd, colour, self.depth_texture.view());
-        self.passes.sky.pass(&mut cmd, bindless, colour);
-        self.passes
-            .terrain
-            .pass(&mut cmd, bindless, colour, self.depth_texture.view());
+        if self.toggles.sky {
+            self.passes.sky.pass(&mut cmd, bindless, colour);
+        }
+        if self.toggles.landscape {
+            self.passes
+                .terrain
+                .pass(&mut cmd, bindless, colour, self.depth_texture.view());
+        }
         // Local detail before the model pass: both write depth for their opaque draws, and
         // the model pass ends with its depth-sorted blended ones, which must come last.
-        self.passes
-            .local_detail
-            .pass(&mut cmd, bindless.bind_group, colour, self.depth_texture.view());
-        self.passes
-            .model
-            .pass(&mut cmd, bindless.bind_group, colour, self.depth_texture.view());
+        if self.toggles.repeated_meshes {
+            self.passes.local_detail.pass(
+                &mut cmd,
+                bindless.bind_group,
+                colour,
+                self.depth_texture.view(),
+            );
+        }
+        if self.toggles.static_meshes {
+            self.passes
+                .model
+                .pass(&mut cmd, bindless.bind_group, colour, self.depth_texture.view());
+        }
 
         if let Some(msaa) = &self.msaa_texture {
             self.passes.resolve.pass(&mut cmd, &msaa.view, view);
