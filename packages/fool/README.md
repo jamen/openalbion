@@ -6,6 +6,18 @@ A command-line tool for inspecting and modifying Fable's data files.
 
 - `fool big dump <input.big> [output_dir]` — extract every asset from a `.big`
   archive into `output_dir/<bank>/<asset>`.
+- `fool fmp info <input.fmp>` — print an `.fmp`'s version, content type and bank
+  table. The `.fmp` container reuses the `.big` header and bank-table layout with a
+  `B\0\0\0` magic, version 101 and a content-type word; wrapped (`12345` + zlib)
+  packages are inflated first.
+- `fool fmp list <input.fmp> [--bank NAME] [--text]` — list each bank's records.
+  A bank's records are `.big` `AssetMetadata` entries (minus the type map), so the
+  symbol names, payload sizes and `extras` come straight from the existing BIG
+  parser; `GameBINEntries` extras name the definition type. `--text` decodes
+  text-bank payloads (UTF-16LE).
+- `fool fmp dump <input.fmp> [output_dir]` — write each bank's raw bytes to
+  `output_dir/<bank>.bin`. Bank contents are opaque at this level (they are not
+  `.big` asset tables).
 - `fool wad unpack <input.wad> [output_dir]` — extract every file from a `.wad`
   archive.
 - `fool wad pack <input_dir> [output.wad] [-P prefix]` — pack a directory of

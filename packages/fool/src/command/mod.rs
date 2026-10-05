@@ -1,5 +1,6 @@
 mod big;
 mod def;
+mod fmp;
 mod lev;
 mod mesh;
 mod texture;
@@ -8,8 +9,8 @@ mod wad;
 mod wld;
 
 use self::{
-    big::BigCommand, def::DefCommand, lev::LevCommand, mesh::MeshCommand, texture::TextureCommand,
-    tng::TngCommand, wad::WadCommand, wld::WldCommand,
+    big::BigCommand, def::DefCommand, fmp::FmpCommand, lev::LevCommand, mesh::MeshCommand,
+    texture::TextureCommand, tng::TngCommand, wad::WadCommand, wld::WldCommand,
 };
 use clap::Subcommand;
 
@@ -20,6 +21,9 @@ pub enum Command {
 
     #[command(subcommand, arg_required_else_help = true)]
     Def(DefCommand),
+
+    #[command(subcommand, arg_required_else_help = true)]
+    Fmp(FmpCommand),
 
     #[command(subcommand, arg_required_else_help = true)]
     Wad(WadCommand),
@@ -44,6 +48,7 @@ pub fn handler(command: Command) -> anyhow::Result<()> {
     match command {
         Command::Big(c) => big::handler(c),
         Command::Def(c) => def::handler(c),
+        Command::Fmp(c) => fmp::handler(c),
         Command::Wad(c) => wad::handler(c),
         Command::Lev(c) => lev::handler(c),
         Command::Mesh(c) => mesh::handler(c),

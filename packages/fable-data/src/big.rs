@@ -8,25 +8,29 @@ use std::{
     io::{self, Read, Seek, SeekFrom},
 };
 
-pub struct BigReader<T: Read + Seek> {
+/// A BIG container's file header and bank metadata table, with no bank contents parsed.
+///
+/// This is the half of the format that `.fmp` shares with `.big`: a [`Header`] followed by a
+/// table of [`BankMetadata`] entries. [`BigReader`] builds on it by parsing each bank's asset
+/// table; `fmp::FmpReader` uses it directly, because `.fmp` bank contents are not BIG bank
+/// contents.
+pub struct BigContainer<T: Read + Seek> {
     source: T,
-    /// Parsed file header, retained for completeness though not yet read back.
-    #[allow(dead_code)]
     header: Header,
-    banks: HashMap<String, Bank>,
+    banks: Vec<BankMetadata>,
 }
 
 #[derive(Debug, Display, Error)]
-pub enum BigReaderError {
+pub enum BigContainerError {
     SeekToHeader(io::Error),
     ReadHeader(io::Error),
     ParseHeader(HeaderError),
     ReadBankTable(ReadBankTableError),
 }
 
-impl<T: Read + Seek> BigReader<T> {
-    pub fn new(mut source: T) -> Result<Self, BigReaderError> {
-        use BigReaderError as E;
+impl<T: Read + Seek> BigContainer<T> {
+    pub fn new(mut source: T) -> Result<Self, BigContainerError> {
+        use BigContainerError as E;
 
         let mut header_bytes = [0; Header::BYTE_SIZE];
 
@@ -46,8 +50,119 @@ impl<T: Read + Seek> BigReader<T> {
         })
     }
 
+    /// Read the bank metadata table. Only the entries are parsed here; a bank's own contents
+    /// are `BigReader`'s or `FmpReader`'s business, and differ between the two formats.
+    fn read_bank_table(
+        source: &mut T,
+        header: &Header,
+    ) -> Result<Vec<BankMetadata>, ReadBankTableError> {
+        use ReadBankTableError as E;
+
+        let mut count = [0u8; BankCount::BYTE_SIZE];
+
+        let pos = SeekFrom::Start(header.banks_position as u64);
+
+        source.seek(pos).map_err(E::SeekCount)?;
+
+        source.read_exact(&mut count).map_err(E::ReadCount)?;
+
+        let BankCount { count } = BankCount::parse(&mut &count[..]).map_err(E::ParseCount)?;
+
+        let mut table_bytes = Vec::new();
+
+        source
+            .read_to_end(&mut table_bytes)
+            .map_err(E::ReadMetadata)?;
+
+        let mut table_bytes = &table_bytes[..];
+
+        let mut banks = Vec::with_capacity(count as usize);
+
+        for i in 0..count {
+            let metadata = BankMetadataRef::parse(&mut table_bytes)
+                .map_err(|e| E::ReadBankMetadata(i, e))?
+                .into_owned();
+
+            banks.push(metadata);
+        }
+
+        Ok(banks)
+    }
+
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    pub fn banks(&self) -> &[BankMetadata] {
+        &self.banks
+    }
+
+    pub fn bank(&self, name: &str) -> Option<&BankMetadata> {
+        self.banks.iter().find(|bank| bank.name == name)
+    }
+
+    /// Read an arbitrary byte range out of the container.
+    pub fn read_range(&mut self, start: u32, size: u32) -> Result<Vec<u8>, ReadAssetDataError> {
+        use ReadAssetDataError as E;
+
+        let mut data = vec![0u8; size as usize];
+        let pos = SeekFrom::Start(start as u64);
+        self.source.seek(pos).map_err(E::Seek)?;
+        self.source.read_exact(&mut data).map_err(E::Read)?;
+
+        Ok(data)
+    }
+
+    /// Read a bank's file bytes as they sit in the container.
+    pub fn read_bank_raw(&mut self, bank: &BankMetadata) -> Result<Vec<u8>, ReadAssetDataError> {
+        self.read_range(bank.position, bank.length)
+    }
+}
+
+pub struct BigReader<T: Read + Seek> {
+    container: BigContainer<T>,
+    banks: HashMap<String, Bank>,
+}
+
+#[derive(Debug, Display, Error)]
+pub enum BigReaderError {
+    Container(BigContainerError),
+    #[display("read bank ${_0}: ${_1}")]
+    ReadBank(u32, ReadAssetDataError),
+    #[display("parse bank ${_0}: ${_1}")]
+    ParseBank(u32, ReadBankError),
+}
+
+impl<T: Read + Seek> BigReader<T> {
+    pub fn new(source: T) -> Result<Self, BigReaderError> {
+        use BigReaderError as E;
+
+        let mut container = BigContainer::new(source).map_err(E::Container)?;
+
+        let metadata: Vec<BankMetadata> = container.banks().to_vec();
+
+        let mut banks = HashMap::with_capacity(metadata.len());
+
+        for (i, metadata) in metadata.into_iter().enumerate() {
+            let bytes = container
+                .read_bank_raw(&metadata)
+                .map_err(|e| E::ReadBank(i as u32, e))?;
+
+            let name = metadata.name.to_string();
+
+            let bank = Bank::read(&bytes, metadata).map_err(|e| E::ParseBank(i as u32, e))?;
+
+            banks.insert(name, bank);
+        }
+
+        Ok(Self { container, banks })
+    }
+
     pub fn bank_iter(&self) -> impl Iterator<Item = &Bank> {
-        self.banks.values()
+        self.container
+            .banks()
+            .iter()
+            .filter_map(|metadata| self.banks.get(metadata.name.as_ref()))
     }
 
     pub fn bank(&self, name: &str) -> Option<&Bank> {
@@ -74,14 +189,7 @@ impl<T: Read + Seek> BigReader<T> {
         &mut self,
         asset: &AssetMetadata,
     ) -> Result<Vec<u8>, ReadAssetDataError> {
-        use ReadAssetDataError as E;
-
-        let mut data = vec![0u8; asset.size as usize];
-        let pos = SeekFrom::Start(asset.start as u64);
-        self.source.seek(pos).map_err(E::Seek)?;
-        self.source.read_exact(&mut data).map_err(E::Read)?;
-
-        Ok(data)
+        self.container.read_range(asset.start, asset.size)
     }
 
     pub fn read_asset(
@@ -110,51 +218,6 @@ pub enum ReadBankTableError {
     ReadMetadata(io::Error),
     #[display("read bank metadata ${_0}: ${_1}")]
     ReadBankMetadata(u32, BankMetadataError),
-    #[display("read bank ${_0}: ${_1}")]
-    ReadBank(u32, ReadBankError),
-}
-
-impl<T: Read + Seek> BigReader<T> {
-    fn read_bank_table(
-        mut source: &mut T,
-        header: &Header,
-    ) -> Result<HashMap<String, Bank>, ReadBankTableError> {
-        use ReadBankTableError as E;
-
-        let mut count = [0u8; BankCount::BYTE_SIZE];
-
-        let pos = SeekFrom::Start(header.banks_position as u64);
-
-        source.seek(pos).map_err(E::SeekCount)?;
-
-        source.read_exact(&mut count).map_err(E::ReadCount)?;
-
-        let BankCount { count } = BankCount::parse(&mut &count[..]).map_err(E::ParseCount)?;
-
-        let mut table_bytes = Vec::new();
-
-        source
-            .read_to_end(&mut table_bytes)
-            .map_err(E::ReadMetadata)?;
-
-        let mut table_bytes = &table_bytes[..];
-
-        let mut table = HashMap::new();
-
-        for i in 0..count {
-            let metadata = BankMetadataRef::parse(&mut table_bytes)
-                .map_err(|e| E::ReadBankMetadata(i, e))?
-                .into_owned();
-
-            let name = metadata.name.to_string();
-
-            let bank = Bank::read(&mut source, metadata).map_err(|e| E::ReadBank(i, e))?;
-
-            table.insert(name, bank);
-        }
-
-        Ok(table)
-    }
 }
 
 pub struct Bank {
@@ -192,26 +255,16 @@ impl Bank {
 
 #[derive(Debug, Display, Error)]
 pub enum ReadBankError {
-    SeekHeader(io::Error),
-    ReadHeader(io::Error),
     ParseHeader(AssetTableHeaderError),
     #[display("asset metadata ${_0}: ${_1}")]
     ParseAssetMetadata(u32, AssetMetadataError),
 }
 
 impl Bank {
-    fn read<T: Read + Seek>(mut file: T, metadata: BankMetadata) -> Result<Self, ReadBankError> {
+    fn read(table_bytes: &[u8], metadata: BankMetadata) -> Result<Self, ReadBankError> {
         use ReadBankError as E;
 
-        let mut table_bytes = vec![0u8; metadata.length as usize];
-
-        let pos = SeekFrom::Start(metadata.position as u64);
-
-        file.seek(pos).map_err(E::SeekHeader)?;
-
-        file.read_exact(&mut table_bytes).map_err(E::ReadHeader)?;
-
-        let mut table_bytes = &table_bytes[..];
+        let mut table_bytes = table_bytes;
 
         let header = TypeMap::parse(&mut table_bytes).map_err(E::ParseHeader)?;
 
